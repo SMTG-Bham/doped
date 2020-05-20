@@ -152,7 +152,7 @@ def vasp_gam_files(single_defect_dict, input_dir=None, incar_settings=None):
         'NELECT': NELECT, 'IBRION': '2 # vasp_gam cheap enough, this is more reliable',
         'NUPDOWN': f"{NELECT % 2:.0f} # But could be {NELECT % 2 + 2:.0f} if ya think we got a bit of crazy ferromagnetic shit going down",
         'NCORE': 12, '#KPAR': 'One pal, only one k-point yeh', 'AEXX': 0.25, 'ENCUT': 450,
-        'POTIM': 0.2, 'ISPIN': 2, 'ICORELEVEL': 1, 'LSUBROT': True,
+        'POTIM': 0.2, 'ISPIN': 2, 'ICORELEVEL': 0, 'LSUBROT': True,
         'ALGO': 'All', 'ADDGRID': True, 'EDIFF': 1e-06, 'EDIFFG': -0.005, 'HFSCREEN': 0.2,
         'ICHARG': 1, 'ISIF': 2, 'ISYM': 0, 'ISMEAR': 0, 'LASPH': True, 'LHFCALC': True, 'LORBIT': 11,
         'LREAL': False, 'LVHAR': True, 'LWAVE': True, 'NEDOS': 2000, 'NELM': 100, 'NSW': 300,
