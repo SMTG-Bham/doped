@@ -6,8 +6,9 @@ See [this link](https://www.sciencedirect.com/science/article/pii/S0010465518300
 
 This code is still being customised, so in the spirit of efficiency 
 and avoiding redundant work, I've just provided an example 
-[Jupyter notebook](DWTB_Example_Notebook.ipynb) of the code functionality and usage, 
-so please look at that.
+[Jupyter notebook](DWTB_Example_Notebook.ipynb)
+of the code functionality and usage, 
+so please look at that. (Better to open in Jupyter, after installing, rather than with GitHub preview)
 
 If I reach a final product at some point 
 (likely integrating things like [CPLAP](https://github.com/jbuckeridge/cplap), 
@@ -23,8 +24,6 @@ DefectsWithTheBoys requires pymatgen (and its dependencies).
 1.  Download the DefectsWithTheBoys source code using the command::
 ```bash
   git clone https://github.com/kavanase/DefectsWithTheBoys
-  for i in {Bulk_Supercell/vasp_gam,as_1_Cd_on_Te_-2/NUPDOWN_0,as_1_Cd_on_Te_-2/NUPDOWN_2,as_1_Cd_on_Te_-2/NUPDOWN_4}; do cd Examples/$i; tar -xzf LOCPOT.tar.gz; cd ../../..; done 
-  # Second line is to unzip LOCPOT files for examples
 ```
 2.  Navigate to pycdt root directory::
 ```bash
@@ -32,17 +31,22 @@ DefectsWithTheBoys requires pymatgen (and its dependencies).
 ```
 3.  Install the code, using the command::
 ```bash
-  python setup.py develop
+  python setup.py install
 ```
 This command tries to obtain the required packages and their dependencies and install them automatically.
 Access to root may be needed if ``virtualenv`` is not used.
 
-4.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
+4. Unzip `LOCPOT` files to use with the example [Jupyter notebook](DWTB_Example_Notebook.ipynb)
+```bash
+  for i in {Bulk_Supercell/vasp_gam,as_1_Cd_on_Te_-2/NUPDOWN_0,as_1_Cd_on_Te_-2/NUPDOWN_2,as_1_Cd_on_Te_-2/NUPDOWN_4}; do cd Examples/$i; tar -xzf LOCPOT.tar.gz; cd ../../..; done 
+```
+
+5.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   VASP_PSP_DIR: <Location of vasp pseudopotential top directory>
 ```
 
-5.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
+6.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
 ```
