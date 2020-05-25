@@ -1,0 +1,55 @@
+Metadata-Version: 1.2
+Name: DefectsWithTheBoys
+Version: 0.0.1
+Summary: Collection of Python modules & functions to perform and process solid-state defect calculations
+Home-page: http://github.com/kavanase/DefectsWithTheBoys
+Author: Seán Kavanagh
+Author-email: sean.kavanagh.19@ucl.ac.uk
+Maintainer: Seán Kavanagh
+Maintainer-email: sean.kavanagh.19@ucl.ac.uk
+License: MIT
+Description: # DefectsWithTheBoys
+        -   Shoutout PyCDT (give bitbucket link etc.)
+        -   This code is still being customised, so in the spirit of efficiency and avoiding redundant work, I've just provided an example Jupyter notebook of the code functionality and usage. If I reach a final product at some point (likely integrating CPLAP(link), SC-Fermi(link) etc.), I'll make a detailed README then.
+        
+        
+        ## Requirements
+        DefectsWithTheBoys requires pymatgen (and its dependencies).
+        
+        ## Installation
+        1.  Download the DefectsWithTheBoys source code using the command::
+        ```bash
+          git clone https://github.com/kavanase/DefectsWithTheBoys
+        ```
+        2.  Navigate to pycdt root directory::
+        ```bash
+          cd DefectsWithTheBoys
+        ```
+        3.  Install the code, using the command::
+        ```bash
+          python setup.py develop
+        ```
+        This command tries to obtain the required packages and their dependencies and install them automatically.
+        Access to root may be needed if ``virtualenv`` is not used.
+        
+        4.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
+        ```bash
+          VASP_PSP_DIR: <Location of vasp pseudopotential top directory>
+        ```
+        
+        5.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
+        ```bash
+          MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
+        ```
+        
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Development Status :: 2 - Release
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering :: Information Analysis
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
