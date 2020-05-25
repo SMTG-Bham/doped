@@ -1,5 +1,18 @@
-*.py[cod]     # Will match .pyc, .pyo and .pyd files. (Byte-compiled and optimized files)
-__pycache__/  # Exclude the whole folder
-.idea/ # PyCharm Project settings/info folder
-.ipynb_checkpoints/ # JupyterLab notebooks
-*egg-info/ # Distribution/packaging
+# For some stupid fucking reason, gitignore comments have to be on their own line
+# What a load of bollocks, anyway here's Wonderwall
+
+# No PyCharm shit
+.idea/
+
+# Ignore Mac Finder metadata file
+.DS_Store
+
+# Ignore JupyterLab stuff
+.ipynb_checkpoints/
+
+# Distribution/packagaing shit
+*egg-info/
+
+# Byte-configuration and optimization files
+*__pycache__/
+*.pyc
