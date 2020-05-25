@@ -1,0 +1,4 @@
+# Default ignored files
+/workspace.xml
+*.py[cod]     # Will match .pyc, .pyo and .pyd files.
+__pycache__/  # Exclude the whole folder
