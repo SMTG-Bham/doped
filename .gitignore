@@ -1,0 +1,7 @@
+# Default ignored files
+/workspace.xml
+*.py[cod]     # Will match .pyc, .pyo and .pyd files. (Byte-compiled and optimized files)
+__pycache__/  # Exclude the whole folder
+.idea/ # PyCharm Project settings/info folder
+.ipynb_checkpoints/ # JupyterLab notebooks
+*egg-info/ # Distribution/packaging
