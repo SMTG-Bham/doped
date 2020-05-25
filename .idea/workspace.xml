@@ -5,6 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ad6d1fab-3f80-482d-bd30-55a56e97f26c" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/DefectsWithTheBoys.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/DWTB_Example_Notebook.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/DWTB_Example_Notebook.ipynb" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -112,7 +120,7 @@
       <workItem from="1590013402791" duration="339000" />
       <workItem from="1590241154038" duration="1539000" />
       <workItem from="1590244622155" duration="389000" />
-      <workItem from="1590428331860" duration="519000" />
+      <workItem from="1590428331860" duration="898000" />
     </task>
     <task id="LOCAL-00001" summary="Add all the fresh files for the first commit">
       <created>1589983730606</created>
@@ -128,7 +136,14 @@
       <option name="project" value="LOCAL" />
       <updated>1590012181852</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Add .gitignore">
+      <created>1590428941519</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1590428941519</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -151,7 +166,8 @@
     <option name="CHECK_NEW_TODO" value="false" />
     <MESSAGE value="Add all the fresh files for the first commit" />
     <MESSAGE value="Change ICORELEVEL to 0 in vasp_gam_files" />
-    <option name="LAST_COMMIT_MESSAGE" value="Change ICORELEVEL to 0 in vasp_gam_files" />
+    <MESSAGE value="Add .gitignore" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add .gitignore" />
   </component>
   <component name="WindowStateProjectService">
     <state x="184" y="83" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1590242200774">
