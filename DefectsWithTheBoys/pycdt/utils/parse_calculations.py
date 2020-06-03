@@ -259,6 +259,7 @@ class SingleDefectParser(object):
     def freysoldt_loader(self, bulk_locpot=None):
         """Load metadata required for performing Freysoldt correction
         requires "bulk_path" and "defect_path" to be loaded to DefectEntry parameters dict.
+        Can read gunzipped "LOCPOT.gz" files as well.
 
         Args:
             bulk_locpot (Locpot): Add bulk Locpot object for expedited parsing.
@@ -273,12 +274,24 @@ class SingleDefectParser(object):
         if not bulk_locpot:
             bulk_locpot_path = os.path.join( self.defect_entry.parameters["bulk_path"],
                                              "LOCPOT")
-            bulk_locpot = Locpot.from_file( bulk_locpot_path)
+            if os.path.exists(bulk_locpot_path):
+                bulk_locpot = Locpot.from_file(bulk_locpot_path)
+            elif os.path.exists(bulk_locpot_path+".gz"):
+                bulk_locpot = Locpot.from_file(bulk_locpot_path + ".gz")
+            else:
+                raise FileNotFoundError(f"""Well I can't fucking find a LOCPOT(.gz) in {self.defect_entry.parameters['bulk_path']}.
+                   You sure there's one there pal? I need it to get the Freysoldt correction""")
 
         def_locpot_path = os.path.join( self.defect_entry.parameters["defect_path"],
                                              "LOCPOT")
 
-        def_locpot = Locpot.from_file( def_locpot_path)
+        if os.path.exists(def_locpot_path):
+            def_locpot = Locpot.from_file(def_locpot_path)
+        elif os.path.exists(def_locpot_path + ".gz"):
+            def_locpot = Locpot.from_file(def_locpot_path + ".gz")
+        else:
+            raise FileNotFoundError(f"""Well I can't fucking find a LOCPOT(.gz) in {self.defect_entry.parameters['defect_path']}.
+               You sure there's one there pal? I need it to get the Freysoldt correction""")
 
         axis_grid = [def_locpot.get_axis_grid(i) for i in range(3)]
         bulk_planar_averages = [bulk_locpot.get_average_along_axis(i) for i in range(3)]
