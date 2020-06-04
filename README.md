@@ -36,17 +36,12 @@ DefectsWithTheBoys requires pymatgen (and its dependencies).
 This command tries to obtain the required packages and their dependencies and install them automatically.
 Access to root may be needed if ``virtualenv`` is not used.
 
-4. Unzip `LOCPOT` files to use with the example [Jupyter notebook](DWTB_Example_Notebook.ipynb)
-```bash
-  for i in {Bulk_Supercell/vasp_gam,as_1_Cd_on_Te_-2/NUPDOWN_0,as_1_Cd_on_Te_-2/NUPDOWN_2,as_1_Cd_on_Te_-2/NUPDOWN_4}; do cd Examples/$i; tar -xzf LOCPOT.tar.gz; cd ../../..; done 
-```
-
-5.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
+4.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   VASP_PSP_DIR: <Location of vasp pseudopotential top directory>
 ```
 
-6.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
+5.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
 ```
