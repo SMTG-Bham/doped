@@ -274,24 +274,11 @@ class SingleDefectParser(object):
         if not bulk_locpot:
             bulk_locpot_path = os.path.join( self.defect_entry.parameters["bulk_path"],
                                              "LOCPOT")
-            if os.path.exists(bulk_locpot_path):
-                bulk_locpot = Locpot.from_file(bulk_locpot_path)
-            elif os.path.exists(bulk_locpot_path+".gz"):
-                bulk_locpot = Locpot.from_file(bulk_locpot_path + ".gz")
-            else:
-                raise FileNotFoundError(f"""Well I can't fucking find a LOCPOT(.gz) in {self.defect_entry.parameters['bulk_path']}.
-                   You sure there's one there pal? I need it to get the Freysoldt correction""")
+            bulk_locpot = self.get_locpot(bulk_locpot_path)
 
         def_locpot_path = os.path.join( self.defect_entry.parameters["defect_path"],
                                              "LOCPOT")
-
-        if os.path.exists(def_locpot_path):
-            def_locpot = Locpot.from_file(def_locpot_path)
-        elif os.path.exists(def_locpot_path + ".gz"):
-            def_locpot = Locpot.from_file(def_locpot_path + ".gz")
-        else:
-            raise FileNotFoundError(f"""Well I can't fucking find a LOCPOT(.gz) in {self.defect_entry.parameters['defect_path']}.
-               You sure there's one there pal? I need it to get the Freysoldt correction""")
+        def_locpot = self.get_locpot(def_locpot_path)
 
         axis_grid = [def_locpot.get_axis_grid(i) for i in range(3)]
         bulk_planar_averages = [bulk_locpot.get_average_along_axis(i) for i in range(3)]
@@ -307,6 +294,17 @@ class SingleDefectParser(object):
                                              })
 
         return bulk_locpot
+
+    def get_locpot(self, locpot_path):
+        if os.path.exists(locpot_path):
+            locpot = Locpot.from_file(locpot_path)
+        elif os.path.exists(locpot_path + ".gz"):
+            locpot = Locpot.from_file(locpot_path + ".gz")
+        else:
+            raise FileNotFoundError(
+                f"""Well I can't fucking find a LOCPOT(.gz) at {locpot_path}(.gz).
+                   You sure there's one there pal? I need it to get the Freysoldt correction""")
+        return locpot
 
     def kumagai_loader(self, bulk_outcar=None):
         """Load metadata required for performing Kumagai correction
@@ -601,7 +599,7 @@ class PostProcess(object):
 
             # Check if locpot exists
             locpot_file = os.path.join(fldr, "LOCPOT")
-            if not os.path.exists(locpot_file):
+            if not (os.path.exists(locpot_file) or os.path.exists(locpot_file + ".gz")):
                 logger.warning("{} doesn't exit".format(locpot_file))
                 error_msg = ": Failure, LOCPOT doesn't exist"
                 return (None, error_msg) #Further processing is not useful

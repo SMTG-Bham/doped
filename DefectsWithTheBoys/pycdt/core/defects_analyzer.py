@@ -27,7 +27,7 @@ import warnings
 warnings.simplefilter('default')
 
 
-def freysoldt_correction_from_paths( defect_file_path, bulk_file_path, dielectric,
+def freysoldt_correction_from_paths(defect_file_path, bulk_file_path, dielectric,
                                      defect_charge, plot=False):
     """
     A function for performing the Freysoldt correction with a set of file paths.
