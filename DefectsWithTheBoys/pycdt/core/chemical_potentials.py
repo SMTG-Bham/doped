@@ -682,7 +682,7 @@ class UserChemPotInputGenerator(object):
         self.MPC = MPChemPotAnalyzer()
 
     def setup_phase_diagram_calculations(self, full_phase_diagram = False, energy_above_hull = 0, struct_fmt = 'poscar',
-                                         write_files = True, overwrite = False):
+                                         write_files = False, overwrite = False, include_elements = True):
         """
         This method allows for setting up local phase diagram calculations so a user can calculate
         chemical potentials on a level of interest beyond PBE-GGA/GGA+U
@@ -697,9 +697,17 @@ class UserChemPotInputGenerator(object):
                 default is 0, meaning just the PBE-GGA ground state phases are set up. If you set value to 0.5 then all
                 phases within 0.5 eV/atom of PBE-GGA ground state hull will be set up etc.
 
-        struct_fmt: is file format you want structure to be written as. Options are “cif”, “poscar”, “cssr”, and “json”
+        struct_fmt: is file format you want structure to be written as. Options are “cif”, “poscar”, “cssr”, and “json”
+                    Defaults to "poscar"
 
-        overwrite: write files even if PhaseDiagram folder already exists.
+        write_files: write the calculation folders and structure files to the PhaseDiagram folder. Defaults to False.
+
+        overwrite: write files even if PhaseDiagram folder already exists. Defaults to False.
+
+        include_elements: set up all elemental reference phases as well (necessary to properly determine absolute
+                          chemical potentials, zero-reference elemental energies etc.), regardless of whether the
+                          elemental phase is a local facet adjacent to the MP GGA-calculated stable phase space for the
+                          composition of interest. Defaults to True.
 
         """
 
@@ -715,6 +723,12 @@ class UserChemPotInputGenerator(object):
                 setupphases = set([phase.split('_')[0] for facet in MPgga_muvals.keys() for phase in facet.split('-')])
             else:
                 setupphases = set([phase for facet in MPgga_muvals.keys() for phase in facet.split('-')]) #just local facets
+
+            if include_elements: # add elemental reference phases to structures to setup
+                for entrykey in self.MPC.entries.keys():
+                    for localentry in self.MPC.entries[entrykey]:
+                        if localentry.is_element:
+                            setupphases.add(localentry.name) # set.add() only adds entry if not already in set
 
         structures_to_setup = {}   #this will be a list of structure objects which need to be setup locally
 
