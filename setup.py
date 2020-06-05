@@ -1,3 +1,5 @@
+"""This is a setup.py script to install DefectsWithTheBoys"""
+
 import os
 import glob
 
@@ -6,14 +8,18 @@ from setuptools import setup, find_packages
 SETUP_PTH = os.path.dirname(os.path.abspath(__file__))
 
 def readme():
-    with open('README.md') as f: # Set GitHub repo README as package README
-        return f.read()
+    """
+    Set GitHub repo README as package README.
+    """
+    with open('README.md') as readme_file:
+        return readme_file.read()
 
 setup(
         name="DefectsWithTheBoys",
         packages=find_packages(),
         version="0.0.1",
-        install_requires=["numpy>=1.18.1", "pymatgen>=2020.1.28", "matplotlib>=3.1""monty>=3.0.2"],
+        install_requires=["numpy>=1.18.1", "pymatgen>=2020.1.28", "matplotlib>=3.1",
+                          "monty>=3.0.2"],
         # That I know of...
         package_data={"DefectsWithTheBoys.pycdt.utils": ["*.yaml"]},
         # Standard PyCDT settings, will probably delete soon
