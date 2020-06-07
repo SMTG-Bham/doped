@@ -199,7 +199,7 @@ def vasp_gam_files(
         "ALGO": "All",
         "ADDGRID": True,
         "EDIFF": 1e-06,
-        "EDIFFG": -0.005,
+        "EDIFFG": "-0.005 # Tight relax criteria for vasp_gam, it's cheap enough pal",
         "HFSCREEN": 0.2,
         "ICHARG": 1,
         "ISIF": 2,
@@ -370,7 +370,8 @@ def vasp_std_files(
         "AEXX": 0.25,
         "ENCUT": 450,
         "POTIM": 0.2,
-        "ISPIN": "2 # Check mag though",
+        "ISPIN": "2 # Check mag in OSZICAR though, if 0 don't bother with spin polarisation ("
+        "change to 1",
         "LSUBROT": True,
         "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
         "ALGO": "All",
@@ -378,7 +379,7 @@ def vasp_std_files(
         "EDIFF": 1e-05,
         "EDIFFG": -0.01,
         "HFSCREEN": 0.2,
-        "IBRION": 1,
+        "IBRION": "1 # May need to change to 2 for difficult relaxations though",
         "ICHARG": 1,
         "ISIF": 2,
         "ISYM": 0,
@@ -543,8 +544,8 @@ def vasp_converge_files(
         "NCORE": 12,
         "#KPAR": 1,
         "ENCUT": 450,
-        "ISMEAR": "0 # Change to 2 for Metals",
-        "ISPIN": 2,
+        "ISMEAR": "0 # Non-metal, use Gaussian smearing",
+        "ISPIN": "1 # 2 if ya think there's some magnetic shit going down",
         "ICORELEVEL": 0,
         "GGA": "PS",
         "ALGO": "Normal",
@@ -566,9 +567,7 @@ def vasp_converge_files(
         "SIGMA": 0.2,
     }
     if all(is_metal(element) for element in structure.composition.elements):
-        vaspconvergeincardict["ISMEAR"] = 2  # If metals only
-    else:
-        vaspconvergeincardict["ISMEAR"] = 0  # Gaussian smearing otherwise
+        vaspconvergeincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
     if incar_settings:
         vaspconvergeincardict.update(incar_settings)
 
