@@ -227,6 +227,8 @@ def vasp_gam_files(
         os.makedirs(vaspgaminputdir)
 
     vasppotcardict = {
+        "POTCAR_FUNCTIONAL": "PBE_54",  # May need to change this if you've got
+        # different POTCARs
         "POTCAR": {
             "Ac": "Ac",
             "Ag": "Ag",
@@ -317,7 +319,7 @@ def vasp_gam_files(
             "Yb": "Yb_2",
             "Zn": "Zn",
             "Zr": "Zr_sv",
-        }
+        },
     }
     vaspgamkpts = Kpoints().from_dict(
         {"comment": "Kpoints from DefectsWithTheBoys.vasp_gam_files", "generation_style": "Gamma"}
@@ -531,8 +533,8 @@ def vasp_converge_files(
             source code, to see what the default INCAR settings are.
             (default: None)
         config (str):
-            CONFIG file string. If provided, will also write the CONFIG file to each
-            'input' directory.
+            CONFIG file string. If provided, will also write the CONFIG file (to automate
+            convergence tests with vaspup2.0) to each 'input' directory.
             (default: None)
     """
 
@@ -577,6 +579,8 @@ def vasp_converge_files(
         os.makedirs(vaspconvergeinputdir)
 
     vasppotcardict = {
+        "POTCAR_FUNCTIONAL": "PBE_54",  # May need to change this if you've got
+        # different POTCARs
         "POTCAR": {
             "Ac": "Ac",
             "Ag": "Ag",
@@ -667,7 +671,7 @@ def vasp_converge_files(
             "Yb": "Yb_2",
             "Zn": "Zn",
             "Zr": "Zr_sv",
-        }
+        },
     }
     vaspconvergekpts = Kpoints().from_dict(
         {"comment": "Kpoints from vasp_gam_files", "generation_style": "Gamma"}
