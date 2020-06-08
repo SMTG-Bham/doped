@@ -15,6 +15,7 @@ __date__ = "May 19, 2020"
 import glob
 import logging
 import os
+import warnings
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -25,7 +26,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.inputs import Potcar
+from pymatgen.io.vasp.inputs import Potcar, BadPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
 
 from DefectsWithTheBoys.pycdt.core.chemical_potentials import MPChemPotAnalyzer
@@ -119,7 +120,7 @@ def get_locpot(locpot_path):
     return locpot
 
 
-class SingleDefectParser():
+class SingleDefectParser:
     def __init__(
         self, defect_entry, compatibility=DefectCompatibility(), defect_vr=None, bulk_vr=None
     ):
@@ -176,12 +177,18 @@ class SingleDefectParser():
         }
 
         # add bulk simple properties
-        bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+        with warnings.catch_warnings():  # Ignore POTCAR warnings when loading vasprun.xml (
+            # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
+            warnings.simplefilter("ignore", category=BadPotcarWarning)
+            bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
         bulk_energy = bulk_vr.final_energy
         bulk_sc_structure = bulk_vr.initial_structure.copy()
 
         # add defect simple properties
-        defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+        with warnings.catch_warnings():  # Ignore POTCAR warnings when loading vasprun.xml (
+            # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
+            warnings.simplefilter("ignore", category=BadPotcarWarning)
+            defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
         defect_energy = defect_vr.final_energy
         # Can specify initial defect structure (to help PyCDT find the defect site if
         # multiple relaxations were required, else use from defect relaxation OUTCAR:
@@ -239,6 +246,7 @@ class SingleDefectParser():
         # sites and initial defect structure sites.
         # WARNING: this can cause issues if initial_defect_structure is slightly different than
         # bulk_sc_structure (as a result of multiple relaxation steps, for example)
+        # noinspection DuplicatedCode
         if defect_index_sc_coords is None:
             bulksites = [site.frac_coords for site in bulk_sc_structure]
             initsites = [site.frac_coords for site in initial_defect_structure]
@@ -265,6 +273,7 @@ class SingleDefectParser():
                     ]
 
             elif defect_type == "Substitution":
+                # noinspection DuplicatedCode
                 for mindist, bulk_index, defect_index in min_dist_with_index:
                     species_match = (
                         bulk_sc_structure[bulk_index].specie
@@ -361,6 +370,7 @@ class SingleDefectParser():
 
         return bulk_locpot
 
+    # noinspection DuplicatedCode
     def kumagai_loader(self, bulk_outcar=None):
         """Load metadata required for performing Kumagai correction
         requires "bulk_path" and "defect_path" to be loaded to DefectEntry parameters dict.
@@ -427,6 +437,7 @@ class SingleDefectParser():
                 ]
 
         elif isinstance(self.defect_entry.defect, Substitution):
+            # noinspection DuplicatedCode
             for mindist, bulk_index, defect_index in min_dist_with_index:
                 species_match = (
                     bulk_sc_structure[bulk_index].specie
@@ -664,7 +675,7 @@ class SingleDefectParser():
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
 
 
-class PostProcess():
+class PostProcess:
     def __init__(self, root_fldr, mpid=None, mapi_key=None):
         """
         Post processing object for charged point-defect calculations.
