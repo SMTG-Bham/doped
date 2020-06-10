@@ -199,7 +199,7 @@ def vasp_gam_files(
         "ALGO": "All",
         "ADDGRID": True,
         "EDIFF": 1e-06,
-        "EDIFFG": "-0.005 # Tight relax criteria for vasp_gam, it's cheap enough pal",
+        "EDIFFG": "-0.005 # Tight relax criteria for vasp_gam, it's cheap enough buddy",
         "HFSCREEN": 0.2,
         "ICHARG": 1,
         "ISIF": 2,
