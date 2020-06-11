@@ -16,3 +16,6 @@
 # Byte-configuration and optimization files
 *__pycache__/
 *.pyc
+
+# Ignore SMTG Paper Talk PowerPoint stuff
+DWTB_Paper_Talk.pptx
