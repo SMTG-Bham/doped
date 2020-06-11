@@ -337,7 +337,10 @@ def vasp_gam_files(
 
 
 def vasp_std_files(
-    single_defect_dict: dict, input_dir: str = None, incar_settings: dict = None
+    single_defect_dict: dict,
+    input_dir: str = None,
+    incar_settings: dict = None,
+    kpoints_settings: dict = None,
 ) -> None:
     """
     Generates INCAR and KPOINTS for vasp_std expensive k-point mesh relaxation.
@@ -356,6 +359,12 @@ def vasp_std_files(
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or DefectsWithTheBoys.vasp_input
             source code, to see what the default INCAR settings are.
+            (default: None)
+        kpoints_settings (dict):
+            Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
+            options would be "generation_style": "Monkhorst" (rather than "Gamma"),
+            and/or "kpoints": [[3, 3, 1]] etc.
+            Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
             (default: None)
     """
     nelect = single_defect_dict["NELECT"]
@@ -407,15 +416,19 @@ def vasp_std_files(
     if not os.path.exists(vaspstdinputdir):
         os.makedirs(vaspstdinputdir)
 
-    # Might need to alter KPOINTS!
-    vaspstdkpts = "Kpoints from DefectsWithTheBoys.vasp_std_files\n0\nGamma\n2 2 2"
+    vaspstdkpointsdict = {
+        "comment": "Kpoints from DefectsWithTheBoys.vasp_std_files",
+        "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
+        "kpoints": [[2, 2, 2]],
+    }
+    if kpoints_settings:
+        vaspstdkpointsdict.update(kpoints_settings)
+    vaspstdkpts = Kpoints.from_dict(vaspstdkpointsdict)
+    vaspstdkpts.write_file(vaspstdinputdir + "KPOINTS")
 
     vaspstdincar = Incar.from_dict(vaspstdincardict)
-
     with zopen(vaspstdinputdir + "INCAR", "wt") as incar_file:
         incar_file.write(vaspstdincar.get_string())
-    with open(vaspstdinputdir + "KPOINTS", "wt") as kpoints_file:
-        kpoints_file.write(vaspstdkpts)
 
 
 def vasp_ncl_files(
