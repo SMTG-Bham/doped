@@ -8,7 +8,7 @@ This code is still being customised, so in the spirit of efficiency
 and avoiding redundant work, I've just provided an example 
 [Jupyter notebook](DWTB_Example_Notebook.ipynb)
 of the code functionality and usage, 
-so please look at that. (Better to open in Jupyter, after installing, rather than with GitHub preview)
+so please look at that. (Better to open in Jupyter, after installing, rather than with GitHub preview).
 
 If I reach a final product at some point 
 (likely integrating things like [CPLAP](https://github.com/jbuckeridge/cplap), 
