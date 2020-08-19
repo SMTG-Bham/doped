@@ -33,7 +33,7 @@ from DefectsWithTheBoys.pycdt.corrections.sxdefect_correction import Sxdefectali
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
 
-def get_correction_freysoldt( defect_entry, epsilon, title = None,
+def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename=None,
                               partflag='All', axis=None):
     """
     Function to compute the isotropic freysoldt correction for each defect.
@@ -71,9 +71,9 @@ def get_correction_freysoldt( defect_entry, epsilon, title = None,
                     'q_model' : Charge Model for Freysoldt correction
                     'q_model' : Charge Model for Freysoldt correction
         epsilon (float or 3x3 matrix): Dielectric constant for the structure
-        title: decides whether to plot electrostatic potential plots or not...
-            if None, no plot is printed, if a string,
-            then the plot will be saved using the string
+        plot (bool): decides whether to plot electrostatic potential plots or not...
+        filename (str): if None, plots are not saved, if a string,
+            then the plot will be saved as 'filename_{axis}.pdf'
         partflag: four options for correction output:
                'pc' for just point charge correction, or
                'potalign' for just potalign correction, or
@@ -94,7 +94,7 @@ def get_correction_freysoldt( defect_entry, epsilon, title = None,
     madetol = defect_entry.parameters.get( 'madetol', 0.0001)
 
     if not defect_entry.charge:
-        print('charge is zero so charge correction is zero')
+        print('Charge is zero so charge correction is zero.')
         return 0.
 
     template_defect = defect_entry.copy()
@@ -102,7 +102,7 @@ def get_correction_freysoldt( defect_entry, epsilon, title = None,
                                       axis= axis)
     f_corr_summ = corr_class.get_correction( template_defect)
 
-    if title:
+    if plot:
         if axis is None:
             ax_list = [[k, "axis"+str(k)] for k in corr_class.metadata["pot_plot_data"].keys()]
         else:
@@ -110,8 +110,9 @@ def get_correction_freysoldt( defect_entry, epsilon, title = None,
 
         for ax_key, ax_title in ax_list:
             p = corr_class.plot( ax_key, title=ax_title, saved=False)
-            p.savefig(title + '_' + ax_title + '_freysoldtplot.pdf',
-                      bbox_inches='tight')
+            if filename:
+                p.savefig(filename + '_' + ax_title + '.pdf',
+                          bbox_inches='tight')
 
     if partflag in ['AllSplit', 'All']:
         freyval = np.sum( list(f_corr_summ.values()))
@@ -120,7 +121,7 @@ def get_correction_freysoldt( defect_entry, epsilon, title = None,
     elif partflag == 'potalign':
         freyval = f_corr_summ['freysoldt_potential_alignment']
 
-    print('\n Final Freysoldt correction is {}'.format( freyval))
+    print('Final Freysoldt correction is {}'.format( freyval))
 
     if partflag == 'AllSplit':
         freyval = [f_corr_summ['freysoldt_electrostatic'],

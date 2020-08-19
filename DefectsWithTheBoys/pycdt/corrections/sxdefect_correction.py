@@ -25,6 +25,7 @@ import numpy as np
 
 from pymatgen.io.vasp.outputs import Locpot
 from monty.tempfile import ScratchDir
+from DefectsWithTheBoys.pycdt.utils.parse_calculations import get_locpot
 
 
 class SxdefectalignWrapper(object):
@@ -70,7 +71,7 @@ class SxdefectalignWrapper(object):
         self._frac_coords = site_frac_coords   
         self._encut = encut
         if not lengths:
-            struct=Locpot.from_file(locpot_bulk_path)
+            struct=get_locpot(locpot_bulk_path)
             self._lengths=struct.structure.lattice.abc
             print('had to import lengths, if want to speed up set lengths='+str(self._lengths))
         else:
@@ -121,8 +122,8 @@ class SxdefectalignWrapper(object):
         fig = plt.figure()
         ax = fig.add_subplot(3,1,1)
         ax.set_title('Locpot planar averaged potentials')
-        bulkloc=Locpot.from_file(self._locpot_bulk)
-        defloc=Locpot.from_file(self._locpot_bulk)
+        bulkloc=get_locpot(self._locpot_bulk)
+        defloc=get_locpot(self._locpot_bulk)
         get_agrid = bulkloc.get_axis_grid
         get_baavg = bulkloc.get_average_along_axis
         get_daavg = defloc.get_average_along_axis
@@ -148,8 +149,8 @@ class SxdefectalignWrapper(object):
         fig = plt.figure()
         ax = fig.add_subplot(3,1,1)
         ax.set_title('Locpot planar averaged potential difference')
-        bulkloc=Locpot.from_file(self._locpot_bulk)
-        defloc=Locpot.from_file(self._locpot_defect)
+        bulkloc=get_locpot(self._locpot_bulk)
+        defloc=get_locpot(self._locpot_defect)
         for axis in [0,1,2]:
             ax = fig.add_subplot(3, 1, axis+1)
             defect_axis = defloc.get_axis_grid(axis)
@@ -173,8 +174,8 @@ class SxdefectalignWrapper(object):
         fig = plt.figure()
         ax = fig.add_subplot(3,1,1)
         ax.set_title('Locpot planar averaged potentials and difference')
-        bulkloc=Locpot.from_file(self._locpot_bulk)
-        defloc=Locpot.from_file(self._locpot_defect)
+        bulkloc=get_locpot(self._locpot_bulk)
+        defloc=get_locpot(self._locpot_defect)
         for axis in [0,1,2]:
             ax = fig.add_subplot(3, 1, axis+1)
             defect_axis = defloc.get_axis_grid(axis)
@@ -227,7 +228,7 @@ class SxdefectalignWrapper(object):
             #relpos = (str(self._frac_coords)[1:])[:-1]
             #relpos = relpos.replace(" ",",")
             relpos = ",".join(str(i) for i in self._frac_coords)
-            command = ['~/bin/sxdefectalign', '--vasp', '-a'+str(axis+1), 
+            command = ['sxdefectalign', '--vasp', '-a'+str(axis+1),
                     '--relative', '--pos', relpos, 
                     '--charge', str(-self._charge), 
                     '--ecut', str(self._encut/13.6057), #eV to Ry for sxdefect 
@@ -392,26 +393,26 @@ class SxdefectalignWrapper(object):
         set transflag to True if you want to write flags
         """
         outputvals=[] #for splitting up parts of correction
-        with ScratchDir('.'):
-            self.prepare_files()
-            s = self.plot_pot_diff(print_pot_flag='none')
-            outputvals.append(np.mean(s[0])) #ES correction
-            outputvals.append(-self._charge * np.mean(s[1]))
-            print('--')
-            print('potential alignments determined to be: '+str(s[1]))
-            print('get final correction terms')
-            print('--')
-            #To get locpot plots use print_pot_flag = 'written' or 'plotfull'
-            vals = self.plot_pot_diff(align=s[1], print_pot_flag=print_pot_flag)
-            print('vals is '+str(vals))
-            for i in range(3):
-                if np.abs(vals[1][i]) > 0.0001:
-                    print('PROBLEM! planar averaging didnt work. Issue ' +\
-                            'with axis', str(i+1))
-            print('--')
-            print('Final Freysoldt sxdefectalign correction values are: ', \
-                    str(vals[0]))
-            outputvals.append(np.mean(vals[0]))
+        #with ScratchDir('.'):
+        self.prepare_files()
+        s = self.plot_pot_diff(print_pot_flag='none')
+        outputvals.append(np.mean(s[0])) #ES correction
+        outputvals.append(-self._charge * np.mean(s[1]))
+        print('--')
+        print('potential alignments determined to be: '+str(s[1]))
+        print('get final correction terms')
+        print('--')
+        #To get locpot plots use print_pot_flag = 'written' or 'plotfull'
+        vals = self.plot_pot_diff(align=s[1], print_pot_flag=print_pot_flag)
+        print('vals is '+str(vals))
+        for i in range(3):
+            if np.abs(vals[1][i]) > 0.0001:
+                print('PROBLEM! planar averaging didnt work. Issue ' +\
+                        'with axis', str(i+1))
+        print('--')
+        print('Final Freysoldt sxdefectalign correction values are: ', \
+                str(vals[0]))
+        outputvals.append(np.mean(vals[0]))
 
         if partflag=='All':
             return outputvals[2]
