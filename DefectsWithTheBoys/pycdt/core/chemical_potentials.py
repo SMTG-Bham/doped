@@ -14,12 +14,15 @@ __date__ = "May 19, 2020"
 
 import logging
 import os
+import copy
 
 from pymatgen import Structure, Element
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.outputs import Vasprun
+
+from DefectsWithTheBoys.pycdt.utils.parse_calculations import get_vasprun
 
 
 def get_mp_chempots_from_dpd(dpd):
@@ -33,7 +36,7 @@ def get_mp_chempots_from_dpd(dpd):
     ):
         try:
             bulk_struct = dpd.entries[0].parameters["bulk_sc_structure"].copy()
-            if type(bulk_struct) != Structure:
+            if not isinstance(bulk_struct, Structure):
                 bulk_struct = Structure.from_dict(bulk_struct)
             bulk_energy = dpd.entries[0].parameters["bulk_energy"]
         except:
@@ -62,7 +65,7 @@ def get_mp_chempots_from_dpd(dpd):
     return mp_cpa.analyze_GGA_chempots()
 
 
-class ChemPotAnalyzer(object):
+class ChemPotAnalyzer():
     """
     Post processing for atomic chemical potentials used in defect
     calculations.
@@ -86,14 +89,13 @@ class ChemPotAnalyzer(object):
             )
             logger.warning(msg)
             raise ValueError(msg)
-        else:
-            bulk_composition = self.bulk_ce.composition
-            redcomp = bulk_composition.reduced_composition
 
-            # append bulk_ce to phase diagram
-            entries = pd.all_entries
-            entries.append(self.bulk_ce)
-            pd = PhaseDiagram(entries)
+        bulk_composition = self.bulk_ce.composition
+        redcomp = bulk_composition.reduced_composition
+        # append bulk_ce to phase diagram
+        entries = pd.all_entries
+        entries.append(self.bulk_ce)
+        pd = PhaseDiagram(entries)
 
         chem_lims = pd.get_all_chempots(redcomp)
 
@@ -439,8 +441,6 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                 # All entries apart from the bulk entry set
                 self.entries["subs_set"][sub_el] = fin_sub_entry_set
 
-        return
-
 
 class UserChemPotAnalyzer(ChemPotAnalyzer):
     """
@@ -508,10 +508,10 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")):
                 try:
                     print("loading ", structfile)
-                    vr = Vasprun(
-                        os.path.join(pdfile, structfile, "vasprun.xml"), parse_potcar_file=False
-                    )
-                    personal_entry_list.append(vr.get_computed_entry())
+                    vr = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
+                    entry_from_vr = vr.get_computed_entry()
+                    entry_from_vr.data.update({"Orig_Folder_Name": structfile})
+                    personal_entry_list.append(entry_from_vr)
                 except:
                     print("Could not load ", structfile)
 
@@ -520,7 +520,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
             if os.path.exists(vr_path):
                 print("loading bulk computed entry")
-                bulkvr = Vasprun(vr_path)
+                bulkvr = get_vasprun(vr_path)
                 self.bulk_ce = bulkvr.get_computed_entry()
             else:
                 print(
@@ -531,6 +531,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
 
         self.bulk_composition = self.bulk_ce.composition
         self.redcomp = self.bulk_composition.reduced_composition
+        self.bulk_species_symbol = [s.symbol for s in self.bulk_ce.composition.elements]
 
         # Supplement entries to phase diagram with those from MP database
         if include_mp_entries:
@@ -562,13 +563,13 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     print("Adding entry from MP-database:", mpcomp, "(entry-id:", mplist[1])
                     personal_entry_list.append(mplist[2])
         else:
-            personal_entry_list.append(self.bulk_ce)
+            # personal_entry_list.append(self.bulk_ce)
             # if you dont have entries for elemental corners of phase diagram then code breaks
             # manually inserting entries with energies of zero for competeness...USER DO NOT USE
             # THIS
             eltcount = {elt: 0 for elt in set(self.bulk_ce.composition.elements)}
             for pentry in personal_entry_list:
-                if pentry.is_element:
+                if pentry.is_element and pentry.composition.elements[0] in eltcount.keys():
                     eltcount[pentry.composition.elements[0]] += 1
             for elt, eltnum in eltcount.items():
                 if not eltnum:
@@ -605,7 +606,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 if bulk_associated:
                     entry_list.append(localentry)
                 else:
-                    sub_associated_entry_list(localentry)
+                    sub_associated_entry_list.append(localentry)
 
             # now iterate through and collect chemical potentials
             pd = PhaseDiagram(entry_list)
@@ -701,6 +702,19 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 pd = PhaseDiagram(entry_list)
                 chem_lims = self.get_chempots_from_pd(pd)
 
+        self.phase_diagram = PhaseDiagram(entry_list)
+        chem_lims = {
+            "facets": chem_lims,
+            "elemental_refs": {
+                elt: ent.energy_per_atom for elt, ent in self.phase_diagram.el_refs.items()
+            },
+            "facets_wrt_elt_refs" : {}
+        }
+        for facet, chempot_dict in chem_lims['facets'].items():
+            rel_chempot_dict = copy.deepcopy(chempot_dict)
+            for elt, chempot_energy in rel_chempot_dict.items():
+                rel_chempot_dict[elt] -= chem_lims['elemental_refs'][elt]
+            chem_lims['facets_wrt_elt_refs'].update({facet: rel_chempot_dict})
         return chem_lims
 
 
@@ -879,6 +893,7 @@ class UserChemPotInputGenerator(object):
                     structures_to_setup[localname]["Structure"].to(
                         fmt=struct_fmt, filename=os.path.join(filename, outputname)
                     )
-                    # NOTE TO USER. Can use pymatgen here to setup additional calculation files if interested...
+                    # NOTE TO USER. Can use pymatgen here to setup additional calculation
+                    # files if interested...
 
         return structures_to_setup
