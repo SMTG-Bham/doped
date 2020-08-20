@@ -419,7 +419,20 @@ class SingleDefectParser:
                 os.path.join(self.defect_entry.parameters["bulk_path"], "vasprun.xml")
             ).initial_structure.copy()
 
-        if os.path.exists(os.path.join(self.defect_entry.parameters["defect_path"], "POSCAR")):
+        if self.defect_entry.site:
+            defect_frac_sc_coords = self.defect_entry.site.frac_coords
+            poss_deflist = sorted(
+                bulk_sc_structure.get_sites_in_sphere(
+                    self.defect_entry.site.coords, 0.15, include_index=True
+                ),
+                key=lambda x: x[1],
+            )
+            defect_index_sc_coords = poss_deflist[0][2]
+        # May add this bit if it's still suggesting several possible defect sites
+
+        if "initial_defect_structure" in self.defect_entry.parameters:
+            initial_defect_structure = self.defect_entry.parameters["initial_defect_structure"]
+        elif os.path.exists(os.path.join(self.defect_entry.parameters["defect_path"], "POSCAR")):
             initial_defect_structure = Poscar.from_file(
                 os.path.join(self.defect_entry.parameters["defect_path"], "POSCAR")
             ).structure
@@ -446,10 +459,15 @@ class SingleDefectParser:
             for mindist, bulk_index, defect_index in min_dist_with_index:
                 if mindist < 0.1:
                     site_matching_indices.append([bulk_index, defect_index])
-                elif isinstance(self.defect_entry.defect, Vacancy):
+                elif (
+                    isinstance(self.defect_entry.defect, Vacancy) and defect_index_sc_coords is None
+                ):
                     poss_defect.append([bulk_index, bulksites[bulk_index][:]])
 
-            if isinstance(self.defect_entry.defect, Interstitial):
+            if (
+                isinstance(self.defect_entry.defect, Interstitial)
+                and defect_index_sc_coords is None
+            ):
                 poss_defect = [
                     [ind, fc[:]]
                     for ind, fc in enumerate(initsites)
@@ -466,17 +484,18 @@ class SingleDefectParser:
                 if mindist < 0.1 and species_match:
                     site_matching_indices.append([bulk_index, defect_index])
 
-                elif not species_match:
+                elif not species_match and defect_index_sc_coords is None:
                     poss_defect.append([defect_index, initsites[defect_index][:]])
 
-        if len(poss_defect) == 1:
-            defect_index_sc_coords = poss_defect[0][0]
-            defect_frac_sc_coords = poss_defect[0][1]
-        else:
-            raise ValueError(
-                "Found {} possible defect sites when matching bulk and "
-                "defect structure".format(len(poss_defect))
-            )
+        if defect_index_sc_coords is None:
+            if len(poss_defect) == 1:
+                defect_index_sc_coords = poss_defect[0][0]
+                defect_frac_sc_coords = poss_defect[0][1]
+            else:
+                raise ValueError(
+                    "Found {} possible defect sites when matching bulk and "
+                    "defect structure".format(len(poss_defect))
+                )
 
         if len(set(np.array(site_matching_indices)[:, 0])) != len(
             set(np.array(site_matching_indices)[:, 1])
