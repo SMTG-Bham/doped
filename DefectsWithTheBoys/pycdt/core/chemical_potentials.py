@@ -20,16 +20,33 @@ from pymatgen import Structure, Element
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.outputs import Vasprun
 
-from DefectsWithTheBoys.pycdt.utils.parse_calculations import get_vasprun
+from DefectsWithTheBoys.pycdt.utils import parse_calculations
+
+#def get_vasprun(vasprun_path, **kwargs):
+#    """ Read the vasprun.xml(.gz) file as a pymatgen vasprun object """
+#    warnings.filterwarnings(
+#        "ignore", category=BadPotcarWarning
+#    )  # Ignore POTCAR warnings when loading vasprun.xml
+#    # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
+#    warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+#    if os.path.exists(vasprun_path):
+#        vasprun = Vasprun(vasprun_path)
+#    elif os.path.exists(vasprun_path + ".gz", **kwargs):
+#        vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
+#    else:
+#        raise FileNotFoundError(
+#            f"""Well I can't fucking find a vasprun.xml(.gz) at {vasprun_path}(.gz).
+#                   You sure there's one there pal? I need it to parse the calculation results"""
+#        )
+#    return vasprun
 
 
 def get_mp_chempots_from_dpd(dpd):
     """
     Grab Materials Project chemical potentials from a pymatgen DefectPhaseDiagram object
     """
-    print("Retrieiving chemical potentials from MP database using dpd object...")
+    print("Retrieving chemical potentials from MP database using dpd object...")
     bulk_energy = 0.0
     if ("bulk_energy" in dpd.entries[0].parameters.keys()) and (
         "bulk_sc_structure" in dpd.entries[0].parameters.keys()
@@ -65,7 +82,7 @@ def get_mp_chempots_from_dpd(dpd):
     return mp_cpa.analyze_GGA_chempots()
 
 
-class ChemPotAnalyzer():
+class ChemPotAnalyzer:
     """
     Post processing for atomic chemical potentials used in defect
     calculations.
@@ -508,7 +525,8 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")):
                 try:
                     print("loading ", structfile)
-                    vr = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
+                    vr = parse_calculations.get_vasprun(os.path.join(pdfile, structfile,
+                                                                     "vasprun.xml"))
                     entry_from_vr = vr.get_computed_entry()
                     entry_from_vr.data.update({"Orig_Folder_Name": structfile})
                     personal_entry_list.append(entry_from_vr)
@@ -520,7 +538,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
             if os.path.exists(vr_path):
                 print("loading bulk computed entry")
-                bulkvr = get_vasprun(vr_path)
+                bulkvr = parse_calculations.get_vasprun(vr_path)
                 self.bulk_ce = bulkvr.get_computed_entry()
             else:
                 print(
@@ -708,13 +726,13 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             "elemental_refs": {
                 elt: ent.energy_per_atom for elt, ent in self.phase_diagram.el_refs.items()
             },
-            "facets_wrt_elt_refs" : {}
+            "facets_wrt_elt_refs": {},
         }
-        for facet, chempot_dict in chem_lims['facets'].items():
+        for facet, chempot_dict in chem_lims["facets"].items():
             rel_chempot_dict = copy.deepcopy(chempot_dict)
             for elt, chempot_energy in rel_chempot_dict.items():
-                rel_chempot_dict[elt] -= chem_lims['elemental_refs'][elt]
-            chem_lims['facets_wrt_elt_refs'].update({facet: rel_chempot_dict})
+                rel_chempot_dict[elt] -= chem_lims["elemental_refs"][elt]
+            chem_lims["facets_wrt_elt_refs"].update({facet: rel_chempot_dict})
         return chem_lims
 
 
@@ -730,7 +748,7 @@ class UserChemPotInputGenerator(object):
                 object. This and mapi_key are only actual required input for
                 generating set of chemical potentials from Materials Project
                 database
-            subs_species : set of elemental species that are extrinsic to
+            sub_species : set of elemental species that are extrinsic to
                 structure defaults to No substitutions needed.
             path_base (str): the base path where the 'PhaseDiagram' folder should be created
                 defaults to the local folder
