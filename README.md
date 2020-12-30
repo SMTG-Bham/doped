@@ -21,15 +21,15 @@ If I reach a final product at some point
 DefectsWithTheBoys requires pymatgen (and its dependencies).
 
 ## Installation
-1.  Download the DefectsWithTheBoys source code using the command::
+1.  Download the DefectsWithTheBoys source code using the command:
 ```bash
   git clone https://github.com/kavanase/DefectsWithTheBoys
 ```
-2.  Navigate to pycdt root directory::
+2.  Navigate to root directory:
 ```bash
   cd DefectsWithTheBoys
 ```
-3.  Install the code, using the command::
+3.  Install the code, using the command:
 ```bash
   python setup.py install
 ```
