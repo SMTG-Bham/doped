@@ -322,7 +322,7 @@ def formation_energy_plot(
     lg_fontsize=1.0,
     lg_position=None,
     fermi_level=None,
-    title=None,
+    title="pd_facet_name",
     saved=False,
     colormap="Dark2",
     minus_symbol="-",
@@ -341,14 +341,16 @@ def formation_energy_plot(
             mu_elts = chempot_limits["facets"][facet]
             elt_refs = chempot_limits["facets_wrt_elt_refs"][facet]
             plot_filename = filename
-            if title:
+            if title == "pd_facet_name":
+                plot_title = facet
+            elif title:
                 plot_title = title
                 if not filename:
                     plot_filename = plot_title + "_" + facet + ".pdf"
             else:
-                plot_title = facet
+                plot_title = None
 
-            _aide_pmg_plot(
+            return _aide_pmg_plot(
                 defect_phase_diagram,
                 mu_elts=mu_elts,
                 elt_refs=elt_refs,
@@ -371,7 +373,7 @@ def formation_energy_plot(
                 emphasis=emphasis,
             )
     else:  # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
-        _aide_pmg_plot(
+        return _aide_pmg_plot(
             defect_phase_diagram,
             mu_elts=chempot_limits,
             elt_refs=None,
@@ -421,7 +423,7 @@ def _aide_pmg_plot(
     Produce defect Formation energy vs Fermi energy plot
     Args:
         mu_elts:
-            a dictionnary of {Element:value} giving the chemical
+            a dictionary of {Element:value} giving the chemical
             potential of each element
         xlim:
             Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
@@ -445,6 +447,7 @@ def _aide_pmg_plot(
     if xlim is None:
         xlim = (-0.4, defect_phase_diagram.band_gap + 0.4)
     xy = {}
+    all_lines_xy = {} # For emphasis plots with faded grey E_form lines for all charge states
     lower_cap = -100.0
     upper_cap = 100.0
     y_range_vals = []  # for finding max/min values on y-axis based on x-limits
@@ -452,7 +455,6 @@ def _aide_pmg_plot(
     for defnom, def_tl in defect_phase_diagram.transition_level_map.items():
         xy[defnom] = [[], []]
         if emphasis:
-            all_lines_xy = {}
             all_lines_xy[defnom] = [[], []]
             for chg_ent in defect_phase_diagram.stable_entries[defnom]:
                 for x_extrem in [lower_cap, upper_cap]:
@@ -535,6 +537,28 @@ some defects will have the same line colour). Recommended to change/set colormap
     ax = pretty_axis(ax=ax, fonts=fonts)
     # plot formation energy lines
     for_legend = []
+    for cnt, defnom in enumerate(xy.keys()):
+        ax.plot(
+            xy[defnom][0],
+            xy[defnom][1],
+            color=colors[cnt],
+            markeredgecolor=colors[cnt],
+            lw=1.2,
+            markersize=3.5,
+        )
+        for_legend.append(defect_phase_diagram.stable_entries[defnom][0].copy())
+    # Redo for loop so grey 'all_lines_xy' not included in legend
+    for cnt, defnom in enumerate(xy.keys()):
+        if emphasis:
+            ax.plot(
+                all_lines_xy[defnom][0],
+                all_lines_xy[defnom][1],
+                color=(0.8, 0.8, 0.8),
+                markeredgecolor=colors[cnt],
+                lw=1.2,
+                markersize=3.5,
+                alpha=0.5,
+            )
     # plot transition levels
     for cnt, defnom in enumerate(xy.keys()):
         x_trans, y_trans = [], []
@@ -576,27 +600,6 @@ some defects will have the same line colour). Recommended to change/set colormap
                         size=ax_fontsize * width * 0.9,
                         annotation_clip=True,
                     )  # only show label if coords in current axes
-
-    for cnt, defnom in enumerate(xy.keys()):
-        ax.plot(
-            xy[defnom][0],
-            xy[defnom][1],
-            color=colors[cnt],
-            markeredgecolor=colors[cnt],
-            lw=1.2,
-            markersize=3.5,
-        )
-        for_legend.append(defect_phase_diagram.stable_entries[defnom][0].copy())
-        if emphasis:
-            ax.plot(
-                all_lines_xy[defnom][0],
-                all_lines_xy[defnom][1],
-                color=(0.8, 0.8, 0.8),
-                markeredgecolor=colors[cnt],
-                lw=1.2,
-                markersize=3.5,
-                alpha=0.5,
-            )
 
     # get latex-like legend titles
     legends_txt = []
@@ -723,8 +726,7 @@ some defects will have the same line colour). Recommended to change/set colormap
             plt.savefig(filename, bbox_inches="tight", dpi=600)
         else:
             plt.savefig(str(title) + "_DWTB_plot.pdf", bbox_inches="tight", dpi=600)
-    else:
-        return ax
+    return ax
 
 
 def _plot_chemical_potential_table(
@@ -1022,8 +1024,9 @@ def _all_lines_aide_pmg_plot(
         else:
             base = defnom
             sub_str = ""
-        def_name = base + sub_str + r"$^{" + f"{int(flds[-1]):{'+' if int(flds[-1]) > 0 else ''}}"\
-                   + r"}$"
+        def_name = (
+            base + sub_str + r"$^{" + f"{int(flds[-1]):{'+' if int(flds[-1]) > 0 else ''}}" + r"}$"
+        )
 
         # add subscript labels for different configurations of same defect species
         legends_txt = [

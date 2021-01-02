@@ -26,7 +26,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.inputs import Potcar, BadPotcarWarning
+from pymatgen.io.vasp.inputs import Potcar, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
 
 from DefectsWithTheBoys.pycdt.core.chemical_potentials import MPChemPotAnalyzer
@@ -95,7 +95,7 @@ def convert_cd_to_de(cd, b_cse):
 def get_vasprun(vasprun_path, **kwargs):
     """ Read the vasprun.xml(.gz) file as a pymatgen Locpot object """
     warnings.filterwarnings(
-        "ignore", category=BadPotcarWarning
+        "ignore", category=UnknownPotcarWarning
     )  # Ignore POTCAR warnings when loading vasprun.xml
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
@@ -222,20 +222,22 @@ class SingleDefectParser:
             site = tf["defect_supercell_site"]
             if defect_type == "Vacancy":
                 poss_deflist = sorted(
-                    bulk_sc_structure.get_sites_in_sphere(site.coords, 0.15, include_index=True),
+                    bulk_sc_structure.get_sites_in_sphere(site.coords, 0.2, include_index=True),
                     key=lambda x: x[1],
                 )
+                searched = "bulk_supercell"
             else:
                 poss_deflist = sorted(
                     initial_defect_structure.get_sites_in_sphere(
-                        site.coords, 0.15, include_index=True
+                        site.coords, 0.2, include_index=True
                     ),
                     key=lambda x: x[1],
                 )
+                searched = "initial_defect_structure"
             if not poss_deflist:
                 raise ValueError(
-                    "{} specified defect site {}, but could not find it in bulk_supercell."
-                    " Abandoning parsing".format(transformation_path, site)
+                    "{} specified defect site {}, but could not find it in {}."
+                    " Abandoning parsing".format(transformation_path, site, searched)
                 )
             defect_index_sc_coords = poss_deflist[0][2]
         else:
@@ -423,7 +425,7 @@ class SingleDefectParser:
             defect_frac_sc_coords = self.defect_entry.site.frac_coords
             poss_deflist = sorted(
                 bulk_sc_structure.get_sites_in_sphere(
-                    self.defect_entry.site.coords, 0.15, include_index=True
+                    self.defect_entry.site.coords, 0.2, include_index=True
                 ),
                 key=lambda x: x[1],
             )
@@ -457,7 +459,7 @@ class SingleDefectParser:
         poss_defect = []
         if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
             for mindist, bulk_index, defect_index in min_dist_with_index:
-                if mindist < 0.1:
+                if mindist < 0.2:
                     site_matching_indices.append([bulk_index, defect_index])
                 elif (
                     isinstance(self.defect_entry.defect, Vacancy) and defect_index_sc_coords is None
@@ -713,22 +715,19 @@ class SingleDefectParser:
     def run_compatibility(self):
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
         if not self.defect_entry.parameters["is_compatible"]:
-            warnings.warn(
-                f"""
+            delocalized_warning = f"""
 Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
 scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
 look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`DefectsWithTheBoys.pycdt.corrections.finite_size_charge_correction` to visually determine if
+`DefectsWithTheBoys.pycdt.corrections.finite_size_charge_correction`) to visually determine if
 charge correction scheme still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
-if you're happy (replace 'freysoldt' with 'kumagai' if using anisotropic correction.
+if you're happy (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
 You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
 in `SingleDefectParser.from_paths()`.
 Watch out that if `num_hole_vbm` or `num_elec_cbm` are greater than the free_chg_cutoff (default
-2.1), charge correction will not be applied.
-""",
-                stacklevel=2,
-            )
+2.1), charge correction will not be applied."""
+            warnings.warn(message=delocalized_warning, stacklevel=1)
 
 
 class PostProcess:
