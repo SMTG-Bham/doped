@@ -27,6 +27,7 @@ __maintainer__ = "Seán Kavanagh"
 __email__ = 'sean.kavanagh.19@ucl.ac.uk'
 __date__ = "May 19, 2020"
 
+import copy
 import numpy as np
 
 from DefectsWithTheBoys.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
@@ -97,7 +98,7 @@ def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename
         print('Charge is zero so charge correction is zero.')
         return 0.
 
-    template_defect = defect_entry.copy()
+    template_defect = copy.deepcopy(defect_entry)
     corr_class = FreysoldtCorrection( epsilon, q_model = q_model, energy_cutoff=encut, madetol=madetol,
                                       axis= axis)
     f_corr_summ = corr_class.get_correction( template_defect)
@@ -184,7 +185,7 @@ def get_correction_kumagai( defect_entry, epsilon, title = None,
         print('charge is zero so charge correction is zero')
         return 0.
 
-    template_defect = defect_entry.copy()
+    template_defect = copy.deepcopy(defect_entry)
     corr_class = KumagaiCorrection( epsilon, sampling_radius=sampling_radius,
                                   gamma=gamma)
     k_corr_summ = corr_class.get_correction( template_defect)
