@@ -472,7 +472,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 or supercell
             path_base (str): the base path where the 'PhaseDiagram' folder
                 exists defaults to the local folder
-            subs_species (set): set of elemental species that are extrinsic
+            sub_species (set): set of elemental species that are extrinsic
                 to structure. Default is no subs included
             entries (dict): pymatgen ComputedEntry objects to build phase
                 diagram The dict contains two keys: 'bulk_derived', and
@@ -522,7 +522,8 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         # pymatgen functionality for importing computed entries below...
         personal_entry_list = []
         for structfile in os.listdir(pdfile):
-            if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")):
+            if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")) or os.path.exists(
+                    os.path.join(pdfile, structfile, "vasprun.xml.gz")):
                 try:
                     print("loading ", structfile)
                     vr = parse_calculations.get_vasprun(os.path.join(pdfile, structfile,
@@ -720,7 +721,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 pd = PhaseDiagram(entry_list)
                 chem_lims = self.get_chempots_from_pd(pd)
 
-        self.phase_diagram = PhaseDiagram(entry_list)
+        self.phase_diagram = pd
         chem_lims = {
             "facets": chem_lims,
             "elemental_refs": {
