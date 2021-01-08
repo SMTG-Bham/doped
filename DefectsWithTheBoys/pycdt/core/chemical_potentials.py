@@ -889,15 +889,14 @@ class UserChemPotInputGenerator(object):
 
         # Set up structure files locally if desired
         if not write_files:
-            print("Returning chempot structures, but ain't making no crap POSCAR files.")
+            print("Returning chempot structures, but no making POSCAR files.")
         else:
             if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and not overwrite:
-                print("PhaseDiagram folder already exists! Won't overwrite pal")
+                print("PhaseDiagram folder already exists! Set overwrite = True if you want me to overwrite it")
             else:
                 if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and overwrite:
                     print(
-                        "PhaseDiagram folder already exists, but fuck it we're gonna (over)write "
-                        "some files anyway yupppaahhhhhh"
+                        "PhaseDiagram folder already exists, but f@ck it we're gonna (over)write files"
                     )
                 if not os.path.exists(os.path.join(self.path_base, "PhaseDiagram")):
                     os.makedirs(os.path.join(self.path_base, "PhaseDiagram"))
