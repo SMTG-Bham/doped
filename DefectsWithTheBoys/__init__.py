@@ -5,4 +5,4 @@ from datetime import date
 if date.today().weekday() in [5, 6]:
     print("""Working on the weekend, like usual...\n""")
 if date.today().weekday() == 5:
-    print("Seriously though, everyone knows Saturday's for the boys!\n")
+    print("Seriously though, everyone knows Saturday's for the boys/girls...\n")
