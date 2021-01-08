@@ -13,12 +13,13 @@ __date__ = "May 19, 2020"
 
 import functools
 import os
+import warnings
 from typing import TYPE_CHECKING
 
 from monty.io import zopen
 from monty.serialization import dumpfn
 from pymatgen.io.vasp import Incar, Kpoints, Poscar
-from pymatgen.io.vasp.sets import DictSet
+from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
 
 from DefectsWithTheBoys.pycdt.utils.vasp import DefectRelaxSet
 
@@ -227,7 +228,7 @@ def vasp_gam_files(
         os.makedirs(vaspgaminputdir)
 
     vasppotcardict = {
-        "POTCAR_FUNCTIONAL": "PBE_54",  # May need to change this if you've got
+        "POTCAR_FUNCTIONAL": "PBE",  # May need to change this if you've got
         # different POTCARs
         "POTCAR": {
             "Ac": "Ac",
@@ -325,6 +326,9 @@ def vasp_gam_files(
         {"comment": "Kpoints from DefectsWithTheBoys.vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspgamincar = Incar.from_dict(vaspgamincardict)
+    warnings.filterwarnings(
+        "ignore", category=BadInputSetWarning
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
     vaspgaminput = DictSet(supercell, config_dict=vasppotcardict)
     vaspgamposcar = vaspgaminput.poscar
     vaspgaminput.potcar.write_file(vaspgaminputdir + "POTCAR")
@@ -591,7 +595,7 @@ def vasp_converge_files(
         os.makedirs(vaspconvergeinputdir)
 
     vasppotcardict = {
-        "POTCAR_FUNCTIONAL": "PBE_54",  # May need to change this if you've got
+        "POTCAR_FUNCTIONAL": "PBE",  # May need to change this if you've got
         # different POTCARs
         "POTCAR": {
             "Ac": "Ac",
@@ -689,6 +693,9 @@ def vasp_converge_files(
         {"comment": "Kpoints from vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspconvergeincar = Incar.from_dict(vaspconvergeincardict)
+    warnings.filterwarnings(
+        "ignore", category=BadInputSetWarning
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
     vaspconvergeinput = DictSet(structure, config_dict=vasppotcardict)
 
     vaspconvergeinput.potcar.write_file(vaspconvergeinputdir + "POTCAR")
