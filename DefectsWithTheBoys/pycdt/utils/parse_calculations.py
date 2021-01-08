@@ -105,7 +105,7 @@ def get_vasprun(vasprun_path, **kwargs):
         vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
     else:
         raise FileNotFoundError(
-            f"""Well I can't fucking find a vasprun.xml(.gz) at {vasprun_path}(.gz).
+            f"""I can't find a vasprun.xml(.gz) at {vasprun_path}(.gz).
                    You sure there's one there pal? I need it to parse the calculation results"""
         )
     return vasprun
@@ -119,7 +119,7 @@ def get_locpot(locpot_path):
         locpot = Locpot.from_file(locpot_path + ".gz")
     else:
         raise FileNotFoundError(
-            f"""Well I can't fucking find a LOCPOT(.gz) at {locpot_path}(.gz).
+            f"""I can't find a LOCPOT(.gz) at {locpot_path}(.gz).
                    You sure there's one there pal? I need it to get the Freysoldt correction"""
         )
     return locpot
@@ -324,7 +324,7 @@ class SingleDefectParser:
             stol=0.5, primitive_cell=False, scale=False, attempt_supercell=False, allow_subset=False
         ).fit(test_defect_structure, defect_vr.initial_structure):
             # NOTE: this does not insure that cartesian coordinates or indexing are identical
-            # Note: I've changed stol to 0.5 to fix matching for defects that move the fuck about yo
+            # Note: I've changed stol to 0.5 to fix matching for defects that distort significantly
             if not StructureMatcher(
                 stol=0.5,
                 primitive_cell=False,
