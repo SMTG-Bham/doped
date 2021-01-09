@@ -19,3 +19,7 @@
 
 # Ignore SMTG Paper Talk PowerPoint stuff
 DWTB_Paper_Talk.pptx
+
+# No PyPi stuff
+dist/
+build/
