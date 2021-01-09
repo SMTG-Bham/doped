@@ -4,7 +4,7 @@
 Code to analyse VASP defect calculation results, and other dope things.
 These functions are built from a combination of extremely useful modules
 from pymatgen and AIDE (by Adam Jackson and Alex Ganose), alongside
-substantial modification by myself, in the efforts of making an
+substantial modification, in the efforts of making an
 efficient, user-friendly package for managing and analysing defect
 calculations, with publication-quality outputs.
 """
