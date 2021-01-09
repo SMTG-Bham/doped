@@ -19,7 +19,7 @@ If I reach a final product at some point
 
 
 ## Requirements
-dope requires pymatgen (and its dependencies).
+`dope` requires pymatgen (and its dependencies).
 
 ## Installation
 1.  Download the `dope` source code using the command:
