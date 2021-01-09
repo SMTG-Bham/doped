@@ -17,7 +17,7 @@ from pymatgen.core.sites import PeriodicSite
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 
-from DefectsWithTheBoys.pycdt.corrections.finite_size_charge_correction import get_correction_freysoldt, get_correction_kumagai
+from dope.pycdt.corrections.finite_size_charge_correction import get_correction_freysoldt, get_correction_kumagai
 
 
 class FiniteSizeChargeCorrectionTest(PymatgenTest):

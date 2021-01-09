@@ -1,4 +1,4 @@
-"""This is a setup.py script to install DefectsWithTheBoys"""
+"""This is a setup.py script to install dope"""
 
 import os
 import glob
@@ -17,7 +17,7 @@ def readme():
 
 
 setup(
-    name="DefectsWithTheBoys",
+    name="dope",
     packages=find_packages(),
     version="0.0.2",
     install_requires=[
@@ -28,7 +28,7 @@ setup(
         "tabulate",
     ],
     # That I know of...
-    package_data={"DefectsWithTheBoys.pycdt.utils": ["*.yaml"]},
+    package_data={"dope.pycdt.utils": ["*.yaml"]},
     # Standard PyCDT settings, will probably delete soon
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",

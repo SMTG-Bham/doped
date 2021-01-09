@@ -8,7 +8,7 @@ philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dyn
 
 This code is still being customised, so in the spirit of efficiency 
 and avoiding redundant work, I've provided an example 
-[Jupyter notebook](DWTB_Example_Notebook.ipynb)
+[Jupyter notebook](dope_Example_Notebook.ipynb)
 of the code functionality and usage, 
 so please look at that. (Better to open in Jupyter, after installing, rather than with GitHub preview).
 
@@ -19,16 +19,16 @@ If I reach a final product at some point
 
 
 ## Requirements
-DOPE requires pymatgen (and its dependencies).
+dope requires pymatgen (and its dependencies).
 
 ## Installation
-1.  Download the DOPE source code using the command:
+1.  Download the `dope` source code using the command:
 ```bash
-  git clone https://github.com/kavanase/DOPE
+  git clone https://github.com/kavanase/dope
 ```
 2.  Navigate to root directory:
 ```bash
-  cd DOPE
+  cd dope
 ```
 3.  Install the code, using the command:
 ```bash
