@@ -13,7 +13,7 @@ __date__ = "Aug 22, 2016"
 import os
 import unittest
 
-from DefectsWithTheBoys.pycdt.corrections.ldau_correction import *
+from dope.pycdt.corrections.ldau_correction import *
 
 test_file_loc = os.path.abspath(os.path.join(
     __file__, '..', '..', '..', '..', 'test_files'))

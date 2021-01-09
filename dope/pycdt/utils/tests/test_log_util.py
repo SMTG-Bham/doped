@@ -15,7 +15,7 @@ import logging
 import unittest
 import logging.config
 
-from DefectsWithTheBoys.pycdt.utils.log_util import initialize_logging
+from dope.pycdt.utils.log_util import initialize_logging
 
 class InitializeLoggingTest(unittest.TestCase):
     def test_initialize_logging(self):
