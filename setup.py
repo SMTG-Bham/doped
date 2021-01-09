@@ -19,7 +19,7 @@ def readme():
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.0.2",
+    version="0.0.3",
     install_requires=[
         "numpy",
         "pymatgen>=2020.10.20",
