@@ -1,4 +1,4 @@
-"""This is a setup.py script to install dope"""
+"""This is a setup.py script to install doped"""
 
 import os
 import glob
@@ -17,24 +17,24 @@ def readme():
 
 
 setup(
-    name="dope",
+    name="doped",
     packages=find_packages(),
     version="0.0.2",
     install_requires=[
-        "numpy>=1.18.1",
-        "pymatgen>=2020.1.28",
-        "matplotlib>=3.1",
+        "numpy",
+        "pymatgen>=2020.10.20",
+        "matplotlib",
         "monty>=3.0.2",
         "tabulate",
     ],
     # That I know of...
-    package_data={"dope.pycdt.utils": ["*.yaml"]},
+    package_data={"doped.pycdt.utils": ["*.yaml"]},
     # Standard PyCDT settings, will probably delete soon
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",
     maintainer="Seán Kavanagh",
     maintainer_email="sean.kavanagh.19@ucl.ac.uk",
-    url="http://github.com/kavanase/DefectsWithTheBoys",
+    url="http://github.com/kavanase/doped",
     description="Collection of Python modules & functions to perform "
     "and process solid-state defect calculations",
     long_description=readme(),
