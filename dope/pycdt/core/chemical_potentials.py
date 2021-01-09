@@ -21,7 +21,7 @@ from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 
-from DefectsWithTheBoys.pycdt.utils import parse_calculations
+from dope.pycdt.utils import parse_calculations
 
 #def get_vasprun(vasprun_path, **kwargs):
 #    """ Read the vasprun.xml(.gz) file as a pymatgen vasprun object """

@@ -21,7 +21,7 @@ from monty.serialization import dumpfn
 from pymatgen.io.vasp import Incar, Kpoints, Poscar
 from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
 
-from DefectsWithTheBoys.pycdt.utils.vasp import DefectRelaxSet
+from dope.pycdt.utils.vasp import DefectRelaxSet
 
 
 if TYPE_CHECKING:
@@ -171,7 +171,7 @@ def vasp_gam_files(
             (default: None)
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or DefectsWithTheBoys.vasp_input
+            Highly recommended to look at output INCARs or dope.vasp_input
             source code, to see what the default INCAR settings are.
             (default: None)
     """
@@ -323,7 +323,7 @@ def vasp_gam_files(
         },
     }
     vaspgamkpts = Kpoints().from_dict(
-        {"comment": "Kpoints from DefectsWithTheBoys.vasp_gam_files", "generation_style": "Gamma"}
+        {"comment": "Kpoints from dope.vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspgamincar = Incar.from_dict(vaspgamincardict)
     warnings.filterwarnings(
@@ -361,7 +361,7 @@ def vasp_std_files(
             (default: None)
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or DefectsWithTheBoys.vasp_input
+            Highly recommended to look at output INCARs or dope.vasp_input
             source code, to see what the default INCAR settings are.
             (default: None)
         kpoints_settings (dict):
@@ -421,7 +421,7 @@ def vasp_std_files(
         os.makedirs(vaspstdinputdir)
 
     vaspstdkpointsdict = {
-        "comment": "Kpoints from DefectsWithTheBoys.vasp_std_files",
+        "comment": "Kpoints from dope.vasp_std_files",
         "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
         "kpoints": [[2, 2, 2]],
     }
@@ -456,7 +456,7 @@ def vasp_ncl_files(
             (default: None)
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or DefectsWithTheBoys.vasp_input
+            Highly recommended to look at output INCARs or dope.vasp_input
             source code, to see what the default INCAR settings are.
             (default: None)
     """
@@ -546,7 +546,7 @@ def vasp_converge_files(
             (default: None)
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or DefectsWithTheBoys.vasp_input
+            Highly recommended to look at output INCARs or dope.vasp_input
             source code, to see what the default INCAR settings are.
             (default: None)
         config (str):

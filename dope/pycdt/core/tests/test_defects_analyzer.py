@@ -27,7 +27,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Locpot
 from pymatgen.util.testing import PymatgenTest
 
-from DefectsWithTheBoys.pycdt.core.defects_analyzer import ComputedDefect, DefectsAnalyzer, \
+from dope.pycdt.core.defects_analyzer import ComputedDefect, DefectsAnalyzer, \
     freysoldt_correction_from_paths, kumagai_correction_from_paths
 
 pmgtestfiles_loc = os.path.join(

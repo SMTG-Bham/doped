@@ -30,7 +30,7 @@ __date__ = "May 19, 2020"
 import copy
 import numpy as np
 
-from DefectsWithTheBoys.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
+from dope.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
 

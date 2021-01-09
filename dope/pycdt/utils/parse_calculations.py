@@ -29,7 +29,7 @@ from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Potcar, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
 
-from DefectsWithTheBoys.pycdt.core.chemical_potentials import MPChemPotAnalyzer
+from dope.pycdt.core.chemical_potentials import MPChemPotAnalyzer
 
 
 def convert_cd_to_de(cd, b_cse):

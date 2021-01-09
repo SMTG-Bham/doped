@@ -19,9 +19,9 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from DefectsWithTheBoys.pycdt.corrections.finite_size_charge_correction import get_correction_freysoldt, get_correction_kumagai
-from DefectsWithTheBoys.pycdt.utils.parse_calculations import SingleDefectParser
-from DefectsWithTheBoys.pycdt.utils.units import kb, conv, hbar
+from dope.pycdt.corrections.finite_size_charge_correction import get_correction_freysoldt, get_correction_kumagai
+from dope.pycdt.utils.parse_calculations import SingleDefectParser
+from dope.pycdt.utils.units import kb, conv, hbar
 
 import warnings
 warnings.simplefilter('default')
