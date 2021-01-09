@@ -3,6 +3,8 @@ import itertools
 from math import exp, erfc
 import numpy as np
 
+## These functions are taken from the AIDE package developed by
+## Adam Jackson and Alex Ganose (https://github.com/SMTG-UCL/aide)
 
 def get_image_charge_correction(lattice, dielectric_matrix, conv=0.3,
                                 factor=30, motif=[0.0, 0.0, 0.0],
