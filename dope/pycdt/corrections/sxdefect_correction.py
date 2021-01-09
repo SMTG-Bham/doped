@@ -25,7 +25,7 @@ import numpy as np
 
 from pymatgen.io.vasp.outputs import Locpot
 from monty.tempfile import ScratchDir
-from DefectsWithTheBoys.pycdt.utils.parse_calculations import get_locpot
+from dope.pycdt.utils.parse_calculations import get_locpot
 
 
 class SxdefectalignWrapper(object):

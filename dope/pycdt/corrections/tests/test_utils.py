@@ -15,7 +15,7 @@ import unittest
 import numpy as np
 
 from pymatgen.core.structure import Structure
-from DefectsWithTheBoys.pycdt.corrections.utils import *
+from dope.pycdt.corrections.utils import *
 
 bs_path = os.path.abspath(os.path.join(
     __file__, '..', '..', '..', '..', 'test_files', 'POSCAR_Ga4As4'))

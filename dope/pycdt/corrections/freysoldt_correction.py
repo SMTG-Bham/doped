@@ -21,8 +21,8 @@ import numpy as np
 from pymatgen.io.vasp.outputs import Locpot
 from pymatgen.core.structure import Structure
 
-from DefectsWithTheBoys.pycdt.corrections.utils import *
-from DefectsWithTheBoys.pycdt.utils.units import hart_to_ev
+from dope.pycdt.corrections.utils import *
+from dope.pycdt.utils.units import hart_to_ev
 
 norm = np.linalg.norm
 

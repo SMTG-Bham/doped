@@ -14,7 +14,7 @@ import os
 
 from pymatgen.core.structure import Structure
 from pymatgen.core import PeriodicSite
-from DefectsWithTheBoys.pycdt.core.defectsmaker import *
+from dope.pycdt.core.defectsmaker import *
 from pymatgen.util.testing import PymatgenTest
 
 file_loc = os.path.abspath(os.path.join(

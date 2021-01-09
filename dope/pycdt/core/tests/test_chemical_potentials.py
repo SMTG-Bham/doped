@@ -19,7 +19,7 @@ from shutil import copyfile
 from monty.serialization import loadfn
 from monty.tempfile import ScratchDir
 
-from DefectsWithTheBoys.pycdt.core.chemical_potentials import ChemPotAnalyzer, MPChemPotAnalyzer, \
+from dope.pycdt.core.chemical_potentials import ChemPotAnalyzer, MPChemPotAnalyzer, \
     UserChemPotAnalyzer, UserChemPotInputGenerator, get_mp_chempots_from_dpd
 
 from pymatgen.core import Composition, Element

@@ -11,7 +11,7 @@ from monty.tempfile import ScratchDir
 from monty.serialization import loadfn
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
 from pymatgen.core.structure import Structure
-from DefectsWithTheBoys.pycdt.utils.vasp import *
+from dope.pycdt.utils.vasp import *
 
 __author__ = "Bharat Medasani"
 __copyright__ = "Copyright 2014, The Materials Project"

@@ -26,8 +26,8 @@ from pymatgen.analysis.defects.core import DefectEntry, Vacancy, Substitution
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.testing import PymatgenTest
 
-from DefectsWithTheBoys.pycdt.core.defects_analyzer import ComputedDefect
-from DefectsWithTheBoys.pycdt.utils.parse_calculations import PostProcess, convert_cd_to_de, SingleDefectParser
+from dope.pycdt.core.defects_analyzer import ComputedDefect
+from dope.pycdt.utils.parse_calculations import PostProcess, convert_cd_to_de, SingleDefectParser
 
 pmgtestfiles_loc = os.path.join(
         os.path.split(os.path.split(initfilep)[0])[0], "test_files")

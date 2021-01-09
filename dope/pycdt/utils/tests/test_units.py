@@ -11,7 +11,7 @@ __status__ = "Development"
 __date__ = "October 9, 2017"
 
 import unittest
-from DefectsWithTheBoys.pycdt.utils.units import k_to_eV, eV_to_k
+from dope.pycdt.utils.units import k_to_eV, eV_to_k
 
 class EnergyFunctionsTest(unittest.TestCase):
     def test_k_to_eV(self):

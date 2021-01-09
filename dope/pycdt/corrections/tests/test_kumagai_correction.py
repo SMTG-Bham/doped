@@ -15,7 +15,7 @@ import numpy as np
 import unittest
 
 from pymatgen.io.vasp.outputs import Locpot
-from DefectsWithTheBoys.pycdt.corrections.kumagai_correction import *
+from dope.pycdt.corrections.kumagai_correction import *
 from pymatgen.util.testing import PymatgenTest
 
 # Paths to files we are testing on

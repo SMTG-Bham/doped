@@ -19,8 +19,7 @@ from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.defects.core import Vacancy, DefectEntry
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 
-from DefectsWithTheBoys.pycdt.utils.plotter import DefectPlotter
-# from DefectsWithTheBoys.pycdt.core.defects_analyzer import ComputedDefect, DefectsAnalyzer
+from dope.pycdt.utils.plotter import DefectPlotter
 
 
 class DefectPlotterTest(PymatgenTest):

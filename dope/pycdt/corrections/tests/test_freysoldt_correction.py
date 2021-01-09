@@ -14,7 +14,7 @@ import os
 import unittest
 
 from pymatgen.io.vasp.outputs import Locpot
-from DefectsWithTheBoys.pycdt.corrections.freysoldt_correction import *
+from dope.pycdt.corrections.freysoldt_correction import *
 
 #Paths to files we are testing on
 bl_path = os.path.abspath(os.path.join(
