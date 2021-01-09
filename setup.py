@@ -38,10 +38,10 @@ setup(
     description="Collection of Python modules & functions to perform "
     "and process solid-state defect calculations",
     long_description=readme(),
+    long_description_content_type="text/markdown",
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
-        "Development Status :: 2 - Release",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
