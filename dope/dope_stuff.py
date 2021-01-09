@@ -31,7 +31,7 @@ from matplotlib import rc
 
 from tabulate import tabulate
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
-from DefectsWithTheBoys import aide_murphy_correction
+from dope import aide_murphy_correction
 
 default_fonts = [
     "Whitney Book Extended",
@@ -46,12 +46,12 @@ default_fonts = [
 def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations
     (presumably created using SingleDefectParser
-    from DefectsWithTheBoys.pycdt.utils.parse_calculations), which can then be plotted (using
+    from dope.pycdt.utils.parse_calculations), which can then be plotted (using
     pretty_formation_energy_plot) to get formation energies, transition levels etc.
     Args:
         parsed_defect_dict (dict):
             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-            from DefectsWithTheBoys.pycdt.utils.parse_calculations) (see example notebook)
+            from dope.pycdt.utils.parse_calculations) (see example notebook)
             Must have 'vbm' and 'gap' in defect.parameters for each defect (from
             SingleDefectParser.get_bulk_gap_data())
     Returns:
@@ -826,14 +826,14 @@ def pretty_axis(ax=None, fonts=None):
 
 def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     """Convert input parsed defect dictionary (presumably created using SingleDefectParser
-     from DefectsWithTheBoys.pycdt.utils.parse_calculations) with Freysoldt charge corrections to
+     from dope.pycdt.utils.parse_calculations) with Freysoldt charge corrections to
      the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
      alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
      Freysoldt scheme)).
      Args:
          parsed_defect_dict (dict):
              Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-             from DefectsWithTheBoys.pycdt.utils.parse_calculations) (see example notebook)
+             from dope.pycdt.utils.parse_calculations) (see example notebook)
              Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
              SingleDefectParser.freysoldt_loader())
      Returns:

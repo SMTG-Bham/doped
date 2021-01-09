@@ -10,7 +10,7 @@ import warnings
 import numpy as np
 norm = np.linalg.norm
 
-from DefectsWithTheBoys.pycdt.utils.units import eV_to_k, invang_to_ev, ang_to_bohr
+from dope.pycdt.utils.units import eV_to_k, invang_to_ev, ang_to_bohr
 
 warnings.warn("Replacing PyCDT correction utils with use "
               "corresponding objects in pymatgen.analysis.defects.corrections\n"
