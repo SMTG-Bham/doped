@@ -1,4 +1,4 @@
-# **D**efect **O**riented **P**ython **E**nvironment (DOPE)
+# **D**efect **O**riented **P**ython **E**nvironment **D**istribution (DOPED)
 This is a (mid-development) Python package for managing solid-state defect calculations,
 geared toward VASP. Much of it is a modified version of the excellent [PyCDT](https://bitbucket.org/mbkumar/pycdt).  
 See [this link](https://www.sciencedirect.com/science/article/pii/S0010465518300079) for the original PyCDT paper.
@@ -19,16 +19,16 @@ If I reach a final product at some point
 
 
 ## Requirements
-`dope` requires pymatgen (and its dependencies).
+`doped` requires pymatgen (and its dependencies).
 
 ## Installation
-1.  Download the `dope` source code using the command:
+1.  Download the `doped` source code using the command:
 ```bash
-  git clone https://github.com/kavanase/dope
+  git clone https://github.com/kavanase/doped
 ```
 2.  Navigate to root directory:
 ```bash
-  cd dope
+  cd doped
 ```
 3.  Install the code, using the command:
 ```bash
