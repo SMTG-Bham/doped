@@ -653,8 +653,6 @@ class SingleDefectParser:
         vbm, cbm, bandgap = None, None, None
         gap_parameters = {}
         if mpid is not None and not no_MP:
-            # TODO: NEED to be smarter about use of +U or HSE etc in MP gga band structure
-            #  calculations...
             with MPRester() as mp:
                 bs = mp.get_bandstructure_by_material_id(mpid)
             if bs:
@@ -720,7 +718,7 @@ Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
 scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
 look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`DefectsWithTheBoys.pycdt.corrections.finite_size_charge_correction`) to visually determine if
+`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if
 charge correction scheme still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
 if you're happy (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
 You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
