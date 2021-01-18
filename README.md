@@ -39,14 +39,18 @@ Access to root may be needed if ``virtualenv`` is not used.
 
 4.  (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
 ```bash
-  PMG_VASP_PSP_DIR: <Location of vasp pseudopotential top directory>
+  PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
 ```
+Within your `VASP pseudopotential top directory`, you should have a folder named `POT_GGA_PAW_PBE` which contains the `POTCAR.X(.gz)` files (in this case for PBE `POTCAR`s).
+
 (Necessary to generate `POTCAR` files, auto-determine `INCAR` settings such as `NELECT` for charged defects...)
 
-5.  (If not set) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
+5.  (Optional) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
 ```
+(For pulling structures and comparing properties with the Materials Project database).
+
 
 ## Word of Caution
 There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
