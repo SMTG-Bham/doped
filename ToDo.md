@@ -14,3 +14,4 @@
 - `rattle` function and notes about finding stable ground state structures (what about the bond distortion method for finding polarons?)
 - `aide` labelling of defect species in formation energy plots.
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!
+- Create defects in/near the centre of the supercell (rather than near the origin), for easier visualisation.
