@@ -15,3 +15,4 @@
 - `aide` labelling of defect species in formation energy plots.
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!
 - Create defects in/near the centre of the supercell (rather than near the origin), for easier visualisation.
+- Create GGA practice workflow, for people to learn how to work with doped and defect calculations
