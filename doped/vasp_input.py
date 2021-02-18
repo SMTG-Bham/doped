@@ -507,7 +507,7 @@ def vasp_ncl_files(
             (default: None)
         kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Most
-            common option would be "kpoints": [[3, 3, 1]] etc.
+            common option would be {"kpoints": [[3, 3, 1]]} etc.
             Will generate a non-symmetrised (i.e. explicitly listed) KPOINTS, as typically required
             for vasp_ncl calculations. Default is Gamma-centred 2 x 2 x 2 mesh.
             (default: None)
@@ -578,7 +578,9 @@ def vasp_ncl_files(
     vaspnclinput = DictSet(supercell, config_dict=potcar_dict)
     vaspnclinput.potcar.write_file(vaspnclinputdir + "POTCAR")
 
-    vasp_ncl_kpt_array = monkhorst_pack([2, 2, 2])
+    k_grid = kpoints_settings.pop("kpoints")[0] if (kpoints_settings and
+                                                "kpoints" in kpoints_settings) else [2,2,2]
+    vasp_ncl_kpt_array = monkhorst_pack(k_grid)
     vasp_ncl_kpt_array += -vasp_ncl_kpt_array[0] # Gamma-centred by default
     vasp_ncl_kpts = Kpoints(comment="Non-symmetrised KPOINTS for vasp_ncl, from doped",
             num_kpts=len(vasp_ncl_kpt_array),
