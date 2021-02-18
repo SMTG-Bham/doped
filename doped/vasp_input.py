@@ -15,6 +15,7 @@ import functools
 import os
 import warnings
 from typing import TYPE_CHECKING
+import numpy as np
 
 from monty.io import zopen
 from monty.serialization import dumpfn
@@ -580,8 +581,11 @@ def vasp_ncl_files(
 
     k_grid = kpoints_settings.pop("kpoints")[0] if (kpoints_settings and
                                                 "kpoints" in kpoints_settings) else [2,2,2]
+    shift = np.array(kpoints_settings.pop("usershift")) if (kpoints_settings and
+                                                "usershift" in kpoints_settings) else np.array([
+        0,0,0])
     vasp_ncl_kpt_array = monkhorst_pack(k_grid)
-    vasp_ncl_kpt_array += -vasp_ncl_kpt_array[0] # Gamma-centred by default
+    vasp_ncl_kpt_array += -vasp_ncl_kpt_array[0] + shift # Gamma-centred by default
     vasp_ncl_kpts = Kpoints(comment="Non-symmetrised KPOINTS for vasp_ncl, from doped",
             num_kpts=len(vasp_ncl_kpt_array),
             style=Kpoints_supported_modes(5), # Reciprocal
