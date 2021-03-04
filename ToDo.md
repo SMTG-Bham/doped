@@ -16,3 +16,11 @@
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!
 - Create defects in/near the centre of the supercell (rather than near the origin), for easier visualisation.
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
+- Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic
+  nor Voronoi sites) 
+- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use 
+these to predict defect charge states (so people can see if something off etc.)
+  
+- Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value)
+- Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one)
+- Check against updated PyCDT to see if any big, useful changes since we copied code.
