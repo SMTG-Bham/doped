@@ -13,6 +13,7 @@ __date__ = "May 19, 2020"
 
 import functools
 import os
+from copy import deepcopy
 import warnings
 from typing import TYPE_CHECKING
 import numpy as np
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     import pymatgen.core.structure
 
 
-default_potcar_dict = {
+default_potcar_dict = { # MPRelaxSet config
         "POTCAR_FUNCTIONAL": "PBE",  # May need to change this if you've got
         # different POTCARs
         "POTCAR": {
@@ -158,18 +159,6 @@ def prepare_vasp_defect_inputs(defects: dict) -> dict:
 
             defect_relax_set = DefectRelaxSet(supercell["structure"], charge=charge)
 
-            # try: # Actually, we don't need this code block
-            #     potcar = defect_relax_set.potcar
-            # except AttributeError as error:
-            #     print(
-            #         f"""Error {error} occurred with arguments {error.args},
-            #     meaning no POTCAR generated, have you set the PseudoPotential directory
-            #     in your .pmgrc.yaml file? (See https://bitbucket.org/mbkumar/pycdt).
-            #     """
-            #     )
-            #     break
-
-            incar = defect_relax_set.incar
             poscar = defect_relax_set.poscar
             struct = defect_relax_set.structure
             poscar.comment = (
@@ -180,16 +169,11 @@ def prepare_vasp_defect_inputs(defects: dict) -> dict:
             )
             folder_name = defect["name"] + f"_{charge}"
             print(folder_name)
-            try:
-                # Only set if change in NELECT
-                nelect = incar.as_dict()["NELECT"]
-            except KeyError:
-                # Get NELECT if no change (KV = -dNELECT = 0)
-                nelect = defect_relax_set.nelect
+
             defect_input_dict[folder_name] = {
                 "Defect Structure": struct,
-                "NELECT": nelect,
                 "POSCAR Comment": poscar.comment,
+                "Transformation Dict": dict_transf
             }
     return defect_input_dict
 
@@ -281,10 +265,35 @@ def vasp_gam_files(
             (default: None)
     """
     supercell = single_defect_dict["Defect Structure"]
-    nelect = single_defect_dict["NELECT"]
     poscar_comment = (
         single_defect_dict["POSCAR Comment"] if "POSCAR Comment" in single_defect_dict else None
     )
+
+    # Directory
+    vaspgaminputdir = input_dir + "/vasp_gam/" if input_dir else "VASP_Files/vasp_gam/"
+    if not os.path.exists(vaspgaminputdir):
+        os.makedirs(vaspgaminputdir)
+
+    warnings.filterwarnings(
+        "ignore", category=BadInputSetWarning
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+    potcar_dict = deepcopy(default_potcar_dict)
+    if potcar_settings:
+        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+        potcar_dict.update(potcar_settings)
+    defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
+                                                                           "Dict"]["charge"],
+                                      user_potcar_settings=potcar_dict["POTCAR"],
+                                      user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    defect_relax_set.potcar.write_file(vaspgaminputdir + "POTCAR")
+
+    relax_set_incar = defect_relax_set.incar
+    try:
+        # Only set if change in NELECT
+        nelect = relax_set_incar.as_dict()["NELECT"]
+    except KeyError:
+        # Get NELECT if no change (KV = -dNELECT = 0)
+        nelect = defect_relax_set.nelect
 
     # Variable parameters first
     vaspgamincardict = {
@@ -333,27 +342,12 @@ def vasp_gam_files(
                 )
         vaspgamincardict.update(incar_settings)
 
-    # Directory
-    vaspgaminputdir = input_dir + "/vasp_gam/" if input_dir else "VASP_Files/vasp_gam/"
-    if not os.path.exists(vaspgaminputdir):
-        os.makedirs(vaspgaminputdir)
-
-    warnings.filterwarnings(
-        "ignore", category=BadInputSetWarning
-    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
-    potcar_dict = default_potcar_dict
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
-    vaspgaminput = DictSet(supercell, config_dict=potcar_dict)
-    vaspgaminput.potcar.write_file(vaspgaminputdir + "POTCAR")
-
     vaspgamkpts = Kpoints().from_dict(
         {"comment": "Kpoints from doped.vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspgamincar = Incar.from_dict(vaspgamincardict)
 
-    vaspgamposcar = vaspgaminput.poscar
+    vaspgamposcar = defect_relax_set.poscar
     if poscar_comment:
         vaspgamposcar.comment = poscar_comment
     vaspgamposcar.write_file(vaspgaminputdir + "POSCAR")
@@ -400,7 +394,33 @@ def vasp_std_files(
             (default: None)
     """
     supercell = single_defect_dict["Defect Structure"]
-    nelect = single_defect_dict["NELECT"]
+
+    # Directory
+    vaspstdinputdir = input_dir + "/vasp_std/" if input_dir else "VASP_Files/vasp_std/"
+    if not os.path.exists(vaspstdinputdir):
+        os.makedirs(vaspstdinputdir)
+
+    warnings.filterwarnings(
+        "ignore", category=BadInputSetWarning
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+
+    potcar_dict = deepcopy(default_potcar_dict)
+    if potcar_settings:
+        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+        potcar_dict.update(potcar_settings)
+    defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
+                                                                           "Dict"]["charge"],
+                                      user_potcar_settings=potcar_dict["POTCAR"],
+                                      user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    defect_relax_set.potcar.write_file(vaspstdinputdir + "POTCAR")
+
+    relax_set_incar = defect_relax_set.incar
+    try:
+        # Only set if change in NELECT
+        nelect = relax_set_incar.as_dict()["NELECT"]
+    except KeyError:
+        # Get NELECT if no change (KV = -dNELECT = 0)
+        nelect = defect_relax_set.nelect
 
     # Variable parameters first
     vaspstdincardict = {
@@ -449,21 +469,6 @@ def vasp_std_files(
                     BadIncarWarning,
                 )
         vaspstdincardict.update(incar_settings)
-
-    # Directory
-    vaspstdinputdir = input_dir + "/vasp_std/" if input_dir else "VASP_Files/vasp_std/"
-    if not os.path.exists(vaspstdinputdir):
-        os.makedirs(vaspstdinputdir)
-
-    warnings.filterwarnings(
-        "ignore", category=BadInputSetWarning
-    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
-    potcar_dict = default_potcar_dict
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
-    vaspstdinput = DictSet(supercell, config_dict=potcar_dict)
-    vaspstdinput.potcar.write_file(vaspstdinputdir + "POTCAR")
 
     vaspstdkpointsdict = {
         "comment": "Kpoints from doped.vasp_std_files",
@@ -519,7 +524,34 @@ def vasp_ncl_files(
             (default: None)
     """
     supercell = single_defect_dict["Defect Structure"]
-    nelect = single_defect_dict["NELECT"]
+
+    # Directory
+    vaspnclinputdir = input_dir + "/vasp_ncl/" if input_dir else "VASP_Files/vasp_ncl/"
+    if not os.path.exists(vaspnclinputdir):
+        os.makedirs(vaspnclinputdir)
+
+    warnings.filterwarnings(
+        "ignore", category=BadInputSetWarning
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+
+    potcar_dict = deepcopy(default_potcar_dict)
+    if potcar_settings:
+        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+        potcar_dict.update(potcar_settings)
+    defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
+                                                                           "Dict"]["charge"],
+                                      user_potcar_settings=potcar_dict["POTCAR"],
+                                      user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    defect_relax_set.potcar.write_file(vaspnclinputdir + "POTCAR")
+
+    relax_set_incar = defect_relax_set.incar
+    try:
+        # Only set if change in NELECT
+        nelect = relax_set_incar.as_dict()["NELECT"]
+    except KeyError:
+        # Get NELECT if no change (KV = -dNELECT = 0)
+        nelect = defect_relax_set.nelect
+
     # Variable parameters first
     vaspnclincardict = {
         "# May need to change NELECT, NCORE, KPAR, AEXX, ENCUT, NUPDOWN": "variable parameters",
@@ -563,21 +595,6 @@ def vasp_ncl_files(
                     BadIncarWarning,
                 )
         vaspnclincardict.update(incar_settings)
-
-    # Directory
-    vaspnclinputdir = input_dir + "/vasp_ncl/" if input_dir else "VASP_Files/vasp_ncl/"
-    if not os.path.exists(vaspnclinputdir):
-        os.makedirs(vaspnclinputdir)
-
-    warnings.filterwarnings(
-        "ignore", category=BadInputSetWarning
-    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
-    potcar_dict = default_potcar_dict
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
-    vaspnclinput = DictSet(supercell, config_dict=potcar_dict)
-    vaspnclinput.potcar.write_file(vaspnclinputdir + "POTCAR")
 
     k_grid = kpoints_settings.pop("kpoints")[0] if (kpoints_settings and
                                                 "kpoints" in kpoints_settings) else [2,2,2]

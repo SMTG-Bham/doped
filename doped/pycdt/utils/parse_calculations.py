@@ -686,7 +686,8 @@ class SingleDefectParser:
                     "bulk calculation."
                 )
                 print(
-                    "Note that it would be better to " "perform real band structure calculation..."
+                    "This may not be appropriate if the VBM/CBM occur at reciprocal points "
+                    "not included in the bulk calculation."
                 )
 
             gap_parameters.update({"MP_gga_BScalc_data": None})  # to signal no MP BS is used
@@ -946,7 +947,8 @@ class PostProcess:
                     "No mp-id provided, will fetch CBM/VBM details from the " "bulk calculation."
                 )
             logger.warning(
-                "Note that it would be better to " "perform real band structure calculation..."
+                "This may not be appropriate if the VBM/CBM occur at reciprocal points "
+                "not included in the bulk calculation."
             )
             vr = get_vasprun(
                 os.path.join(self._root_fldr, "bulk", "vasprun.xml"), parse_potcar_file=False
