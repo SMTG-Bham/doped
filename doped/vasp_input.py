@@ -13,7 +13,7 @@ __date__ = "May 19, 2020"
 
 import functools
 import os
-from copy import deepcopy
+from copy import deepcopy # See https://stackoverflow.com/a/22341377/14020960 why
 import warnings
 from typing import TYPE_CHECKING
 import numpy as np
@@ -642,6 +642,7 @@ def vasp_converge_files(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
     incar_settings: dict = None,
+    potcar_settings: dict = None,
     config: str = None,
 ) -> None:
     """
