@@ -29,7 +29,7 @@ from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Potcar, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
 
-from doped.pycdt.core.chemical_potentials import MPChemPotAnalyzer
+from doped.pycdt.core import chemical_potentials
 
 
 def convert_cd_to_de(cd, b_cse):
@@ -971,7 +971,7 @@ class PostProcess:
         logger = logging.getLogger(__name__)
 
         if self._mpid:
-            cpa = MPChemPotAnalyzer(
+            cpa = chemical_potentials.MPChemPotAnalyzer(
                 mpid=self._mpid, sub_species=self._substitution_species, mapi_key=self._mapi_key
             )
         else:
@@ -982,7 +982,7 @@ class PostProcess:
                 msg = "Could not fetch computed entry for atomic chempots!"
                 logger.warning(msg)
                 raise ValueError(msg)
-            cpa = MPChemPotAnalyzer(
+            cpa = chemical_potentials.MPChemPotAnalyzer(
                 bulk_ce=bulkvr.get_computed_entry(),
                 sub_species=self._substitution_species,
                 mapi_key=self._mapi_key,
