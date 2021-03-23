@@ -21,25 +21,7 @@ from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 
-from doped.pycdt.utils import parse_calculations
-
-#def get_vasprun(vasprun_path, **kwargs):
-#    """ Read the vasprun.xml(.gz) file as a pymatgen vasprun object """
-#    warnings.filterwarnings(
-#        "ignore", category=BadPotcarWarning
-#    )  # Ignore POTCAR warnings when loading vasprun.xml
-#    # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
-#    warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-#    if os.path.exists(vasprun_path):
-#        vasprun = Vasprun(vasprun_path)
-#    elif os.path.exists(vasprun_path + ".gz", **kwargs):
-#        vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
-#    else:
-#        raise FileNotFoundError(
-#            f"""Well I can't fucking find a vasprun.xml(.gz) at {vasprun_path}(.gz).
-#                   You sure there's one there pal? I need it to parse the calculation results"""
-#        )
-#    return vasprun
+from doped.pycdt.utils.parse_calculations import get_vasprun
 
 
 def get_mp_chempots_from_dpd(dpd):
@@ -526,7 +508,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     os.path.join(pdfile, structfile, "vasprun.xml.gz")):
                 try:
                     print("loading ", structfile)
-                    vr = parse_calculations.get_vasprun(os.path.join(pdfile, structfile,
+                    vr = get_vasprun(os.path.join(pdfile, structfile,
                                                                      "vasprun.xml"))
                     entry_from_vr = vr.get_computed_entry()
                     entry_from_vr.data.update({"Orig_Folder_Name": structfile})
@@ -539,7 +521,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
             if os.path.exists(vr_path):
                 print("loading bulk computed entry")
-                bulkvr = parse_calculations.get_vasprun(vr_path)
+                bulkvr = get_vasprun(vr_path)
                 self.bulk_ce = bulkvr.get_computed_entry()
             else:
                 print(
@@ -889,7 +871,7 @@ class UserChemPotInputGenerator(object):
 
         # Set up structure files locally if desired
         if not write_files:
-            print("Returning chempot structures, but no making POSCAR files.")
+            print("Returning chempot structures, but not making POSCAR files.")
         else:
             if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and not overwrite:
                 print("PhaseDiagram folder already exists! Set overwrite = True if you want me to overwrite it")
