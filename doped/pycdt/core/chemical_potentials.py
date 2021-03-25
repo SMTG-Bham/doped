@@ -138,7 +138,7 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         Args:
             bulk_ce: Pymatgen ComputedStructureEntry object for
                 bulk entry / supercell
-            subs_species (set): set of elemental species that are extrinsic to structure.
+            sub_species (set): set of elemental species that are extrinsic to structure.
                 Default is no subs included
             entries (dict): a dict of pymatgen ComputedEntry objects to build relevant phase diagram
                 The dict contains two keys: 'bulk_derived', and 'subs_set', each contains a list
@@ -338,7 +338,7 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
 
         return chem_lims
 
-    def get_chempots_from_composition(self, bulk_composition):
+    def get_chempots_from_composition(self, bulk_composition, full_sub_approach=False):
         """
         A simple method for getting GGA-PBE chemical potentials JUST
         from the composition information (Note: this only works if the
@@ -349,14 +349,33 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                 object. This and mapi_key are only actual required input for
                 generating set of chemical potentials from Materials Project
                 database
+            full_sub_approach : Include sub_species in query, sub entries can
+                be found in self.entries['subs_set']
         """
         logger = logging.getLogger(__name__)
 
         redcomp = bulk_composition.reduced_composition
+        self.bulk_species_symbol = [s.symbol for s in redcomp.elements]
+
         if not self.entries:
-            self.bulk_species_symbol = [s.symbol for s in redcomp.elements]
-            with MPRester(api_key=self.mapi_key) as mp:
-                self.entries["bulk_derived"] = mp.get_entries_in_chemsys(self.bulk_species_symbol)
+            if full_sub_approach:  # this can be time consuming if several sub species exist
+                species_symbols = self.bulk_species_symbol[:]
+                for sub_el in self.sub_species:
+                    species_symbols.append(sub_el)
+
+                with MPRester(api_key=self.mapi_key) as mp:
+                    self.entries["bulk_derived"] = mp.get_entries_in_chemsys(species_symbols)
+
+                self.entries["subs_set"] = {sub_el: [] for sub_el in self.sub_species}
+                for entry in self.entries["bulk_derived"]:
+                    for sub_el in self.sub_species:
+                        if sub_el in entry.composition:
+                            self.entries["subs_set"][sub_el].append(entry)
+
+            else:
+                with MPRester(api_key=self.mapi_key) as mp:
+                    self.entries["bulk_derived"] = mp.get_entries_in_chemsys(
+                        self.bulk_species_symbol)
 
         pd = PhaseDiagram(self.entries["bulk_derived"])
         chem_lims = pd.get_all_chempots(redcomp)
@@ -744,7 +763,7 @@ class UserChemPotInputGenerator(object):
         self.sub_species = sub_species
         self.path_base = path_base
         self.mapi_key = mapi_key
-        self.MPC = MPChemPotAnalyzer()
+        self.MPC = MPChemPotAnalyzer(sub_species=sub_species)
 
     def setup_phase_diagram_calculations(
         self,
@@ -754,6 +773,7 @@ class UserChemPotInputGenerator(object):
         write_files=False,
         overwrite=False,
         include_elements=True,
+        full_sub_approach=True
     ):
         """
         This method allows for setting up local phase diagram calculations so a user can calculate
@@ -785,26 +805,28 @@ class UserChemPotInputGenerator(object):
         overwrite: write files even if PhaseDiagram folder already exists. Defaults to False.
 
         include_elements: set up all elemental reference phases as well (necessary to properly
-        determine absolute
-                          chemical potentials, zero-reference elemental energies etc.),
-                          regardless of whether the
-                          elemental phase is a local facet adjacent to the MP GGA-calculated
-                          stable phase space for the
-                          composition of interest. Defaults to True.
+            determine absolute chemical potentials, zero-reference elemental energies etc.),
+            regardless of whether the elemental phase is a local facet adjacent to the MP
+            GGA-calculated stable phase space for the composition of interest. Defaults to True.
+
+        full_sub_approach : Include sub_species in query, sub entries can then be found in
+            self.MPC.entries['subs_set']
 
         """
 
         # while GGA chem pots won't be used here; use this method for quickly gathering phase
         # diagram object entries AND to find phases of interest if you just want to re-calculate
         # local facets
-        MPgga_muvals = self.MPC.get_chempots_from_composition(self.bulk_composition)
+        if full_sub_approach and self.sub_species:
+            MPgga_muvals = self.MPC.get_chempots_from_composition(self.bulk_composition,
+                                                                  full_sub_approach=True)
+        else:
+            MPgga_muvals = self.MPC.get_chempots_from_composition(self.bulk_composition)
 
         if full_phase_diagram:
             setupphases = set(
                 [
-                    localentry.name
-                    for entrykey in self.MPC.entries.keys()
-                    for localentry in self.MPC.entries[entrykey]
+                    localentry.name for localentry in self.MPC.entries['bulk_derived']
                 ]
             )  # all elements in
             # phase diagram
@@ -824,8 +846,7 @@ class UserChemPotInputGenerator(object):
                 )  # just local facets
 
             if include_elements:  # add elemental reference phases to structures to setup
-                for entrykey in self.MPC.entries.keys():
-                    for localentry in self.MPC.entries[entrykey]:
+                for localentry in self.MPC.entries['bulk_derived']:
                         if localentry.is_element:
                             setupphases.add(localentry.name)  # set.add() only adds entry if not
                             # already in set
@@ -836,7 +857,7 @@ class UserChemPotInputGenerator(object):
         # create phase diagram object for analyzing PBE-GGA energetics of structures computed in
         # MP database
         full_structure_entries = [
-            struct for entrykey in self.MPC.entries.keys() for struct in self.MPC.entries[entrykey]
+            struct for struct in self.MPC.entries['bulk_derived']
         ]
         pd = PhaseDiagram(full_structure_entries)
 
