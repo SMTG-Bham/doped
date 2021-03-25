@@ -24,3 +24,4 @@ these to predict defect charge states (so people can see if something off etc.)
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value)
 - Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one)
 - Check against updated PyCDT to see if any big, useful changes since we copied code.
+- Generate 'molecules in a box' rather than Materials Project solid forms for O2, H2, I2, Br2 etc. gas competing phases
