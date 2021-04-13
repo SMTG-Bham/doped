@@ -410,6 +410,11 @@ class SingleDefectParser:
         bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
         defect_atomic_site_averages = def_outcar.electrostatic_potential
 
+        # Is parsing the bulk structure and defect site here again unnecessary?
+        # Yes, if the user has used SingleDefectParser.from_paths, but not if they've
+        # been a cowboy and used SingleDefectParser() with a pre-generated DefectEntry...
+        # So let's keep it for the moment
+
         if os.path.exists(os.path.join(self.defect_entry.parameters["bulk_path"], "POSCAR")):
             bulk_sc_structure = Poscar.from_file(
                 os.path.join(self.defect_entry.parameters["bulk_path"], "POSCAR")
@@ -448,6 +453,7 @@ class SingleDefectParser:
 
         site_matching_indices = []
         poss_defect = []
+        defect_index_sc_coords = None
         if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
             for mindist, bulk_index, defect_index in min_dist_with_index:
                 if mindist < 0.2:
