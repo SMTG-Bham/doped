@@ -16,12 +16,10 @@ import logging
 import os
 import copy
 
-from pymatgen import Structure, Element
+from pymatgen.core.structure import Structure, Element
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
-
-from doped.pycdt.utils.parse_calculations import get_vasprun
 
 
 def get_mp_chempots_from_dpd(dpd):
@@ -527,6 +525,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     os.path.join(pdfile, structfile, "vasprun.xml.gz")):
                 try:
                     print("loading ", structfile)
+                    from doped.pycdt.utils.parse_calculations import get_vasprun
                     vr = get_vasprun(os.path.join(pdfile, structfile,
                                                                      "vasprun.xml"))
                     entry_from_vr = vr.get_computed_entry()
@@ -540,6 +539,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
             if os.path.exists(vr_path):
                 print("loading bulk computed entry")
+                from doped.pycdt.utils.parse_calculations import get_vasprun
                 bulkvr = get_vasprun(vr_path)
                 self.bulk_ce = bulkvr.get_computed_entry()
             else:
