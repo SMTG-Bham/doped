@@ -19,7 +19,7 @@ from monty.serialization import loadfn, dumpfn
 from monty.json import MontyEncoder
 from monty.os.path import zpath
 
-from pymatgen import SETTINGS
+from pymatgen.core import SETTINGS
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
 from pymatgen.io.vasp.inputs import PotcarSingle, Potcar
