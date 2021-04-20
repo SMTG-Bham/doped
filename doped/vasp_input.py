@@ -129,6 +129,10 @@ default_potcar_dict = { # MPRelaxSet config
         },
     }
 
+def scaled_ediff(natoms): # 1e-5 for 50 atoms, up to max 1e-4
+    ediff = float(f"{((natoms/50)*1e-5):.1g}")
+    return ediff if ediff <= 1e-4 else 1e-4
+
 def prepare_vasp_defect_inputs(defects: dict) -> dict:
     """
     Generates a dictionary of folders for VASP defect calculations
@@ -313,8 +317,8 @@ def vasp_gam_files(
         "# LSUBROT": "True # Uncomment this if relaxation doesn't converge",
         "ALGO": "All",
         "ADDGRID": True,
-        "EDIFF": 5e-06,
-        "EDIFFG": "-0.005 # Tight relax criteria for vasp_gam, it's cheap enough buddy",
+        "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
+        "EDIFFG": -0.01,
         "HFSCREEN": 0.2,
         "ICHARG": 1,
         "ISIF": 2,
@@ -440,7 +444,7 @@ def vasp_std_files(
         "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
         "ALGO": "All",
         "ADDGRID": True,
-        "EDIFF": "1e-05 # May need to reduce for tricky relaxations",
+        "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
         "EDIFFG": -0.01,
         "HFSCREEN": 0.2,
         "IBRION": "1 # May need to change to 2 for difficult relaxations though",
@@ -565,7 +569,7 @@ def vasp_ncl_files(
         "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
         "NSW": 0,
         "LSORBIT": True,
-        "EDIFF": 1e-06,
+        "EDIFF": 1e-06, # tight for final energy and converged DOS
         "EDIFFG": -0.01,
         "ALGO": "All",
         "ADDGRID": True,
@@ -685,7 +689,7 @@ def vasp_converge_files(
         "GGA": "PS",
         "ALGO": "Normal",
         "ADDGRID": True,
-        "EDIFF": 1e-07,
+        "EDIFF": 1e-06,
         "EDIFFG": -0.01,
         "IBRION": -1,
         "ICHARG": 1,
