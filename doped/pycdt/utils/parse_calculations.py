@@ -426,8 +426,6 @@ class SingleDefectParser:
                 os.path.join(self.defect_entry.parameters["bulk_path"], "vasprun.xml")
             ).initial_structure.copy()
 
-
-
         if "initial_defect_structure" in self.defect_entry.parameters:
             initial_defect_structure = self.defect_entry.parameters["initial_defect_structure"]
         elif os.path.exists(os.path.join(self.defect_entry.parameters["defect_path"], "POSCAR")):
@@ -495,9 +493,10 @@ class SingleDefectParser:
                 defect_frac_sc_coords = self.defect_entry.site.frac_coords
                 poss_deflist = sorted(
                     bulk_sc_structure.get_sites_in_sphere(
-                    self.defect_entry.site.coords, 0.2, include_index=True),
+                        self.defect_entry.site.coords, 0.2, include_index=True
+                    ),
                     key=lambda x: x[1],
-                    )
+                )
                 defect_index_sc_coords = poss_deflist[0][2]
 
             else:
@@ -719,6 +718,9 @@ class SingleDefectParser:
         self.defect_entry.parameters.update(gap_parameters)
 
     def run_compatibility(self):
+        # Set potalign so pymatgen can calculate bandfilling for 'neutral' defects (possible for resonant dopants etc.)
+        if self.defect_entry.charge == 0 and "potalign" not in self.defect_entry.parameters:
+            self.defect_entry.parameters["potalign"] = 0
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
         if not self.defect_entry.parameters["is_compatible"]:
             delocalized_warning = f"""
