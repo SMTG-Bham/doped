@@ -19,10 +19,10 @@ def readme():
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.0.3",
+    version="0.0.4",
     install_requires=[
         "numpy",
-        "pymatgen>=2020.10.20",
+        "pymatgen>=2021.3.3",
         "matplotlib",
         "monty>=3.0.2",
         "tabulate",
