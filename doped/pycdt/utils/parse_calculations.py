@@ -200,6 +200,9 @@ class SingleDefectParser:
         else:
             initial_defect_structure = defect_vr.initial_structure.copy()
 
+        # Add initial defect structure to parameters, so it can be pulled later on (eg. for Kumagai loader)
+        self.defect_entry.parameters["initial_defect_structure"] = initial_defect_structure
+
         # identify defect site, structural information, and create defect object
         num_ids = len(initial_defect_structure)
         num_bulk = len(bulk_sc_structure)
@@ -491,12 +494,27 @@ class SingleDefectParser:
 
             elif self.defect_entry.site:
                 defect_frac_sc_coords = self.defect_entry.site.frac_coords
-                poss_deflist = sorted(
-                    bulk_sc_structure.get_sites_in_sphere(
-                        self.defect_entry.site.coords, 0.2, include_index=True
-                    ),
-                    key=lambda x: x[1],
-                )
+                if defect_type == "Vacancy":
+                    poss_deflist = sorted(
+                        bulk_sc_structure.get_sites_in_sphere(
+                            self.defect_entry.site.coords, 0.2, include_index=True
+                        ),
+                        key=lambda x: x[1],
+                    )
+                    searched = "bulk_supercell"
+                else:
+                    poss_deflist = sorted(
+                        initial_defect_structure.get_sites_in_sphere(
+                            self.defect_entry.site.coords, 0.2, include_index=True
+                        ),
+                        key=lambda x: x[1],
+                    )
+                    searched = "initial_defect_structure"
+                if not poss_deflist:
+                    raise ValueError(
+                        "Could not find defect site {} in {}, abandoning parsing".format(
+                            self.defect_entry.site, searched)
+                    )
                 defect_index_sc_coords = poss_deflist[0][2]
 
             else:
