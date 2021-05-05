@@ -201,7 +201,7 @@ class SingleDefectParser:
             initial_defect_structure = defect_vr.initial_structure.copy()
 
         # Add initial defect structure to parameters, so it can be pulled later on (eg. for Kumagai loader)
-        self.defect_entry.parameters["initial_defect_structure"] = initial_defect_structure
+        parameters["initial_defect_structure"] = initial_defect_structure
 
         # identify defect site, structural information, and create defect object
         num_ids = len(initial_defect_structure)
