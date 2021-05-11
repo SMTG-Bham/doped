@@ -322,7 +322,7 @@ def formation_energy_plot(
     lg_fontsize=1.0,
     lg_position=None,
     fermi_level=None,
-    title="pd_facet_name",
+    title: str = None,
     saved=False,
     colormap="Dark2",
     minus_symbol="-",
@@ -340,15 +340,10 @@ def formation_energy_plot(
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
             elt_refs = chempot_limits["facets_wrt_elt_refs"][facet]
-            plot_filename = filename
-            if title == "pd_facet_name":
-                plot_title = facet
-            elif title:
-                plot_title = title
-                if not filename:
-                    plot_filename = plot_title + "_" + facet + ".pdf"
-            else:
-                plot_title = None
+            if not title:
+                title = facet
+            if not filename:
+                filename = title + "_" + facet + ".pdf"
 
             return _aide_pmg_plot(
                 defect_phase_diagram,
@@ -362,14 +357,14 @@ def formation_energy_plot(
                 lg_fontsize=lg_fontsize,
                 lg_position=lg_position,
                 fermi_level=fermi_level,
-                title=plot_title,
+                title=title,
                 saved=saved,
                 colormap=colormap,
                 minus_symbol=minus_symbol,
                 frameon=frameon,
                 chem_pot_table=chem_pot_table,
                 auto_labels=auto_labels,
-                filename=plot_filename,
+                filename=filename,
                 emphasis=emphasis,
             )
     else:  # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
@@ -721,11 +716,11 @@ some defects will have the same line colour). Recommended to change/set colormap
         ax.set_title(title, size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"})
     elif title:
         ax.set_title("{}".format(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
-    if saved or filename:
+    if saved and filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
         else:
-            plt.savefig(str(title) + "_DWTB_plot.pdf", bbox_inches="tight", dpi=600)
+            plt.savefig(str(title) + "_doped_plot.pdf", bbox_inches="tight", dpi=600)
     return ax
 
 
@@ -857,6 +852,54 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
                 {
                     "Lany-Zunger_Corrections": {
                         "(Freysoldt)_Potential_Alignment_Correction": potalign,
+                        "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
+                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65
+                        * makove_payne_pc_correction,
+                        "Total_Lany-Zunger_Correction": potalign
+                        + 0.65 * makove_payne_pc_correction,
+                    }
+                }
+            )
+            defect_entry.corrections["charge_correction"] = defect_entry.parameters[
+                "Lany-Zunger_Corrections"
+            ]["Total_Lany-Zunger_Correction"]
+
+        lz_corrected_defect_dict.update({defect_name: defect_entry})
+    return lz_corrected_defect_dict
+
+
+def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
+    """Convert input parsed defect dictionary (presumably created using SingleDefectParser
+     from doped.pycdt.utils.parse_calculations) with Kumagai charge corrections to
+     the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
+     alignment plus 0.65 * image charge correction.
+     Args:
+         parsed_defect_dict (dict):
+             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
+             from doped.pycdt.utils.parse_calculations) (see example notebook)
+             Must have 'kumagai_meta' in defect.parameters for each charged defect (from
+             SingleDefectParser.kumagai_loader())
+     Returns:
+         Parsed defect dictionary with Lany-Zunger charge corrections.
+     """
+    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
+    # defect_dict to get the lattice and dielectric matrix
+    lattice = random_defect_entry.bulk_structure.lattice.matrix
+    dielectric = random_defect_entry.parameters["dielectric"]
+    lz_image_charge_corrections = aide_murphy_correction.get_image_charge_correction(
+        lattice, dielectric
+    )
+    lz_corrected_defect_dict = copy.deepcopy(defect_dict)
+    for defect_name, defect_entry in lz_corrected_defect_dict.items():
+        if defect_entry.charge != 0:
+            potalign = defect_entry.parameters["kumagai_meta"][
+                "kumagai_potential_alignment_correction"
+            ]
+            makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge)]
+            defect_entry.parameters.update(
+                {
+                    "Lany-Zunger_Corrections": {
+                        "(Kumagai)_Potential_Alignment_Correction": potalign,
                         "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
                         "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65
                         * makove_payne_pc_correction,
@@ -1172,6 +1215,6 @@ some defects will have the same line colour). Recommended to change/set colormap
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
         else:
-            plt.savefig(str(title) + "_DWTB_plot.pdf", bbox_inches="tight", dpi=600)
+            plt.savefig(str(title) + "_doped_plot.pdf", bbox_inches="tight", dpi=600)
     else:
         return ax
