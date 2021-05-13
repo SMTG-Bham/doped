@@ -167,8 +167,8 @@ class SingleDefectParser:
         Identify defect object based on file paths. Minimal parsing performing for
         instantiating the SingleDefectParser class.
 
-        :param path_to_defect (str): path to defect file of interest (with vasprun.xml(.gz))
-        :param path_to_bulk (str): path to bulk file of interest (with vasprun.xml(.gz))
+        :param path_to_defect (str): path to defect folder of interest (with vasprun.xml(.gz))
+        :param path_to_bulk (str): path to bulk folder of interest (with vasprun.xml(.gz))
         :param dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
         :param defect_charge (int):
         :param mpid (str):
@@ -220,10 +220,19 @@ class SingleDefectParser:
 
         defect_index_sc_coords = None
         transformation_path = os.path.join(path_to_defect, "transformation.json")
+        if not os.path.exists(transformation_path): # try next folder up
+            orig_transformation_path = transformation_path
+            transformation_path = os.path.join(
+                os.path.dirname(os.path.normpath(path_to_defect)), "transformation.json"
+            )
+            if os.path.exists(transformation_path):
+                print("No transformation file found at {}, but found one at {}. "
+                      "Using this for defect parsing.".format(orig_transformation_path, transformation_path))
+
         if os.path.exists(transformation_path):
             tf = loadfn(transformation_path)
             site = tf["defect_supercell_site"]
-            if defect_type == "Vacancy":
+            if defect_type == "Vacancy": # should we also search the bulk structure for substitutions?
                 poss_deflist = sorted(
                     bulk_sc_structure.get_sites_in_sphere(site.coords, 0.2, include_index=True),
                     key=lambda x: x[1],
@@ -245,8 +254,8 @@ class SingleDefectParser:
             defect_index_sc_coords = poss_deflist[0][2]
         else:
             print(
-                "No transformation file exists at {}.\nCalculating defect index manually"
-                " (proceed with caution)".format(transformation_path)
+                "No transformation file exists at {} or {}.\nCalculating defect index manually"
+                " (proceed with caution)".format(orig_transformation_path, transformation_path)
             )
 
         # IF not transformation file exists, the defect_index_sc_coords will not be identified in
@@ -287,7 +296,7 @@ class SingleDefectParser:
                         bulk_sc_structure[bulk_index].specie
                         == initial_defect_structure[defect_index].specie
                     )
-                    if mindist < 0.1 and species_match:
+                    if mindist < 0.2 and species_match:
                         site_matching_indices.append([bulk_index, defect_index])
 
                     elif not species_match:
