@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from monty.io import zopen
-from monty.serialization import dumpfn
+from monty.serialization import dumpfn, loadfn
 from pymatgen.io.vasp import Incar, Kpoints, Poscar
 from pymatgen.io.vasp.inputs import incar_params, BadIncarWarning, Kpoints_supported_modes
 from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
@@ -32,102 +32,8 @@ if TYPE_CHECKING:
     import pymatgen.core.periodic_table
     import pymatgen.core.structure
 
-
-default_potcar_dict = { # MPRelaxSet config
-        "POTCAR_FUNCTIONAL": "PBE",  # May need to change this if you've got
-        # different POTCARs
-        "POTCAR": {
-            "Ac": "Ac",
-            "Ag": "Ag",
-            "Al": "Al",
-            "Ar": "Ar",
-            "As": "As",
-            "Au": "Au",
-            "B": "B",
-            "Ba": "Ba_sv",
-            "Be": "Be_sv",
-            "Bi": "Bi",
-            "Br": "Br",
-            "C": "C",
-            "Ca": "Ca_sv",
-            "Cd": "Cd",
-            "Ce": "Ce",
-            "Cl": "Cl",
-            "Co": "Co",
-            "Cr": "Cr_pv",
-            "Cs": "Cs_sv",
-            "Cu": "Cu_pv",
-            "Dy": "Dy_3",
-            "Er": "Er_3",
-            "Eu": "Eu",
-            "F": "F",
-            "Fe": "Fe_pv",
-            "Ga": "Ga_d",
-            "Gd": "Gd",
-            "Ge": "Ge_d",
-            "H": "H",
-            "He": "He",
-            "Hf": "Hf_pv",
-            "Hg": "Hg",
-            "Ho": "Ho_3",
-            "I": "I",
-            "In": "In_d",
-            "Ir": "Ir",
-            "K": "K_sv",
-            "Kr": "Kr",
-            "La": "La",
-            "Li": "Li_sv",
-            "Lu": "Lu_3",
-            "Mg": "Mg_pv",
-            "Mn": "Mn_pv",
-            "Mo": "Mo_pv",
-            "N": "N",
-            "Na": "Na_pv",
-            "Nb": "Nb_pv",
-            "Nd": "Nd_3",
-            "Ne": "Ne",
-            "Ni": "Ni_pv",
-            "Np": "Np",
-            "O": "O",
-            "Os": "Os_pv",
-            "P": "P",
-            "Pa": "Pa",
-            "Pb": "Pb_d",
-            "Pd": "Pd",
-            "Pm": "Pm_3",
-            "Pr": "Pr_3",
-            "Pt": "Pt",
-            "Pu": "Pu",
-            "Rb": "Rb_sv",
-            "Re": "Re_pv",
-            "Rh": "Rh_pv",
-            "Ru": "Ru_pv",
-            "S": "S",
-            "Sb": "Sb",
-            "Sc": "Sc_sv",
-            "Se": "Se",
-            "Si": "Si",
-            "Sm": "Sm_3",
-            "Sn": "Sn_d",
-            "Sr": "Sr_sv",
-            "Ta": "Ta_pv",
-            "Tb": "Tb_3",
-            "Tc": "Tc_pv",
-            "Te": "Te",
-            "Th": "Th",
-            "Ti": "Ti_pv",
-            "Tl": "Tl_d",
-            "Tm": "Tm_3",
-            "U": "U",
-            "V": "V_pv",
-            "W": "W_pv",
-            "Xe": "Xe",
-            "Y": "Y_sv",
-            "Yb": "Yb_2",
-            "Zn": "Zn",
-            "Zr": "Zr_sv",
-        },
-    }
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "default_POTCARs.yaml"))
 
 def scaled_ediff(natoms): # 1e-5 for 50 atoms, up to max 1e-4
     ediff = float(f"{((natoms/50)*1e-5):.1g}")
