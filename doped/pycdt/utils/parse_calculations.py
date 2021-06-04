@@ -215,7 +215,7 @@ class SingleDefectParser:
         else:
             raise ValueError(
                 "Could not identify defect type just from number of sites in structure: "
-                "{} in bulk vs. {} in defect?".format(num_ids, num_bulk)
+                "{} in bulk vs. {} in defect?".format(num_bulk, num_ids)
             )
 
         defect_index_sc_coords = None
