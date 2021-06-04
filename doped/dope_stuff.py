@@ -23,6 +23,7 @@ from typing import Any
 import warnings
 import numpy as np
 import copy
+import pandas as pd
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -31,6 +32,7 @@ from matplotlib import rc
 
 from tabulate import tabulate
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
+from pymatgen.util.string import latexify, unicodeify
 from doped import aide_murphy_correction
 
 default_fonts = [
@@ -223,28 +225,39 @@ def formation_energy_table(
     show_key: bool = True,
     pd_facets: list = None,
 ):
+    """
+        Prints the formation energy tables for either a single chemical potential limit (i.e. phase
+        diagram facet) or each facet in the chempot_limits dict, depending on which version you
+        provide. Returns the results as either a pandas dataframe or list of dataframes.
+        """
     if "facets" in chempot_limits:
+        list_of_dfs = []
         if not pd_facets:
             pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
         for facet in pd_facets:
-            bold_print("Facet: " + facet)
-            single_formation_energy_table(
+            bold_print("Facet: " + unicodeify(facet))
+            df = single_formation_energy_table(
                 defect_phase_diagram,
                 chempots=chempot_limits["facets"][facet],
                 fermi_level=fermi_level,
                 hide_cols=hide_cols,
                 show_key=show_key,
             )
+            list_of_dfs.append(df)
             print("\n")
+
+        return list_of_dfs
+
     else:  # If you only want to give {Elt: Energy} dict for chempot_limits
-        single_formation_energy_table(
+        df = single_formation_energy_table(
             defect_phase_diagram,
             chempots=chempot_limits,
             fermi_level=fermi_level,
             hide_cols=hide_cols,
             show_key=show_key,
         )
+        return df
 
 
 def single_formation_energy_table(
@@ -254,12 +267,16 @@ def single_formation_energy_table(
     hide_cols: list = None,
     show_key: bool = True,
 ):
-    header = ["Defect", "Charge"]
+    """
+    Prints the formation energy table for a single chemical potential limit (i.e. phase diagram
+    facet), and returns the results as a pandas dataframe.
+    """
+    header = ["Defect", "Charge", "Defect Path"]
     table = []
     if hide_cols is None:
         hide_cols = []
     for defect_entry in defect_phase_diagram.entries:
-        row = [defect_entry.name, defect_entry.charge]
+        row = [defect_entry.name, defect_entry.charge, defect_entry.parameters["defect_path"]]
         if "Uncorrected_E" not in hide_cols:
             header += ["Uncorrected_E"]
             row += [f"{defect_entry.uncorrected_energy:.2f} eV"]
@@ -294,6 +311,13 @@ supercell)
 chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM)
         """
         )
+
+    sorted_df = pd.DataFrame(
+        table,
+        columns = ['Defect', 'Charge', 'defect_path', 'Uncorrected_E', 'Corrected_E', 'Formation_E']
+    )
+    sorted_df = sorted_df.sort_values('Formation_E')
+    return sorted_df
 
 
 def bold_print(string: str) -> None:
@@ -713,9 +737,10 @@ some defects will have the same line colour). Recommended to change/set colormap
             )
 
     if title and chem_pot_table:
-        ax.set_title(title, size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"})
+        ax.set_title(latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={
+            "fontweight": "bold"})
     elif title:
-        ax.set_title("{}".format(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
+        ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
     if saved and filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
@@ -1208,9 +1233,11 @@ some defects will have the same line colour). Recommended to change/set colormap
             )
 
     if title and chem_pot_table:
-        ax.set_title(title, size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"})
+        ax.set_title(latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={
+            "fontweight":
+                                                                                   "bold"})
     elif title:
-        ax.set_title("{}".format(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
+        ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
     if saved or filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
