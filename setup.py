@@ -19,13 +19,14 @@ def readme():
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.0.4",
+    version="0.0.5",
     install_requires=[
         "numpy",
-        "pymatgen>=2021.3.3",
+        "pymatgen",
         "matplotlib",
         "monty>=3.0.2",
         "tabulate",
+        "ase",
     ],
     # That I know of...
     package_data={"doped.pycdt.utils": ["*.yaml"]},
@@ -34,7 +35,7 @@ setup(
     author_email="sean.kavanagh.19@ucl.ac.uk",
     maintainer="Seán Kavanagh",
     maintainer_email="sean.kavanagh.19@ucl.ac.uk",
-    url="http://github.com/kavanase/doped",
+    url="https://github.com/kavanase/doped",
     description="Collection of Python modules & functions to perform "
     "and process solid-state defect calculations",
     long_description=readme(),
