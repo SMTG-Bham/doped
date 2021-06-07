@@ -29,6 +29,31 @@ MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
 
 
+def _check_psp_dir(): # Provided by Katarina Brlec, from github.com/SMTG-UCL/surfaxe
+    """
+    Helper function to check if potcars are set up correctly for use with
+    pymatgen, to be compatible across pymatgen versions (breaking changes in v2022)
+    """
+    potcar = False
+    try:
+        import pymatgen.settings
+        pmg_settings = pymatgen.settings.SETTINGS
+        if 'PMG_VASP_PSP_DIR' in pmg_settings:
+            potcar = True
+    except ModuleNotFoundError:
+        try:
+            import pymatgen
+            pmg_settings = pymatgen.SETTINGS
+            if 'PMG_VASP_PSP_DIR' in pmg_settings:
+                potcar = True
+        except AttributeError:
+            from pymatgen.core import SETTINGS
+            pmg_settings = SETTINGS
+            if 'PMG_VASP_PSP_DIR' in pmg_settings:
+                potcar = True
+    return potcar
+
+
 class PotcarSingleMod(PotcarSingle):
 
     def __init__(self, *args, **kwargs):

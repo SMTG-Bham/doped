@@ -25,7 +25,7 @@ from pymatgen.io.vasp.inputs import incar_params, BadIncarWarning, Kpoints_suppo
 from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
 from ase.dft.kpoints import monkhorst_pack
 
-from doped.pycdt.utils.vasp import DefectRelaxSet
+from doped.pycdt.utils.vasp import DefectRelaxSet, _check_psp_dir
 
 
 if TYPE_CHECKING:
@@ -195,7 +195,18 @@ def vasp_gam_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
-    defect_relax_set.potcar.write_file(vaspgaminputdir + "POTCAR")
+    potcars = _check_psp_dir()
+    if potcars:
+        defect_relax_set.potcar.write_file(vaspgaminputdir + "POTCAR")
+    else: # make the folders without POTCARs
+        warnings.warn("POTCAR directory not set up with pymatgen, so only POSCAR files will be "
+                      "generated (POTCARs also needed to determine appropriate NELECT setting in "
+                      "INCAR files)")
+        vaspgamposcar = defect_relax_set.poscar
+        if poscar_comment:
+            vaspgamposcar.comment = poscar_comment
+        vaspgamposcar.write_file(vaspgaminputdir + "POSCAR")
+        return  # exit here
 
     relax_set_incar = defect_relax_set.incar
     try:
@@ -220,7 +231,7 @@ def vasp_gam_files(
         "POTIM": 0.2,
         "ISPIN": 2,
         "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
-        "# LSUBROT": "True # Uncomment this if relaxation doesn't converge",
+        "LSUBROT": "False # Change to True if relaxation poorly convergent",
         "ALGO": "All",
         "ADDGRID": True,
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
@@ -322,6 +333,13 @@ def vasp_std_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    potcars = _check_psp_dir()
+    if not potcars:
+        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
+                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
+                      "relaxation files, then continue from this pre-converged structure with "
+                      "vasp_std)")
+        return  # exit here
     defect_relax_set.potcar.write_file(vaspstdinputdir + "POTCAR")
 
     relax_set_incar = defect_relax_set.incar
@@ -346,7 +364,7 @@ def vasp_std_files(
         "POTIM": 0.2,
         "ISPIN": "2 # Check mag in OSZICAR though, if 0 don't bother with spin polarisation ("
         "change to 1",
-        "LSUBROT": True,
+        "LSUBROT": "False # Change to True if relaxation poorly convergent",
         "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
         "ALGO": "All",
         "ADDGRID": True,
@@ -452,6 +470,13 @@ def vasp_ncl_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    potcars = _check_psp_dir()
+    if not potcars:
+        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
+                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
+                      "relaxation files, then continue from this pre-converged structure with "
+                      "vasp_std and finally vasp_ncl if SOC important)")
+        return  # exit here
     defect_relax_set.potcar.write_file(vaspnclinputdir + "POTCAR")
 
     relax_set_incar = defect_relax_set.incar
