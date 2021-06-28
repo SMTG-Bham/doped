@@ -26,3 +26,4 @@ these to predict defect charge states (so people can see if something off etc.)
 - Check against updated PyCDT to see if any big, useful changes since we copied code.
 - Generate 'molecules in a box' rather than Materials Project solid forms for O2, H2, I2, Br2 etc. gas competing phases
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
+- Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
