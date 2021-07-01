@@ -503,6 +503,7 @@ class SingleDefectParser:
 
             elif self.defect_entry.site:
                 defect_frac_sc_coords = self.defect_entry.site.frac_coords
+                defect_type = self.defect_entry.defect.as_dict()["@class"]
                 if defect_type == "Vacancy":
                     poss_deflist = sorted(
                         bulk_sc_structure.get_sites_in_sphere(
