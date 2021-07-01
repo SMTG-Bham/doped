@@ -95,7 +95,7 @@ def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename
     madetol = defect_entry.parameters.get('madetol', 0.0001)
 
     if not defect_entry.charge:
-        print('Charge is zero so charge correction is zero.')
+        print("Charge is zero so charge correction is zero.")
         return 0.
 
     template_defect = copy.deepcopy(defect_entry)
@@ -122,7 +122,7 @@ def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename
     elif partflag == 'potalign':
         freyval = f_corr_summ['freysoldt_potential_alignment']
 
-    print('Final Freysoldt correction is {}'.format( freyval))
+    print(f"Final Freysoldt correction is {freyval:.3f} eV")
 
     if partflag == 'AllSplit':
         freyval = [f_corr_summ['freysoldt_electrostatic'],
@@ -182,7 +182,7 @@ def get_correction_kumagai( defect_entry, epsilon, title = None,
     gamma = defect_entry.parameters.get( 'gamma', None)
 
     if not defect_entry.charge:
-        print('charge is zero so charge correction is zero')
+        print("Charge is zero so charge correction is zero.")
         return 0.
 
     template_defect = copy.deepcopy(defect_entry)
@@ -202,7 +202,7 @@ def get_correction_kumagai( defect_entry, epsilon, title = None,
     elif partflag == 'potalign':
         kumagai_val = k_corr_summ['kumagai_potential_alignment']
 
-    print('\n Final Kumagai correction is {}'.format( kumagai_val))
+    print(f"\nFinal Kumagai correction is {kumagai_val:.3f} eV")
 
     if partflag == 'AllSplit':
         kumagai_val = [k_corr_summ['kumagai_electrostatic'],
