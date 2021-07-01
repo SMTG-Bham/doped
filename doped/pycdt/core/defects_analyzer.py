@@ -46,11 +46,11 @@ def freysoldt_correction_from_paths(defect_file_path, bulk_file_path, dielectric
     """
     sdp = SingleDefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = sdp.freysoldt_loader()
-    plt_title = os.path.join(defect_file_path,
-                             "{}_chg_{}".format(sdp.defect_entry.name, defect_charge)) if plot else None
+    if plot:
+        print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
     correction = get_correction_freysoldt(sdp.defect_entry,
                                           dielectric,
-                                          title=plt_title)
+                                          plot=plot)
 
     return correction
 
