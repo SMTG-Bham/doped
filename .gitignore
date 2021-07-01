@@ -21,5 +21,6 @@
 DWTB_Paper_Talk.pptx
 
 # No PyPi stuff
+pypi_packaging.sh
 dist/
 build/
