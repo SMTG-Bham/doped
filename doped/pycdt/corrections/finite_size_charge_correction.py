@@ -91,17 +91,17 @@ def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename
         return
 
     q_model = defect_entry.parameters.get('q_model', None)
-    encut = defect_entry.parameters.get( 'encut', 520)
-    madetol = defect_entry.parameters.get( 'madetol', 0.0001)
+    encut = defect_entry.parameters.get('encut', 520)
+    madetol = defect_entry.parameters.get('madetol', 0.0001)
 
     if not defect_entry.charge:
         print('Charge is zero so charge correction is zero.')
         return 0.
 
     template_defect = copy.deepcopy(defect_entry)
-    corr_class = FreysoldtCorrection( epsilon, q_model = q_model, energy_cutoff=encut, madetol=madetol,
-                                      axis= axis)
-    f_corr_summ = corr_class.get_correction( template_defect)
+    corr_class = FreysoldtCorrection(epsilon, q_model=q_model, energy_cutoff=encut, madetol=madetol,
+                                      axis=axis)
+    f_corr_summ = corr_class.get_correction(template_defect)
 
     if plot:
         if axis is None:
