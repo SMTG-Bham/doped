@@ -32,7 +32,7 @@ If I reach a final product at some point
 ```
 3.  Install the code, using the command:
 ```bash
-  python setup.py install
+  pip install -e .
 ```
 This command tries to obtain the required packages and their dependencies and install them automatically.
 Access to root may be needed if ``virtualenv`` is not used.
