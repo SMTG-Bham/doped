@@ -7,16 +7,9 @@ Defect formation energy plots are templated from [AIDE](https://github.com/SMTG-
 philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dynamic duo Adam Jackson and Alex Ganose.
 
 This code is still being customised, so in the spirit of efficiency 
-and avoiding redundant work, I've provided an example 
-[Jupyter notebook](dope_Example_Notebook.ipynb)
-of the code functionality and usage, 
-so please look at that. (Better to open in Jupyter, after installing, rather than with GitHub preview).
-
-If I reach a final product at some point 
-(likely integrating things like [CPLAP](https://github.com/jbuckeridge/cplap), 
-[SC-Fermi](https://github.com/jbuckeridge/sc-fermi) etc.),
- I'll make a detailed README then.
-
+and avoiding redundant work, there are example 
+Jupyter notebooks (the `.ipynb` files) provided to show the code functionality and usage.
+(Better to open in Jupyter, after installing, rather than with GitHub preview).
 
 ## Requirements
 `doped` requires pymatgen (and its dependencies).
@@ -24,7 +17,7 @@ If I reach a final product at some point
 ## Installation
 1.  Download the `doped` source code using the command:
 ```bash
-  git clone https://github.com/kavanase/doped
+  git clone https://github.com/SMTG-UCL/doped
 ```
 2.  Navigate to root directory:
 ```bash
@@ -54,4 +47,4 @@ Within your `VASP pseudopotential top directory`, you should have a folder named
 
 ## Word of Caution
 There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
-If you find any, please let me know!
+If you find any, please let us know!
