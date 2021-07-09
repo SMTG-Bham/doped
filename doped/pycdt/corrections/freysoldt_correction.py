@@ -9,8 +9,6 @@ If you use the corrections implemented in this module, cite
    [Optionally Phys. Status Solidi B. 248, 1067-1076 (2011) ]
    in addition to the pycdt paper
 """
-__author__ = 'Danny Broberg, Bharat Medasani'
-__email__ = 'dbroberg@gmail.com, mbkumar@gmail.com'
 
 import sys
 import math

@@ -5,12 +5,6 @@ canonical linear programming approach
 """
 from __future__ import division
 
-__author__ = "Seán Kavanagh"
-__copyright__ = "MIT License"
-__version__ = "0.0.1"
-__maintainer__ = "Seán Kavanagh"
-__email__ = "sean.kavanagh.19@ucl.ac.uk"
-__date__ = "May 19, 2020"
 
 import logging
 import os
