@@ -24,3 +24,6 @@ DWTB_Paper_Talk.pptx
 pypi_packaging.sh
 dist/
 build/
+
+# Local notes & testing folder
+doped_JOSS_project/
