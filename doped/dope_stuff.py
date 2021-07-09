@@ -9,14 +9,6 @@ efficient, user-friendly package for managing and analysing defect
 calculations, with publication-quality outputs.
 """
 
-__author__ = "Seán Kavanagh"
-__copyright__ = "MIT License"
-__version__ = "0.0.1"
-__maintainer__ = "Seán Kavanagh"
-__email__ = "sean.kavanagh.19@ucl.ac.uk"
-__date__ = "June 18, 2020"
-
-
 from operator import itemgetter
 import pickle
 from typing import Any
