@@ -2,13 +2,7 @@
 
 from __future__ import division
 
-__author__ = "Danny Broberg, Bharat Medasani"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Danny Broberg, Bharat Medasani"
-__email__ = "mbkumar@gmail.com"
 __status__ = "Development"
-__date__ = "June 23, 2016"
 
 import os
 import numpy as np

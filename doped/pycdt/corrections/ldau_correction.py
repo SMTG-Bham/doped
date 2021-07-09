@@ -2,12 +2,7 @@
 
 from __future__ import division
 
-__author__ = "Bharat Medasani"
-__version__ = "0.8"
-__maintainer__ = "Bharat Medasani"
-__email__ = "mbkumar@gmail.com"
 __status__ = "Development"
-__date__ = "Aug 22, 2016"
 
 from copy import deepcopy
 import warnings

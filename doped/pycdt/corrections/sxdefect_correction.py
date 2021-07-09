@@ -11,13 +11,7 @@ Keeping code here in case someone wants to make use of future
 sxdefectalign functionalities with a python wrapper.
 """
 
-__author__ = "Geoffroy Hautier, Danny Broberg"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.1"
-__maintainer__ = "Geoffroy Hautier/Danny Broberg"
-__email__ = "geoffroy@uclouvain.be, dbroberg@berkeley.edu"
 __status__ = "Development"
-__date__ = "April 24, 2015"
 
 import subprocess
 import os

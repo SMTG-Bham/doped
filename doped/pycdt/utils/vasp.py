@@ -2,13 +2,7 @@
 
 from __future__ import print_function
 
-__author__ = "Geoffroy Hautier, Bharat Medasani"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Bharat Medasani"
-__email__ = "mbkumar@gmail.com"
 __status__ = "Development"
-__date__ = "November 4, 2012"
 
 import os
 from copy import deepcopy

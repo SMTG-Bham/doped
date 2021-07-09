@@ -1,12 +1,6 @@
 #!/usr/bin/env python
 
-__author__ = "Geoffroy Hautier, Bharat Medasani, Danny Broberg"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Geoffroy Hautier"
-__email__ = "geoffroy@uclouvain.be"
 __status__ = "Development"
-__date__ = "November 4, 2012"
 
 import numpy as np
 import matplotlib
