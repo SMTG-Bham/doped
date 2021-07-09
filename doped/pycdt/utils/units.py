@@ -1,8 +1,6 @@
 """
 This module contains unit conversion constants and  functions
 """
-__author__ = 'Danny Broberg, Bharat Medasani'
-__email__ = 'dbroberg@gmail.com, mbkumar@gmail.com'
 
 import math
 import numpy as np

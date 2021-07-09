@@ -2,13 +2,7 @@
 
 from __future__ import division
 
-__author__ = "Nils E. R. Zimmermann"
-__copyright__ = "Copyright 2017, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Nils. E. R. Zimmermann"
-__email__ = "nils.e.r.zimmermann@gmail.com"
 __status__ = "Development"
-__date__ = "July 19, 2017"
 
 import os
 

@@ -2,8 +2,6 @@
 This module implements helper functions used in both Freysoldt and Kumagai
 correction metodules 
 """
-__author__ = 'Danny Broberg, Bharat Medasani'
-__email__ = 'dbroberg@gmail.com, mbkumar@gmail.com'
 
 import math
 import warnings

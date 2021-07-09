@@ -5,13 +5,7 @@ This is just for plotting the axis files that come out of the sxdefectalignwrapp
 Created 8/11/15 (right after I finished the first version of the wrapper class)
 """
 
-__author__ = "Danny Broberg"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.2"
-__maintainer__ = "Danny Broberg"
-__email__ = "dbroberg@berkeley.edu"
 __status__ = "Development"
-__date__ = "August 11, 2015"
 
 import os
 import numpy as np

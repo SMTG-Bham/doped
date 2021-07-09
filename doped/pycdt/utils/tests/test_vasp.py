@@ -13,13 +13,7 @@ from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
 from pymatgen.core.structure import Structure
 from doped.pycdt.utils.vasp import *
 
-__author__ = "Bharat Medasani"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Bharat Medasani"
-__email__ = "mbkumar@gmail.com"
 __status__ = "Development"
-__date__ = "May 6, 2015"
 
 file_loc = os.path.abspath(os.path.join(
     __file__,'..', '..', '..', '..', 'test_files'))
