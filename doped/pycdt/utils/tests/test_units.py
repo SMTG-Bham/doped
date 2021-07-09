@@ -2,13 +2,7 @@
 
 from __future__ import division
 
-__author__ = "Nils E. R. Zimmermann, Danny Broberg"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Nils E. R. Zimmermann"
-__email__ = "nils.e.r.zimmermann@gmail.com"
 __status__ = "Development"
-__date__ = "October 9, 2017"
 
 import unittest
 from doped.pycdt.utils.units import k_to_eV, eV_to_k

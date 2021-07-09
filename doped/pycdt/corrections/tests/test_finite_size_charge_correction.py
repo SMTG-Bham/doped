@@ -2,13 +2,7 @@
 
 from __future__ import division
 
-__author__ = "Bharat Medasani"
-__copyright__ = "Copyright 2014, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Bharat Medasani"
-__email__ = "mbkumar@gmail.com"
 __status__ = "Development"
-__date__ = "Jan 26, 2016"
 
 import unittest
 import numpy as np
