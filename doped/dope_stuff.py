@@ -458,7 +458,6 @@ def _aide_pmg_plot(
             Tuple (horizontal-position, vertical-position) giving the position
             to place the legend.
             Example: (0.5,-0.75) will likely put it below the x-axis.
-        saved:
     Returns:
         a matplotlib object
     """
@@ -741,7 +740,7 @@ some defects will have the same line colour). Recommended to change/set colormap
             "fontweight": "bold"})
     elif title:
         ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
-    if saved and filename:
+    if saved or filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
         else:
@@ -1063,7 +1062,6 @@ def _all_lines_aide_pmg_plot(
             Tuple (horizontal-position, vertical-position) giving the position
             to place the legend.
             Example: (0.5,-0.75) will likely put it below the x-axis.
-        saved:
     Returns:
         a matplotlib object
     """
