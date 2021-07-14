@@ -609,7 +609,7 @@ class ChargedDefectsStructures(object):
         sub_defs = []
 
         VG = VacancyGenerator( self.struct)
-        print("Setting up defects...")
+        print("Setting up defects ...")
         for i, vac in enumerate(VG):
             vac_site = vac.site
             vac_symbol = vac.site.specie.symbol
@@ -776,7 +776,7 @@ class ChargedDefectsStructures(object):
                                     'Possible_KV_Charge':c.charge})
 
             else:
-                print("Searching for Voronoi interstitial sites (this can take awhile)...")
+                print("Searching for Voronoi interstitial sites (this can take a while) ...")
                 for elt in inter_elems:
                     #TODO: Add ability to use other interstitial finding methods in pymatgen
                     IG = VoronoiInterstitialGenerator(self.struct, elt)
