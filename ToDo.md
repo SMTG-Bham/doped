@@ -10,7 +10,7 @@
 - Add `defects_std_to_ncl.sh` bash script to auto-generate symmetrised `KPOINTS` for SOC `vasp_ncl` run from `vasp_std` IBZKPT, and copy `vasp_std/CONTCAR` to `vasp_ncl/POSCAR`, copy `CHGCAR`, `POTCAR` over etc. (Make note about symmetrised k-points required for accurate SOC bandstructures, VASP wizardry with Chris, but not an issue for ground state energies).
 - Add `chempot_std_to_ncl.sh` bash script to auto-generate non-symmetrised `KPOINTS` for SOC `vasp_ncl` run (note on editing `module load vasp` command), and copy `vasp_std/CONTCAR` to `vasp_ncl/POSCAR`, copy `CHGCAR`, `POTCAR` over etc.
 - Use `UserChemPotAnalyzer` to parse chemical potential calculations
-- Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their FERE paper (https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
+- Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
 
 ## Defect calculations set up
 
@@ -22,8 +22,7 @@
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value; could add a `remove_incar_tags` arg and then `pop` them out of the incar dict?)
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
 - Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions)
-- Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic
-  nor Voronoi sites)
+- Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use
 these to predict defect charge states (so people can see if something off etc.); could use the csv dandy sent on defects slack and set an arbitrary cutoff for oxidation states that can occur in known materials
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
@@ -37,7 +36,7 @@ these to predict defect charge states (so people can see if something off etc.);
 - `transition_levels_table()`
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations.
-- Figure out a neat way of plotting phase diagrams for quaternary&quinary systems 
+- Figure out a neat way of plotting phase diagrams for quaternary and quinary systems.
 
 ## Housekeeping
 
