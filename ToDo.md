@@ -29,3 +29,4 @@ these to predict defect charge states (so people can see if something off etc.)
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. 
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
+- Brouwer diagrams
