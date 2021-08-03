@@ -27,6 +27,6 @@ these to predict defect charge states (so people can see if something off etc.)
 - Generate 'molecules in a box' rather than Materials Project solid forms for O2, H2, I2, Br2 etc. gas competing phases
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
-- Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. 
+- Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? 
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
 - Brouwer diagrams
