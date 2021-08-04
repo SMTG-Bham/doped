@@ -31,3 +31,5 @@ these to predict defect charge states (so people can see if something off etc.)
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
 - Brouwer diagrams
 - See Ben Morgan's `py-sc-fermi`
+- Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / csv etc for reproducibility
+-
