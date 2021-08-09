@@ -5,7 +5,7 @@ Code to analyse VASP defect calculations.
 These functions are built from a combination of useful modules from pymatgen and AIDE (by Adam
 Jackson and Alex Ganose), alongside substantial modification, in the efforts of making an
 efficient, user-friendly package for managing and analysing defect calculations,
-with publication-quality outputs.
+with publication-quality outputs
 """
 
 from operator import itemgetter
@@ -36,17 +36,34 @@ default_fonts = [
 ]
 
 
+def bold_print(string: str) -> None:
+    """Does what it says on the tin. Prints the input string in bold."""
+    print("\033[1m" + string + "\033[0m")
+
+
+def save_to_pickle(python_object: Any, filename: str) -> None:
+    with open(filename, "wb") as fp:
+        pickle.dump(python_object, fp)
+
+
+def load_from_pickle(filepath: str) -> None:
+    with open(filepath, "rb") as fp:
+        return pickle.load(fp)
+
+
 def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations (
     format: {"defect_name": defect_entry}), likely created using SingleDefectParser from
     doped.pycdt.utils.parse_calculations), which can then be used to analyse and plot the defect
-    thermodynamics (formation energies, transition levels, concentrations etc.)
+    thermodynamics (formation energies, transition levels, concentrations etc)
+
     Args:
         parsed_defect_dict (dict):
             Dictionary of parsed defect calculations (format: {"defect_name": defect_entry}),
-            likely created using SingleDefectParser from doped.pycdt.utils.parse_calculations),
+            likely created using SingleDefectParser from doped.pycdt.utils.parse_calculations).
             Must have 'vbm' and 'gap' in defect_entry.parameters for each defect (from
             SingleDefectParser.get_bulk_gap_data())
+
     Returns:
         pymatgen DefectPhaseDiagram object (DefectPhaseDiagram)
     """
@@ -79,6 +96,17 @@ def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
 
 
 def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
+    """Iteratively prints the charge transition levels for the input DefectPhaseDiagram object
+    (via the from a defect_phase_diagram.transition_level_map attribute)
+
+    Args:
+        defect_phase_diagram (DefectPhaseDiagram):
+            DefectPhaseDiagram object (likely created from
+            dope_stuff.dpd_from_parsed_defect_dict)
+
+    Returns:
+        None
+    """
     for def_type, tl_info in defect_phase_diagram.transition_level_map.items():
         bold_print(f"\nDefect: {def_type.split('@')[0]}")
         for tl_efermi, chargeset in tl_info.items():
@@ -89,91 +117,53 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
             )
 
 
-# def pretty_formation_energy_plot(
-#     defect_phase_diagram: DefectPhaseDiagram,
-#     chempots: dict = None,
-#     xlim: float = None,
-#     ylim: float = None,
-#     ax_fontsize: float = 1.3,
-#     lg_fontsize: float = 1.0,
-#     lg_position: tuple = None,
-#     fermi_level: float = None,
-#     title: str = None,
-#     saved: bool = False,
-# ):
-#     """
-#         Produces pretty Defect Formation Energy vs Fermi Energy plots for the defects in
-#         defect_phase_diagram, for each chemical potential limit in chempot_limits.
-#         Args:
-#             defect_phase_diagram (DefectPhaseDiagram):
-#                 DefectPhaseDiagram object for which to plot Formation Energy vs Fermi Energy
-#             chempots:
-#                 A dictionary of {Element: Energy} giving the chemical potential of each element.
-#                 If None, chemical potential is set to 0 for each element.
-#                 (default: None}
-#             xlim (tuple):
-#                 Tuple (min,max) to set the range of the x (Fermi Energy) axis
-#                 (default: None)
-#             ylim (tuple):
-#                 Tuple (min,max) to set the range for the Formation Energy axis
-#                 (default: None)
-#             ax_fontsize (float):
-#                 Float  multiplier to change axis label fontsize
-#                 (default: 1.3)
-#             lg_fontsize (float):
-#                 Float  multiplier to change legend label fontsize
-#                 (default: 1.0)
-#             lg_position (tuple):
-#                 Tuple (horizontal-position, vertical-position) giving the fractional position
-#                 to place the legend.
-#                 Example: (0.5,-0.75) will likely put it below the x-axis.
-#                 (default: None)
-#             fermi_level (float):
-#                 Plot the specified Fermi Level position as a vertical line.
-#                 (default: None)
-#             title (str):
-#                 Title of plot.
-#                 (default: None)
-#             saved (bool):
-#                 Whether to save the plot as an image file.
-#                 (default: False)
-#         Returns:
-#             A matplotlib plot object
-#         """
-#     plot = defect_phase_diagram.plot(
-#         mu_elts=chempots,
-#         xlim=xlim,
-#         ylim=ylim,
-#         ax_fontsize=ax_fontsize,
-#         lg_fontsize=lg_fontsize,
-#         lg_position=lg_position,
-#         fermi_level=fermi_level,
-#         title=title,
-#         saved=saved,
-#     )
-#     for i in defect_phase_diagram.transition_level_map.values():
-#         for trans_level, charges in i.items():
-#             plot.vlines(trans_level, *plot.ylim(), colors="cyan", linestyles="dashdot")
-#             plot.annotate(
-#                 f"({max(charges)}/{min(charges)})", (trans_level + 0.02, plot.ylim()[1] - 0.2)
-#             )
-#
-#     return plot
-
-
 def formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
     chempot_limits: dict = None,
+    pd_facets: list = None,
     fermi_level: float = 0,
     hide_cols: list = None,
     show_key: bool = True,
-    pd_facets: list = None,
 ):
     """
-    Prints the formation energy tables for either a single chemical potential limit (i.e. phase
-    diagram facet) or each facet in the chempot_limits dict, depending on which version you
-    provide. Returns the results as either a pandas dataframe or list of dataframes.
+    Prints defect formation energy tables for either a single chemical potential limit (i.e. phase
+    diagram facet) or each facet in the phase diagram (chempot_limits dict), depending on the
+    chempot_limits input supplied. This can either be a dictionary of chosen absolute/DFT chemical
+    potentials: {Elt: Energy} (giving a single formation energy table) or a dictionary including
+    the key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
+    by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). In the
+    latter case, a subset of facet(s) / chemical potential limit(s) can be chosen with the
+    pd_facets argument, or if not specified, will print formation energy tables for each facet in
+    the phase diagram.
+    Returns the results a pandas DataFrame or list of DataFrames.
+
+    Args:
+        defect_phase_diagram (DefectPhaseDiagram):
+             DefectPhaseDiagram object (likely created from
+             dope_stuff.dpd_from_parsed_defect_dict)
+        chempot_limits (dict):
+            This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
+            Energy} (giving a single formation energy table) or a dictionary including the
+            key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
+            by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). If
+            not specified, chemical potentials are not included in the formation energy calculation
+            (all set to zero energy).
+        pd_facets (list):
+            A list facet(s) / chemical potential limit(s) for which to print the defect formation
+            energy tables. If not specified, will print formation energy tables for each facet in
+            the phase diagram. (default: None)
+        fermi_level (float):
+            Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
+            at the VBM))
+        hide_cols: (list):
+            List of columns to hide from the output. (default: None)
+        show_key (bool):
+            Whether or not to print the table key at the bottom of the output. (default: True)
+
+    Returns:
+        pandas DataFrame or list of DataFrames
     """
+    if chempot_limits is None: chempot_limits = {}
     if "facets" in chempot_limits:
         list_of_dfs = []
         if not pd_facets:
@@ -193,7 +183,7 @@ def formation_energy_table(
 
         return list_of_dfs
 
-    else:  # If you only want to give {Elt: Energy} dict for chempot_limits
+    else:  # {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
         df = single_formation_energy_table(
             defect_phase_diagram,
             chempots=chempot_limits,
@@ -212,25 +202,44 @@ def single_formation_energy_table(
     show_key: bool = True,
 ):
     """
-    Prints the formation energy table for a single chemical potential limit (i.e. phase diagram
-    facet), and returns the results as a pandas dataframe.
+    Prints a defect formation energy table for a single chemical potential limit (i.e. phase diagram
+    facet), and returns the results as a pandas DataFrame.
+
+    Args:
+        defect_phase_diagram (DefectPhaseDiagram):
+             DefectPhaseDiagram object (likely created from
+             dope_stuff.dpd_from_parsed_defect_dict)
+        chempots (dict):
+            Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
+            specified, chemical potentials are not included in the formation energy calculation
+            (all set to zero energy).
+        fermi_level (float):
+            Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
+            at the VBM))
+        hide_cols: (list):
+            List of columns to hide from the output. (default: None)
+        show_key (bool):
+            Whether or not to print the table key at the bottom of the output. (default: True)
+
+    Returns:
+        pandas DataFrame sorted by formation energy
     """
     header = ["Defect", "Charge", "Defect Path"]
     table = []
-    if hide_cols is None:
-        hide_cols = []
+    if hide_cols is None: hide_cols = []
+
     for defect_entry in defect_phase_diagram.entries:
         row = [defect_entry.name, defect_entry.charge, defect_entry.parameters["defect_path"]]
-        if "Uncorrected_E" not in hide_cols:
-            header += ["Uncorrected_E"]
+        if "Uncorrected Energy" not in hide_cols:
+            header += ["Uncorrected Energy"]
             row += [f"{defect_entry.uncorrected_energy:.2f} eV"]
-        if "Corrected_E" not in hide_cols:
-            header += ["Corrected_E"]
+        if "Corrected Energy" not in hide_cols:
+            header += ["Corrected Energy"]
             row += [
                 f"{defect_entry.energy:.2f} eV"
             ]  # With 0 chemical potentials, at the calculation
             # fermi level
-        header += ["Formation_E"]
+        header += ["Formation Energy"]
         row += [
             f"{defect_entry.formation_energy(chemical_potentials=chempots, fermi_level=fermi_level):.2f} eV"
         ]
@@ -247,36 +256,22 @@ def single_formation_energy_table(
         print(
             """'Defect' -> Defect Type and Multiplicity
 'Charge' -> Defect Charge State
-'Uncorrected_E' -> Defect Energy from calculation, without corrections
-'Corrected_E' -> Defect Energy from calculation (E_defect - E_host + corrections)
+'Uncorrected Energy' -> Defect Energy from calculation, without corrections
+'Corrected Energy' -> Defect Energy from calculation (E_defect - E_host + corrections)
 (chemical potentials set to 0 and the fermi level at average electrostatic potential in the
 supercell)
-'Formation_E' -> Final Defect Formation Energy, with the specified chemical potentials (
+'Formation Energy' -> Final Defect Formation Energy, with the specified chemical potentials (
 chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM)
         """
         )
 
     sorted_df = pd.DataFrame(
         table,
-        columns=["Defect", "Charge", "defect_path", "Uncorrected_E", "Corrected_E", "Formation_E"],
+        columns=["Defect", "Charge", "Defect Path", "Uncorrected Energy", "Corrected Energy",
+                 "Formation Energy"],
     )
-    sorted_df = sorted_df.sort_values("Formation_E")
+    sorted_df = sorted_df.sort_values("Formation Energy")
     return sorted_df
-
-
-def bold_print(string: str) -> None:
-    """Does what it says on the tin. Prints the input string in bold."""
-    print("\033[1m" + string + "\033[0m")
-
-
-def save_to_pickle(python_object: Any, filename: str) -> None:
-    with open(filename, "wb") as fp:
-        pickle.dump(python_object, fp)
-
-
-def load_from_pickle(filepath: str) -> None:
-    with open(filepath, "rb") as fp:
-        return pickle.load(fp)
 
 
 def formation_energy_plot(
