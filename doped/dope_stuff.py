@@ -1,12 +1,11 @@
 # coding: utf-8
 
 """
-Code to analyse VASP defect calculation results, and other dope things.
-These functions are built from a combination of extremely useful modules
-from pymatgen and AIDE (by Adam Jackson and Alex Ganose), alongside
-substantial modification, in the efforts of making an
-efficient, user-friendly package for managing and analysing defect
-calculations, with publication-quality outputs.
+Code to analyse VASP defect calculations.
+These functions are built from a combination of useful modules from pymatgen and AIDE (by Adam
+Jackson and Alex Ganose), alongside substantial modification, in the efforts of making an
+efficient, user-friendly package for managing and analysing defect calculations,
+with publication-quality outputs.
 """
 
 from operator import itemgetter
@@ -38,18 +37,18 @@ default_fonts = [
 
 
 def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
-    """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations
-    (presumably created using SingleDefectParser
-    from doped.pycdt.utils.parse_calculations), which can then be plotted (using
-    pretty_formation_energy_plot) to get formation energies, transition levels etc.
+    """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations (
+    format: {"defect_name": defect_entry}), likely created using SingleDefectParser from
+    doped.pycdt.utils.parse_calculations), which can then be used to analyse and plot the defect
+    thermodynamics (formation energies, transition levels, concentrations etc.)
     Args:
         parsed_defect_dict (dict):
-            Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-            from doped.pycdt.utils.parse_calculations) (see example notebook)
-            Must have 'vbm' and 'gap' in defect.parameters for each defect (from
+            Dictionary of parsed defect calculations (format: {"defect_name": defect_entry}),
+            likely created using SingleDefectParser from doped.pycdt.utils.parse_calculations),
+            Must have 'vbm' and 'gap' in defect_entry.parameters for each defect (from
             SingleDefectParser.get_bulk_gap_data())
     Returns:
-        DefectPhaseDiagram object
+        pymatgen DefectPhaseDiagram object (DefectPhaseDiagram)
     """
     vbm_vals = []
     bandgap_vals = []
@@ -77,53 +76,6 @@ def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     )
 
     return dpd
-
-
-def suggest_larger_supercells(defect_phase_diagram: DefectPhaseDiagram, tolerance=0.1):
-    """
-    This is a pymatgen DefectPhaseDiagram method that has a bug in it, so I've rewritten the code
-    without the bug here.
-    Suggest larger supercells for different defect+chg combinations based on use of
-    compatibility analysis. Does this for any charged defects which have is_compatible = False,
-    and the defect+chg formation energy is stable at fermi levels within the band gap.
-    NOTE: Requires self.filter_compatible = False
-    Args:
-        tolerance (float): tolerance with respect to the VBM and CBM for considering
-                           larger supercells for a given charge
-    """
-    if defect_phase_diagram.filter_compatible:
-        raise ValueError("Cannot suggest larger supercells if filter_compatible is True.")
-    recommendations = {}
-    for def_type in defect_phase_diagram.defect_types:
-        template_entry = defect_phase_diagram.stable_entries[def_type][0].copy()
-        defect_indices = [int(def_ind) for def_ind in def_type.split("@")[-1].split("-")]
-        for charge in defect_phase_diagram.finished_charges[def_type]:
-            chg_defect = template_entry.defect.copy()
-            chg_defect.set_charge(charge)
-            for entry_index in defect_indices:
-                entry = defect_phase_diagram.entries[entry_index]
-                if entry.charge == charge:
-                    break
-            if entry.parameters.get("is_compatible", True):
-                continue
-            else:
-                # consider if transition level is within
-                # tolerance of band edges
-                suggest_bigger_supercell = True
-                for tl, chgset in defect_phase_diagram.transition_level_map[def_type].items():
-                    sorted_chgset = list(chgset)
-                    sorted_chgset.sort(reverse=True)
-                    if charge == sorted_chgset[0] and tl < tolerance:
-                        suggest_bigger_supercell = False
-                    elif charge == sorted_chgset[1] and tl > (
-                        defect_phase_diagram.band_gap - tolerance
-                    ):
-                        suggest_bigger_supercell = False
-            if suggest_bigger_supercell:
-                if def_type not in recommendations:
-                    recommendations[def_type] = []
-                recommendations[def_type].append(charge)
-    return recommendations
 
 
 def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
@@ -218,10 +170,10 @@ def formation_energy_table(
     pd_facets: list = None,
 ):
     """
-        Prints the formation energy tables for either a single chemical potential limit (i.e. phase
-        diagram facet) or each facet in the chempot_limits dict, depending on which version you
-        provide. Returns the results as either a pandas dataframe or list of dataframes.
-        """
+    Prints the formation energy tables for either a single chemical potential limit (i.e. phase
+    diagram facet) or each facet in the chempot_limits dict, depending on which version you
+    provide. Returns the results as either a pandas dataframe or list of dataframes.
+    """
     if "facets" in chempot_limits:
         list_of_dfs = []
         if not pd_facets:
@@ -306,9 +258,9 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 
     sorted_df = pd.DataFrame(
         table,
-        columns = ['Defect', 'Charge', 'defect_path', 'Uncorrected_E', 'Corrected_E', 'Formation_E']
+        columns=["Defect", "Charge", "defect_path", "Uncorrected_E", "Corrected_E", "Formation_E"],
     )
-    sorted_df = sorted_df.sort_values('Formation_E')
+    sorted_df = sorted_df.sort_values("Formation_E")
     return sorted_df
 
 
@@ -457,7 +409,7 @@ def _aide_pmg_plot(
     if xlim is None:
         xlim = (-0.4, defect_phase_diagram.band_gap + 0.4)
     xy = {}
-    all_lines_xy = {} # For emphasis plots with faded grey E_form lines for all charge states
+    all_lines_xy = {}  # For emphasis plots with faded grey E_form lines for all charge states
     lower_cap = -100.0
     upper_cap = 100.0
     y_range_vals = []  # for finding max/min values on y-axis based on x-limits
@@ -728,8 +680,9 @@ some defects will have the same line colour). Recommended to change/set colormap
             )
 
     if title and chem_pot_table:
-        ax.set_title(latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={
-            "fontweight": "bold"})
+        ax.set_title(
+            latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
+        )
     elif title:
         ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
     if saved or filename:
@@ -837,19 +790,19 @@ def pretty_axis(ax=None, fonts=None):
 
 def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     """Convert input parsed defect dictionary (presumably created using SingleDefectParser
-     from doped.pycdt.utils.parse_calculations) with Freysoldt charge corrections to
-     the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
-     alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
-     Freysoldt scheme)).
-     Args:
-         parsed_defect_dict (dict):
-             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-             from doped.pycdt.utils.parse_calculations) (see example notebook)
-             Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
-             SingleDefectParser.freysoldt_loader())
-     Returns:
-         Parsed defect dictionary with Lany-Zunger charge corrections.
-     """
+    from doped.pycdt.utils.parse_calculations) with Freysoldt charge corrections to
+    the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
+    alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
+    Freysoldt scheme)).
+    Args:
+        parsed_defect_dict (dict):
+            Dictionary of parsed defect calculations (presumably created using SingleDefectParser
+            from doped.pycdt.utils.parse_calculations) (see example notebook)
+            Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
+            SingleDefectParser.freysoldt_loader())
+    Returns:
+        Parsed defect dictionary with Lany-Zunger charge corrections.
+    """
     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
@@ -886,18 +839,18 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
 
 def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
     """Convert input parsed defect dictionary (presumably created using SingleDefectParser
-     from doped.pycdt.utils.parse_calculations) with Kumagai charge corrections to
-     the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
-     alignment plus 0.65 * image charge correction.
-     Args:
-         parsed_defect_dict (dict):
-             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-             from doped.pycdt.utils.parse_calculations) (see example notebook)
-             Must have 'kumagai_meta' in defect.parameters for each charged defect (from
-             SingleDefectParser.kumagai_loader())
-     Returns:
-         Parsed defect dictionary with Lany-Zunger charge corrections.
-     """
+    from doped.pycdt.utils.parse_calculations) with Kumagai charge corrections to
+    the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
+    alignment plus 0.65 * image charge correction.
+    Args:
+        parsed_defect_dict (dict):
+            Dictionary of parsed defect calculations (presumably created using SingleDefectParser
+            from doped.pycdt.utils.parse_calculations) (see example notebook)
+            Must have 'kumagai_meta' in defect.parameters for each charged defect (from
+            SingleDefectParser.kumagai_loader())
+    Returns:
+        Parsed defect dictionary with Lany-Zunger charge corrections.
+    """
     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
@@ -1223,9 +1176,9 @@ some defects will have the same line colour). Recommended to change/set colormap
             )
 
     if title and chem_pot_table:
-        ax.set_title(latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={
-            "fontweight":
-                                                                                   "bold"})
+        ax.set_title(
+            latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
+        )
     elif title:
         ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
     if saved or filename:
