@@ -296,6 +296,28 @@ def formation_energy_plot(
     filename: str = None,
     emphasis=False,
 ):
+    """Produce a defect formation energy vs Fermi energy plot (i.e. a defect transition level
+    diagram).
+    Args:
+        mu_elts:
+            a dictionary of {Element:value} giving the chemical
+            potential of each element
+        xlim:
+            Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
+            set manually when including transition level labels, so that they dont' cross the axes.
+        ylim:
+            Tuple (min,max) giving the range for the formation energy axis. This may need to be
+            set manually when including transition level labels, so that they dont' cross the axes.
+        ax_fontsize:
+            float  multiplier to change axis label fontsize
+        lg_fontsize:
+            float  multiplier to change legend label fontsize
+        lg_position:
+            Tuple (horizontal-position, vertical-position) giving the position
+            to place the legend.
+            Example: (0.5,-0.75) will likely put it below the x-axis.
+    Returns:
+        a matplotlib object"""
     if chempot_limits and "facets" in chempot_limits:
         if not pd_facets:
             pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
