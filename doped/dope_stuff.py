@@ -298,10 +298,18 @@ def formation_energy_plot(
 ):
     """Produce a defect formation energy vs Fermi energy plot (i.e. a defect transition level
     diagram).
+
     Args:
-        mu_elts:
-            a dictionary of {Element:value} giving the chemical
-            potential of each element
+        defect_phase_diagram (DefectPhaseDiagram):
+             DefectPhaseDiagram object (likely created from
+             dope_stuff.dpd_from_parsed_defect_dict)
+        chempots (dict):
+            Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
+            specified, chemical potentials are not included in the formation energy calculation
+            (all set to zero energy).
+        fermi_level (float):
+            Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
+            at the VBM))
         xlim:
             Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
             set manually when including transition level labels, so that they dont' cross the axes.
