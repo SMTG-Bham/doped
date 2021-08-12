@@ -67,7 +67,7 @@ def prepare_vasp_defect_inputs(defects: dict) -> dict:
             poscar.comment = (
                 defect["name"]
                 + str(dict_transf["defect_supercell_site"].frac_coords)
-                + "_KV=-dNELECT="
+                + "_-dNELECT=" # change in NELECT from bulk supercell
                 + str(charge)
             )
             folder_name = defect["name"] + f"_{charge}"
@@ -206,7 +206,7 @@ def vasp_gam_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
@@ -340,7 +340,7 @@ def vasp_std_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
@@ -477,7 +477,7 @@ def vasp_ncl_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
