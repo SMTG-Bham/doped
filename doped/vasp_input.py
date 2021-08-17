@@ -181,9 +181,12 @@ def vasp_gam_files(
         "ignore", category=BadInputSetWarning
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
+
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
@@ -319,9 +322,12 @@ def vasp_std_files(
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
+            
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
@@ -456,9 +462,11 @@ def vasp_ncl_files(
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
