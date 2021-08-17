@@ -528,6 +528,9 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 except:
                     print("Could not load ", structfile)
 
+            else:
+                print("No vasprun.xml(.gz) found in ", structfile)
+
         # add bulk computed entry to phase diagram, and see if it is stable
         if not self.bulk_ce:
             vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
