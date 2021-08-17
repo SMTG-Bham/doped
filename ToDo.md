@@ -11,6 +11,7 @@
 - Add `chempot_std_to_ncl.sh` bash script to auto-generate non-symmetrised `KPOINTS` for SOC `vasp_ncl` run (note on editing `module load vasp` command), and copy `vasp_std/CONTCAR` to `vasp_ncl/POSCAR`, copy `CHGCAR`, `POTCAR` over etc.
 - Use `UserChemPotAnalyzer` to parse chemical potential calculations
 - Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
+- Publication ready chemical potential diagram plotting tool
 
 ## Defect calculations set up
 
@@ -27,6 +28,7 @@
 these to predict defect charge states (so people can see if something off etc.); could use the csv dandy sent on defects slack and set an arbitrary cutoff for oxidation states that can occur in known materials
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Ideally figure out automation of polaron finding
+- Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 
 ## Post-processing / analysis / plotting
 
