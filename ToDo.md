@@ -36,6 +36,7 @@ these to predict defect charge states (so people can see if something off etc.);
 - Build in `emphasis` option to `formation_energy_plot`, label 0 as VBM and CBM on x-axis
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - `transition_levels_table()`
+- Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations.
 - Figure out a neat way of plotting phase diagrams for quaternary and quinary systems.
