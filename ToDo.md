@@ -49,3 +49,5 @@ these to predict defect charge states (so people can see if something off etc.);
 - Add tests
 - Clean the example jupyter notebooks and docstrings
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
+- PR to pymatgen: Update check_final_relaxed_structure_delocalized(self, defect_entry) in pymatgen/analysis/defects/defect_compatibility.py to allow defects which move more than 0.01 Angstrom from initial_defect_structure (allow up to 1 Angstrom?).
+- PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)).
