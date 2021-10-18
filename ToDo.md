@@ -39,6 +39,7 @@ these to predict defect charge states (so people can see if something off etc.);
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations.
+- Functionality to generate chemical potential limit plots from parsed chempot calculations (phase diagram objects), as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D). – See `Cs2SnTiI6` notebooks for template code for this.
 - Figure out a neat way of plotting phase diagrams for quaternary and quinary systems.
 
 ## Housekeeping
