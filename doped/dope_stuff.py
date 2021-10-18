@@ -946,7 +946,7 @@ def all_lines_formation_energy_plot(
             else:
                 plot_title = facet
 
-            _all_lines_aide_pmg_plot(
+            return _all_lines_aide_pmg_plot(
                 defect_phase_diagram,
                 mu_elts=mu_elts,
                 elt_refs=elt_refs,
@@ -968,7 +968,7 @@ def all_lines_formation_energy_plot(
                 filename=plot_filename,
             )
     else:  # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
-        _all_lines_aide_pmg_plot(
+        return _all_lines_aide_pmg_plot(
             defect_phase_diagram,
             mu_elts=chempot_limits,
             elt_refs=None,
