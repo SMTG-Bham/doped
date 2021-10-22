@@ -290,7 +290,7 @@ def formation_energy_plot(
     colormap="Dark2",
     minus_symbol="-",
     frameon=False,
-    chem_pot_table=True,
+    chempot_table=True,
     pd_facets: list = None,
     auto_labels: bool = False,
     filename: str = None,
@@ -355,7 +355,7 @@ def formation_energy_plot(
                 colormap=colormap,
                 minus_symbol=minus_symbol,
                 frameon=frameon,
-                chem_pot_table=chem_pot_table,
+                chempot_table=chempot_table,
                 auto_labels=auto_labels,
                 filename=filename,
                 emphasis=emphasis,
@@ -378,7 +378,7 @@ def formation_energy_plot(
             colormap=colormap,
             minus_symbol=minus_symbol,
             frameon=frameon,
-            chem_pot_table=chem_pot_table,
+            chempot_table=chempot_table,
             auto_labels=auto_labels,
             filename=filename,
             emphasis=emphasis,
@@ -402,7 +402,7 @@ def _aide_pmg_plot(
     colormap="Dark2",
     minus_symbol="-",
     frameon=False,
-    chem_pot_table=True,
+    chempot_table=True,
     auto_labels=False,
     filename=None,
     emphasis=False,
@@ -684,7 +684,7 @@ some defects will have the same line colour). Recommended to change/set colormap
     ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
     ax.xaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol=minus_symbol))
     ax.yaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol=minus_symbol))
-    if chem_pot_table:
+    if chempot_table:
         if elt_refs:
             _plot_chemical_potential_table(
                 plt,
@@ -704,7 +704,7 @@ some defects will have the same line colour). Recommended to change/set colormap
                 wrt_elt_refs=False,
             )
 
-    if title and chem_pot_table:
+    if title and chempot_table:
         ax.set_title(
             latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
         )
@@ -721,7 +721,7 @@ some defects will have the same line colour). Recommended to change/set colormap
 def _plot_chemical_potential_table(
     plt,
     elt_refs,
-    chem_pot_label="",
+    chempot_label="",
     fontsize=9,
     loc="left",
     ax=None,
@@ -739,7 +739,7 @@ def _plot_chemical_potential_table(
     labels[1] = "(" + labels[1]
     labels[-1] = labels[-1][:-1] + ")"
     labels = ["Chemical Potentials"] + labels + [" Units:"]
-    text = [[chem_pot_label]]
+    text = [[chempot_label]]
 
     for el in sorted(chemical_potentials.keys()):
         text[0].append("{:.2f},".format(chemical_potentials[el]).replace("-", minus_symbol))
@@ -926,7 +926,7 @@ def all_lines_formation_energy_plot(
     colormap="Dark2",
     minus_symbol="-",
     frameon=False,
-    chem_pot_table=True,
+    chempot_table=True,
     pd_facets: list = None,
     auto_labels: bool = False,
     filename: str = None,
@@ -963,7 +963,7 @@ def all_lines_formation_energy_plot(
                 colormap=colormap,
                 minus_symbol=minus_symbol,
                 frameon=frameon,
-                chem_pot_table=chem_pot_table,
+                chempot_table=chempot_table,
                 auto_labels=auto_labels,
                 filename=plot_filename,
             )
@@ -985,7 +985,7 @@ def all_lines_formation_energy_plot(
             colormap=colormap,
             minus_symbol=minus_symbol,
             frameon=frameon,
-            chem_pot_table=chem_pot_table,
+            chempot_table=chempot_table,
             auto_labels=auto_labels,
             filename=filename,
         )
@@ -1008,7 +1008,7 @@ def _all_lines_aide_pmg_plot(
     colormap="Dark2",
     minus_symbol="-",
     frameon=False,
-    chem_pot_table=True,
+    chempot_table=True,
     auto_labels=False,
     filename=None,
 ):
@@ -1180,7 +1180,7 @@ some defects will have the same line colour). Recommended to change/set colormap
     ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
     ax.xaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol=minus_symbol))
     ax.yaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol=minus_symbol))
-    if chem_pot_table:
+    if chempot_table:
         if elt_refs:
             _plot_chemical_potential_table(
                 plt,
@@ -1200,7 +1200,7 @@ some defects will have the same line colour). Recommended to change/set colormap
                 wrt_elt_refs=False,
             )
 
-    if title and chem_pot_table:
+    if title and chempot_table:
         ax.set_title(
             latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
         )
