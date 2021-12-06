@@ -364,7 +364,7 @@ def vasp_std_files(
         "ISPIN": "2 # Check mag in OSZICAR though, if 0 don't bother with spin polarisation ("
         "change to 1",
         "LSUBROT": "False # Change to True if relaxation poorly convergent",
-        "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
+        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
         "ALGO": "All",
         "ADDGRID": True,
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
@@ -498,7 +498,7 @@ def vasp_ncl_files(
         "KPAR": 2,
         "AEXX": 0.25,
         "ENCUT": 450,
-        "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
+        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
         "NSW": 0,
         "LSORBIT": True,
         "EDIFF": 1e-06, # tight for final energy and converged DOS
@@ -617,7 +617,6 @@ def vasp_converge_files(
         "ENCUT": 450,
         "ISMEAR": "0 # Non-metal, use Gaussian smearing",
         "ISPIN": "1 # 2 if ya think there's some magnetic shit going down",
-        "ICORELEVEL": 0,
         "GGA": "PS",
         "ALGO": "Normal",
         "ADDGRID": True,
