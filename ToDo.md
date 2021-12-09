@@ -32,11 +32,13 @@ these to predict defect charge states (so people can see if something off etc.);
 
 ## Post-processing / analysis / plotting
 
+- Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
 - `aide` labelling of defect species in formation energy plots.
 - Build in `emphasis` option to `formation_energy_plot`, label 0 as VBM and CBM on x-axis
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - `transition_levels_table()`
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
+- Fix `(ax=ax)` optional parameter behaviour in `formation_energy_plot` (where `f, ax = plt.subplots` run previously).
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations.
 - Functionality to generate chemical potential limit plots from parsed chempot calculations (phase diagram objects), as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D). – See `Cs2SnTiI6` notebooks for template code for this.
