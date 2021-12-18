@@ -5,13 +5,12 @@ canonical linear programming approach
 """
 from __future__ import division
 
-
+import copy
 import logging
 import os
-import copy
 
+from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
 from pymatgen.core.structure import Structure, Element
-from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 
@@ -83,10 +82,18 @@ class ChemPotAnalyzer:
 
         bulk_composition = self.bulk_ce.composition
         redcomp = bulk_composition.reduced_composition
-        # append bulk_ce to phase diagram
+        # append bulk_ce to phase diagram, if not present
         entries = pd.all_entries
-        entries.append(self.bulk_ce)
-        pd = PhaseDiagram(entries)
+        if not any(
+            [
+                (ent.composition == self.bulk_ce.composition and ent.energy == self.bulk_ce.energy)
+                for ent in entries
+            ]
+        ):
+            entries.append(
+                PDEntry(self.bulk_ce.composition, self.bulk_ce.energy, attribute="Bulk Material")
+            )
+            pd = PhaseDiagram(entries)
 
         chem_lims = pd.get_all_chempots(redcomp)
 
@@ -367,7 +374,8 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
             else:
                 with MPRester(api_key=self.mapi_key) as mp:
                     self.entries["bulk_derived"] = mp.get_entries_in_chemsys(
-                        self.bulk_species_symbol)
+                        self.bulk_species_symbol
+                    )
 
         pd = PhaseDiagram(self.entries["bulk_derived"])
         chem_lims = pd.get_all_chempots(redcomp)
@@ -516,17 +524,21 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         personal_entry_list = []
         for structfile in os.listdir(pdfile):
             if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")) or os.path.exists(
-                    os.path.join(pdfile, structfile, "vasprun.xml.gz")):
+                os.path.join(pdfile, structfile, "vasprun.xml.gz")
+            ):
                 try:
                     print("loading ", structfile)
                     from doped.pycdt.utils.parse_calculations import get_vasprun
-                    vr = get_vasprun(os.path.join(pdfile, structfile,
-                                                                     "vasprun.xml"))
-                    entry_from_vr = vr.get_computed_entry()
-                    entry_from_vr.data.update({"Orig_Folder_Name": structfile})
-                    personal_entry_list.append(entry_from_vr)
+
+                    vr = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
+                    vr_entry = vr.get_computed_entry()
+                    pdentry = PDEntry(vr_entry.composition, vr_entry.energy, attribute=structfile)
+                    personal_entry_list.append(pdentry)
                 except:
                     print("Could not load ", structfile)
+
+            else:
+                print("No vasprun.xml(.gz) found in ", structfile)
 
         # add bulk computed entry to phase diagram, and see if it is stable
         if not self.bulk_ce:
@@ -534,8 +546,12 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             if os.path.exists(vr_path):
                 print("loading bulk computed entry")
                 from doped.pycdt.utils.parse_calculations import get_vasprun
+
                 bulkvr = get_vasprun(vr_path)
-                self.bulk_ce = bulkvr.get_computed_entry()
+                bulkvr_entry = bulkvr.get_computed_entry()
+                self.bulk_ce = PDEntry(
+                    bulkvr_entry.composition, bulkvr_entry.energy, attribute=vr_path
+                )
             else:
                 print(
                     "No bulk entry given locally. Phase diagram "
@@ -599,16 +615,19 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                         "potential results for regions "
                         "of phase diagram that involve the element " + str(elt)
                     )
-                    personal_entry_list.append(eltentry)
+                    personal_entry_list.append(PDEntry(eltentry.composition, eltentry.energy))
 
-        personal_entry_list.append(self.bulk_ce)
+        personal_entry_list.append(
+            PDEntry(self.bulk_ce.composition, self.bulk_ce.energy, attribute="Bulk Material")
+        )
+        unique_entries = list(set(personal_entry_list))  # remove duplicate entries if present
 
         # compute chemical potentials
         if full_sub_approach:
-            pd = PhaseDiagram(personal_entry_list)
+            pd = PhaseDiagram(unique_entries)
             chem_lims = self.get_chempots_from_pd(pd)
         else:
-            # first seperate out the bulk associated elements from those of substitutional elements
+            # first separate out the bulk associated elements from those of substitutional elements
             entry_list = []
             sub_associated_entry_list = []
             for localentry in personal_entry_list:
@@ -767,7 +786,7 @@ class UserChemPotInputGenerator(object):
         write_files=False,
         overwrite=False,
         include_elements=True,
-        full_sub_approach=True
+        full_sub_approach=True,
     ):
         """
         This method allows for setting up local phase diagram calculations so a user can calculate
@@ -812,16 +831,15 @@ class UserChemPotInputGenerator(object):
         # diagram object entries AND to find phases of interest if you just want to re-calculate
         # local facets
         if full_sub_approach and self.sub_species:
-            MPgga_muvals = self.MPC.get_chempots_from_composition(self.bulk_composition,
-                                                                  full_sub_approach=True)
+            MPgga_muvals = self.MPC.get_chempots_from_composition(
+                self.bulk_composition, full_sub_approach=True
+            )
         else:
             MPgga_muvals = self.MPC.get_chempots_from_composition(self.bulk_composition)
 
         if full_phase_diagram:
             setupphases = set(
-                [
-                    localentry.name for localentry in self.MPC.entries['bulk_derived']
-                ]
+                [localentry.name for localentry in self.MPC.entries["bulk_derived"]]
             )  # all elements in
             # phase diagram
         else:
@@ -840,19 +858,17 @@ class UserChemPotInputGenerator(object):
                 )  # just local facets
 
             if include_elements:  # add elemental reference phases to structures to setup
-                for localentry in self.MPC.entries['bulk_derived']:
-                        if localentry.is_element:
-                            setupphases.add(localentry.name)  # set.add() only adds entry if not
-                            # already in set
+                for localentry in self.MPC.entries["bulk_derived"]:
+                    if localentry.is_element:
+                        setupphases.add(localentry.name)  # set.add() only adds entry if not
+                        # already in set
 
         structures_to_setup = {}  # this will be a list of structure objects which need to be
         # setup locally
 
         # create phase diagram object for analyzing PBE-GGA energetics of structures computed in
         # MP database
-        full_structure_entries = [
-            struct for struct in self.MPC.entries['bulk_derived']
-        ]
+        full_structure_entries = [struct for struct in self.MPC.entries["bulk_derived"]]
         pd = PhaseDiagram(full_structure_entries)
 
         for entry in full_structure_entries:
@@ -889,7 +905,9 @@ class UserChemPotInputGenerator(object):
             print("Returning chempot structures, but not making POSCAR files.")
         else:
             if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and not overwrite:
-                print("PhaseDiagram folder already exists! Set overwrite = True if you want me to overwrite it")
+                print(
+                    "PhaseDiagram folder already exists! Set overwrite = True if you want me to overwrite it"
+                )
             else:
                 if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and overwrite:
                     print(
