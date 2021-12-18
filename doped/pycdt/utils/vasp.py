@@ -13,7 +13,6 @@ from monty.serialization import loadfn, dumpfn
 from monty.json import MontyEncoder
 from monty.os.path import zpath
 
-from pymatgen.core import SETTINGS
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
 from pymatgen.io.vasp.inputs import PotcarSingle, Potcar
@@ -47,6 +46,24 @@ def _check_psp_dir(): # Provided by Katarina Brlec, from github.com/SMTG-UCL/sur
                 potcar = True
     return potcar
 
+def _import_psp(): 
+    """import pmg settings for PotcarSingleMod"""
+    pmg_settings = None
+    try:
+        import pymatgen.settings
+        pmg_settings = pymatgen.settings.SETTINGS
+    except ModuleNotFoundError:
+        try:
+            import pymatgen
+            pmg_settings = pymatgen.SETTINGS
+        except AttributeError:
+            from pymatgen.core import SETTINGS
+            pmg_settings = SETTINGS
+    
+    if pmg_settings is None: 
+        raise ValueError('pymatgen settings not found?')
+    else: 
+        return pmg_settings
 
 class PotcarSingleMod(PotcarSingle):
 
@@ -60,12 +77,13 @@ class PotcarSingleMod(PotcarSingle):
 
     @staticmethod
     def from_symbol_and_functional(symbol, functional=None):
+        settings = _import_psp()
         if functional is None:
-            functional = SETTINGS.get("PMG_DEFAULT_FUNCTIONAL", "PBE")
+            functional = settings.get("PMG_DEFAULT_FUNCTIONAL", "PBE")
         funcdir = PotcarSingle.functional_dir[functional]
 
         if not os.path.isdir(os.path.join(
-                SETTINGS.get("PMG_VASP_PSP_DIR"), funcdir)):
+                settings.get("PMG_VASP_PSP_DIR"), funcdir)):
             functional_dir = {"LDA_US": "pot",
                               "PW91_US": "pot_GGA", 
                               "LDA": "potpaw", 
@@ -78,7 +96,7 @@ class PotcarSingleMod(PotcarSingle):
                               }
             funcdir = functional_dir[functional]
 
-        d = SETTINGS.get("PMG_VASP_PSP_DIR")
+        d = settings.get("PMG_VASP_PSP_DIR")
         if d is None:
             raise ValueError("No POTCAR directory found. Please set "
                              "the VASP_PSP_DIR environment variable")
