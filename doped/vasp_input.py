@@ -67,7 +67,7 @@ def prepare_vasp_defect_inputs(defects: dict) -> dict:
             poscar.comment = (
                 defect["name"]
                 + str(dict_transf["defect_supercell_site"].frac_coords)
-                + "_KV=-dNELECT="
+                + "_-dNELECT=" # change in NELECT from bulk supercell
                 + str(charge)
             )
             folder_name = defect["name"] + f"_{charge}"
@@ -181,9 +181,12 @@ def vasp_gam_files(
         "ignore", category=BadInputSetWarning
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
+
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
@@ -206,7 +209,7 @@ def vasp_gam_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
@@ -214,31 +217,32 @@ def vasp_gam_files(
         "# May need to change NELECT, IBRION, NCORE, KPAR, AEXX, ENCUT, NUPDOWN, ISPIN, "
         "POTIM": "variable parameters",
         "NELECT": nelect,
-        "IBRION": "2 # vasp_gam cheap enough, this is generally more reliable",
-        "NUPDOWN": f"{nelect % 2:.0f} # But could be {nelect % 2 + 2:.0f} if ya think we got a "
-        "bit of crazy ferromagnetic shit going down",
+        "IBRION": "2 # While often slower than '1' (RMM-DIIS), this is more stable and "
+                  "reliable, and vasp_gam relaxations are typically cheap enough to justify it",
+        "NUPDOWN": f"{nelect % 2:.0f} # But could be {nelect % 2 + 2:.0f} "
+                   + "if strong spin polarisation or magnetic behaviour present",
+        "ISPIN": "2 # Spin polarisation likely for defects",
         "NCORE": 12,
-        "#KPAR": "One pal, only one k-point yeh",
+        "#KPAR": "# No KPAR, only one kpoint here",
         "AEXX": 0.25,
         "ENCUT": 450,
         "POTIM": 0.2,
-        "ISPIN": 2,
         "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
         "LSUBROT": "False # Change to True if relaxation poorly convergent",
-        "ALGO": "All",
+        "ALGO": "All # Most stable. Normal likely faster but less stable",
         "ADDGRID": True,
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
         "EDIFFG": -0.01,
         "HFSCREEN": 0.2,
         "ICHARG": 1,
         "ISIF": 2,
-        "ISYM": 0,
+        "ISYM": "0 # Symmetry breaking extremely likely for defects",
         "ISMEAR": 0,
         "LASPH": True,
         "LHFCALC": True,
         "LORBIT": 11,
         "LREAL": False,
-        "LVHAR": "True # Needed if using the Freysoldt (FNV) isotropic charge correction",
+        "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
         "LWAVE": True,
         "NEDOS": 2000,
         "NELM": 100,
@@ -319,9 +323,12 @@ def vasp_std_files(
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
+            
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
@@ -340,7 +347,7 @@ def vasp_std_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
@@ -349,31 +356,30 @@ def vasp_std_files(
         + "ISPIN, POTIM": "variable parameters",
         "NELECT": nelect,
         "NUPDOWN": f"{nelect % 2:.0f} # But could be {nelect % 2 + 2:.0f} "
-        + "if ya think we got a bit of crazy ferromagnetic shit going down",
+        + "if strong spin polarisation or magnetic behaviour present",
         "NCORE": 12,
         "KPAR": 2,
         "AEXX": 0.25,
         "ENCUT": 450,
         "POTIM": 0.2,
-        "ISPIN": "2 # Check mag in OSZICAR though, if 0 don't bother with spin polarisation ("
-        "change to 1",
+        "ISPIN": "2 # Spin polarisation likely for defects",
         "LSUBROT": "False # Change to True if relaxation poorly convergent",
-        "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
-        "ALGO": "All",
+        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
+        "ALGO": "All # Most stable. Normal likely faster but less stable",
         "ADDGRID": True,
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
         "EDIFFG": -0.01,
         "HFSCREEN": 0.2,
-        "IBRION": "1 # May need to change to 2 for difficult relaxations though",
+        "IBRION": "1 # May need to change to 2 for difficult/poorly-convergent relaxations",
         "ICHARG": 1,
         "ISIF": 2,
-        "ISYM": 0,
+        "ISYM": "0 # Symmetry breaking extremely likely for defects",
         "ISMEAR": 0,
         "LASPH": True,
         "LHFCALC": True,
         "LORBIT": 11,
         "LREAL": False,
-        "LVHAR": True,
+        "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
         "LWAVE": True,
         "NEDOS": 2000,
         "NELM": 100,
@@ -456,9 +462,11 @@ def vasp_ncl_files(
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-        potcar_dict.update(potcar_settings)
+    if potcar_settings: 
+        if 'POTCAR_FUNCTIONAL' in potcar_settings.keys(): 
+            potcar_dict['POTCAR_FUNCTIONAL'] = potcar_settings['POTCAR_FUNCTIONAL']
+        if 'POTCAR' in potcar_settings.keys():
+            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))   
     defect_relax_set = DefectRelaxSet(supercell, charge=single_defect_dict["Transformation "
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
@@ -477,7 +485,7 @@ def vasp_ncl_files(
         # Only set if change in NELECT
         nelect = relax_set_incar.as_dict()["NELECT"]
     except KeyError:
-        # Get NELECT if no change (KV = -dNELECT = 0)
+        # Get NELECT if no change (-dNELECT = 0)
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
@@ -485,12 +493,12 @@ def vasp_ncl_files(
         "# May need to change NELECT, NCORE, KPAR, AEXX, ENCUT, NUPDOWN": "variable parameters",
         "NELECT": nelect,
         "NUPDOWN": f"{nelect % 2:.0f} # But could be {nelect % 2 + 2:.0f} "
-        + "if ya think we got a bit of crazy ferromagnetic shit going down",
+        + "if strong spin polarisation or magnetic behaviour present",
         "NCORE": 12,
         "KPAR": 2,
         "AEXX": 0.25,
         "ENCUT": 450,
-        "ICORELEVEL": "0 # Get core potentials in OUTCAR for Kumagai corrections",
+        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
         "NSW": 0,
         "LSORBIT": True,
         "EDIFF": 1e-06, # tight for final energy and converged DOS
@@ -507,7 +515,7 @@ def vasp_ncl_files(
         "LHFCALC": True,
         "LORBIT": 11,
         "LREAL": False,
-        "LVHAR": True,
+        "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
         "LWAVE": True,
         "NEDOS": 2000,
         "NELM": 100,
@@ -603,13 +611,12 @@ def vasp_converge_files(
     vaspconvergeincardict = {
         "# May need to change ISMEAR, NCORE, KPAR, AEXX, ENCUT, NUPDOWN, "
         + "ISPIN": "variable parameters",
-        "NUPDOWN": "0 # But could be >0 if ya think there's some magnetic shit going down",
+        "NUPDOWN": "0 # But could be >0 if magnetic behaviour present",
         "NCORE": 12,
         "#KPAR": 1,
         "ENCUT": 450,
         "ISMEAR": "0 # Non-metal, use Gaussian smearing",
-        "ISPIN": "1 # 2 if ya think there's some magnetic shit going down",
-        "ICORELEVEL": 0,
+        "ISPIN": "1 # Change to 2 if spin polarisation or magnetic behaviour present",
         "GGA": "PS",
         "ALGO": "Normal",
         "ADDGRID": True,
@@ -621,7 +628,7 @@ def vasp_converge_files(
         "LASPH": True,
         "LORBIT": 11,
         "LREAL": False,
-        "LWAVE": "False # Shouldn't need WAVECAR from Convergence Test Calculation",
+        "LWAVE": "False # Save filespace, shouldn't need WAVECAR from convergence tests",
         "NEDOS": 2000,
         "NELM": 100,
         "NSW": 0,
