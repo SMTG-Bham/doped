@@ -19,7 +19,7 @@ def readme():
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.0.5",
+    version="0.0.7",
     install_requires=[
         "numpy",
         "pymatgen",
@@ -29,7 +29,7 @@ setup(
         "ase",
     ],
     # That I know of...
-    package_data={"doped.pycdt.utils": ["*.yaml"]},
+    package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["default_POTCARs.yaml"]},
     # Standard PyCDT settings, will probably delete soon
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",
