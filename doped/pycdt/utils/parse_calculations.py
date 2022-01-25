@@ -25,6 +25,8 @@ from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
 
 from doped.pycdt.core import chemical_potentials
 
+angstrom = "\u212B" # unicode symbol for angstrom to print in strings
+
 
 def convert_cd_to_de(cd, b_cse):
     """
@@ -252,10 +254,12 @@ class SingleDefectParser:
                     " Abandoning parsing".format(transformation_path, site, searched)
                 )
             elif poss_deflist[0][1] > 1:
+                site_matched_defect = poss_deflist[0]  # pymatgen Neighbor object
                 offsite_warning = (
-                    f"Site-matching has determined {poss_deflist[0][2]} as the defect site, "
-                    f"located {poss_deflist[0][1]:.2f}) Angstrom from its initial position. "
-                    f"This may incur small errors in the charge correction."
+                    f"Site-matching has determined {site_matched_defect.species} at "
+                    f"{site_matched_defect.coords} as the defect site, located "
+                    f"{site_matched_defect.nn_distance:.2f} {angstrom} from its initial "
+                    f"position. This may incur small errors in the charge correction."
                 )
                 warnings.warn(message=offsite_warning, stacklevel=1)
             defect_index_sc_coords = poss_deflist[0][2]
@@ -534,10 +538,12 @@ class SingleDefectParser:
                         )
                     )
                 elif poss_deflist[0][1] > 1:
+                    site_matched_defect = poss_deflist[0] # pymatgen Neighbor object
                     offsite_warning = (
-                        f"Site-matching has determined {poss_deflist[0][2]} as the defect site, "
-                        f"located {poss_deflist[0][1]:.2f}) Angstrom from its initial position. "
-                        f"This may incur small errors in the charge correction."
+                        f"Site-matching has determined {site_matched_defect.species} at "
+                        f"{site_matched_defect.coords} as the defect site, located "
+                        f"{site_matched_defect.nn_distance:.2f} {angstrom} from its initial "
+                        f"position. This may incur small errors in the charge correction."
                     )
                     warnings.warn(message=offsite_warning, stacklevel=1)
 
