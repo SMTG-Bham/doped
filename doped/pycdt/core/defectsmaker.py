@@ -609,7 +609,7 @@ class ChargedDefectsStructures(object):
         sub_defs = []
 
         VG = VacancyGenerator( self.struct)
-        print("Setting up defects ...")
+        print("Setting up vacancies")
         for i, vac in enumerate(VG):
             vac_site = vac.site
             vac_symbol = vac.site.specie.symbol
@@ -638,6 +638,7 @@ class ChargedDefectsStructures(object):
                     'Possible_KV_Charge': c.charge})
 
         if antisites_flag:
+            print('Setting up antisites')
             for as_specie in set(struct_species):
                 SG = SubstitutionGenerator(self.struct, as_specie)
                 for i, sub in enumerate(SG):
@@ -736,47 +737,48 @@ class ChargedDefectsStructures(object):
                 raise RuntimeError("empty element list for interstitials")
 
             if intersites:
+                print('Setting up interstitials from intersites')
                 #manual specification of interstitials
                 for i, intersite in enumerate(intersites):
-                    for elt in inter_elems:
-                        name = "inter_{}_{}".format(i+1, elt)
+                    elt = intersite.specie
+                    name = "inter_{}_{}".format(i+1, elt)
 
-                        if intersite.lattice != self.struct.lattice:
-                            err_msg = "Lattice matching error occurs between provided interstitial and the bulk structure."
-                            if standardized:
-                                err_msg += "\nLikely because the standardized flag was used. Turn this flag off or reset " \
-                                           "your interstitial PeriodicSite to match the standardized form of the bulk structure."
-                            raise ValueError(err_msg)
-                        else:
-                            intersite_object = Interstitial( self.struct, intersite)
+                    if intersite.lattice != self.struct.lattice:
+                        err_msg = "Lattice matching error occurs between provided interstitial and the bulk structure."
+                        if standardized:
+                            err_msg += "\nLikely because the standardized flag was used. Turn this flag off or reset " \
+                                        "your interstitial PeriodicSite to match the standardized form of the bulk structure."
+                        raise ValueError(err_msg)
+                    else:
+                        intersite_object = Interstitial( self.struct, intersite)
 
-                        # create a trivial defect structure to find where supercell transformation moves the defect site
-                        struct_for_defect_site = Structure(intersite_object.bulk_structure.copy().lattice,
-                                                           [intersite_object.site.specie],
-                                                           [intersite_object.site.frac_coords],
-                                                           to_unit_cell=True, coords_are_cartesian=False)
-                        struct_for_defect_site.make_supercell(sc_scale)
-                        site_sc = struct_for_defect_site[0]
+                    # create a trivial defect structure to find where supercell transformation moves the defect site
+                    struct_for_defect_site = Structure(intersite_object.bulk_structure.copy().lattice,
+                                                        [intersite_object.site.specie],
+                                                        [intersite_object.site.frac_coords],
+                                                        to_unit_cell=True, coords_are_cartesian=False)
+                    struct_for_defect_site.make_supercell(sc_scale)
+                    site_sc = struct_for_defect_site[0]
 
-                        sc_with_inter = intersite_object.generate_defect_structure( sc_scale)
-                        charges_inter = self.defect_charger.get_charges(
-                                'interstitial', elt)
+                    sc_with_inter = intersite_object.generate_defect_structure( sc_scale)
+                    charges_inter = self.defect_charger.get_charges(
+                            'interstitial', elt)
 
-                        for c in SimpleChargeGenerator(intersite_object):
-                            interstitials.append({
-                                    'name': name,
-                                    'unique_site': intersite_object.site,
-                                    'bulk_supercell_site': site_sc,
-                                    'defect_type': 'interstitial',
-                                    'site_specie': intersite_object.site.specie.symbol,
-                                    'site_multiplicity': intersite_object.multiplicity,
-                                    'supercell': {'size': sc_scale,
-                                                  'structure': sc_with_inter},
-                                    'charges': charges_inter,
-                                    'Possible_KV_Charge':c.charge})
+                    for c in SimpleChargeGenerator(intersite_object):
+                        interstitials.append({
+                                'name': name,
+                                'unique_site': intersite_object.site,
+                                'bulk_supercell_site': site_sc,
+                                'defect_type': 'interstitial',
+                                'site_specie': intersite_object.site.specie.symbol,
+                                'site_multiplicity': intersite_object.multiplicity,
+                                'supercell': {'size': sc_scale,
+                                                'structure': sc_with_inter},
+                                'charges': charges_inter,
+                                'Possible_KV_Charge':c.charge})
 
             else:
-                print("Searching for Voronoi interstitial sites (this can take a while) ...")
+                print("Searching for Voronoi interstitial sites (this can take a while)")
                 for elt in inter_elems:
                     #TODO: Add ability to use other interstitial finding methods in pymatgen
                     IG = VoronoiInterstitialGenerator(self.struct, elt)
