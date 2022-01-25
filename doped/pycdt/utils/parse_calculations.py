@@ -87,7 +87,7 @@ def convert_cd_to_de(cd, b_cse):
 
 
 def get_vasprun(vasprun_path, **kwargs):
-    """ Read the vasprun.xml(.gz) file as a pymatgen Locpot object """
+    """Read the vasprun.xml(.gz) file as a pymatgen Locpot object"""
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore POTCAR warnings when loading vasprun.xml
@@ -106,7 +106,7 @@ def get_vasprun(vasprun_path, **kwargs):
 
 
 def get_locpot(locpot_path):
-    """ Read the LOCPOT(.gz) file as a pymatgen Locpot object """
+    """Read the LOCPOT(.gz) file as a pymatgen Locpot object"""
     if os.path.exists(locpot_path):
         locpot = Locpot.from_file(locpot_path)
     elif os.path.exists(locpot_path + ".gz"):
@@ -214,19 +214,25 @@ class SingleDefectParser:
 
         defect_index_sc_coords = None
         transformation_path = os.path.join(path_to_defect, "transformation.json")
-        if not os.path.exists(transformation_path): # try next folder up
+        if not os.path.exists(transformation_path):  # try next folder up
             orig_transformation_path = transformation_path
             transformation_path = os.path.join(
                 os.path.dirname(os.path.normpath(path_to_defect)), "transformation.json"
             )
             if os.path.exists(transformation_path):
-                print("No transformation file found at {}, but found one at {}. "
-                      "Using this for defect parsing.".format(orig_transformation_path, transformation_path))
+                print(
+                    "No transformation file found at {}, but found one at {}. "
+                    "Using this for defect parsing.".format(
+                        orig_transformation_path, transformation_path
+                    )
+                )
 
         if os.path.exists(transformation_path):
             tf = loadfn(transformation_path)
             site = tf["defect_supercell_site"]
-            if defect_type == "Vacancy": # should we also search the bulk structure for substitutions?
+            if (
+                defect_type == "Vacancy"
+            ):  # should we also search the bulk structure for substitutions?
                 poss_deflist = sorted(
                     bulk_sc_structure.get_sites_in_sphere(site.coords, 0.2, include_index=True),
                     key=lambda x: x[1],
@@ -235,7 +241,7 @@ class SingleDefectParser:
             else:
                 poss_deflist = sorted(
                     initial_defect_structure.get_sites_in_sphere(
-                        site.coords, 0.2, include_index=True
+                        site.coords, 2.5, include_index=True
                     ),
                     key=lambda x: x[1],
                 )
@@ -245,6 +251,13 @@ class SingleDefectParser:
                     "{} specified defect site {}, but could not find it in {}."
                     " Abandoning parsing".format(transformation_path, site, searched)
                 )
+            elif poss_deflist[0][1] > 1:
+                offsite_warning = (
+                    f"Site-matching has determined {poss_deflist[0][2]} as the defect site, "
+                    f"located {poss_deflist[0][1]:.2f}) Angstrom from its initial position. "
+                    f"This may incur small errors in the charge correction."
+                )
+                warnings.warn(message=offsite_warning, stacklevel=1)
             defect_index_sc_coords = poss_deflist[0][2]
         else:
             print(
@@ -509,7 +522,7 @@ class SingleDefectParser:
                 else:
                     poss_deflist = sorted(
                         initial_defect_structure.get_sites_in_sphere(
-                            self.defect_entry.site.coords, 0.2, include_index=True
+                            self.defect_entry.site.coords, 2.5, include_index=True
                         ),
                         key=lambda x: x[1],
                     )
@@ -517,8 +530,17 @@ class SingleDefectParser:
                 if not poss_deflist:
                     raise ValueError(
                         "Could not find defect site {} in {}, abandoning parsing".format(
-                            self.defect_entry.site, searched)
+                            self.defect_entry.site, searched
+                        )
                     )
+                elif poss_deflist[0][1] > 1:
+                    offsite_warning = (
+                        f"Site-matching has determined {poss_deflist[0][2]} as the defect site, "
+                        f"located {poss_deflist[0][1]:.2f}) Angstrom from its initial position. "
+                        f"This may incur small errors in the charge correction."
+                    )
+                    warnings.warn(message=offsite_warning, stacklevel=1)
+
                 defect_index_sc_coords = poss_deflist[0][2]
 
             else:
