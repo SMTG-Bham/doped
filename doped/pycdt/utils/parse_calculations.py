@@ -28,6 +28,11 @@ from doped.pycdt.core import chemical_potentials
 angstrom = "\u212B" # unicode symbol for angstrom to print in strings
 
 
+def custom_formatwarning(msg, *args, **kwargs):
+    f"""Reformat warnings to just print the warning message"""
+    return f"{msg}\n"
+warnings.formatwarning = custom_formatwarning
+
 def convert_cd_to_de(cd, b_cse):
     """
     As of pymatgen v2.0, ComputedDefect objects were deprecated in favor
@@ -261,7 +266,7 @@ class SingleDefectParser:
                     f"{site_matched_defect.nn_distance:.2f} {angstrom} from its initial "
                     f"position. This may incur small errors in the charge correction."
                 )
-                warnings.warn(message=offsite_warning, stacklevel=1)
+                warnings.warn(message=offsite_warning)
             defect_index_sc_coords = poss_deflist[0][2]
         else:
             print(
@@ -545,7 +550,7 @@ class SingleDefectParser:
                         f"{site_matched_defect.nn_distance:.2f} {angstrom} from its initial "
                         f"position. This may incur small errors in the charge correction."
                     )
-                    warnings.warn(message=offsite_warning, stacklevel=1)
+                    warnings.warn(message=offsite_warning)
 
                 defect_index_sc_coords = poss_deflist[0][2]
 
@@ -785,7 +790,7 @@ You can also change the DefectCompatibility() tolerance settings via the `compat
 in `SingleDefectParser.from_paths()`.
 Watch out that if `num_hole_vbm` or `num_elec_cbm` are greater than the free_chg_cutoff (default
 2.1), charge correction will not be applied."""
-            warnings.warn(message=delocalized_warning, stacklevel=1)
+            warnings.warn(message=delocalized_warning)
 
 
 class PostProcess:
