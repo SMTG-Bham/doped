@@ -31,6 +31,7 @@ these to predict defect charge states (so people can see if something off etc.);
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
+- Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
 
 ## Post-processing / analysis / plotting
 
@@ -49,6 +50,8 @@ these to predict defect charge states (so people can see if something off etc.);
 - Brouwer diagrams
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
+- Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
+- Update charge `kumagai_loader` and `freysoldt_loader` to use _relaxed_ defect site rather than _initial_ defect site for charge corrections (negligible error in most cases), and update `offsite_warning`.
 
 ## Housekeeping
 
