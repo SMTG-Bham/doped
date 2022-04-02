@@ -3,7 +3,6 @@ Improved version of the DefectPhaseDiagram
 """
 
 import logging
-from functools import lru_cache
 
 import numpy as np
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram, HalfspaceIntersection
@@ -12,11 +11,37 @@ from pymatgen.analysis.structure_matcher import PointDefectComparator
 logger = logging.getLogger(__name__)
 
 class PointDefectComparatorWithCache(PointDefectComparator):
+    """
+    Comparator for point defects, but keep the results as cached.
     
-    @lru_cache(maxsize=100000)
-    def are_equal(self, d1, d2):
-        return super().are_equal(d1, d2)
+    Hash is computed based on the defects JSON representation. The calculated values are
+    stored as attributes. 
+    It is assumed that the defects compared will not be changed afterwards for this to work
+    properly.
 
+    Caching the results makes creating the phase diagram objects much faster, as the matching
+    of equivalent defects is the most time-consuming part..
+    """
+    cache = {}    
+
+    def are_equal(self, d1, d2):
+        """Check if two entries are equivalent"""
+        if not (hasattr(d1, '_hashval') and hasattr(d2, '_hashval')):
+            d1._hashval = hash(d1.to_json())
+            d2._hashval = hash(d2.to_json())
+
+        hashvalue = d1._hashval + d2._hashval
+        val = self.cache.get(hashvalue)
+        if val is not None:
+            return val
+
+        out = super().are_equal(d1, d2)
+        self.cache[hashvalue] = out
+        return out
+
+PDC = PointDefectComparatorWithCache(
+    check_charge=False, check_primitive_cell=True, check_lattice_scale=False
+)
 
 class BetterDefectPhaseDiagram(DefectPhaseDiagram):
     """
@@ -59,7 +84,7 @@ class BetterDefectPhaseDiagram(DefectPhaseDiagram):
         transition_level_map = {}
 
         # Grouping by defect types
-        for defects, index_list in similar_defects(tuple(self.entries)):
+        for defects, index_list in similar_defects(self.entries):
             defects = list(defects)
 
             # prepping coefficient matrix for half-space intersection
@@ -188,30 +213,34 @@ class BetterDefectPhaseDiagram(DefectPhaseDiagram):
         }
 
 
-@lru_cache(maxsize=1000)
 def similar_defects(entryset):
     """
     Used for grouping similar defects of different charges
     Can distinguish identical defects even if they are not in same position
     """
-    pdc = PointDefectComparator(
-        check_charge=False, check_primitive_cell=True, check_lattice_scale=False
-    )
     grp_def_sets = []
     grp_def_indices = []
+
+    def copy_with_hash(entry):
+        """copy the entry but keep the cached hash value from the parent"""
+        out = entry.copy()
+        if hasattr(entry.defect, '_hashval'):
+            out.defect._hashval = entry.defect._hashval
+        return out
+
     for ent_ind, ent in enumerate(entryset):
         # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
         # this is currently most time intensive part of DefectPhaseDiagram
         matched_ind = None
         for grp_ind, defgrp in enumerate(grp_def_sets):
-            if pdc.are_equal(ent.defect, defgrp[0].defect):
+            if PDC.are_equal(ent.defect, defgrp[0].defect):
                 matched_ind = grp_ind
                 break
         if matched_ind is not None:
-            grp_def_sets[matched_ind].append(ent.copy())
+            grp_def_sets[matched_ind].append(copy_with_hash(ent))
             grp_def_indices[matched_ind].append(ent_ind)
         else:
-            grp_def_sets.append([ent.copy()])
+            grp_def_sets.append([copy_with_hash(ent)])
             grp_def_indices.append([ent_ind])
 
     return zip(grp_def_sets, grp_def_indices)
