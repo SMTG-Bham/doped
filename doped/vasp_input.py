@@ -264,13 +264,12 @@ def vasp_gam_files(
         {"comment": "Kpoints from doped.vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspgamincar = Incar.from_dict(vaspgamincardict)
+    vaspgamincar.write_file(vaspgaminputdir + "INCAR")
 
     vaspgamposcar = defect_relax_set.poscar
     if poscar_comment:
         vaspgamposcar.comment = poscar_comment
     vaspgamposcar.write_file(vaspgaminputdir + "POSCAR")
-    with zopen(vaspgaminputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspgamincar.get_string())
     vaspgamkpts.write_file(vaspgaminputdir + "KPOINTS")
 
 
@@ -408,8 +407,7 @@ def vasp_std_files(
     vaspstdkpts.write_file(vaspstdinputdir + "KPOINTS")
 
     vaspstdincar = Incar.from_dict(vaspstdincardict)
-    with zopen(vaspstdinputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspstdincar.get_string())
+    vaspstdincar.write_file(vaspstdinputdir + "INCAR")
 
 
 def vasp_ncl_files(
@@ -551,9 +549,7 @@ def vasp_ncl_files(
     vasp_ncl_kpts.write_file(vaspnclinputdir + "KPOINTS")
 
     vaspnclincar = Incar.from_dict(vaspnclincardict)
-
-    with zopen(vaspnclinputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspnclincar.get_string())
+    vaspnclincar.write_file(vaspnclinputdir + "INCAR")
 
 
 def is_metal(element: "pymatgen.core.periodic_table.Element") -> bool:
@@ -666,11 +662,11 @@ def vasp_converge_files(
         {"comment": "Kpoints from vasp_gam_files", "generation_style": "Gamma"}
     )
     vaspconvergeincar = Incar.from_dict(vaspconvergeincardict)
-
+    vaspconvergeincar.write_file(vaspconvergeinputdir + "INCAR")
+    
     vaspconvergeposcar = Poscar(structure)
     vaspconvergeposcar.write_file(vaspconvergeinputdir + "POSCAR")
-    with zopen(vaspconvergeinputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspconvergeincar.get_string())
+  
     vaspconvergekpts.write_file(vaspconvergeinputdir + "KPOINTS")
     # generate CONFIG file
     if config:
