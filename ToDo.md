@@ -52,6 +52,7 @@ these to predict defect charge states (so people can see if something off etc.);
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Update charge `kumagai_loader` and `freysoldt_loader` to use _relaxed_ defect site rather than _initial_ defect site for charge corrections (negligible error in most cases), and update `offsite_warning`.
+- Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 
 ## Housekeeping
 
