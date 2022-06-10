@@ -303,10 +303,17 @@ def formation_energy_plot(
         defect_phase_diagram (DefectPhaseDiagram):
              DefectPhaseDiagram object (likely created from
              dope_stuff.dpd_from_parsed_defect_dict)
-        chempots (dict):
-            Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
-            specified, chemical potentials are not included in the formation energy calculation
+        chempot_limits (dict):
+            This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
+            Energy} (giving a single formation energy table) or a dictionary including the
+            key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
+            by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). If
+            not specified, chemical potentials are not included in the formation energy calculation
             (all set to zero energy).
+        pd_facets (list):
+            A list facet(s) / chemical potential limit(s) for which to print the defect formation
+            energy tables. If not specified, will print formation energy tables for each facet in
+            the phase diagram. (default: None)
         fermi_level (float):
             Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
             at the VBM))
@@ -333,12 +340,16 @@ def formation_energy_plot(
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
             elt_refs = chempot_limits["facets_wrt_elt_refs"][facet]
-            if not title:
-                title = facet
-            if not filename:
-                filename = title + "_" + facet + ".pdf"
+            if title:
+                plot_title = title
+            else:
+                plot_title = facet
+            if filename:
+                plot_filename = filename
+            else:
+                plot_filename = plot_title + "_" + facet + ".pdf"
 
-            return _aide_pmg_plot(
+            plot = _aide_pmg_plot(
                 defect_phase_diagram,
                 mu_elts=mu_elts,
                 elt_refs=elt_refs,
@@ -350,16 +361,19 @@ def formation_energy_plot(
                 lg_fontsize=lg_fontsize,
                 lg_position=lg_position,
                 fermi_level=fermi_level,
-                title=title,
+                title=plot_title,
                 saved=saved,
                 colormap=colormap,
                 minus_symbol=minus_symbol,
                 frameon=frameon,
                 chempot_table=chempot_table,
                 auto_labels=auto_labels,
-                filename=filename,
+                filename=plot_filename,
                 emphasis=emphasis,
             )
+
+        return plot
+
     else:  # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
         return _aide_pmg_plot(
             defect_phase_diagram,
