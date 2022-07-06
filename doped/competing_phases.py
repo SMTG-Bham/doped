@@ -12,6 +12,9 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 import json 
 import pandas as pd
 
+# globally ignore this shit 
+warnings.filterwarnings("ignore", category=UnknownPotcarWarning)  
+warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields") 
 class CompetingPhases(): 
     def __init__(self, system, e_above_hull=0.02): 
         """
