@@ -139,7 +139,7 @@ class CompetingPhases():
                 if 'ISPIN' not in uis:
                     uis['ISPIN'] = 2
                 
-            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_nonmetals}, user_incar_settings=uis)
+            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_nonmetals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings)
                 
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname)
@@ -157,7 +157,7 @@ class CompetingPhases():
                 if 'ISPIN' not in uis:
                     uis['ISPIN'] = 2
                 
-            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_metals}, user_incar_settings=uis)     
+            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_metals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings)     
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname)
 
@@ -179,7 +179,7 @@ class CompetingPhases():
                     uis['NUPDOWN'] = 2
             
             # set up for 2x2x2 kpoints automatically     
-            dis = DictSet(e['structure'], cd, user_potcar_functional=potcar_functional, user_kpoints_settings=Kpoints(kpts=[[2,2,2]]), user_incar_settings=uis)
+            dis = DictSet(e['structure'], cd, user_potcar_functional=potcar_functional, user_kpoints_settings=Kpoints(kpts=[[2,2,2]]), user_incar_settings=uis, user_potcar_settings=user_potcar_settings)
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname) 
 
@@ -328,51 +328,16 @@ class CompetingPhasesAnalyzer():
         else: 
             raise ValueError('supplied csv does not contain the correct headers, cannot read in the data')
 
-    def calculate_chempots(self, include_extrinsic=False, extrinsic_elements=None, csv_fname='chempot_limits.csv'): 
+    def calculate_chempots(self, include_extrinsic=False, extrinsic_element=None, csv_fname='chempot_limits.csv'): 
         """
-        
-        include_extrinsic (bool): whether to mix in extrinsic species in the phase diagram (need to specify elemental in that case, currently doesnt work)
-        extrinsic_elements (list): symbols of the extrinsic elements
+        this assumes you're 
+        include_extrinsic (bool): whether to mix in extrinsic species in the phase diagram (need to specify which element it is in that case, this currently doesnt work)
+        extrinsic_elements (str): symbol of the extrinsic element
         csv_fname (str): name of csv file to which chempot limits are saved
         """ 
-
-        self.pd_entries = []
-        for d in self.data: 
-            e = PDEntry(d['formula'], d['energy_per_fu'])
-            self.pd_entries.append(e)
-
-        self.phase_diagram = PhaseDiagram(self.pd_entries, map(Element, self.elemental))
-        chem_lims = self.phase_diagram.get_all_chempots(self.bulk_composition)
-        chem_limits = {
-            'facets': chem_lims, 
-            'elemental_refs': {
-                elt: ent.energy_per_atom for elt, ent in self.phase_diagram.el_refs.items()
-            }, 
-            'facets_wrt_el_refs': {}
-        }
-        # do the shenanigan to relate the facets to the elemental energies
-        for facet, chempot_dict in chem_limits['facets'].items(): 
-            relative_chempot_dict = copy.deepcopy(chempot_dict)
-            for e in relative_chempot_dict.keys(): 
-                relative_chempot_dict[e] -= chem_limits['elemental_refs'][e]
-            chem_limits['facets_wrt_el_refs'].update({facet: relative_chempot_dict})
-        
-        # get chemical potentials as pandas dataframe
-        self.chemical_potentials = [] 
-        for k, v in chem_limits['facets_wrt_el_refs'].items(): 
-            lst = []
-            columns = []
-            for k, v in v.items(): 
-                lst.append(v)
-                columns.append(str(k))
-            self.chemical_potentials.append(lst) 
-
-        df = pd.DataFrame(self.chemical_potentials, columns=columns)
-        df.to_csv(csv_fname, index=False)
-        print('calculated chemical potential limits: \n')
-        print(df)
         
         if include_extrinsic: 
+            print('extrinsic competing phases are not currently supported')
             # 1. work out the formation energies of all dopant competing
             #    phases using the elemental energies
             # 2. for each of the chempots already calculated work out what 
@@ -384,10 +349,47 @@ class CompetingPhasesAnalyzer():
             # 4. update the chemical potential limits table to reflect this?
             pass
 
+        else: 
+            self.pd_entries = []
+            for d in self.data: 
+                e = PDEntry(d['formula'], d['energy_per_fu'])
+                self.pd_entries.append(e)
+
+            self.phase_diagram = PhaseDiagram(self.pd_entries, map(Element, self.elemental))
+            chem_lims = self.phase_diagram.get_all_chempots(self.bulk_composition)
+            chem_limits = {
+                'facets': chem_lims, 
+                'elemental_refs': {
+                    elt: ent.energy_per_atom for elt, ent in self.phase_diagram.el_refs.items()
+                }, 
+                'facets_wrt_el_refs': {}
+            }
+            # do the shenanigan to relate the facets to the elemental energies
+            for facet, chempot_dict in chem_limits['facets'].items(): 
+                relative_chempot_dict = copy.deepcopy(chempot_dict)
+                for e in relative_chempot_dict.keys(): 
+                    relative_chempot_dict[e] -= chem_limits['elemental_refs'][e]
+                chem_limits['facets_wrt_el_refs'].update({facet: relative_chempot_dict})
+            
+            # get chemical potentials as pandas dataframe
+            self.chemical_potentials = [] 
+            for k, v in chem_limits['facets_wrt_el_refs'].items(): 
+                lst = []
+                columns = []
+                for k, v in v.items(): 
+                    lst.append(v)
+                    columns.append(str(k))
+                self.chemical_potentials.append(lst) 
+
+            df = pd.DataFrame(self.chemical_potentials, columns=columns)
+            df.to_csv(csv_fname, index=False)
+            print('calculated chemical potential limits: \n')
+            print(df)
+
 
     def cplap_input(self, dependent_variable=None): 
         """ for completeness' sake, automatically saves to  input.dat
-        dependent variable (str) gotta pick one of the variables as dependent, the first element is chosen from the compositoin if this isnt set
+        dependent variable (str) gotta pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
         """
         with open('input.dat', 'w') as f:
             with contextlib.redirect_stdout(f):
