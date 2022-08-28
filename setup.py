@@ -27,8 +27,8 @@ setup(
         "monty>=3.0.2",
         "tabulate",
         "ase",
+        "shakenbreak",
     ],
-    # That I know of...
     package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["default_POTCARs.yaml"]},
     # Standard PyCDT settings, will probably delete soon
     author="Seán Kavanagh",
