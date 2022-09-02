@@ -659,7 +659,7 @@ def vasp_converge_files(
          if "POTCAR_FUNCTIONAL" in potcar_settings.keys():
              potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
          if "POTCAR" in potcar_settings.keys():
-             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR") 
+             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR")) 
     vaspconvergeinput = DictSet(structure, config_dict=potcar_dict)
     vaspconvergeinput.potcar.write_file(vaspconvergeinputdir + "POTCAR")
 
