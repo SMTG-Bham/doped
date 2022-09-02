@@ -53,6 +53,7 @@
 - Update charge `kumagai_loader` and `freysoldt_loader` to use _relaxed_ defect site rather than _initial_ defect site for charge corrections (negligible error in most cases), and update `offsite_warning`.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Used `monty` JSON encoding rather than `pickle` (like `pymatgen`) as less senstitive to environment and human-readable.
+- Improved/more robust site-matching, capable of dealing with distorted structures. Automatically adjust site-matching tolerances if defect not initially identified. Try build in stoichiometry consideration as a hint for what defect site it should be looking for?
 
 ## Housekeeping
 
