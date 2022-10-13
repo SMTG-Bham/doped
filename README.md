@@ -6,8 +6,8 @@ See [this link](https://www.sciencedirect.com/science/article/pii/S0010465518300
 Defect formation energy plots are templated from [AIDE](https://github.com/SMTG-UCL/aide) and follow the aesthetics
 philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dynamic duo Adam Jackson and Alex Ganose.
 
-This code is still being customised, so in the spirit of efficiency 
-and avoiding redundant work, there are example 
+This code is still being customised, so in the spirit of efficiency
+and avoiding redundant work, there are example
 Jupyter notebooks (the `.ipynb` files) provided to show the code functionality and usage.
 (Better to open in Jupyter, after installing, rather than with GitHub preview).
 
@@ -44,6 +44,15 @@ Within your `VASP pseudopotential top directory`, you should have a folder named
 ```
 (For pulling structures and comparing properties with the Materials Project database).
 
+
+## `ShakeNBreak`
+As shown in the example notebook, it is highly recommended to use the `[ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/)` approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://arxiv.org/abs/2207.09862), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-UCL/doped/blob/master/dope_Example_Notebook.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
+
+Summary GIF:
+[](files/SnB_Supercell_Schematic_PES_2sec_Compressed.gif)
+
+`SnB` CLI Usage:
+[](files/SnB_CLI.gif)
 
 ## Word of Caution
 There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
