@@ -891,13 +891,24 @@ class UserChemPotInputGenerator(object):
                         + "_EaH="
                         + f"{pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[1]:.3g}"
                     )
+                try:
+                    sg_symbol = localstruct.get_space_group_info()[0]
+                except TypeError:
+                    try:
+                        sg_symbol = localstruct.get_space_group_info(symprec=1e-1)[0]
+                    except:
+                        try:
+                            sg_symbol = localstruct.get_space_group_info(symprec=1e0)[0]
+                        except:
+                            sg_symbol = None
+
                 structures_to_setup[name] = {
                     "Structure": localstruct,
                     "Energy above Hull": pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[
                         1
                     ],
                     "MP Entry ID": entry.entry_id,
-                    "Space Group": localstruct.get_space_group_info()[0],
+                    "Space Group": sg_symbol,
                 }
 
         # Set up structure files locally if desired
