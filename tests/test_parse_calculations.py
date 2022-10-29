@@ -6,7 +6,9 @@ from doped.pycdt.utils import parse_calculations
 
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
-        self.EXAMPLE_DIR = os.path.join(os.path.dirname(__file__), "../Examples")
+        # get module path
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.EXAMPLE_DIR = os.path.join(self.module_path, "../Examples")
         self.BULK_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
         self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
@@ -16,7 +18,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
         for i in os.listdir(self.EXAMPLE_DIR):
             if "vac_1_Cd" in i:  # loop folders and parse those with "vac_1_Cd" in name
-                defect_file_path = f"../Examples/{i}/vasp_ncl"
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -80,7 +82,7 @@ class DopedParsingTestCase(unittest.TestCase):
         """Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV) correction"""
         for i in os.listdir(self.EXAMPLE_DIR):
             if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                defect_file_path = f"../Examples/{i}/vasp_ncl"
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -113,7 +115,7 @@ class DopedParsingTestCase(unittest.TestCase):
         """Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction"""
         for i in os.listdir(self.EXAMPLE_DIR):
             if "as_1_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                defect_file_path = f"../Examples/{i}/vasp_ncl"
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
