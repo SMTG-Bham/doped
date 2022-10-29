@@ -163,11 +163,14 @@ def formation_energy_table(
     Returns:
         pandas DataFrame or list of DataFrames
     """
-    if chempot_limits is None: chempot_limits = {}
+    if chempot_limits is None:
+        chempot_limits = {}
     if "facets" in chempot_limits:
         list_of_dfs = []
         if not pd_facets:
-            pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
+            pd_facets = chempot_limits[
+                "facets"
+            ].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
         for facet in pd_facets:
             bold_print("Facet: " + unicodeify(facet))
@@ -226,10 +229,15 @@ def single_formation_energy_table(
     """
     header = ["Defect", "Charge", "Defect Path"]
     table = []
-    if hide_cols is None: hide_cols = []
+    if hide_cols is None:
+        hide_cols = []
 
     for defect_entry in defect_phase_diagram.entries:
-        row = [defect_entry.name, defect_entry.charge, defect_entry.parameters["defect_path"]]
+        row = [
+            defect_entry.name,
+            defect_entry.charge,
+            defect_entry.parameters["defect_path"],
+        ]
         if "Uncorrected Energy" not in hide_cols:
             header += ["Uncorrected Energy"]
             row += [f"{defect_entry.uncorrected_energy:.2f} eV"]
@@ -247,7 +255,13 @@ def single_formation_energy_table(
         table.append(row)
     table = sorted(table, key=itemgetter(0, 1))
     print(
-        tabulate(table, headers=header, tablefmt="fancy_grid", stralign="left", numalign="left"),
+        tabulate(
+            table,
+            headers=header,
+            tablefmt="fancy_grid",
+            stralign="left",
+            numalign="left",
+        ),
         "\n",
     )
 
@@ -267,8 +281,14 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 
     sorted_df = pd.DataFrame(
         table,
-        columns=["Defect", "Charge", "Defect Path", "Uncorrected Energy", "Corrected Energy",
-                 "Formation Energy"],
+        columns=[
+            "Defect",
+            "Charge",
+            "Defect Path",
+            "Uncorrected Energy",
+            "Corrected Energy",
+            "Formation Energy",
+        ],
     )
     sorted_df = sorted_df.sort_values("Formation Energy")
     return sorted_df
@@ -335,7 +355,9 @@ def formation_energy_plot(
         a matplotlib object"""
     if chempot_limits and "facets" in chempot_limits:
         if not pd_facets:
-            pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
+            pd_facets = chempot_limits[
+                "facets"
+            ].keys()  # Phase diagram facets to use for chemical
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
@@ -448,7 +470,9 @@ def _aide_pmg_plot(
     if xlim is None:
         xlim = (-0.4, defect_phase_diagram.band_gap + 0.4)
     xy = {}
-    all_lines_xy = {}  # For emphasis plots with faded grey E_form lines for all charge states
+    all_lines_xy = (
+        {}
+    )  # For emphasis plots with faded grey E_form lines for all charge states
     lower_cap = -100.0
     upper_cap = 100.0
     y_range_vals = []  # for finding max/min values on y-axis based on x-limits
@@ -461,7 +485,9 @@ def _aide_pmg_plot(
                 for x_extrem in [lower_cap, upper_cap]:
                     all_lines_xy[defnom][0].append(x_extrem)
                     all_lines_xy[defnom][1].append(
-                        chg_ent.formation_energy(chemical_potentials=mu_elts, fermi_level=x_extrem)
+                        chg_ent.formation_energy(
+                            chemical_potentials=mu_elts, fermi_level=x_extrem
+                        )
                     )
                 # for x_window in xlim:
                 #    y_range_vals.append(
@@ -515,11 +541,15 @@ def _aide_pmg_plot(
             for x_extrem in [lower_cap, upper_cap]:
                 xy[defnom][0].append(x_extrem)
                 xy[defnom][1].append(
-                    chg_ent.formation_energy(chemical_potentials=mu_elts, fermi_level=x_extrem)
+                    chg_ent.formation_energy(
+                        chemical_potentials=mu_elts, fermi_level=x_extrem
+                    )
                 )
             for x_window in xlim:
                 y_range_vals.append(
-                    chg_ent.formation_energy(chemical_potentials=mu_elts, fermi_level=x_window)
+                    chg_ent.formation_energy(
+                        chemical_potentials=mu_elts, fermi_level=x_window
+                    )
                 )
 
     cmap = cm.get_cmap(colormap)
@@ -565,7 +595,9 @@ some defects will have the same line colour). Recommended to change/set colormap
         x_trans, y_trans = [], []
         tl_labels = []
         tl_label_type = []
-        for x_val, chargeset in defect_phase_diagram.transition_level_map[defnom].items():
+        for x_val, chargeset in defect_phase_diagram.transition_level_map[
+            defnom
+        ].items():
             x_trans.append(x_val)
             for chg_ent in defect_phase_diagram.stable_entries[defnom]:
                 if chg_ent.charge == chargeset[0]:
@@ -577,7 +609,9 @@ some defects will have the same line colour). Recommended to change/set colormap
                 f"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
                 f"{min(chargeset):{'+' if min(chargeset) else ''}})"
             )
-            tl_label_type.append("start_positive" if max(chargeset) > 0 else "end_negative")
+            tl_label_type.append(
+                "start_positive" if max(chargeset) > 0 else "end_negative"
+            )
         if x_trans:
             ax.plot(
                 x_trans,
@@ -591,7 +625,9 @@ some defects will have the same line colour). Recommended to change/set colormap
             )
             if auto_labels:
                 for index, coords in enumerate(zip(x_trans, y_trans)):
-                    text_alignment = "right" if tl_label_type[index] == "start_positive" else "left"
+                    text_alignment = (
+                        "right" if tl_label_type[index] == "start_positive" else "left"
+                    )
                     ax.annotate(
                         tl_labels[index],  # this is the text
                         coords,  # this is the point to label
@@ -720,10 +756,15 @@ some defects will have the same line colour). Recommended to change/set colormap
 
     if title and chempot_table:
         ax.set_title(
-            latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
+            latexify(title),
+            size=1.2 * ax_fontsize * width,
+            pad=28,
+            fontdict={"fontweight": "bold"},
         )
     elif title:
-        ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
+        ax.set_title(
+            latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"}
+        )
     if saved or filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
@@ -747,7 +788,8 @@ def _plot_chemical_potential_table(
     chemical_potentials = elt_refs
 
     labels = [""] + [
-        "$\mathregular{{\mu_{{{}}}}}$,".format(s) for s in sorted(chemical_potentials.keys())
+        "$\mathregular{{\mu_{{{}}}}}$,".format(s)
+        for s in sorted(chemical_potentials.keys())
     ]
     # add if else here, to use 'facets' if no wrt_elts, and don't say wrt elt_refs etc.
     labels[1] = "(" + labels[1]
@@ -756,7 +798,9 @@ def _plot_chemical_potential_table(
     text = [[chempot_label]]
 
     for el in sorted(chemical_potentials.keys()):
-        text[0].append("{:.2f},".format(chemical_potentials[el]).replace("-", minus_symbol))
+        text[0].append(
+            "{:.2f},".format(chemical_potentials[el]).replace("-", minus_symbol)
+        )
 
     text[0][1] = "(" + text[0][1]
     text[0][-1] = text[0][-1][:-1] + ")"
@@ -765,7 +809,9 @@ def _plot_chemical_potential_table(
     else:
         text[0] = ["(from calculations)"] + text[0] + ["  [eV]"]
     widths = [0.1] + [0.9 / len(chemical_potentials)] * (len(chemical_potentials) + 2)
-    tab = ax.table(cellText=text, colLabels=labels, colWidths=widths, loc="top", cellLoc=loc)
+    tab = ax.table(
+        cellText=text, colLabels=labels, colWidths=widths, loc="top", cellLoc=loc
+    )
     tab.auto_set_font_size(False)
     tab.set_fontsize(fontsize)
 
@@ -784,7 +830,11 @@ class _CustomScalarFormatter(ticker.ScalarFormatter):
         minus_symbol (str): Symbol used in place of hyphen"""
 
     def __init__(
-        self, useOffset=None, useMathText=None, useLocale=None, minus_symbol="\N{MINUS SIGN}"
+        self,
+        useOffset=None,
+        useMathText=None,
+        useLocale=None,
+        minus_symbol="\N{MINUS SIGN}",
     ):
         self.minus_symbol = minus_symbol
         super(_CustomScalarFormatter, self).__init__(
@@ -805,7 +855,9 @@ def pretty_axis(ax=None, fonts=None):
         ax = plt.gca()
 
     ax.tick_params(width=linewidth, size=ticksize)
-    ax.tick_params(which="major", size=ticksize, width=linewidth, labelsize=ticklabelsize, pad=3)
+    ax.tick_params(
+        which="major", size=ticksize, width=linewidth, labelsize=ticklabelsize, pad=3
+    )
     ax.tick_params(which="minor", size=ticksize / 2, width=linewidth)
 
     ax.set_title(ax.get_title(), size=9.5)
@@ -842,7 +894,9 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
+    random_defect_entry = list(defect_dict.values())[
+        0
+    ]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
@@ -855,7 +909,9 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
             potalign = defect_entry.parameters["freysoldt_meta"][
                 "freysoldt_potential_alignment_correction"
             ]
-            makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge)]
+            makove_payne_pc_correction = lz_image_charge_corrections[
+                abs(defect_entry.charge)
+            ]
             defect_entry.parameters.update(
                 {
                     "Lany-Zunger_Corrections": {
@@ -890,7 +946,9 @@ def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
+    random_defect_entry = list(defect_dict.values())[
+        0
+    ]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
@@ -903,7 +961,9 @@ def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
             potalign = defect_entry.parameters["kumagai_meta"][
                 "kumagai_potential_alignment_correction"
             ]
-            makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge)]
+            makove_payne_pc_correction = lz_image_charge_corrections[
+                abs(defect_entry.charge)
+            ]
             defect_entry.parameters.update(
                 {
                     "Lany-Zunger_Corrections": {
@@ -947,7 +1007,9 @@ def all_lines_formation_energy_plot(
 ):
     if chempot_limits and "facets" in chempot_limits:
         if not pd_facets:
-            pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
+            pd_facets = chempot_limits[
+                "facets"
+            ].keys()  # Phase diagram facets to use for chemical
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
@@ -1075,7 +1137,11 @@ def _all_lines_aide_pmg_plot(
             base = defnom
             sub_str = ""
         def_name = (
-            base + sub_str + r"$^{" + f"{int(flds[-1]):{'+' if int(flds[-1]) > 0 else ''}}" + r"}$"
+            base
+            + sub_str
+            + r"$^{"
+            + f"{int(flds[-1]):{'+' if int(flds[-1]) > 0 else ''}}"
+            + r"}$"
         )
 
         # add subscript labels for different configurations of same defect species
@@ -1096,11 +1162,15 @@ def _all_lines_aide_pmg_plot(
         for x_extrem in [lower_cap, upper_cap]:
             xy[def_name][0].append(x_extrem)
             xy[def_name][1].append(
-                chg_ent.formation_energy(chemical_potentials=mu_elts, fermi_level=x_extrem)
+                chg_ent.formation_energy(
+                    chemical_potentials=mu_elts, fermi_level=x_extrem
+                )
             )
         for x_window in xlim:
             y_range_vals.append(
-                chg_ent.formation_energy(chemical_potentials=mu_elts, fermi_level=x_window)
+                chg_ent.formation_energy(
+                    chemical_potentials=mu_elts, fermi_level=x_window
+                )
             )
 
     cmap = cm.get_cmap(colormap)
@@ -1216,10 +1286,15 @@ some defects will have the same line colour). Recommended to change/set colormap
 
     if title and chempot_table:
         ax.set_title(
-            latexify(title), size=1.2 * ax_fontsize * width, pad=28, fontdict={"fontweight": "bold"}
+            latexify(title),
+            size=1.2 * ax_fontsize * width,
+            pad=28,
+            fontdict={"fontweight": "bold"},
         )
     elif title:
-        ax.set_title(latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"})
+        ax.set_title(
+            latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"}
+        )
     if saved or filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
