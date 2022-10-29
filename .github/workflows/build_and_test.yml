@@ -3,11 +3,11 @@ name: Build and test package
 on:
   pull_request:
     branches:
-       - main
+       - master
        - develop
   push:
     branches:
-      - main
+      - master
       - develop
   workflow_dispatch:
 
