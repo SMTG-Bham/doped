@@ -66,7 +66,10 @@ class DopedParsingTestCase(unittest.TestCase):
             ),
         ]:
             self.assertAlmostEqual(parsed_vac_Cd_dict[name].energy, energy, places=3)
-            self.assertDictEqual(parsed_vac_Cd_dict[name].corrections, correction_dict)
+            for k in correction_dict:
+                self.assertAlmostEqual(
+                    parsed_vac_Cd_dict[name].corrections[k], correction_dict[k], places=3
+                )
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
             if name == "vac_1_Cd_0":
@@ -104,7 +107,10 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        self.assertDictEqual(te_i_2_ent.corrections, correction_dict)
+        for k in correction_dict:
+            self.assertAlmostEqual(
+                te_i_2_ent.corrections[k], correction_dict[k], places=3
+            )
         # assert auto-determined interstital site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
@@ -137,7 +143,10 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        self.assertDictEqual(te_cd_1_ent.corrections, correction_dict)
+        for k in correction_dict:
+            self.assertAlmostEqual(
+                te_cd_1_ent.corrections[k], correction_dict[k], places=3
+            )
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
