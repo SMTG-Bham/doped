@@ -124,8 +124,8 @@ def get_vasprun(vasprun_path, **kwargs):
         vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
     else:
         raise FileNotFoundError(
-            f"""I can't find a vasprun.xml(.gz) at {vasprun_path}(.gz).
-                   You sure there's one there pal? I need it to parse the calculation results"""
+            f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for parsing defect 
+            calculations."""
         )
     return vasprun
 
@@ -138,10 +138,24 @@ def get_locpot(locpot_path):
         locpot = Locpot.from_file(locpot_path + ".gz")
     else:
         raise FileNotFoundError(
-            f"""I can't find a LOCPOT(.gz) at {locpot_path}(.gz).
-                   You sure there's one there pal? I need it to get the Freysoldt correction"""
+            f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for calculating the 
+            Freysoldt (FNV) image charge corrections."""
         )
     return locpot
+
+
+def get_outcar(outcar_path):
+    """Read the OUTCAR(.gz) file as a pymatgen Outcar object"""
+    if os.path.exists(outcar_path):
+        outcar = Outcar(outcar_path)
+    elif os.path.exists(outcar_path + ".gz"):
+        outcar = Outcar(outcar_path + ".gz")
+    else:
+        raise FileNotFoundError(
+            f"""OUTCAR(.gz) not found at {outcar_path}(.gz). Needed for calculating the Kumagai (
+            eFNV) image charge corrections."""
+        )
+    return outcar
 
 
 def get_defect_type_and_composition_diff(bulk, defect):
@@ -608,10 +622,7 @@ class SingleDefectParser:
             return None
 
         if not bulk_outcar:
-            bulk_outcar_path = os.path.join(
-                self.defect_entry.parameters["bulk_path"], "OUTCAR"
-            )
-            bulk_outcar = Outcar(bulk_outcar_path)
+            bulk_outcar = get_outcar(bulk_outcar_path)
 
         def_outcar_path = os.path.join(
             self.defect_entry.parameters["defect_path"], "OUTCAR"
