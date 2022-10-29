@@ -36,7 +36,7 @@ angstrom = "\u212B"  # unicode symbol for angstrom to print in strings
 
 
 def custom_formatwarning(msg, *args, **kwargs):
-    f"""Reformat warnings to just print the warning message"""
+    """Reformat warnings to just print the warning message"""
     return f"{msg}\n"
 
 
@@ -56,9 +56,9 @@ def convert_cd_to_de(cd, b_cse):
         associated with the ComputedDefect.
     :return: de (DefectEntry): Resulting DefectEntry object
     """
-    if type(cd) != dict:
+    if isinstance(cd, dict):
         cd = cd.as_dict()
-    if type(b_cse) != dict:
+    if isinstance(b_cse, dict):
         b_cse = b_cse.as_dict()
 
     bulk_sc_structure = Structure.from_dict(b_cse["structure"])
@@ -92,7 +92,7 @@ def convert_cd_to_de(cd, b_cse):
     elif "int_" in def_nom:
         defect_obj = Interstitial(bulk_sc_structure, defect_site, charge=cd["charge"])
     else:
-        raise ValueError("Could not recognize defect type for {}".format(cd["name"]))
+        raise ValueError(f"Could not recognize defect type for {cd['name']}")
 
     # assign proper energy and parameter metadata
     uncorrected_energy = cd["entry"]["energy"] - b_cse["energy"]
@@ -138,7 +138,7 @@ def get_locpot(locpot_path):
         locpot = Locpot.from_file(locpot_path + ".gz")
     else:
         raise FileNotFoundError(
-            f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for calculating the 
+            f"""LOCPOT(.gz) not found at {locpot_path}(.gz). Needed for calculating the 
             Freysoldt (FNV) image charge corrections."""
         )
     return locpot
@@ -211,11 +211,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 "Could not uniquely determine site of new species in defect structure"
             )
 
-        relaxed_defect_site_idx = list(
+        defect_site_idx = list(
             set(np.arange(len(defect_new_species_coords), dtype=int))
             - set(site_matches)
         )[0]
-        defect_coords = defect_new_species_coords[relaxed_defect_site_idx]
+        defect_coords = defect_new_species_coords[defect_site_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
@@ -227,8 +227,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
         original_site_idx = distances.argmin()
 
-        # if there are any other matches with a distance within unique_tolerance of the located site then
-        # unique matching failed
+        # if there are any other matches with a distance within unique_tolerance of the located
+        # site then unique matching failed
         if (
             len(distances[distances < distances[original_site_idx] * unique_tolerance])
             > 1
@@ -237,8 +237,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 "Could not uniquely determine site of old species in bulk structure"
             )
 
-        # currently, original_site_idx is indexed with respect to the old species only. Need to get the
-        # index in the full structure
+        # currently, original_site_idx is indexed with respect to the old species only.
+        # Need to get the index in the full structure
         bulk_coords = np.array([s.frac_coords for s in bulk])
         bulk_site_idx = np.linalg.norm(
             pbc_diff(bulk_coords, bulk_old_species_coords[original_site_idx]), axis=1
@@ -276,8 +276,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             set(np.arange(len(bulk_old_species_coords), dtype=int)) - set(site_matches)
         )[0]
 
-        # currently, original_site_idx is indexed with respect to the old species only. Need to get the
-        # index in the full structure
+        # currently, original_site_idx is indexed with respect to the old species only.
+        # Need to get the index in the full structure
         bulk_coords = np.array([s.frac_coords for s in bulk])
         bulk_site_idx = np.linalg.norm(
             pbc_diff(bulk_coords, bulk_old_species_coords[original_site_idx]), axis=1
@@ -287,7 +287,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
         defect_site_idx = None
-        relaxed_defect_site_idx = None
 
     elif defect_type == "interstitial":
         new_species = list(composition_diff.keys())[0]
@@ -311,11 +310,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 "Could not uniquely determine site of interstitial in defect structure"
             )
 
-        relaxed_defect_site_idx = list(
+        defect_site_idx = list(
             set(np.arange(len(defect_new_species_coords), dtype=int))
             - set(site_matches)
         )[0]
-        defect_site_coords = defect_new_species_coords[relaxed_defect_site_idx]
+        defect_site_coords = defect_new_species_coords[defect_site_idx]
 
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
@@ -328,8 +327,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
     return (
         bulk_site_idx,
-        unrelaxed_defect_site_idx,
-        relaxed_defect_site_idx,
+        defect_site_idx,
         unrelaxed_defect_structure,
     )
 
@@ -440,11 +438,11 @@ class SingleDefectParser:
             def_type, comp_diff = get_defect_type_and_composition_diff(
                 bulk_sc_structure, initial_defect_structure
             )
-        except RuntimeError:
+        except RuntimeError as exc:
             raise ValueError(
                 "Could not identify defect type from number of sites in structure: "
                 f"{len(bulk_sc_structure)} in bulk vs. {initial_defect_structure} in defect?"
-            )
+            ) from exc
 
         bulk_site_idx = None
         defect_site_idx = None
@@ -452,13 +450,12 @@ class SingleDefectParser:
         try:
             (
                 bulk_site_idx,
-                unrelaxed_defect_site_idx,
-                relaxed_defect_site_idx,
+                defect_site_idx,
                 unrelaxed_defect_structure,
             ) = get_defect_site_idxs_and_unrelaxed_structure(
                 bulk_sc_structure, initial_defect_structure, def_type, comp_diff
             )
-        except RuntimeError:
+        except RuntimeError as exc:
             # try transformation.json
             # if auto site-matching failed, try use transformation.json
             transformation_path = os.path.join(path_to_defect, "transformation.json")
@@ -470,10 +467,8 @@ class SingleDefectParser:
                 )
                 if os.path.exists(transformation_path):
                     print(
-                        "No transformation file found at {}, but found one at {}. "
-                        "Using this for defect parsing.".format(
-                            orig_transformation_path, transformation_path
-                        )
+                        f"No transformation file found at {orig_transformation_path}, but found "
+                        f"one at {transformation_path}. Using this for defect parsing."
                     )
 
             if os.path.exists(transformation_path):
@@ -501,12 +496,10 @@ class SingleDefectParser:
                         defect_site_idx = poss_deflist[0][2]
                 if not poss_deflist:
                     raise ValueError(
-                        "{} specified defect site {}, but could not find it in {}."
-                        " Abandoning parsing".format(
-                            transformation_path, site, searched
-                        )
-                    )
-                elif poss_deflist[0][1] > 1:
+                        f"{transformation_path} specified defect site {site}, but could not find "
+                        f"it in {searched}. Abandoning parsing."
+                    ) from exc
+                if poss_deflist[0][1] > 1:
                     site_matched_defect = poss_deflist[0]  # pymatgen Neighbor object
                     offsite_warning = (
                         f"Site-matching has determined {site_matched_defect.species} at "
@@ -522,7 +515,7 @@ class SingleDefectParser:
                     f"Try supplying the initial defect structure to "
                     f"SingleDefectParser.from_paths(), or making sure the doped "
                     f"transformation.json files are in the defect directory."
-                )
+                ) from exc
 
         if def_type == "vacancy":
             defect_site = bulk_sc_structure[bulk_site_idx]
@@ -546,11 +539,10 @@ class SingleDefectParser:
                 defect_site = unrelaxed_defect_structure[defect_site_idx]
 
             parameters["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-            parameters["relaxed_defect_site_idx"] = relaxed_defect_site_idx
 
         for_monty_defect = {
             "@module": "pymatgen.analysis.defects.core",
-            "@class": defect_type.capitalize(),
+            "@class": def_type.capitalize(),
             "charge": defect_charge,
             "structure": bulk_sc_structure,
             "defect_site": defect_site,
@@ -658,7 +650,9 @@ class SingleDefectParser:
         bulk_structure = self.defect_entry.defect.structure
         bulksites = [site.frac_coords for site in bulk_structure]
         if "unrelaxed_defect_structure" in self.defect_entry.parameters:
-            defect_structure = self.defect_entry.parameters["unrelaxed_defect_structure"]
+            defect_structure = self.defect_entry.parameters[
+                "unrelaxed_defect_structure"
+            ]
             initsites = [site.frac_coords for site in defect_structure]
         elif "initial_defect_structure" in self.defect_entry.parameters:
             defect_structure = self.defect_entry.parameters["initial_defect_structure"]
@@ -688,8 +682,8 @@ class SingleDefectParser:
         elif isinstance(self.defect_entry.defect, Substitution):
             for mindist, bulk_index, defect_index in min_dist_with_index:
                 species_match = (
-                        bulk_structure[bulk_index].specie
-                        == defect_structure[defect_index].specie
+                    bulk_structure[bulk_index].specie
+                    == defect_structure[defect_index].specie
                 )
                 if mindist < 0.5 and species_match:
                     site_matching_indices.append([bulk_index, defect_index])
@@ -697,7 +691,7 @@ class SingleDefectParser:
         defect_frac_sc_coords = self.defect_entry.site.frac_coords
 
         # user Wigner-Seitz radius for sampling radius
-        wz = initial_defect_structure.lattice.get_wigner_seitz_cell()
+        wz = defect_structure.lattice.get_wigner_seitz_cell()
         dist = []
         for facet in wz:
             midpt = np.mean(np.array(facet), axis=0)
@@ -821,10 +815,10 @@ class SingleDefectParser:
                     if ment.composition.reduced_composition
                     == bulk_sc_structure.composition.reduced_composition
                 ]
-            except:
+            except Exception as exc:
                 raise ValueError(
-                    "Error with querying MPRester for {}"
-                    "".format(bulk_sc_structure.composition.reduced_formula)
+                    f"Error with querying MPRester for "
+                    f"{bulk_sc_structure.composition.reduced_formula}: {exc}"
                 )
 
             mpid_fit_list = []
@@ -841,7 +835,7 @@ class SingleDefectParser:
 
             if len(mpid_fit_list) == 1:
                 mpid = mpid_fit_list[0]
-                print("Single mp-id found for bulk structure:{}.".format(mpid))
+                print(f"Single mp-id found for bulk structure:{mpid}.")
             elif len(mpid_fit_list) > 1:
                 num_mpid_list = [int(mp.split("" - "")[1]) for mp in mpid_fit_list]
                 num_mpid_list.sort()
@@ -909,7 +903,8 @@ class SingleDefectParser:
         self.defect_entry.parameters.update(gap_parameters)
 
     def run_compatibility(self):
-        # Set potalign so pymatgen can calculate bandfilling for 'neutral' defects (possible for resonant dopants etc.)
+        # Set potalign so pymatgen can calculate bandfilling for 'neutral' defects
+        # (possible for resonant dopants etc.)
         if (
             self.defect_entry.charge == 0
             and "potalign" not in self.defect_entry.parameters
