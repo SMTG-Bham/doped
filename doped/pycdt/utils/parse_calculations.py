@@ -198,8 +198,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
 
-        # find coords of new species in defect structure
-        # make sure to do take into account periodic boundaries
+        # find coords of new species in defect structure, taking into account periodic boundaries
         distance_matrix = np.linalg.norm(
             pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
             axis=2,
@@ -387,7 +386,14 @@ class SingleDefectParser:
         dielectric,
         defect_charge,
         mpid=None,
-        compatibility=DefectCompatibility(plnr_avg_var_tol=0.0002),
+        compatibility=DefectCompatibility(
+            plnr_avg_var_tol=0.01,
+            plnr_avg_minmax_tol=0.3,
+            atomic_site_var_tol=0.025,
+            atomic_site_minmax_tol=0.3,
+            tot_relax_tol=5.0,
+            defect_tot_relax_tol=5.0,
+        ),
         initial_defect_structure=None,
     ):
         """
@@ -520,7 +526,10 @@ class SingleDefectParser:
         if def_type == "vacancy":
             defect_site = bulk_sc_structure[bulk_site_idx]
         else:
-            defect_site = initial_defect_structure[defect_site_idx]
+            if unrelaxed_defect_structure:
+                defect_site = unrelaxed_defect_structure[defect_site_idx]
+            else:
+                defect_site = initial_defect_structure[defect_site_idx]
 
         if unrelaxed_defect_structure:
             if def_type == "interstitial":
@@ -532,8 +541,8 @@ class SingleDefectParser:
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
                 unrelaxed_defect_structure.append(
                     int_site.species_string,
-                    voronoi_site.coords,
-                    coords_are_cartesian=True,
+                    voronoi_site.frac_coords,
+                    coords_are_cartesian=False,
                     validate_proximity=True,
                 )
                 defect_site = unrelaxed_defect_structure[defect_site_idx]
@@ -549,19 +558,18 @@ class SingleDefectParser:
         }
         defect = MontyDecoder().process_decoded(for_monty_defect)
 
-        if (
-            unrelaxed_defect_structure
-        ):  # only do StructureMatcher test if unrelaxed structure exists
-            test_defect_structure = defect.generate_defect_structure()
-            if not StructureMatcher(
-                stol=0.25,
-                primitive_cell=False,
-                scale=False,
-                attempt_supercell=False,
-                allow_subset=False,
-            ).fit(test_defect_structure, unrelaxed_defect_structure):
-                # NOTE: this does not insure that cartesian coordinates or indexing are identical
-                raise ValueError("Error in defect object matching!")
+        # if unrelaxed_defect_structure:
+        #     # only do StructureMatcher test if unrelaxed structure exists
+        #     test_defect_structure = defect.generate_defect_structure()
+        #     if not StructureMatcher(
+        #         stol=0.25,
+        #         primitive_cell=False,
+        #         scale=False,
+        #         attempt_supercell=False,
+        #         allow_subset=False,
+        #     ).fit(test_defect_structure, unrelaxed_defect_structure):
+        #         # NOTE: this does not insure that cartesian coordinates or indexing are identical
+        #         raise ValueError("Error in defect object matching!")
 
         defect_entry = DefectEntry(
             defect, defect_energy - bulk_energy, corrections={}, parameters=parameters
@@ -611,10 +619,17 @@ class SingleDefectParser:
                 "axis_grid": axis_grid,
                 "bulk_planar_averages": bulk_planar_averages,
                 "defect_planar_averages": defect_planar_averages,
-                "initial_defect_structure": def_locpot.structure,
                 "defect_frac_sc_coords": self.defect_entry.site.frac_coords,
             }
         )
+        if "unrelaxed_defect_structure" in self.defect_entry.parameters:
+            self.defect_entry.parameters.update(
+                {
+                    "initial_defect_structure": self.defect_entry.parameters[
+                        "unrelaxed_defect_structure"
+                    ],
+                }
+            )
 
         return bulk_locpot
 
@@ -647,7 +662,7 @@ class SingleDefectParser:
         bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
         defect_atomic_site_averages = def_outcar.electrostatic_potential
 
-        bulk_structure = self.defect_entry.defect.structure
+        bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
         if "unrelaxed_defect_structure" in self.defect_entry.parameters:
             defect_structure = self.defect_entry.parameters[
@@ -705,6 +720,7 @@ class SingleDefectParser:
                 "site_matching_indices": site_matching_indices,
                 "sampling_radius": sampling_radius,
                 "defect_frac_sc_coords": defect_frac_sc_coords,
+                "initial_defect_structure": defect_structure,
             }
         )
 
@@ -850,12 +866,11 @@ class SingleDefectParser:
                     "following list:\n{}".format(mplist)
                 )
                 mpid = None
-        else:
-            print("Manually fed mpid = {}".format(mpid))
 
         vbm, cbm, bandgap = None, None, None
         gap_parameters = {}
         if mpid is not None and not no_MP:
+            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
             with MPRester() as mp:
                 bs = mp.get_bandstructure_by_material_id(mpid)
             if bs:
@@ -911,20 +926,40 @@ class SingleDefectParser:
         ):
             self.defect_entry.parameters["potalign"] = 0
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
-        if not self.defect_entry.parameters["is_compatible"]:
-            delocalized_warning = f"""
+        if "delocalization_meta" in self.defect_entry.parameters:
+            delocalization_meta = self.defect_entry.parameters["delocalization_meta"]
+            if (
+                "plnr_avg" in delocalization_meta
+                and not delocalization_meta["plnr_avg"]["is_compatible"]
+            ) or (
+                "atomic_site" in delocalization_meta
+                and not delocalization_meta["atomic_site"]["is_compatible"]
+            ):
+                delocalized_warning = f"""
 Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
 scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
 look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
 `doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if
 charge correction scheme still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
-if you're happy (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
+to apply it (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
 You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
-in `SingleDefectParser.from_paths()`.
-Watch out that if `num_hole_vbm` or `num_elec_cbm` are greater than the free_chg_cutoff (default
-2.1), charge correction will not be applied."""
-            warnings.warn(message=delocalized_warning)
+in `SingleDefectParser.from_paths()`."""
+                warnings.warn(message=delocalized_warning)
+
+        elif "num_hole_vbm" in self.defect_entry.parameters:
+            if (
+                self.compatibility.free_chg_cutoff
+                < self.defect_entry.parameters["num_hole_vbm"]
+            ) or (
+                self.compatibility.free_chg_cutoff
+                < self.defect_entry.parameters["num_elec_cbm"]
+            ):
+                warnings.warn(
+                    "Eigenvalue analysis has indicated that `num_hole_vbm` or "
+                    "`num_elec_cbm` is greater than `free_chg_cutoff` (default = 2.1), "
+                    "charge correction is not being applied."
+                )
 
 
 class PostProcess:
