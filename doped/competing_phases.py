@@ -82,7 +82,7 @@ class CompetingPhases():
                 
             for kpoint in range(min_nm, max_nm, step_nm):
                 dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, 
-                user_potcar_settings=user_potcar_settings,user_kpoints_settings={'reciprocal_density': kpoint}, user_incar_settings=uis)
+                user_potcar_settings=user_potcar_settings,user_kpoints_settings={'reciprocal_density': kpoint}, user_incar_settings=uis, force_gamma=True)
                 
                 kname = 'k'+','.join(str(k) for k in dis.kpoints.kpts[0]) 
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(e['formula'], float(f"{e['ehull']:.4f}"), kname)
@@ -103,7 +103,7 @@ class CompetingPhases():
                 
             for kpoint in range(min_m, max_m, step_m):
                 dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, 
-                user_potcar_settings=user_potcar_settings,   user_kpoints_settings={'reciprocal_density': kpoint}, user_incar_settings=uis)
+                user_potcar_settings=user_potcar_settings,   user_kpoints_settings={'reciprocal_density': kpoint}, user_incar_settings=uis, force_gamma=True)
                 
                 kname = 'k'+','.join(str(k) for k in dis.kpoints.kpts[0]) 
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(e['formula'], float(f"{e['ehull']:.4f}"), kname)
@@ -139,7 +139,7 @@ class CompetingPhases():
                 if 'ISPIN' not in uis:
                     uis['ISPIN'] = 2
                 
-            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_nonmetals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings)
+            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_nonmetals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings, force_gamma=True)
                 
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname)
@@ -157,7 +157,7 @@ class CompetingPhases():
                 if 'ISPIN' not in uis:
                     uis['ISPIN'] = 2
                 
-            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_metals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings)     
+            dis = DictSet(e['structure'], cd,user_potcar_functional=potcar_functional, user_kpoints_settings={'reciprocal_density': kpoints_metals}, user_incar_settings=uis, user_potcar_settings=user_potcar_settings, force_gamma=True)     
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname)
 
@@ -173,13 +173,12 @@ class CompetingPhases():
             if e['magnetisation'] > 1: # account for magnetic moment
                 if 'ISPIN' not in uis:
                     uis['ISPIN'] = 2
-                # idk how many others need nupdown - could use magnetisation key from 
                 # the molecule set up to set this automatically? 
                 if e['formula'] == 'O2': 
                     uis['NUPDOWN'] = 2
             
             # set up for 2x2x2 kpoints automatically     
-            dis = DictSet(e['structure'], cd, user_potcar_functional=potcar_functional, user_kpoints_settings=Kpoints(kpts=[[2,2,2]]), user_incar_settings=uis, user_potcar_settings=user_potcar_settings)
+            dis = DictSet(e['structure'], cd, user_potcar_functional=potcar_functional, user_kpoints_settings=Kpoints(kpts=[[2,2,2]]), user_incar_settings=uis, user_potcar_settings=user_potcar_settings, force_gamma=True)
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(e['formula'], float(f"{e['ehull']:.4f}"))
             dis.write_input(fname) 
 
@@ -296,7 +295,8 @@ class CompetingPhasesAnalyzer():
         for v in self.vaspruns: 
             rcf = v['reduced_cell_formula']
             formulas_per_unit = list(v['unit_cell_formula'].values())[0] / list(rcf.values())[0]
-            final_energy = v['output']['final_energy']  
+            final_energy = v['output']['final_energy'] 
+            kpoints = 'x'.join(str(x) for x in v['input']['kpoints']['kpoints'][0]) 
 
             # check if elemental:
             if len(rcf) == 1: 
@@ -305,6 +305,7 @@ class CompetingPhasesAnalyzer():
 
             d = {
                 'formula': v['pretty_formula'], 
+                'kpoints': kpoints,
                 'energy_per_fu': final_energy / formulas_per_unit, 
                 'energy': final_energy
             }
@@ -321,7 +322,8 @@ class CompetingPhasesAnalyzer():
         df = pd.read_csv(csv)
         columns = ['formula', 'energy_per_fu', 'energy', 'formation_energy']
         if all(x in list(df.columns) for x in columns): 
-
+            droplist = [i for i in df.columns if i not in columns]
+            df.drop(droplist, axis=1, inplace=True)
             d = df.to_dict(orient='records')
             self.data = d
         
@@ -340,6 +342,11 @@ class CompetingPhasesAnalyzer():
             print('extrinsic competing phases are not currently supported')
             # 1. work out the formation energies of all dopant competing
             #    phases using the elemental energies
+            extrinsic_entries = []
+            self.pd_entries = []
+            for d in self.data: 
+                bulk = True 
+
             # 2. for each of the chempots already calculated work out what 
             #    the chemical potential of the dopant would be from
             #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements) 
@@ -383,7 +390,7 @@ class CompetingPhasesAnalyzer():
 
             df = pd.DataFrame(self.chemical_potentials, columns=columns)
             df.to_csv(csv_fname, index=False)
-            print('calculated chemical potential limits: \n')
+            print('Calculated chemical potential limits: \n')
             print(df)
 
 
@@ -424,15 +431,15 @@ def make_molecule_in_a_box(element):
         'O2': {'structure': Structure(lattice=lattice, species=['O', 'O'], 
         coords=[[15,15,15], [15,15,16.22]], coords_are_cartesian=True), 'formula': 'O2', 'magnetisation': 2}, 
         'N2': {'structure': Structure(lattice=lattice, species=['N', 'N'], 
-        coords=[[15,15,15], [15,15,16.09]], coords_are_cartesian=True), 'formula': 'N2', 'magnetisation': 2}, 
+        coords=[[15,15,15], [15,15,16.09]], coords_are_cartesian=True), 'formula': 'N2', 'magnetisation': 0}, 
         'H2': {'structure': Structure(lattice=lattice, species=['H', 'H'], 
-        coords=[[15,15,15], [15,15,15.74]], coords_are_cartesian=True), 'formula': 'H2', 'magnetisation': 2},
+        coords=[[15,15,15], [15,15,15.74]], coords_are_cartesian=True), 'formula': 'H2', 'magnetisation': 0},
         'F2': {'structure': Structure(lattice=lattice, species=['F', 'F'], 
-        coords=[[15,15,15], [15,15,16.44]], coords_are_cartesian=True), 'formula': 'F2', 'magnetisation': 2},
-        'Cl2': {'structure': Structure(lattice=lattice, species=['Cl', 'Cl'], coords=[[15,15,15], [15,15,16.99]], coords_are_cartesian=True), 'formula': 'Cl2', 'magnetisation': 2},
-        'Br2': {'structure': Structure(lattice=lattice, species=['Br', 'Br'],coords=[[15,15,15], [15,15,17.30]], coords_are_cartesian=True), 'formula': 'Br2', 'magnetisation': 2},
+        coords=[[15,15,15], [15,15,16.44]], coords_are_cartesian=True), 'formula': 'F2', 'magnetisation': 0},
+        'Cl2': {'structure': Structure(lattice=lattice, species=['Cl', 'Cl'], coords=[[15,15,15], [15,15,16.99]], coords_are_cartesian=True), 'formula': 'Cl2', 'magnetisation': 0},
+        'Br2': {'structure': Structure(lattice=lattice, species=['Br', 'Br'],coords=[[15,15,15], [15,15,17.30]], coords_are_cartesian=True), 'formula': 'Br2', 'magnetisation': 0},
         'I2': {'structure': Structure(lattice=lattice, species=['I', 'I'], 
-        coords=[[15,15,15], [15,15,17.67]], coords_are_cartesian=True), 'formula': 'I2', 'magnetisation': 2}
+        coords=[[15,15,15], [15,15,17.67]], coords_are_cartesian=True), 'formula': 'I2', 'magnetisation': 0}
     }
     if element in all_structures.keys(): 
         structure = all_structures[element]['structure']
