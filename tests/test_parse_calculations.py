@@ -169,7 +169,7 @@ class DopedParsingTestCase(unittest.TestCase):
             bulk_sc_structure, initial_defect_structure
         )
         self.assertEqual(def_type, "interstitial")
-        self.assertEqual(comp_diff, {"F": 1})
+        self.assertDictEqual(comp_diff, {"F": 1})
         (
             bulk_site_idx,
             defect_site_idx,
@@ -186,6 +186,40 @@ class DopedParsingTestCase(unittest.TestCase):
             unrelaxed_defect_structure[defect_site_idx].frac_coords,
             [0.00, 0.00, 0.48],
             decimal=2,  # approx match, not exact because relaxed bulk supercell
+        )
+
+    def test_extrinsic_substitution_defect_ID(self):
+        """Test parsing of extrinsic U_on_Cd in CdTe"""
+        bulk_sc_structure = Structure.from_file(
+            "../Examples/CdTe_bulk_supercell_POSCAR"
+        )
+        initial_defect_structure = Structure.from_file(
+            "../Examples/U_on_Cd_POSCAR"
+        )
+        (
+            def_type,
+            comp_diff,
+        ) = parse_calculations.get_defect_type_and_composition_diff(
+            bulk_sc_structure, initial_defect_structure
+        )
+        self.assertEqual(def_type, "substitution")
+        self.assertDictEqual(comp_diff, {"Cd": -1, "U": 1})
+        (
+            bulk_site_idx,
+            defect_site_idx,
+            unrelaxed_defect_structure,
+        ) = parse_calculations.get_defect_site_idxs_and_unrelaxed_structure(
+            bulk_sc_structure, initial_defect_structure, def_type, comp_diff
+        )
+        self.assertEqual(bulk_site_idx, 0)
+        self.assertEqual(defect_site_idx, 63)  # last site in structure
+
+        # assert auto-determined substitution site is correct
+        # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
+        np.testing.assert_array_almost_equal(
+            unrelaxed_defect_structure[defect_site_idx].frac_coords,
+            [0.00, 0.00, 0.00],
+            decimal=2,  # exact match because perfect supercell
         )
 
 
