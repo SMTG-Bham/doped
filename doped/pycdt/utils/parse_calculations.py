@@ -160,14 +160,14 @@ def get_outcar(outcar_path):
 
 def get_defect_type_and_composition_diff(bulk, defect):
     """Get the difference in composition between a bulk structure and a defect structure.
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry)"""
+    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species"""
     bulk_comp = bulk.composition.get_el_amt_dict()
     defect_comp = defect.composition.get_el_amt_dict()
 
     composition_diff = {
-        element: int(defect_comp[element] - bulk_amount)
-        for element, bulk_amount in bulk_comp.items()
-        if int(defect_comp[element] - bulk_amount) != 0
+        element: int(defect_amount - bulk_comp.get(element, 0))
+        for element, defect_amount in defect_comp.items()
+        if int(defect_amount - bulk_comp.get(element, 0)) != 0
     }
 
     if len(composition_diff) == 1 and list(composition_diff.values())[0] == 1:
@@ -297,23 +297,27 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
 
-        # make sure to take into account periodic boundaries
-        distance_matrix = np.linalg.norm(
-            pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
-            axis=2,
-        )
-        site_matches = distance_matrix.argmin(axis=1)
-
-        if len(np.unique(site_matches)) != len(site_matches):
-            raise RuntimeError(
-                "Could not uniquely determine site of interstitial in defect structure"
+        if bulk_new_species_coords.size > 0:  # intrinsic interstitial
+            # make sure to take into account periodic boundaries
+            distance_matrix = np.linalg.norm(
+                pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
+                axis=2,
             )
+            site_matches = distance_matrix.argmin(axis=1)
 
-        defect_site_idx = list(
-            set(np.arange(len(defect_new_species_coords), dtype=int))
-            - set(site_matches)
-        )[0]
-        defect_site_coords = defect_new_species_coords[defect_site_idx]
+            if len(np.unique(site_matches)) != len(site_matches):
+                raise RuntimeError(
+                    "Could not uniquely determine site of interstitial in defect structure"
+                )
+
+            defect_site_idx = list(
+                set(np.arange(len(defect_new_species_coords), dtype=int))
+                - set(site_matches)
+            )[0]
+            defect_site_coords = defect_new_species_coords[defect_site_idx]
+
+        else:  # extrinsic interstitial
+            defect_site_coords = defect_new_species_coords[0]
 
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
@@ -447,7 +451,7 @@ class SingleDefectParser:
         except RuntimeError as exc:
             raise ValueError(
                 "Could not identify defect type from number of sites in structure: "
-                f"{len(bulk_sc_structure)} in bulk vs. {initial_defect_structure} in defect?"
+                f"{len(bulk_sc_structure)} in bulk vs. {len(initial_defect_structure)} in defect?"
             ) from exc
 
         bulk_site_idx = None
@@ -558,18 +562,23 @@ class SingleDefectParser:
         }
         defect = MontyDecoder().process_decoded(for_monty_defect)
 
-        # if unrelaxed_defect_structure:
-        #     # only do StructureMatcher test if unrelaxed structure exists
-        #     test_defect_structure = defect.generate_defect_structure()
-        #     if not StructureMatcher(
-        #         stol=0.25,
-        #         primitive_cell=False,
-        #         scale=False,
-        #         attempt_supercell=False,
-        #         allow_subset=False,
-        #     ).fit(test_defect_structure, unrelaxed_defect_structure):
-        #         # NOTE: this does not insure that cartesian coordinates or indexing are identical
-        #         raise ValueError("Error in defect object matching!")
+        if unrelaxed_defect_structure:
+            # only do StructureMatcher test if unrelaxed structure exists
+            test_defect_structure = defect.generate_defect_structure()
+            if not StructureMatcher(
+                stol=0.25,
+                primitive_cell=False,
+                scale=False,
+                attempt_supercell=False,
+                allow_subset=False,
+            ).fit(test_defect_structure, unrelaxed_defect_structure):
+                # NOTE: this does not insure that cartesian coordinates or indexing are identical
+                raise ValueError(
+                    "Error in defect object matching! Unrelaxed structure (1st below) "
+                    "does not match pymatgen defect.generate_defect_structure() "
+                    f"(2nd below):\n{unrelaxed_defect_structure}"
+                    f"\n{test_defect_structure}"
+                )
 
         defect_entry = DefectEntry(
             defect, defect_energy - bulk_energy, corrections={}, parameters=parameters

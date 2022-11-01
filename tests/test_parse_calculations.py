@@ -2,6 +2,7 @@ import os
 import numpy as np
 import unittest
 from doped.pycdt.utils import parse_calculations
+from pymatgen.core.structure import Structure
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -36,9 +37,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 ] = sdp.defect_entry  # Keep dictionary of parsed defect entries
 
         self.assertTrue(len(parsed_vac_Cd_dict) == 3)
-        self.assertTrue(
-            all(f"vac_1_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2])
-        )
+        self.assertTrue(all(f"vac_1_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2]))
         # Check that the correct Freysoldt correction is applied
         for name, energy, correction_dict in [
             (
@@ -68,7 +67,9 @@ class DopedParsingTestCase(unittest.TestCase):
             self.assertAlmostEqual(parsed_vac_Cd_dict[name].energy, energy, places=3)
             for k in correction_dict:
                 self.assertAlmostEqual(
-                    parsed_vac_Cd_dict[name].corrections[k], correction_dict[k], places=3
+                    parsed_vac_Cd_dict[name].corrections[k],
+                    correction_dict[k],
+                    places=3,
                 )
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
@@ -151,6 +152,40 @@ class DopedParsingTestCase(unittest.TestCase):
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
             te_cd_1_ent.site.frac_coords, [0.5000, 0.5000, 0.5000]
+        )
+
+    def test_extrinsic_interstitial_defect_ID(self):
+        """Test parsing of extrinsic F in YTOS interstitial"""
+        bulk_sc_structure = Structure.from_file(
+            "../Examples/YTOS_Extrinsic_Fluorine_Interstitial/Bulk_POSCAR"
+        )
+        initial_defect_structure = Structure.from_file(
+            "../Examples/YTOS_Extrinsic_Fluorine_Interstitial/Relaxed_CONTCAR"
+        )
+        (
+            def_type,
+            comp_diff,
+        ) = parse_calculations.get_defect_type_and_composition_diff(
+            bulk_sc_structure, initial_defect_structure
+        )
+        self.assertEqual(def_type, "interstitial")
+        self.assertEqual(comp_diff, {"F": 1})
+        (
+            bulk_site_idx,
+            defect_site_idx,
+            unrelaxed_defect_structure,
+        ) = parse_calculations.get_defect_site_idxs_and_unrelaxed_structure(
+            bulk_sc_structure, initial_defect_structure, def_type, comp_diff
+        )
+        self.assertEqual(bulk_site_idx, None)
+        self.assertEqual(defect_site_idx, len(unrelaxed_defect_structure) - 1)
+
+        # assert auto-determined substitution site is correct
+        # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
+        np.testing.assert_array_almost_equal(
+            unrelaxed_defect_structure[defect_site_idx].frac_coords,
+            [0.00, 0.00, 0.48],
+            decimal=2,  # approx match, not exact because relaxed bulk supercell
         )
 
 
