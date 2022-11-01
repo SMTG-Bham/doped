@@ -186,7 +186,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     bulk, defect, defect_type, composition_diff, unique_tolerance=1
 ):
     """Get the defect site and unrelaxed structure.
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry)"""
+    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species"""
     if defect_type == "substitution":
         old_species = [el for el, amt in composition_diff.items() if amt == -1][0]
         new_species = [el for el, amt in composition_diff.items() if amt == 1][0]
@@ -198,22 +198,27 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
 
-        # find coords of new species in defect structure, taking into account periodic boundaries
-        distance_matrix = np.linalg.norm(
-            pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
-            axis=2,
-        )
-        site_matches = distance_matrix.argmin(axis=1)
-
-        if len(np.unique(site_matches)) != len(site_matches):
-            raise RuntimeError(
-                "Could not uniquely determine site of new species in defect structure"
+        if bulk_new_species_coords.size > 0:  # intrinsic substitution
+            # find coords of new species in defect structure, taking into account periodic boundaries
+            distance_matrix = np.linalg.norm(
+                pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
+                axis=2,
             )
+            site_matches = distance_matrix.argmin(axis=1)
 
-        defect_site_idx = list(
-            set(np.arange(len(defect_new_species_coords), dtype=int))
-            - set(site_matches)
-        )[0]
+            if len(np.unique(site_matches)) != len(site_matches):
+                raise RuntimeError(
+                    "Could not uniquely determine site of new species in defect structure"
+                )
+
+            defect_site_idx = list(
+                set(np.arange(len(defect_new_species_coords), dtype=int))
+                - set(site_matches)
+            )[0]
+
+        else:  # extrinsic substitution
+            defect_site_idx = 0
+
         defect_coords = defect_new_species_coords[defect_site_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
@@ -314,10 +319,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 set(np.arange(len(defect_new_species_coords), dtype=int))
                 - set(site_matches)
             )[0]
-            defect_site_coords = defect_new_species_coords[defect_site_idx]
 
         else:  # extrinsic interstitial
-            defect_site_coords = defect_new_species_coords[0]
+            defect_site_idx = 0
+
+        defect_site_coords = defect_new_species_coords[defect_site_idx]
 
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
