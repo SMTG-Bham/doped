@@ -157,10 +157,10 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_extrinsic_interstitial_defect_ID(self):
         """Test parsing of extrinsic F in YTOS interstitial"""
         bulk_sc_structure = Structure.from_file(
-            "../Examples/YTOS_Extrinsic_Fluorine_Interstitial/Bulk_POSCAR"
+            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Bulk_POSCAR"
         )
         initial_defect_structure = Structure.from_file(
-            "../Examples/YTOS_Extrinsic_Fluorine_Interstitial/Relaxed_CONTCAR"
+            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Relaxed_CONTCAR"
         )
         (
             def_type,
@@ -191,10 +191,10 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_extrinsic_substitution_defect_ID(self):
         """Test parsing of extrinsic U_on_Cd in CdTe"""
         bulk_sc_structure = Structure.from_file(
-            "../Examples/CdTe_bulk_supercell_POSCAR"
+            f"{self.EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR"
         )
         initial_defect_structure = Structure.from_file(
-            "../Examples/U_on_Cd_POSCAR"
+            f"{self.EXAMPLE_DIR}/U_on_Cd_POSCAR"
         )
         (
             def_type,
