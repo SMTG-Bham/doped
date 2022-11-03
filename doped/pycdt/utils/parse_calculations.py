@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 from monty.json import MontyDecoder
-from monty.serialization import loadfn
+from monty.serialization import loadfn, dumpfn
 from pymatgen.analysis.defects.core import (
     Vacancy,
     Substitution,
@@ -341,26 +341,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     )
 
 
-def get_closest_voronoi_node_to_site(structure, site):
-    """
-    Get the closest Voronoi node to a site in a structure.
-
-    Args:
-        structure (Structure): The structure to find the Voronoi node in.
-        site (Site): The site to find the closest Voronoi node to.
-
-    Returns:
-        (Site): The closest Voronoi node to the site.
-    """
-    topography = TopographyAnalyzer(
-        structure, structure.symbol_set, [], check_volume=False
-    )
-    topography.cluster_nodes()
-    topography.remove_collisions()
-    closest_node = min(topography.vnodes, key=lambda node: site.distance(node))
-    return closest_node
-
-
 class SingleDefectParser:
     def __init__(
         self,
@@ -543,15 +523,33 @@ class SingleDefectParser:
 
         if unrelaxed_defect_structure:
             if def_type == "interstitial":
-                # get closest Voronoi site as this is likely to be the initial interstitial site
-                voronoi_site = get_closest_voronoi_node_to_site(
-                    bulk_sc_structure, defect_site
+                # get closest Voronoi site in bulk supercell to final interstitial site as this is
+                # likely to be the initial interstitial site
+                try:
+                    voronoi_frac_coords = loadfn("./bulk_voronoi_nodes.json")
+                    print("Using parsed Voronoi sites in bulk_voronoi_nodes.json (should "
+                          "correspond to same bulk supercell)")
+                except FileNotFoundError:  # first time parsing
+                    topography = TopographyAnalyzer(
+                        bulk_sc_structure, bulk_sc_structure.symbol_set, [], check_volume=False
+                    )
+                    topography.cluster_nodes()
+                    topography.remove_collisions()
+                    voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
+                    dumpfn(voronoi_frac_coords, "./bulk_voronoi_nodes.json")  # for efficient
+                    # parsing of multiple defects at once
+                    print("Saving parsed Voronoi sites (for interstitial site-matching) to "
+                          "bulk_voronoi_sites.json to speed up future parsing.")
+
+                closest_node_frac_coords = min(
+                    voronoi_frac_coords,
+                    key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
                 )
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
                 unrelaxed_defect_structure.append(
                     int_site.species_string,
-                    voronoi_site.frac_coords,
+                    closest_node_frac_coords,
                     coords_are_cartesian=False,
                     validate_proximity=True,
                 )

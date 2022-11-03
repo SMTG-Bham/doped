@@ -117,6 +117,7 @@ class DopedParsingTestCase(unittest.TestCase):
         np.testing.assert_array_almost_equal(
             te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875]
         )
+        os.remove("bulk_voronoi_nodes.json")
 
     def test_substitution_parsing_and_kumagai(self):
         """Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction"""
