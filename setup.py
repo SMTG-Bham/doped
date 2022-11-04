@@ -19,23 +19,22 @@ def readme():
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.0.9",
+    version="0.1.9",
     install_requires=[
         "numpy",
-        "pymatgen",
+        "pymatgen<2022.8.23",
         "matplotlib",
         "monty>=3.0.2",
         "tabulate",
         "ase",
+        "shakenbreak",
     ],
-    # That I know of...
     package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["default_POTCARs.yaml"]},
-    # Standard PyCDT settings, will probably delete soon
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",
     maintainer="Seán Kavanagh",
     maintainer_email="sean.kavanagh.19@ucl.ac.uk",
-    url="https://github.com/kavanase/doped",
+    url="https://github.com/SMTG-UCL/doped",
     description="Collection of Python modules & functions to perform "
     "and process solid-state defect calculations",
     long_description=readme(),
@@ -54,5 +53,5 @@ setup(
     license="MIT",
     scripts=glob.glob(os.path.join(SETUP_PTH, "scripts", "*")),
     test_suite="nose.collector",
-    tests_require=["nose"],
+    tests_require=["nose", "pytest"],
 )
