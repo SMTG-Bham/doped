@@ -19,8 +19,8 @@
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
 - Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions)
 - Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
-- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use
-these to predict defect charge states (so people can see if something off etc.); could use the csv dandy sent on defects slack and set an arbitrary cutoff for oxidation states that can occur in known materials
+- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?) 
+- Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Ideally figure out automation of polaron finding
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
@@ -40,11 +40,16 @@ these to predict defect charge states (so people can see if something off etc.);
 - Functionality to generate chemical potential limit plots from parsed chempot calculations (phase diagram objects), as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D). – See `Cs2SnTiI6` notebooks for template code for this.
 - Figure out a neat way of plotting phase diagrams for quaternary and quinary systems.
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
+- Improved methods for estimating/determining the final site degeneracy/multiplicity from relaxed structures. See `pydefect` for tools for this. Also add consideration of odd/even number of electrons to account for spin degeneracy.
 - Brouwer diagrams
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Update charge `kumagai_loader` and `freysoldt_loader` to use _relaxed_ defect site rather than _initial_ defect site for charge corrections (negligible error in most cases), and update `offsite_warning`.
+- Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
+- Used `monty` JSON encoding rather than `pickle` (like `pymatgen`) as less senstitive to environment and human-readable.
+- Improved/more robust site-matching, capable of dealing with distorted structures. Automatically adjust site-matching tolerances if defect not initially identified. Try build in stoichiometry consideration as a hint for what defect site it should be looking for? See ShakeNBreak tools for this.
+- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, and warn user if not.
 
 ## Housekeeping
 
