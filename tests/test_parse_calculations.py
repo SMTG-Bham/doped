@@ -9,7 +9,7 @@ class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
         # get module path
         self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.EXAMPLE_DIR = os.path.join(self.module_path, "../Examples")
+        self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.BULK_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
         self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
