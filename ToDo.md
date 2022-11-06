@@ -19,7 +19,7 @@
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
 - Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions)
 - Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
-- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?) 
+- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Ideally figure out automation of polaron finding
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
@@ -53,6 +53,7 @@
 
 ## Housekeeping
 
+- Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?).
 - Modularity - could have defect_creation (what is now vasp input+pycdt), defect_analysis, chempot and a separate plotting module?
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Add `dope_stuff` examples and documentation.
