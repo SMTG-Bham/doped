@@ -9,12 +9,8 @@
 - Publication ready chemical potential diagram plotting tool
 
 ## Defect calculations set up
-
-- Check against updated PyCDT to see if any big, useful changes since we copied code.
-- `rattle` function and notes about finding stable ground state structures (what about the bond distortion method for finding polarons?)
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
 - `NKRED` pre-relaxing on defect structures (see jspark Slack discussion)
-- Create defects in/near the centre of the supercell (rather than near the origin), for easier visualisation (get all the possible sites, get the one that has coordinates closest to (0.5, 0.5, 0.5))
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value; could add a `remove_incar_tags` arg and then `pop` them out of the incar dict?)
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
 - Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions)
@@ -30,7 +26,6 @@
 
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
 - `aide` labelling of defect species in formation energy plots.
-- Build in `emphasis` option to `formation_energy_plot`, label 0 as VBM and CBM on x-axis
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - `transition_levels_table()`
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
@@ -45,20 +40,17 @@
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
-- Update charge `kumagai_loader` and `freysoldt_loader` to use _relaxed_ defect site rather than _initial_ defect site for charge corrections (negligible error in most cases), and update `offsite_warning`.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Used `monty` JSON encoding rather than `pickle` (like `pymatgen`) as less senstitive to environment and human-readable.
-- Improved/more robust site-matching, capable of dealing with distorted structures. Automatically adjust site-matching tolerances if defect not initially identified. Try build in stoichiometry consideration as a hint for what defect site it should be looking for? See ShakeNBreak tools for this.
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, and warn user if not.
 
 ## Housekeeping
 
-- Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?).
+- Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
 - Modularity - could have defect_creation (what is now vasp input+pycdt), defect_analysis, chempot and a separate plotting module?
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Add `dope_stuff` examples and documentation.
 - Add tests
 - Clean the example jupyter notebooks and docstrings
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
-- PR to pymatgen: Update check_final_relaxed_structure_delocalized(self, defect_entry) in pymatgen/analysis/defects/defect_compatibility.py to allow defects which move more than 0.01 Angstrom from initial_defect_structure (allow up to 1 Angstrom?).
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)).
