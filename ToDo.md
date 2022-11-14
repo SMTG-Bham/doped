@@ -9,6 +9,7 @@
 - Publication ready chemical potential diagram plotting tool
 
 ## Defect calculations set up
+- Check supercell generation algorithm, worth using ASE's optimal supercell generation tools?
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
 - `NKRED` pre-relaxing on defect structures (see jspark Slack discussion)
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value; could add a `remove_incar_tags` arg and then `pop` them out of the incar dict?)
@@ -53,4 +54,5 @@
 - Add tests
 - Clean the example jupyter notebooks and docstrings
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
-- PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)).
+- PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47
+- At present, we can't update to be compatible with the most recent `pymatgen` because the defect corrections code has all been removed and is not yet in `pymatgen-analysis-defects`. Once it is however, we should refactor to be compatible with this. For doing this, worth looking at how this was done for `ShakeNBreak`, and should use the new naming system built in `ShakeNBreak`. When doing so, update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
