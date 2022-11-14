@@ -398,7 +398,7 @@ class CompetingPhasesAnalyzer():
             raise ValueError(f'{self.bulk_composition.reduced_formula} is not stable with respect to competing phases')
         
         chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
-        chem_limits = {
+        self.intrinsic_chem_limits = {
             'facets': chem_lims, 
             'elemental_refs': {
                 elt: ent.energy_per_atom for elt, ent in self.intrinsic_phase_diagram.el_refs.items()
@@ -407,24 +407,24 @@ class CompetingPhasesAnalyzer():
         }
 
         # do the shenanigan to relate the facets to the elemental energies
-        for facet, chempot_dict in chem_limits['facets'].items(): 
+        for facet, chempot_dict in self.intrinsic_chem_limits['facets'].items(): 
             relative_chempot_dict = copy.deepcopy(chempot_dict)
             for e in relative_chempot_dict.keys(): 
-                relative_chempot_dict[e] -= chem_limits['elemental_refs'][e]
-            chem_limits['facets_wrt_el_refs'].update({facet: relative_chempot_dict})
+                relative_chempot_dict[e] -= self.intrinsic_chem_limits['elemental_refs'][e]
+            self.intrinsic_chem_limits['facets_wrt_el_refs'].update({facet: relative_chempot_dict})
         
         # get chemical potentials as pandas dataframe
-        self.chemical_potentials = [] 
-        for k, v in chem_limits['facets_wrt_el_refs'].items(): 
+        chemical_potentials = [] 
+        for k, v in self.intrinsic_chem_limits['facets_wrt_el_refs'].items(): 
             lst = []
             columns = []
             for k, v in v.items(): 
                 lst.append(v)
                 columns.append(str(k))
-            self.chemical_potentials.append(lst) 
+            chemical_potentials.append(lst) 
 
         # make df, will need it in next step 
-        df = pd.DataFrame(self.chemical_potentials, columns=columns)
+        df = pd.DataFrame(chemical_potentials, columns=columns)
 
         if hasattr(self, 'extrinsic_species'): 
             print(f'Calculating chempots for {self.extrinsic_species}')
@@ -448,7 +448,8 @@ class CompetingPhasesAnalyzer():
                 mins_formulas.append(df3.iloc[df3[name].idxmin()]['formula'])
             
             df[self.extrinsic_species] = mins 
-            df[f'{self.extrinsic_species}_limiting_phase'] = mins_formulas
+            col_name = f'{self.extrinsic_species}_limiting_phase' 
+            df[col_name] = mins_formulas
 
             # 1. work out the formation energies of all dopant competing
             #    phases using the elemental energies
@@ -460,10 +461,25 @@ class CompetingPhasesAnalyzer():
             #    competing phase is the 'limiting phase' right? 
             # 4. update the chemical potential limits table to reflect this?
 
-        else:  
-            # reassign the attributes correctly i guess so we can find them
-            self.pd_entries = pd_entries_intrinsic
-            self.phase_diagram = PhaseDiagram(self.pd_entries, map(Element, self.elemental))    
+            # reverse engineer chem lims for extrinsic 
+            df4 = df.copy().to_dict(orient='records')
+            cl2 = {'elemental_refs': {Element(elt): ene for elt, ene in self.elemental_energies.items()}, 'facets_wrt_el_refs': {}, 'facets': {}}
+            
+            for i, d in enumerate(df4): 
+                key = list(self.intrinsic_chem_limits['facets_wrt_el_refs'].keys())[i] + '-' + d[col_name] 
+                new_vals = list(self.intrinsic_chem_limits['facets_wrt_el_refs'].values())[i]
+                new_vals[Element(f'{self.extrinsic_species}')] = d[f'{self.extrinsic_species}']
+                cl2['facets_wrt_el_refs'][key] = new_vals
+
+            # do the shenanigan to relate the facets to the elemental 
+            # energies but in reverse this time
+            for facet, chempot_dict in cl2['facets_wrt_el_refs'].items(): 
+                relative_chempot_dict = copy.deepcopy(chempot_dict)
+                for e in relative_chempot_dict.keys(): 
+                    relative_chempot_dict[e] += cl2['elemental_refs'][e]
+                cl2['facets'].update({facet: relative_chempot_dict})
+
+            self.chem_limits = cl2 
 
         # save and print 
         df.to_csv(csv_fname, index=False)
