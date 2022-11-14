@@ -38,6 +38,8 @@ Summary GIF:
 `SnB` CLI Usage:
 ![ShakeNBreak CLI](files/SnB_CLI.gif)
 
+Note that while [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) is built to be compatible with the latest `pymatgen` version, the defects corrections code has been removed from the current `pymatgen` version, so when installing [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) the `2022.11.1` version should be used, with: `pip install shakenbreak==2022.11.1`.
+
 
 ### Developer Installation
 
