@@ -60,3 +60,6 @@ Access to root may be needed if ``virtualenv`` is not used.
 ## Word of Caution
 There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
 If you find any, please let us know!
+
+## Acknowledgmenets
+`doped` has benefitted from feedback from many users, in particular members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Katarina Brlec and Sabrine Hachmiouane. Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
