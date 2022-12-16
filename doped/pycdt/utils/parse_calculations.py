@@ -197,6 +197,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
+        # In POSCAR sites are grouped by species when the inputs are generated. Get location of defect from the final structure from DFT calculation. 
+        for site in (site for site in defect if site.specie.name == new_species):
+            defect_index_from_relaxed = defect.index(site)
+        
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
@@ -251,8 +255,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        unrelaxed_defect_structure.append(new_species, bulk_coords[bulk_site_idx])
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(defect_index_from_relaxed, new_species, bulk_coords[bulk_site_idx]) 
+        defect_site_idx =  defect_index_from_relaxed #defect in same position in unrelaxed_defect_structure as in ouput from DFT calculation
 
     elif defect_type == "vacancy":
         old_species = list(composition_diff.keys())[0]
@@ -302,6 +307,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
 
+        # In POSCAR sites are grouped by species when the inputs are generated. Get location of defect from the final structure from DFT calculation. 
+        for site in (site for site in defect if site.specie.name == new_species):
+            defect_index_from_relaxed = defect.index(site)
+
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
             # make sure to take into account periodic boundaries
             distance_matrix = np.linalg.norm(
@@ -327,9 +336,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
-        unrelaxed_defect_structure.append(new_species, defect_site_coords)
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(defect_index_from_relaxed,new_species, defect_site_coords)
         bulk_site_idx = None
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
+        defect_site_idx = defect_index_from_relaxed  #defect in same position in unrelaxed_defect_structure as in ouput from DFT calculation
 
     else:
         raise ValueError(f"Invalid defect type: {defect_type}")
@@ -547,7 +557,8 @@ class SingleDefectParser:
                 )
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
-                unrelaxed_defect_structure.append(
+                unrelaxed_defect_structure.insert(
+                    defect_site_idx, #Place defect at same position as in DFT calculation
                     int_site.species_string,
                     closest_node_frac_coords,
                     coords_are_cartesian=False,
