@@ -224,7 +224,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         defect_coords = defect_new_species_coords[defect_site_idx]
 
-        defect_site_idx = defect_new_species_idx[defect_site_idx] # Get true site index
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
@@ -302,6 +303,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
     elif defect_type == "interstitial":
         new_species = list(composition_diff.keys())[0]
+
         bulk_new_species_coords = np.array(
             [site.frac_coords for site in bulk if site.specie.name == new_species]
         )
@@ -331,10 +333,13 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             )[0]
 
         else:  # extrinsic interstitial
-            defect_site_idx = 0 
+            defect_site_idx = 0
 
         defect_site_coords = defect_new_species_coords[defect_site_idx]
-        defect_site_idx = defect_new_species_idx[defect_site_idx] # Get true site index
+
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
+
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         #Place defect in same location as output from DFT
