@@ -197,10 +197,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
-        # In POSCAR sites are grouped by species when the inputs are generated. Get location of defect from the final structure from DFT calculation. 
-        for site in (site for site in defect if site.specie.name == new_species):
-            defect_index_from_relaxed = defect.index(site)
-        
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
@@ -224,6 +223,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_idx = 0
 
         defect_coords = defect_new_species_coords[defect_site_idx]
+
+        defect_site_idx = defect_new_species_idx[defect_site_idx] # Get true site index
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
@@ -256,8 +257,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
         #Place defect in same location as output from DFT
-        unrelaxed_defect_structure.insert(defect_index_from_relaxed, new_species, bulk_coords[bulk_site_idx]) 
-        defect_site_idx =  defect_index_from_relaxed #defect in same position in unrelaxed_defect_structure as in ouput from DFT calculation
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species, 
+            bulk_coords[bulk_site_idx]) 
 
     elif defect_type == "vacancy":
         old_species = list(composition_diff.keys())[0]
@@ -299,17 +302,15 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
     elif defect_type == "interstitial":
         new_species = list(composition_diff.keys())[0]
-
         bulk_new_species_coords = np.array(
             [site.frac_coords for site in bulk if site.specie.name == new_species]
         )
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
-
-        # In POSCAR sites are grouped by species when the inputs are generated. Get location of defect from the final structure from DFT calculation. 
-        for site in (site for site in defect if site.specie.name == new_species):
-            defect_index_from_relaxed = defect.index(site)
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
             # make sure to take into account periodic boundaries
@@ -330,16 +331,18 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             )[0]
 
         else:  # extrinsic interstitial
-            defect_site_idx = 0
+            defect_site_idx = 0 
 
         defect_site_coords = defect_new_species_coords[defect_site_idx]
-
+        defect_site_idx = defect_new_species_idx[defect_site_idx] # Get true site index
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         #Place defect in same location as output from DFT
-        unrelaxed_defect_structure.insert(defect_index_from_relaxed,new_species, defect_site_coords)
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species,
+            defect_site_coords)
         bulk_site_idx = None
-        defect_site_idx = defect_index_from_relaxed  #defect in same position in unrelaxed_defect_structure as in ouput from DFT calculation
 
     else:
         raise ValueError(f"Invalid defect type: {defect_type}")
@@ -711,7 +714,7 @@ class SingleDefectParser:
             ]
             for bulk_index in range(len(distmatrix))
         ]  # list of [min dist, bulk ind, defect ind]
-
+        
         site_matching_indices = []
         if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
             for mindist, bulk_index, defect_index in min_dist_with_index:
