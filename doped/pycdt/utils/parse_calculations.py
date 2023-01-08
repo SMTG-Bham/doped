@@ -197,6 +197,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
@@ -220,6 +223,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_idx = 0
 
         defect_coords = defect_new_species_coords[defect_site_idx]
+
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
@@ -251,8 +257,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        unrelaxed_defect_structure.append(new_species, bulk_coords[bulk_site_idx])
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species, 
+            bulk_coords[bulk_site_idx]) 
 
     elif defect_type == "vacancy":
         old_species = list(composition_diff.keys())[0]
@@ -301,6 +310,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
             # make sure to take into account periodic boundaries
@@ -325,11 +337,17 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         defect_site_coords = defect_new_species_coords[defect_site_idx]
 
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
+
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
-        unrelaxed_defect_structure.append(new_species, defect_site_coords)
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species,
+            defect_site_coords)
         bulk_site_idx = None
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
 
     else:
         raise ValueError(f"Invalid defect type: {defect_type}")
@@ -547,7 +565,8 @@ class SingleDefectParser:
                 )
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
-                unrelaxed_defect_structure.append(
+                unrelaxed_defect_structure.insert(
+                    defect_site_idx, #Place defect at same position as in DFT calculation
                     int_site.species_string,
                     closest_node_frac_coords,
                     coords_are_cartesian=False,
@@ -700,7 +719,7 @@ class SingleDefectParser:
             ]
             for bulk_index in range(len(distmatrix))
         ]  # list of [min dist, bulk ind, defect ind]
-
+        
         site_matching_indices = []
         if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
             for mindist, bulk_index, defect_index in min_dist_with_index:
