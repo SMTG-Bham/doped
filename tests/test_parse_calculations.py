@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import unittest
+import warnings
+from unittest.mock import patch
 from doped.pycdt.utils import parse_calculations
 from pymatgen.core.structure import Structure
 
@@ -12,6 +14,11 @@ class DopedParsingTestCase(unittest.TestCase):
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.BULK_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
         self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+
+        self.ytos_dielectric = [[40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
+                           [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
+                           [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023]]
+        # from legacy Materials Project
 
     def test_vacancy_parsing_and_freysoldt(self):
         """Test parsing of Cd vacancy calculations and correct Freysoldt correction calculated"""
@@ -84,22 +91,28 @@ class DopedParsingTestCase(unittest.TestCase):
 
     def test_interstitial_parsing_and_kumagai(self):
         """Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV) correction"""
-        for i in os.listdir(self.EXAMPLE_DIR):
-            if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
-                defect_charge = int(i[-2:].replace("_", ""))
-                # parse with no transformation.json:
-                sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=self.BULK_DATA_DIR,
-                    dielectric=self.dielectric,
-                    defect_charge=defect_charge,
-                )
-                sdp.kumagai_loader()
-                sdp.get_stdrd_metadata()
-                sdp.get_bulk_gap_data()
-                sdp.run_compatibility()
-                te_i_2_ent = sdp.defect_entry
+        with patch("builtins.print") as mock_print:
+            for i in os.listdir(self.EXAMPLE_DIR):
+                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
+                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_charge = int(i[-2:].replace("_", ""))
+                    # parse with no transformation.json:
+                    sdp = parse_calculations.SingleDefectParser.from_paths(
+                        path_to_defect=defect_file_path,
+                        path_to_bulk=self.BULK_DATA_DIR,
+                        dielectric=self.dielectric,
+                        defect_charge=defect_charge,
+                    )
+                    sdp.kumagai_loader()
+                    sdp.get_stdrd_metadata()
+                    sdp.get_bulk_gap_data()
+                    sdp.run_compatibility()
+                    te_i_2_ent = sdp.defect_entry
+
+        mock_print.assert_called_once_with(
+            "Saving parsed Voronoi sites (for interstitial site-matching) "
+            "to bulk_voronoi_sites.json to speed up future parsing."
+        )
 
         self.assertAlmostEqual(te_i_2_ent.energy, -6.221, places=3)
         self.assertAlmostEqual(te_i_2_ent.uncorrected_energy, -7.105, places=3)
@@ -117,6 +130,27 @@ class DopedParsingTestCase(unittest.TestCase):
         np.testing.assert_array_almost_equal(
             te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875]
         )
+
+        # run again to check parsing of previous Voronoi sites
+        with patch("builtins.print") as mock_print:
+            for i in os.listdir(self.EXAMPLE_DIR):
+                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
+                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_charge = int(i[-2:].replace("_", ""))
+                    # parse with no transformation.json:
+                    sdp = parse_calculations.SingleDefectParser.from_paths(
+                        path_to_defect=defect_file_path,
+                        path_to_bulk=self.BULK_DATA_DIR,
+                        dielectric=self.dielectric,
+                        defect_charge=defect_charge,
+                    )
+                    sdp.kumagai_loader()
+                    sdp.get_stdrd_metadata()
+                    sdp.get_bulk_gap_data()
+                    sdp.run_compatibility()
+                    te_i_2_ent = sdp.defect_entry
+
+        mock_print.assert_not_called()
         os.remove("bulk_voronoi_nodes.json")
 
     def test_substitution_parsing_and_kumagai(self):
@@ -225,10 +259,6 @@ class DopedParsingTestCase(unittest.TestCase):
 
     def test_extrinsic_interstitial_parsing_and_kumagai(self):
         """Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV) correction"""
-        ytos_dielectric = [[40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
-                           [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
-                           [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023]]
-        # from legacy Materials Project
 
         for i in os.listdir(self.EXAMPLE_DIR):
             if "YTOS" in i:
@@ -238,7 +268,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp = parse_calculations.SingleDefectParser.from_paths(
                     path_to_defect=defect_file_path,
                     path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
-                    dielectric=ytos_dielectric,
+                    dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
                 sdp.kumagai_loader()
@@ -272,10 +302,6 @@ class DopedParsingTestCase(unittest.TestCase):
         Test parsing of extrinsic F-on-O substitution in YTOS,
         w/Kumagai-Oba (eFNV) and Freysoldt (FNV) corrections
         """
-        ytos_dielectric = [[40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
-                           [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
-                           [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023]]
-        # from legacy Materials Project
 
         # first using Freysoldt (FNV) correction
         for i in os.listdir(self.EXAMPLE_DIR):
@@ -286,7 +312,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp = parse_calculations.SingleDefectParser.from_paths(
                     path_to_defect=defect_file_path,
                     path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
-                    dielectric=ytos_dielectric,
+                    dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
                 sdp.freysoldt_loader()
@@ -321,7 +347,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp = parse_calculations.SingleDefectParser.from_paths(
                     path_to_defect=defect_file_path,
                     path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
-                    dielectric=ytos_dielectric,
+                    dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
                 sdp.kumagai_loader()
@@ -346,6 +372,61 @@ class DopedParsingTestCase(unittest.TestCase):
             F_O_1_ent.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
             places=2)
+
+
+    def test_voronoi_structure_mismatch_and_reparse(self):
+        """
+        Test that a mismatch in bulk_supercell structure from previously parsed
+        Voronoi nodes json file with current defect bulk supercell is detected and
+        re-parsed
+        """
+        with patch("builtins.print") as mock_print:
+            for i in os.listdir(self.EXAMPLE_DIR):
+                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
+                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_charge = int(i[-2:].replace("_", ""))
+                    # parse with no transformation.json:
+                    sdp = parse_calculations.SingleDefectParser.from_paths(
+                        path_to_defect=defect_file_path,
+                        path_to_bulk=self.BULK_DATA_DIR,
+                        dielectric=self.dielectric,
+                        defect_charge=defect_charge,
+                    )
+                    sdp.kumagai_loader()
+                    sdp.get_stdrd_metadata()
+                    sdp.get_bulk_gap_data()
+                    sdp.run_compatibility()
+                    te_i_2_ent = sdp.defect_entry
+
+        mock_print.assert_called_once_with(
+            "Saving parsed Voronoi sites (for interstitial site-matching) "
+            "to bulk_voronoi_sites.json to speed up future parsing."
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            for i in os.listdir(self.EXAMPLE_DIR):
+                if "YTOS" in i:
+                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/Int_F_-1/"
+                    defect_charge = -1
+                    # parse with no transformation.json:
+                    sdp = parse_calculations.SingleDefectParser.from_paths(
+                        path_to_defect=defect_file_path,
+                        path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                        dielectric=self.ytos_dielectric,
+                        defect_charge=defect_charge,
+                    )
+                    sdp.kumagai_loader()
+                    sdp.get_stdrd_metadata()
+                    sdp.get_bulk_gap_data()
+                    sdp.run_compatibility()
+                    int_F_minus1_ent = sdp.defect_entry
+
+        warning_message = "Previous bulk_voronoi_nodes.json detected, but does not " \
+                          "match current bulk supercell. Recalculating Voronoi nodes."
+        user_warnings = [warning for warning in w if warning.category == UserWarning]
+        self.assertEqual(len(user_warnings), 1)
+        self.assertIn(warning_message, str(user_warnings[0].message))
+        os.remove("bulk_voronoi_nodes.json")
 
 
 if __name__ == "__main__":
