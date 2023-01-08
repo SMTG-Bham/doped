@@ -544,9 +544,21 @@ class SingleDefectParser:
                 # get closest Voronoi site in bulk supercell to final interstitial site as this is
                 # likely to be the initial interstitial site
                 try:
-                    voronoi_frac_coords = loadfn("./bulk_voronoi_nodes.json")
-                    print("Using parsed Voronoi sites in bulk_voronoi_nodes.json (should "
-                          "correspond to same bulk supercell)")
+                    struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
+                    if not StructureMatcher(
+                            stol=0.05,
+                            primitive_cell=False,
+                            scale=False,
+                            attempt_supercell=False,
+                            allow_subset=False,
+                    ).fit(struc_and_node_dict["bulk_supercell"], bulk_sc_structure):
+                        warnings.warn("Previous bulk_voronoi_nodes.json detected, but does not "
+                                      "match current bulk supercell. Recalculating Voronoi nodes.")
+                        raise FileNotFoundError
+
+                    else:
+                        voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
+
                 except FileNotFoundError:  # first time parsing
                     topography = TopographyAnalyzer(
                         bulk_sc_structure, bulk_sc_structure.symbol_set, [], check_volume=False
@@ -554,7 +566,11 @@ class SingleDefectParser:
                     topography.cluster_nodes()
                     topography.remove_collisions()
                     voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
-                    dumpfn(voronoi_frac_coords, "./bulk_voronoi_nodes.json")  # for efficient
+                    struc_and_node_dict = {
+                        "bulk_supercell": bulk_sc_structure,
+                        "Voronoi nodes": voronoi_frac_coords
+                    }
+                    dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
                     # parsing of multiple defects at once
                     print("Saving parsed Voronoi sites (for interstitial site-matching) to "
                           "bulk_voronoi_sites.json to speed up future parsing.")
@@ -735,8 +751,6 @@ class SingleDefectParser:
                 if mindist < 0.5 and species_match:
                     site_matching_indices.append([bulk_index, defect_index])
 
-        defect_frac_sc_coords = self.defect_entry.site.frac_coords
-
         # user Wigner-Seitz radius for sampling radius
         wz = defect_structure.lattice.get_wigner_seitz_cell()
         dist = []
@@ -751,7 +765,7 @@ class SingleDefectParser:
                 "defect_atomic_site_averages": defect_atomic_site_averages,
                 "site_matching_indices": site_matching_indices,
                 "sampling_radius": sampling_radius,
-                "defect_frac_sc_coords": defect_frac_sc_coords,
+                "defect_frac_sc_coords": self.defect_entry.site.frac_coords,
                 "initial_defect_structure": defect_structure,
             }
         )
