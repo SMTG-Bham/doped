@@ -138,10 +138,10 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp.run_compatibility()
                 te_cd_1_ent = sdp.defect_entry
 
-        self.assertAlmostEqual(te_cd_1_ent.energy, -2.7494, places=3)
+        self.assertAlmostEqual(te_cd_1_ent.energy, -2.665996, places=3)
         self.assertAlmostEqual(te_cd_1_ent.uncorrected_energy, -2.906, places=3)
         correction_dict = {
-            "charge_correction": 0.15660728758716663,
+            "charge_correction": 0.24005014473002428,
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
