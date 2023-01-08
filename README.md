@@ -13,6 +13,8 @@ Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](exampl
 
 ## Installation
 1. `doped` can be installed from `PyPI` with `pip install doped`. 
+Alternatively if you want to use the [example files](examples), 
+you should clone the repository and install with `pip install -e .` from the `doped` directory. 
 
 2. (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
 ```bash
