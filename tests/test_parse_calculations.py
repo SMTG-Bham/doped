@@ -306,7 +306,7 @@ class DopedParsingTestCase(unittest.TestCase):
         # first using Freysoldt (FNV) correction
         for i in os.listdir(self.EXAMPLE_DIR):
             if "YTOS" in i:
-                defect_file_path = f"../examples/{i}/F_O_1/"
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/F_O_1/"
                 defect_charge = +1
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -321,7 +321,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp.run_compatibility()
                 F_O_1_ent = sdp.defect_entry
 
-        self.assertAlmostEqual(F_O_1_ent.energy, 0.034, places=3)
+        self.assertAlmostEqual(F_O_1_ent.energy, 0.0308, places=3)
         self.assertAlmostEqual(F_O_1_ent.uncorrected_energy, -0.0852, places=3)
         correction_dict = {
             "charge_correction": 0.11602321245859282,
@@ -341,7 +341,7 @@ class DopedParsingTestCase(unittest.TestCase):
         # now using Kumagai-Oba (eFNV) correction
         for i in os.listdir(self.EXAMPLE_DIR):
             if "YTOS" in i:
-                defect_file_path = f"../examples/{i}/F_O_1/"
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/F_O_1/"
                 defect_charge = +1
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
