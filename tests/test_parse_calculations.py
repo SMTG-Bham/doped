@@ -112,7 +112,7 @@ class DopedParsingTestCase(unittest.TestCase):
             self.assertAlmostEqual(
                 te_i_2_ent.corrections[k], correction_dict[k], places=3
             )
-        # assert auto-determined interstital site is correct
+        # assert auto-determined interstitial site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
             te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875]
@@ -158,10 +158,10 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_extrinsic_interstitial_defect_ID(self):
         """Test parsing of extrinsic F in YTOS interstitial"""
         bulk_sc_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Bulk_POSCAR"
+            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Bulk/POSCAR"
         )
         initial_defect_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Relaxed_CONTCAR"
+            f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Int_F_-1/Relaxed_CONTCAR"
         )
         (
             def_type,
@@ -181,13 +181,13 @@ class DopedParsingTestCase(unittest.TestCase):
         self.assertEqual(bulk_site_idx, None)
         self.assertEqual(defect_site_idx, len(unrelaxed_defect_structure) - 1)
 
-        # assert auto-determined substitution site is correct
-        # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-        np.testing.assert_array_almost_equal(
-            unrelaxed_defect_structure[defect_site_idx].frac_coords,
-            [0.00, 0.00, 0.48],
-            decimal=2,  # approx match, not exact because relaxed bulk supercell
-        )
+        # assert auto-determined interstitial site is correct
+        print(unrelaxed_defect_structure[defect_site_idx].frac_coords)
+        self.assertAlmostEqual(
+            unrelaxed_defect_structure[defect_site_idx].distance_and_image_from_frac_coords([0, 0, 0.478])[0],
+            0.0,
+            places=2)  # approx match, not exact because relaxed bulk supercell
+
 
     def test_extrinsic_substitution_defect_ID(self):
         """Test parsing of extrinsic U_on_Cd in CdTe"""
@@ -216,12 +216,54 @@ class DopedParsingTestCase(unittest.TestCase):
         self.assertEqual(defect_site_idx, 63)  # last site in structure
 
         # assert auto-determined substitution site is correct
-        # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
             unrelaxed_defect_structure[defect_site_idx].frac_coords,
             [0.00, 0.00, 0.00],
             decimal=2,  # exact match because perfect supercell
         )
+
+    def test_extrinsic_interstitial_parsing_and_kumagai(self):
+        """Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV) correction"""
+        ytos_dielectric = [[40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
+                           [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
+                           [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023]]
+        # from legacy Materials Project
+
+        for i in os.listdir(self.EXAMPLE_DIR):
+            if "YTOS" in i:
+                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/Int_F_-1/"
+                defect_charge = -1
+                # parse with no transformation.json:
+                sdp = parse_calculations.SingleDefectParser.from_paths(
+                    path_to_defect=defect_file_path,
+                    path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                    dielectric=ytos_dielectric,
+                    defect_charge=defect_charge,
+                )
+                sdp.kumagai_loader()
+                sdp.get_stdrd_metadata()
+                sdp.get_bulk_gap_data()
+                sdp.run_compatibility()
+                int_f_minus1_ent = sdp.defect_entry
+
+        self.assertAlmostEqual(int_f_minus1_ent.energy, 0.767, places=3)
+        self.assertAlmostEqual(int_f_minus1_ent.uncorrected_energy, 0.7515, places=3)
+        correction_dict = {
+            "charge_correction": 0.0155169495708003,
+            "bandfilling_correction": -0.0,
+            "bandedgeshifting_correction": 0.0,
+        }
+        for k in correction_dict:
+            self.assertAlmostEqual(
+                int_f_minus1_ent.corrections[k], correction_dict[k], places=3
+            )
+        # assert auto-determined interstitial site is correct
+        self.assertAlmostEqual(
+            int_f_minus1_ent.site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
+            0.0,
+            places=2)  # approx match, not exact because relaxed bulk supercell
+
+        os.remove("bulk_voronoi_nodes.json")
 
 
 if __name__ == "__main__":
