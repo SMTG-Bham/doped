@@ -80,7 +80,7 @@ class CustomEggInfoCommand(egg_info):
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.2.0",
+    version="0.2.1",
     install_requires=[
         "numpy>1.22",
         "pymatgen<2022.8.23",
