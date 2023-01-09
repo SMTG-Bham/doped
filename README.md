@@ -9,12 +9,28 @@ philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dyn
 Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and usage.
 
 ## Requirements
-`doped` requires pymatgen (and its dependencies).
+`doped` requires `pymatgen<2022.8.23` and its dependencies.
 
 ## Installation
-1. `doped` can be installed from `PyPI` with `pip install doped`. 
-Alternatively if you want to use the [example files](examples), 
-you should clone the repository and install with `pip install -e .` from the `doped` directory. 
+- Because of breaking changes made to the `pymatgen` defects code in version `2022.8.23`, `doped` requires 
+`pymatgen<2022.8.23`, which is installed automatically when installing `doped`. 
+However, as discussed briefly below and in the example notebooks, the 
+[`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach is highly recommended when calculating 
+defects in solids, and this package has been updated to be compatible with the latest version of `pymatgen`.
+As such, it is recommended to install `doped` in a virtual python environment as follows:
+
+1. 
+```bash
+conda create -n doped  # create conda environment named doped
+conda activate doped  # activate doped conda environment
+pip install doped  # install doped package and dependencies
+```
+And then use this environment whenever using `doped`.
+Instead of `conda` you can also use `venv` to setup virtual environments, 
+see [here](https://www.freecodecamp.org/news/how-to-setup-virtual-environments-in-python/) for more.
+
+If you want to use the [example files](examples), 
+you should clone the repository and install with `pip install -e .` from the `doped` directory.
 
 2. (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
 ```bash
@@ -23,8 +39,9 @@ you should clone the repository and install with `pip install -e .` from the `do
 Within your `VASP pseudopotential top directory`, you should have a folder named `POT_GGA_PAW_PBE` which contains the `POTCAR.X(.gz)` files (in this case for PBE `POTCAR`s).
 
 (Necessary to generate `POTCAR` files, auto-determine `INCAR` settings such as `NELECT` for charged defects...)
+See [here](https://pymatgen.org/installation.html#potcar-setup) if you have issues with this.
 
-3(Optional) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
+3. (Optional) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
 ```bash
   MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
 ```
@@ -57,13 +74,6 @@ Note that while [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) is 
 ```bash
   pip install -e .
 ```
-This command tries to obtain the required packages and their dependencies and install them automatically.
-Access to root may be needed if ``virtualenv`` is not used.
-
-
-## Word of Caution
-There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
-If you find any, please let us know!
 
 ## Acknowledgments
-`doped` has benefitted from feedback from many users, in particular members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Katarina Brlec and Sabrine Hachmiouane. Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
+`doped` has benefitted from feedback from many users, in particular members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Katarina Brlec, Adair Nicolson and Sabrine Hachmioune. Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
