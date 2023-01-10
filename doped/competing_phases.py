@@ -4,7 +4,7 @@ from pathlib import Path, PurePath
 import warnings
 from pymatgen.ext.matproj import MPRester
 from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
-from pymatgen.io.vasp.sets import DictSet
+from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
 from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
@@ -13,8 +13,10 @@ import json
 import pandas as pd
 
 # globally ignore this shit 
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)  
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields") 
+warnings.filterwarnings("ignore", category = UnknownPotcarWarning)
+warnings.filterwarnings("ignore", category = BadInputSetWarning)
+warnings.filterwarnings("ignore", message = "No POTCAR file with matching TITEL fields")
+warnings.filterwarnings("ignore", message = "You are using the legacy MPRester")
 class CompetingPhases(): 
     """
     Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules 
