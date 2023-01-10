@@ -527,10 +527,10 @@ def make_molecule_in_a_box(element):
         coords=[[15,15,15], [15,15,15.74]], coords_are_cartesian=True), 'formula': 'H2', 'magnetisation': 0},
         'F2': {'structure': Structure(lattice=lattice, species=['F', 'F'], 
         coords=[[15,15,15], [15,15,16.44]], coords_are_cartesian=True), 'formula': 'F2', 'magnetisation': 0},
-        'Cl2': {'structure': Structure(lattice=lattice, species=['Cl', 'Cl'], coords=[[15,15,15], [15,15,16.99]], coords_are_cartesian=True), 'formula': 'Cl2', 'magnetisation': 0},
-        'Br2': {'structure': Structure(lattice=lattice, species=['Br', 'Br'],coords=[[15,15,15], [15,15,17.30]], coords_are_cartesian=True), 'formula': 'Br2', 'magnetisation': 0},
-        'I2': {'structure': Structure(lattice=lattice, species=['I', 'I'], 
-        coords=[[15,15,15], [15,15,17.67]], coords_are_cartesian=True), 'formula': 'I2', 'magnetisation': 0}
+        'Cl2': {'structure': Structure(lattice=lattice, species=['Cl', 'Cl'], coords=[[15,15,15], [15,15,16.99]],
+                                       coords_are_cartesian=True), 'formula': 'Cl2', 'magnetisation': 0},
+        'Br2': {'structure': Structure(lattice=lattice, species=['Br', 'Br'],coords=[[15,15,15], [15,15,17.30]],
+                                       coords_are_cartesian=True), 'formula': 'Br2', 'magnetisation': 0},
     }
     if element in all_structures.keys(): 
         structure = all_structures[element]['structure']
