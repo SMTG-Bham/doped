@@ -64,9 +64,9 @@ class CompetingPhases():
         self.competing_phases = []
         [self.competing_phases.append(x) for x in competing_phases if x not in self.competing_phases]
 
-    def convergence_setup(self, kpoints_metals=(40,120,5), kpoints_nonmetals=(5,60,5), potcar_functional='PBE_54', user_potcar_settings=None, user_incar_settings=None): 
+    def convergence_setup(self, kpoints_metals=(40,120,5), kpoints_nonmetals=(5,60,5), potcar_functional=None, user_potcar_settings=None, user_incar_settings=None):
         """
-        Sets up input files for kpoints convergence testing 
+        Sets up input files for kpoints convergence testing
         Args: 
             kpoints_metals (tuple): Kpoint density per inverse volume (Å-3) to be tested in (min, max, step) format for metals
             kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å-3) to be tested in (min, max, step) format for nonmetals
@@ -137,7 +137,7 @@ class CompetingPhases():
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(e['formula'], float(f"{e['ehull']:.4f}"), kname)
                 dis.write_input(fname)
     
-    def vasp_std_setup(self, kpoints_metals=95, kpoints_nonmetals=45, potcar_functional='PBE_54', user_potcar_settings=None, user_incar_settings=None):
+    def vasp_std_setup(self, kpoints_metals=95, kpoints_nonmetals=45, potcar_functional=None, user_potcar_settings=None, user_incar_settings=None):
         """
         Sets up input files for vasp_std relaxations 
         Args:
@@ -543,8 +543,6 @@ def make_molecule_in_a_box(element):
         coords=[[15,15,15], [15,15,16.44]], coords_are_cartesian=True), 'formula': 'F2', 'magnetisation': 0},
         'Cl2': {'structure': Structure(lattice=lattice, species=['Cl', 'Cl'], coords=[[15,15,15], [15,15,16.99]],
                                        coords_are_cartesian=True), 'formula': 'Cl2', 'magnetisation': 0},
-        'Br2': {'structure': Structure(lattice=lattice, species=['Br', 'Br'],coords=[[15,15,15], [15,15,17.30]],
-                                       coords_are_cartesian=True), 'formula': 'Br2', 'magnetisation': 0},
     }
     if element in all_structures.keys(): 
         structure = all_structures[element]['structure']
