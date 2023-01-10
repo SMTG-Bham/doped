@@ -21,11 +21,12 @@ class CompetingPhases():
     """
     Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules 
     """
-    def __init__(self, system, e_above_hull=0.02): 
+    def __init__(self, system, e_above_hull=0.02, api_key=None):
         """
         Args: 
             system (list): Chemical system under investigation, e.g. ['Mg', 'O']
             e_above_hull (float): Maximum considered energy above hull
+            api_key (str): Materials Project Legacy API key
         """
         # create list of entries 
         molecules_in_a_box = ['H2', 'O2', 'N2', 'F2', 'Cl2', 'Br2']
@@ -33,7 +34,17 @@ class CompetingPhases():
         self.data = ['pretty_formula', 'e_above_hull', 'band_gap', 'nsites', 'volume','icsd_id', "formation_energy_per_atom", 'energy_per_atom', 'energy', 'total_magnetization', 'nelements', 'elements']
         self.system = system
         stype = 'initial'
-        m = MPRester()
+
+        # TODO: This will need to be updated to use the new Materials Project API at some point
+        # (currently uses the legacy version). The main changes for this are just that MPRester is instead imported
+        # from mp_api.client (which will also need to be added as a doped requirement) with a new API key, and
+        # 'e_above_hull' is now 'energy_above_hull`
+
+        if api_key:
+            m = MPRester(api_key=api_key)
+        else:
+            m = MPRester()
+
         self.entries = m.get_entries_in_chemsys(self.system, inc_structure=stype, property_data=self.data)
         self.entries = [e for e in self.entries if e.data['e_above_hull'] <= e_above_hull]
        
@@ -211,20 +222,21 @@ class AdditionalCompetingPhases(CompetingPhases):
     """
     If you want to add some extrinsic doping, or add another element to your chemical system, this is the class for you. Will make sure you're only calculating the extra phases 
     """
-    def __init__(self, system, extrinsic_species, e_above_hull=0.02): 
+    def __init__(self, system, extrinsic_species, e_above_hull=0.02, api_key=None):
         """
         Args: 
             system (list): Chemical system under investigation, e.g. ['Mg', 'O']
             extrinsic_species (str): Dopant species
             e_above_hull (float): Maximum considered energy above hull
+            api_key (str): Materials Project Legacy API key
         """
         # the competing phases & entries of the OG system
-        super().__init__(system, e_above_hull)
+        super().__init__(system, e_above_hull, api_key)
         self.og_competing_phases = copy.deepcopy(self.competing_phases)
         # the competing phases & entries of the OG system + all the additional
         # stuff from the extrinsic species 
         system.append(extrinsic_species)
-        super().__init__(system, e_above_hull)
+        super().__init__(system, e_above_hull, api_key)
         self.ext_competing_phases = copy.deepcopy(self.competing_phases)
 
         # only keep the ones that are actually new
