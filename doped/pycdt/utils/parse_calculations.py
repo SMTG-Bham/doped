@@ -986,8 +986,8 @@ Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
 scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
 look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if
-charge correction scheme still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
+`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if the charge 
+correction scheme is still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
 to apply it (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
 You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
 in `SingleDefectParser.from_paths()`."""
