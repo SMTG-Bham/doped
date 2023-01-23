@@ -130,7 +130,8 @@ class CompetingPhases:
             potcar_functional (str): POTCAR to use
             user_potcar_settings (dict): Override the default POTCARs
             user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5,
-            "LDAU": False}
+            "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input
+            as strings with quotation marks (e.g. `{"ALGO": "All"}`).
         Returns:
             writes input files
         """
@@ -231,7 +232,8 @@ class CompetingPhases:
             potcar_functional (str): POTCAR to use
             user_potcar_settings (dict): Override the default POTCARs
             user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5,
-            "LDAU": False}
+            "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input
+            as strings with quotation marks (e.g. `{"ALGO": "All"}`).
         Returns:
             saves to file
         """
