@@ -159,7 +159,10 @@ def vasp_gam_files(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
+
             (default: None)
         potcar_settings (dict):
             Dictionary of user POTCAR settings to override default settings.
@@ -294,7 +297,9 @@ def vasp_std_files(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
             (default: None)
         kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
@@ -431,7 +436,9 @@ def vasp_ncl_files(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
             (default: None)
         kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Most
@@ -585,7 +592,9 @@ def vasp_converge_files(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
             (default: None)
         config (str):
             CONFIG file string. If provided, will also write the CONFIG file (to automate
@@ -693,7 +702,9 @@ def vasp_std_chempot(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
             (default: None)
         kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
@@ -813,7 +824,9 @@ def vasp_ncl_chempot(
         incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are.
+            source code, to see what the default INCAR settings are. Note that any flags that
+            aren't numbers or True/False need to be input as strings with quotation marks
+            (e.g. `{"ALGO": "All"}`).
             (default: None)
         kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
