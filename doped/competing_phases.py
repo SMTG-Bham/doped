@@ -33,7 +33,7 @@ class CompetingPhases:
             api_key (str): Materials Project Legacy API key
         """
         # create list of entries
-        molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2", "Br2"]
+        molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
         # all data collected from materials project
         self.data = [
             "pretty_formula",
