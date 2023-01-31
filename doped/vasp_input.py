@@ -194,6 +194,10 @@ def vasp_gam_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    vaspgamposcar = defect_relax_set.poscar
+    if poscar_comment:
+        vaspgamposcar.comment = poscar_comment
+
     potcars = _check_psp_dir()
     if potcars:
         defect_relax_set.potcar.write_file(vaspgaminputdir + "POTCAR")
@@ -201,9 +205,6 @@ def vasp_gam_files(
         warnings.warn("POTCAR directory not set up with pymatgen, so only POSCAR files will be "
                       "generated (POTCARs also needed to determine appropriate NELECT setting in "
                       "INCAR files)")
-        vaspgamposcar = defect_relax_set.poscar
-        if poscar_comment:
-            vaspgamposcar.comment = poscar_comment
         vaspgamposcar.write_file(vaspgaminputdir + "POSCAR")
         return  # exit here
 
@@ -267,9 +268,6 @@ def vasp_gam_files(
     vaspgamincar = Incar.from_dict(vaspgamincardict)
     vaspgamincar.write_file(vaspgaminputdir + "INCAR")
 
-    vaspgamposcar = defect_relax_set.poscar
-    if poscar_comment:
-        vaspgamposcar.comment = poscar_comment
     vaspgamposcar.write_file(vaspgaminputdir + "POSCAR")
     vaspgamkpts.write_file(vaspgaminputdir + "KPOINTS")
 
@@ -280,6 +278,7 @@ def vasp_std_files(
     incar_settings: dict = None,
     kpoints_settings: dict = None,
     potcar_settings: dict = None,
+    unperturbed_poscar: bool = False,
 ) -> None:
     """
     Generates INCAR, POTCAR and KPOINTS for vasp_std expensive k-point mesh relaxation.
@@ -312,8 +311,18 @@ def vasp_std_files(
             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
             the (Pymatgen) syntax and doped default settings are.
             (default: None)
+        unperturbed_poscar (bool):
+            If True, write the unperturbed defect POSCAR to the vasp_std folder as well. Not
+            recommended, as the recommended workflow is to initially perform vasp_gam
+            ground-state structure searching using ShakeNBreak (see example notebook;
+            https://shakenbreak.readthedocs.io), then continue the vasp_std relaxations from the
+            'Groundstate' CONTCARs.
+            (default: False)
     """
     supercell = single_defect_dict["Defect Structure"]
+    poscar_comment = (
+        single_defect_dict["POSCAR Comment"] if "POSCAR Comment" in single_defect_dict else None
+    )
 
     # Directory
     vaspstdinputdir = input_dir + "/vasp_std/" if input_dir else "VASP_Files/vasp_std/"
@@ -336,14 +345,26 @@ def vasp_std_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    vaspstdposcar = defect_relax_set.poscar
+    if poscar_comment:
+        vaspstdposcar.comment = poscar_comment
+
     potcars = _check_psp_dir()
     if not potcars:
-        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
-                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
-                      "relaxation files, then continue from this pre-converged structure with "
-                      "vasp_std)")
+        if unperturbed_poscar:
+            warnings.warn("POTCAR directory not set up with pymatgen, so only POSCAR files will be "
+                          "generated (POTCARs also needed to determine appropriate NELECT setting "
+                          "in INCAR files)")
+            vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
+
+        else:
+            warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
+                          "generated (you should use vasp_input.vasp_gam_files() to create the "
+                          "initial relaxation files, then continue from this pre-converged "
+                          "structure with vasp_std)")
         return  # exit here
     defect_relax_set.potcar.write_file(vaspstdinputdir + "POTCAR")
+    vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
 
     relax_set_incar = defect_relax_set.incar
     try:
@@ -418,6 +439,7 @@ def vasp_ncl_files(
         incar_settings: dict = None,
         kpoints_settings: dict = None,
         potcar_settings: dict = None,
+        unperturbed_poscar: bool = False,
 ) -> None:
     """
     Generates INCAR, POTCAR and non-symmetrised KPOINTS for vasp_ncl single-shot SOC energy
@@ -451,8 +473,19 @@ def vasp_ncl_files(
             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
             the (Pymatgen) syntax and doped default settings are.
             (default: None)
+        unperturbed_poscar (bool):
+            If True, write the unperturbed defect POSCAR to the vasp_ncl folder as well. Not
+            recommended, as the recommended workflow is to initially perform vasp_gam
+            ground-state structure searching using ShakeNBreak (see example notebook;
+            https://shakenbreak.readthedocs.io), then continue the vasp_std relaxations from the
+            'Groundstate' CONTCARs, before doing final vasp_ncl singleshot calculations if SOC is
+            important.
+            (default: False)
     """
     supercell = single_defect_dict["Defect Structure"]
+    poscar_comment = (
+        single_defect_dict["POSCAR Comment"] if "POSCAR Comment" in single_defect_dict else None
+    )
 
     # Directory
     vaspnclinputdir = input_dir + "/vasp_ncl/" if input_dir else "VASP_Files/vasp_ncl/"
@@ -473,14 +506,27 @@ def vasp_ncl_files(
                                                                            "Dict"]["charge"],
                                       user_potcar_settings=potcar_dict["POTCAR"],
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
+    vaspnclposcar = defect_relax_set.poscar
+    if poscar_comment:
+        vaspnclposcar.comment = poscar_comment
+
     potcars = _check_psp_dir()
     if not potcars:
-        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
-                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
-                      "relaxation files, then continue from this pre-converged structure with "
-                      "vasp_std and finally vasp_ncl if SOC important)")
+        if unperturbed_poscar:
+            warnings.warn("POTCAR directory not set up with pymatgen, so only POSCAR files will be "
+                          "generated (POTCARs also needed to determine appropriate NELECT setting "
+                          "in INCAR files)")
+            vaspnclposcar.write_file(vaspnclinputdir + "POSCAR")
+
+        else:
+            warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
+                          "generated (you should use vasp_input.vasp_gam_files() to create the "
+                          "initial relaxation files, then continue from this pre-converged "
+                          "structure with vasp_std and finally vasp_ncl if SOC important)")
         return  # exit here
+
     defect_relax_set.potcar.write_file(vaspnclinputdir + "POTCAR")
+    vaspnclposcar.write_file(vaspnclinputdir + "POSCAR")
 
     relax_set_incar = defect_relax_set.incar
     try:
