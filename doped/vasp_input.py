@@ -366,7 +366,7 @@ def vasp_std_files(
 
     defect_relax_set = DefectRelaxSet(
         supercell,
-        charge=single_defect_dict["Transformation " "Dict"]["charge"],
+        charge=single_defect_dict["Transformation Dict"]["charge"],
         user_potcar_settings=potcar_dict["POTCAR"],
         user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
     )
@@ -393,7 +393,9 @@ def vasp_std_files(
             )
         return  # exit here
     defect_relax_set.potcar.write_file(vaspstdinputdir + "POTCAR")
-    vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
+
+    if unperturbed_poscar:
+        vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
 
     relax_set_incar = defect_relax_set.incar
     try:
@@ -542,7 +544,7 @@ def vasp_ncl_files(
             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
     defect_relax_set = DefectRelaxSet(
         supercell,
-        charge=single_defect_dict["Transformation " "Dict"]["charge"],
+        charge=single_defect_dict["Transformation Dict"]["charge"],
         user_potcar_settings=potcar_dict["POTCAR"],
         user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
     )
@@ -570,7 +572,8 @@ def vasp_ncl_files(
         return  # exit here
 
     defect_relax_set.potcar.write_file(vaspnclinputdir + "POTCAR")
-    vaspnclposcar.write_file(vaspnclinputdir + "POSCAR")
+    if unperturbed_poscar:
+        vaspnclposcar.write_file(vaspnclinputdir + "POSCAR")
 
     relax_set_incar = defect_relax_set.incar
     try:
