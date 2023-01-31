@@ -12,10 +12,7 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 import json
 import pandas as pd
 
-# globally ignore this shit
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
 
 
