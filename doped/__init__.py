@@ -1,5 +1,7 @@
+import warnings
 from datetime import date
 from importlib.metadata import version, PackageNotFoundError
+from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 
 if date.today().weekday() in [5, 6]:
     print("""Working on the weekend, like usual...\n""")
@@ -31,4 +33,9 @@ def _check_pmg_compatibility():
             f"pymatgen==2022.7.25`) and restart the kernel."
         )
 _check_pmg_compatibility()
+
+# globally ignore these POTCAR warnings
+warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
+warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
