@@ -394,7 +394,7 @@ class CompetingPhasesAnalyzer:
             files, or a path to the base folder in which you have your
             formula_EaH_/vasp_std/vasprun.xml
             folder (str): The folder in which vasprun is, only use if you set base path
-            (i.e. change to vasp_ncl, relax whatever youve called it)
+            (i.e. change to vasp_ncl, relax whatever you've called it).
             csv_fname (str): csv filename
         Returns:
             saves csv with formation energies to file
@@ -423,10 +423,10 @@ class CompetingPhasesAnalyzer:
             for p in path.iterdir():
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
+                    vpg = p / folder / "vasprun.xml.gz"
                     if vp.is_file():
                         self.vasprun_paths.append(str(vp))
-                    vpg = p / folder / "vasprun.xml.gz"
-                    if vpg.is_file():
+                    elif vpg.is_file():
                         self.vasprun_paths.append(str(vpg))
                     else:
                         print(
