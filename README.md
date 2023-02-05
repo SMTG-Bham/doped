@@ -8,6 +8,10 @@ philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dyn
 
 Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and usage.
 
+### Example Outputs:
+Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
+![Chempot Plot Example](files/doped_chempot_plotting.png)![TLD Example](files/doped_TLD_plot.png)
+
 ## Requirements
 `doped` requires `pymatgen<2022.8.23` and its dependencies.
 
