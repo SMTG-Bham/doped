@@ -11,7 +11,7 @@ Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](exampl
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-<img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_chempot_plotting.png" width="430">   &nbsp;&nbsp;  <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_TLD_plot.png" width="400">
+<img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_chempot_plotting.png" width="420">   &nbsp;&nbsp;  <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_TLD_plot.png" width="390">
 
 ## Requirements
 `doped` requires `pymatgen<2022.8.23` and its dependencies.
