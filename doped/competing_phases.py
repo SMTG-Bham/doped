@@ -500,6 +500,7 @@ class CompetingPhasesAnalyzer:
                 "formula": v["pretty_formula"],
                 "kpoints": kpoints,
                 "energy_per_fu": final_energy / formulas_per_unit,
+                'energy_per_atom': v["output"]["final_energy_per_atom"],
                 "energy": final_energy,
             }
             temp_data.append(d)
@@ -514,12 +515,19 @@ class CompetingPhasesAnalyzer:
         'formation_energy'
         """
         df = pd.read_csv(csv)
-        columns = ["formula", "energy_per_fu", "energy", "formation_energy"]
+        columns = ["formula", "energy_per_fu", 'energy_per_atom', "energy", "formation_energy"]
         if all(x in list(df.columns) for x in columns):
             droplist = [i for i in df.columns if i not in columns]
             df.drop(droplist, axis=1, inplace=True)
             d = df.to_dict(orient="records")
             self.data = d
+
+            self.elemental_energies = {}
+            for i in d: 
+                c = Composition(i['formula'])
+                if len(c.elements) == 1: 
+                    elt = c.chemical_system
+                    self.elemental_energies[elt] = i['energy_per_atom']
 
         else:
             raise ValueError(
@@ -671,6 +679,8 @@ class CompetingPhasesAnalyzer:
         df.to_csv(csv_fname, index=False)
         print("Calculated chemical potential limits: \n")
         print(df)
+
+        return df
 
     def cplap_input(self, dependent_variable=None):
         """For completeness' sake, automatically saves to input.dat
