@@ -2,6 +2,9 @@ import contextlib
 import copy
 from pathlib import Path, PurePath
 import warnings
+import json
+import pandas as pd
+
 from pymatgen.ext.matproj import MPRester
 from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
 from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
@@ -9,8 +12,8 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-import json
-import pandas as pd
+
+from doped.pycdt.utils.parse_calculations import get_vasprun
 
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
@@ -379,16 +382,15 @@ class CompetingPhasesAnalyzer:
 
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
-        if extrinsic_species is not None:
-            self.elemental.append(extrinsic_species)
-            self.extrinsic_species = extrinsic_species
+        self.extrinsic_species = extrinsic_species
 
-    def from_vaspruns(
-        self, path, folder="vasp_std", csv_fname="competing_phases_energies.csv"
-    ):
+        if extrinsic_species:
+            self.elemental.append(extrinsic_species)
+
+    def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
-        Reads in vaspruns, collates energies to csv. It isn't the best at removing higher energy
-        elemental phases (if multiple are present), so double check that
+        Reads in vaspruns, collates energies to csv.
+
         Args:
             path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz)
             files, or a path to the base folder in which you have your
@@ -399,12 +401,14 @@ class CompetingPhasesAnalyzer:
         Returns:
             saves csv with formation energies to file
         """
+        # TODO: "It isn't the best at removing higher energy elemental phases (if multiple are
+        #  present), so double check that" – this should be fixed
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
         if isinstance(path, list):
             for p in path:
-                if Path(p).name in {"vasprun.xml", "vasprun.xml.gz"}:
+                if "vasprun.xml" in Path(p).name:
                     self.vasprun_paths.append(str(Path(p)))
 
                 # try to find the file - will always pick the first match for vasprun.xml*
@@ -423,15 +427,22 @@ class CompetingPhasesAnalyzer:
             for p in path.iterdir():
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
-                    vpg = p / folder / "vasprun.xml.gz"
-                    if vp.is_file():
+                    try:
+                        get_vasprun(vp)
                         self.vasprun_paths.append(str(vp))
-                    elif vpg.is_file():
-                        self.vasprun_paths.append(str(vpg))
-                    else:
-                        print(
-                            f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
-                        )
+
+                    except FileNotFoundError:
+                        try:
+                            vp = p / "vasprun.xml"
+                            get_vasprun(vp)
+                            self.vasprun_paths.append(str(vp))
+
+                        except FileNotFoundError:
+                            print(
+                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
+                                f"proceed with caution"
+                            )
+                            continue
 
                 else:
                     raise FileNotFoundError(
@@ -452,34 +463,11 @@ class CompetingPhasesAnalyzer:
         )
 
         num = len(self.vasprun_paths)
-        print(f"parsing {num} vaspruns, this may take a while")
+        print(
+            f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs..."
+        )
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
-        self.elemental_vaspruns = []
         self.data = []
-
-        # make a fake dictionary with all elemental energies set to 0
-        temp_elemental_energies = {}
-        for e in self.elemental:
-            temp_elemental_energies[e] = 0
-
-        # check if elemental, collect the elemental energies per atom (for
-        # formation energies)
-        vaspruns_for_removal = []
-        for i, v in enumerate(self.vaspruns):
-            comp = [str(c) for c in Composition(v["unit_cell_formula"]).elements]
-            energy = v["output"]["final_energy_per_atom"]
-            if len(comp) == 1:
-                for key, val in temp_elemental_energies.items():
-                    if comp[0] == key and energy < val:
-                        temp_elemental_energies[key] = energy
-                    elif comp[0] == key and energy > val:
-                        vaspruns_for_removal.append(i)
-
-        # get rid of elemental competing phases that aren't the lowest
-        # energy ones
-        if vaspruns_for_removal:
-            for m in sorted(vaspruns_for_removal, reverse=True):
-                del self.vaspruns[m]
 
         temp_data = []
         self.elemental_energies = {}
@@ -494,7 +482,15 @@ class CompetingPhasesAnalyzer:
             # check if elemental:
             if len(rcf) == 1:
                 elt = v["elements"][0]
-                self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                if elt not in self.elemental_energies:
+                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                    if elt not in self.elemental:  # new (extrinsic) element
+                        self.extrinsic_species = elt
+                        self.elemental.append(elt)
+
+                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]:
+                    # only include lowest energy elemental polymorph
+                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
 
             d = {
                 "formula": v["pretty_formula"],
@@ -507,6 +503,7 @@ class CompetingPhasesAnalyzer:
 
         df = _calculate_formation_energies(temp_data, self.elemental_energies)
         df.to_csv(csv_fname, index=False)
+        print(f"Competing phase formation energies have been saved to {csv_fname}.")
         self.data = df.to_dict(orient="records")
 
     def from_csv(self, csv):
@@ -788,4 +785,23 @@ def _calculate_formation_energies(data, elemental):
         df2["formation_energy"] -= df2[k] * v
 
     df["formation_energy"] = df2["formation_energy"]
+
+    def _series_sort_by_num_els(series):
+        """
+        Must return a Series object. Sort by number of elements in the formula.
+        """
+        if isinstance(series[0], str):
+            series = series.apply(lambda x: len(Composition(x).elements))
+        return series
+
+    # sort DataFrame by number of elements, and then by energy per formula unit
+    df.sort_values(
+        by=["formula", "energy_per_fu"], key=_series_sort_by_num_els, inplace=True
+    )
+
+    # remove rows with duplicate formulas, keeping the one with the lowest energy_per_fu
+    df.drop_duplicates(subset="formula", keep="first", inplace=True)
+
+    df.reset_index(drop=True, inplace=True)
+
     return df
