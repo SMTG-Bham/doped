@@ -82,7 +82,7 @@ setup(
     packages=find_packages(),
     version="0.2.1",
     install_requires=[
-        "numpy>=1.22.0",
+        "numpy>=1.21.0",
         "pymatgen<2022.8.23",
         "matplotlib",
         "monty>=3.0.2",
