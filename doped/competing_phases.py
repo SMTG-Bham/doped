@@ -432,10 +432,15 @@ class CompetingPhasesAnalyzer:
                         get_vasprun(vp)
 
                     except FileNotFoundError:
-                        print(
-                            f"Can't find a vasprun.xml(.gz) file in {p/folder}, proceed with "
-                            f"caution"
-                        )
+                        try:
+                            vp = p / "vasprun.xml.gz"
+                            get_vasprun(vp)
+
+                        except FileNotFoundError:
+                            print(
+                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
+                                f"proceed with caution"
+                            )
                         continue
 
                 else:
