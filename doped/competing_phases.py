@@ -457,7 +457,7 @@ class CompetingPhasesAnalyzer:
         )
 
         num = len(self.vasprun_paths)
-        print(f"Parsing {num} vaspruns...")
+        print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
         self.elemental_vaspruns = []
         self.data = []
@@ -511,6 +511,7 @@ class CompetingPhasesAnalyzer:
 
         df = _calculate_formation_energies(temp_data, self.elemental_energies)
         df.to_csv(csv_fname, index=False)
+        print(f"Competing phase formation energies have been saved to {csv_fname}.")
         self.data = df.to_dict(orient="records")
 
     def from_csv(self, csv):
@@ -786,11 +787,18 @@ def _calculate_formation_energies(data, elemental):
 
     def _series_sort_by_num_els(series):
         """
-        Must return a Series object
+        Must return a Series object. Sort by number of elements in the formula.
         """
-        return series.apply(lambda x: len(Composition(x).elements))
+        if isinstance(series[0], str):
+            series = series.apply(lambda x: len(Composition(x).elements))
+        return series
 
-    df.sort_values(by=["formula"], key=_series_sort_by_num_els, inplace=True)
+    # sort DataFrame by number of elements, and then by energy per formula unit
+    df.sort_values(by=["formula", "energy_per_fu"], key=series_sort_by_num_els, inplace=True)
+
+    # remove rows with duplicate formulas, keeping the one with the lowest energy_per_fu
+    df.drop_duplicates(subset="formula", keep="first", inplace=True)
+
     df.reset_index(drop=True, inplace=True)
 
     return df
