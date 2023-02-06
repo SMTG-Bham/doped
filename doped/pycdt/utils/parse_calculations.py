@@ -111,6 +111,7 @@ def convert_cd_to_de(cd, b_cse):
 
 def get_vasprun(vasprun_path, **kwargs):
     """Read the vasprun.xml(.gz) file as a pymatgen Vasprun object"""
+    vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore POTCAR warnings when loading vasprun.xml
@@ -132,6 +133,7 @@ def get_vasprun(vasprun_path, **kwargs):
 
 def get_locpot(locpot_path):
     """Read the LOCPOT(.gz) file as a pymatgen Locpot object"""
+    locpot_path = str(locpot_path)  # convert to string if Path object
     if os.path.exists(locpot_path):
         locpot = Locpot.from_file(locpot_path)
     elif os.path.exists(locpot_path + ".gz"):
@@ -146,6 +148,7 @@ def get_locpot(locpot_path):
 
 def get_outcar(outcar_path):
     """Read the OUTCAR(.gz) file as a pymatgen Outcar object"""
+    outcar_path = str(outcar_path)  # convert to string if Path object
     if os.path.exists(outcar_path):
         outcar = Outcar(outcar_path)
     elif os.path.exists(outcar_path + ".gz"):
