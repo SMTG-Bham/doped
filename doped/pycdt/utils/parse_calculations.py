@@ -110,7 +110,7 @@ def convert_cd_to_de(cd, b_cse):
 
 
 def get_vasprun(vasprun_path, **kwargs):
-    """Read the vasprun.xml(.gz) file as a pymatgen Locpot object"""
+    """Read the vasprun.xml(.gz) file as a pymatgen Vasprun object"""
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore POTCAR warnings when loading vasprun.xml
