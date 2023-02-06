@@ -49,6 +49,7 @@
 
 ## Housekeeping
 
+- Clean `README.md` with summary of main functionalities.
 - Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
 - Modularity - could have defect_creation (what is now vasp input+pycdt), defect_analysis, chempot and a separate plotting module?
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
@@ -58,3 +59,4 @@
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47
 - At present, we can't update to be compatible with the most recent `pymatgen` because the defect corrections code has all been removed and is not yet in `pymatgen-analysis-defects`. Once it is however, we should refactor to be compatible with this. For doing this, worth looking at how this was done for `ShakeNBreak`, and should use the new naming system built in `ShakeNBreak`. When doing so, update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
+- Generate docs
