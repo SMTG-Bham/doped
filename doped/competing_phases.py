@@ -783,4 +783,14 @@ def _calculate_formation_energies(data, elemental):
         df2["formation_energy"] -= df2[k] * v
 
     df["formation_energy"] = df2["formation_energy"]
+
+    def _series_sort_by_num_els(series):
+        """
+        Must return a Series object
+        """
+        return series.apply(lambda x: len(Composition(x).elements))
+
+    df.sort_values(by=["formula"], key=_series_sort_by_num_els, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
     return df
