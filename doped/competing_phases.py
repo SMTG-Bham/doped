@@ -382,9 +382,10 @@ class CompetingPhasesAnalyzer:
 
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
-        if extrinsic_species is not None:
+        self.extrinsic_species = extrinsic_species
+
+        if extrinsic_species:
             self.elemental.append(extrinsic_species)
-            self.extrinsic_species = extrinsic_species
 
     def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
@@ -466,32 +467,7 @@ class CompetingPhasesAnalyzer:
             f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs..."
         )
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
-        self.elemental_vaspruns = []
         self.data = []
-
-        # make a fake dictionary with all elemental energies set to 0
-        temp_elemental_energies = {}
-        for e in self.elemental:
-            temp_elemental_energies[e] = 0
-
-        # check if elemental, collect the elemental energies per atom (for
-        # formation energies)
-        vaspruns_for_removal = []
-        for i, v in enumerate(self.vaspruns):
-            comp = [str(c) for c in Composition(v["unit_cell_formula"]).elements]
-            energy = v["output"]["final_energy_per_atom"]
-            if len(comp) == 1:
-                for key, val in temp_elemental_energies.items():
-                    if comp[0] == key and energy < val:
-                        temp_elemental_energies[key] = energy
-                    elif comp[0] == key and energy > val:
-                        vaspruns_for_removal.append(i)
-
-        # get rid of elemental competing phases that aren't the lowest
-        # energy ones
-        if vaspruns_for_removal:
-            for m in sorted(vaspruns_for_removal, reverse=True):
-                del self.vaspruns[m]
 
         temp_data = []
         self.elemental_energies = {}
@@ -506,7 +482,15 @@ class CompetingPhasesAnalyzer:
             # check if elemental:
             if len(rcf) == 1:
                 elt = v["elements"][0]
-                self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                if elt not in self.elemental_energies:
+                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                    if elt not in self.elemental:  # new (extrinsic) element
+                        self.extrinsic_species = elt
+                        self.elemental.append(elt)
+
+                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]:
+                    # only include lowest energy elemental polymorph
+                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
 
             d = {
                 "formula": v["pretty_formula"],
