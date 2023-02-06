@@ -2,6 +2,9 @@ import contextlib
 import copy
 from pathlib import Path, PurePath
 import warnings
+import json
+import pandas as pd
+
 from pymatgen.ext.matproj import MPRester
 from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
 from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
@@ -9,8 +12,8 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-import json
-import pandas as pd
+
+from doped.pycdt.utils.parse_calculations import get_vasprun
 
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
@@ -384,11 +387,11 @@ class CompetingPhasesAnalyzer:
             self.extrinsic_species = extrinsic_species
 
     def from_vaspruns(
-        self, path, folder="vasp_std", csv_fname="competing_phases_energies.csv"
+        self, path, folder="vasp_std", csv_fname="competing_phases.csv"
     ):
         """
-        Reads in vaspruns, collates energies to csv. It isn't the best at removing higher energy
-        elemental phases (if multiple are present), so double check that
+        Reads in vaspruns, collates energies to csv.
+
         Args:
             path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz)
             files, or a path to the base folder in which you have your
@@ -399,12 +402,14 @@ class CompetingPhasesAnalyzer:
         Returns:
             saves csv with formation energies to file
         """
+        # TODO: "It isn't the best at removing higher energy elemental phases (if multiple are
+        #  present), so double check that" – this should be fixed
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
         if isinstance(path, list):
             for p in path:
-                if Path(p).name in {"vasprun.xml", "vasprun.xml.gz"}:
+                if "vasprun.xml" in Path(p).name:
                     self.vasprun_paths.append(str(Path(p)))
 
                 # try to find the file - will always pick the first match for vasprun.xml*
@@ -423,15 +428,15 @@ class CompetingPhasesAnalyzer:
             for p in path.iterdir():
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
-                    if vp.is_file():
-                        self.vasprun_paths.append(str(vp))
-                    vpg = p / folder / "vasprun.xml.gz"
-                    if vpg.is_file():
-                        self.vasprun_paths.append(str(vpg))
-                    else:
+                    try:
+                        get_vasprun(vp)
+
+                    except FileNotFoundError:
                         print(
-                            f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
+                            f"Can't find a vasprun.xml(.gz) file in {p/folder}, proceed with "
+                            f"caution"
                         )
+                        continue
 
                 else:
                     raise FileNotFoundError(
@@ -452,7 +457,7 @@ class CompetingPhasesAnalyzer:
         )
 
         num = len(self.vasprun_paths)
-        print(f"parsing {num} vaspruns, this may take a while")
+        print(f"Parsing {num} vaspruns...")
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
         self.elemental_vaspruns = []
         self.data = []
