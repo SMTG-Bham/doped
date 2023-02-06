@@ -386,9 +386,7 @@ class CompetingPhasesAnalyzer:
             self.elemental.append(extrinsic_species)
             self.extrinsic_species = extrinsic_species
 
-    def from_vaspruns(
-        self, path, folder="vasp_std", csv_fname="competing_phases.csv"
-    ):
+    def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
         Reads in vaspruns, collates energies to csv.
 
@@ -464,7 +462,9 @@ class CompetingPhasesAnalyzer:
         )
 
         num = len(self.vasprun_paths)
-        print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
+        print(
+            f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs..."
+        )
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
         self.elemental_vaspruns = []
         self.data = []
@@ -801,7 +801,9 @@ def _calculate_formation_energies(data, elemental):
         return series
 
     # sort DataFrame by number of elements, and then by energy per formula unit
-    df.sort_values(by=["formula", "energy_per_fu"], key=_series_sort_by_num_els, inplace=True)
+    df.sort_values(
+        by=["formula", "energy_per_fu"], key=_series_sort_by_num_els, inplace=True
+    )
 
     # remove rows with duplicate formulas, keeping the one with the lowest energy_per_fu
     df.drop_duplicates(subset="formula", keep="first", inplace=True)
