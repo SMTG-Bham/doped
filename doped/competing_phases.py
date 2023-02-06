@@ -430,18 +430,20 @@ class CompetingPhasesAnalyzer:
                     vp = p / folder / "vasprun.xml"
                     try:
                         get_vasprun(vp)
+                        self.vasprun_paths.append(str(vp))
 
                     except FileNotFoundError:
                         try:
-                            vp = p / "vasprun.xml.gz"
+                            vp = p / "vasprun.xml"
                             get_vasprun(vp)
+                            self.vasprun_paths.append(str(vp))
 
                         except FileNotFoundError:
                             print(
                                 f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
                                 f"proceed with caution"
                             )
-                        continue
+                            continue
 
                 else:
                     raise FileNotFoundError(
@@ -799,7 +801,7 @@ def _calculate_formation_energies(data, elemental):
         return series
 
     # sort DataFrame by number of elements, and then by energy per formula unit
-    df.sort_values(by=["formula", "energy_per_fu"], key=series_sort_by_num_els, inplace=True)
+    df.sort_values(by=["formula", "energy_per_fu"], key=_series_sort_by_num_els, inplace=True)
 
     # remove rows with duplicate formulas, keeping the one with the lowest energy_per_fu
     df.drop_duplicates(subset="formula", keep="first", inplace=True)
