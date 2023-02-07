@@ -16,6 +16,7 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
 
+from doped.pycdt.utils.parse_calculations import get_vasprun
 
 class CompetingPhases:
     """
@@ -380,13 +381,10 @@ class CompetingPhasesAnalyzer:
 
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
-        
+        self.extrinsic_species = extrinsic_species
+
         if extrinsic_species:
-            self.elemental.append(extrinsic_species)
-            # keep this attr here because the chempots check if the 
-            # attr exists at all to know whether to consider extrinsic
-            # phases in the chempots calculation  
-            self.extrinsic_species = extrinsic_species
+            self.elemental.append(extrinsic_species)      
 
     def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
@@ -427,15 +425,22 @@ class CompetingPhasesAnalyzer:
             for p in path.iterdir():
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
-                    vpg = p / folder / "vasprun.xml.gz"
-                    if vp.is_file():
-                        self.vasprun_paths.append(str(vp))
-                    elif vpg.is_file():
-                        self.vasprun_paths.append(str(vpg))
-                    else:
-                        print(
-                            f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
-                        )
+                    try:
+                        vr, vr_path = get_vasprun(vp)
+                        self.vasprun_paths.append(vr_path)
+
+                    except FileNotFoundError:
+                        try:
+                            vp = p / "vasprun.xml"
+                            vr, vr_path = get_vasprun(vp)
+                            self.vasprun_paths.append(vr_path)
+
+                        except FileNotFoundError:
+                            print(
+                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
+                                f"proceed with caution"
+                            )
+                            continue
 
                 else:
                     raise FileNotFoundError(
@@ -596,7 +601,7 @@ class CompetingPhasesAnalyzer:
         # make df, will need it in next step
         df = pd.DataFrame(chemical_potentials, columns=columns)
 
-        if hasattr(self, "extrinsic_species"):
+        if self.extrinsic_species is not None:
             print(f"Calculating chempots for {self.extrinsic_species}")
             for e in extrinsic_formation_energies:
                 for el in self.elemental:
