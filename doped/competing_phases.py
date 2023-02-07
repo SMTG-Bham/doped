@@ -603,7 +603,7 @@ class CompetingPhasesAnalyzer:
         # make df, will need it in next step
         df = pd.DataFrame(chemical_potentials, columns=columns)
 
-        if hasattr(self, "extrinsic_species"):
+        if self.extrinsic_species is not None:
             print(f"Calculating chempots for {self.extrinsic_species}")
             for e in extrinsic_formation_energies:
                 for el in self.elemental:
