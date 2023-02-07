@@ -416,7 +416,7 @@ class CompetingPhasesAnalyzer:
 
                 else:
                     print(
-                        f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
+                        f"Can't find a vasprun.xml(.gz) file in {p}, proceed with caution"
                     )
 
         # if path provided points to the doped created directories
