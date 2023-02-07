@@ -528,7 +528,7 @@ class CompetingPhasesAnalyzer:
             raise ValueError(
                 "supplied csv does not contain the correct headers, cannot read in the data"
             )
-
+    
     def calculate_chempots(self, csv_fname="chempot_limits.csv"):
         """
         Calculates chemcial potential limits. For dopant species, it calculates the limiting
@@ -677,13 +677,15 @@ class CompetingPhasesAnalyzer:
 
         return df
 
-    def cplap_input(self, dependent_variable=None):
-        """For completeness' sake, automatically saves to input.dat
+    def cplap_input(self, dependent_variable=None, filename='input.dat'):
+        """For completeness' sake, automatically saves to input.dat for cplap
         Args:
-            dependent variable (str) gotta pick one of the variables as dependent, the first
-            element is chosen from the composition if this isn't set
+            dependent_variable (str) Pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
+            filename (str): filename, should end in .dat 
+        Returns 
+            None, saves to file 
         """
-        with open("input.dat", "w") as f:
+        with open(filename, "w") as f:
             with contextlib.redirect_stdout(f):
                 for i in self.data:
                     comp = Composition(i["formula"]).as_dict()
