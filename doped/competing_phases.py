@@ -13,8 +13,6 @@ from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.pycdt.utils.parse_calculations import get_vasprun
-
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
 
@@ -382,10 +380,13 @@ class CompetingPhasesAnalyzer:
 
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
-        self.extrinsic_species = extrinsic_species
-
+        
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
+            # keep this attr here because the chempots check if the 
+            # attr exists at all to know whether to consider extrinsic
+            # phases in the chempots calculation  
+            self.extrinsic_species = extrinsic_species
 
     def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
@@ -396,13 +397,12 @@ class CompetingPhasesAnalyzer:
             files, or a path to the base folder in which you have your
             formula_EaH_/vasp_std/vasprun.xml
             folder (str): The folder in which vasprun is, only use if you set base path
-            (i.e. change to vasp_ncl, relax whatever you've called it).
+            (i.e. change to vasp_ncl or "" if vaspruns are in the formula_EaH folder).
             csv_fname (str): csv filename
         Returns:
             saves csv with formation energies to file
         """
-        # TODO: "It isn't the best at removing higher energy elemental phases (if multiple are
-        #  present), so double check that" – this should be fixed
+
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
@@ -427,22 +427,15 @@ class CompetingPhasesAnalyzer:
             for p in path.iterdir():
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
-                    try:
-                        get_vasprun(vp)
+                    vpg = p / folder / "vasprun.xml.gz"
+                    if vp.is_file():
                         self.vasprun_paths.append(str(vp))
-
-                    except FileNotFoundError:
-                        try:
-                            vp = p / "vasprun.xml"
-                            get_vasprun(vp)
-                            self.vasprun_paths.append(str(vp))
-
-                        except FileNotFoundError:
-                            print(
-                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
-                                f"proceed with caution"
-                            )
-                            continue
+                    elif vpg.is_file():
+                        self.vasprun_paths.append(str(vpg))
+                    else:
+                        print(
+                            f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
+                        )
 
                 else:
                     raise FileNotFoundError(
@@ -452,7 +445,7 @@ class CompetingPhasesAnalyzer:
 
         else:
             raise ValueError(
-                "path should either be a list of paths, a string or a pathlib Path object"
+                "Path should either be a list of paths, a string or a pathlib Path object"
             )
 
         # Ignore POTCAR warnings when loading vasprun.xml
