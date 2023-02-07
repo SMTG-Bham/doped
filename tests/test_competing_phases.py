@@ -4,7 +4,8 @@ import numpy as np
 import unittest
 import warnings
 from unittest.mock import patch
-from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases
+from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases, make_molecule_in_a_box, _calculate_formation_energies
+from pymatgen.core.structure import Structure
 
 class ChemPotsTestCase(unittest.TestCase): 
     def setUp(self): 
@@ -16,11 +17,14 @@ class ChemPotsTestCase(unittest.TestCase):
         self.csv_path_ext = self.path / 'zro2_la_competing_phase_energies.csv'
 
     def tearDown(self) -> None:
-        if os.path.isfile('chempot_limits.csv'): 
+        if Path('chempot_limits.csv').is_file(): 
             os.remove('chempot_limits.csv')
 
-        if os.path.isfile('competing_phases.csv'): 
+        if Path('competing_phases.csv').is_file(): 
             os.remove('competing_phases.csv')
+        
+        if Path('input.dat').is_file(): 
+            os.remove('input.dat')
         
         return super().tearDown()
     
@@ -98,5 +102,61 @@ class ChemPotsTestCase(unittest.TestCase):
         lst_fols_cpa = CompetingPhasesAnalyzer(self.stable_system)
         lst_fols_cpa.from_vaspruns(path=all_fols)
         self.assertEqual(len(lst_fols_cpa.elemental), 2)
+
+    def test_cplap_input(self): 
+        cpa = CompetingPhasesAnalyzer(self.stable_system)
+        cpa.from_csv(self.csv_path)
+        cpa.cplap_input(dependent_variable='O')
+
+        self.assertTrue(Path('input.dat').is_file())
+
+        with open('input.dat', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[5], '3 Zr 1 O -5.986573519999993\n')
+
+
+class BoxedMoleculesTestCase(unittest.TestCase): 
+    def test_elements(self): 
+        s,f,m = make_molecule_in_a_box('O2')
+        self.assertEqual(f, 'O2')
+        self.assertEqual(m, 2)
+        self.assertEqual(type(s), Structure)
+        
+        with self.assertRaises(UnboundLocalError): 
+            s2, f2, m2 = make_molecule_in_a_box('R2')
+
+
+class FormationEnergyTestCase(unittest.TestCase):
+    def test_fe(self):  
+        elemental = {'O': -7.006602065, 'Zr': -9.84367624}
+        data = [{'formula': 'O2',
+                'energy_per_fu': -14.01320413,
+                'energy_per_atom': -7.006602065,
+                'energy': -14.01320413},
+                {'formula': 'Zr',
+                'energy_per_fu': -9.84367624,
+                'energy_per_atom': -9.84367624,
+                'energy': -19.68735248},
+                {'formula': 'Zr3O',
+                'energy_per_fu': -42.524204305,
+                'energy_per_atom': -10.63105107625,
+                'energy': -85.04840861},
+                {'formula': 'ZrO2',
+                'energy_per_fu': -34.5391058,
+                'energy_per_atom': -11.5130352,
+                'energy': -138.156423},
+                {'formula': 'ZrO2',
+                'energy_per_fu': -34.83230881,
+                'energy_per_atom': -11.610769603333331,
+                'energy': -139.32923524},
+                {'formula': 'Zr2O',
+                'energy_per_fu': -32.42291351666667,
+                'energy_per_atom': -10.807637838888889,
+                'energy': -194.5374811}]
+        
+        df = _calculate_formation_energies(data, elemental)
+        self.assertNotEqual(len(df['formula']), len(data)) #check that it removes 1
+        self.assertAlmostEqual(df['formation_energy'][4], -5.728958971666668 )
+        self.assertEqual(df[df['formula']=='O2']['formation_energy'][0], 0)
 
 
