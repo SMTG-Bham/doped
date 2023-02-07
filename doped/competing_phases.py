@@ -428,14 +428,14 @@ class CompetingPhasesAnalyzer:
                 if p.glob("EaH"):
                     vp = p / folder / "vasprun.xml"
                     try:
-                        get_vasprun(vp)
-                        self.vasprun_paths.append(str(vp))
+                        vr, vr_path = get_vasprun(vp)
+                        self.vasprun_paths.append(vr_path)
 
                     except FileNotFoundError:
                         try:
                             vp = p / "vasprun.xml"
-                            get_vasprun(vp)
-                            self.vasprun_paths.append(str(vp))
+                            vr, vr_path = get_vasprun(vp)
+                            self.vasprun_paths.append(vr_path)
 
                         except FileNotFoundError:
                             print(
