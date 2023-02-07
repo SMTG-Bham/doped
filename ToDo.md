@@ -8,6 +8,8 @@
 - Use `UserChemPotAnalyzer` to parse chemical potential calculations
 - Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
 - Publication ready chemical potential diagram plotting tool (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
+- Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
+- Once happy all required functionality is in the new `competing_phases.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), amalgamate `chempot`/`competing_phase` example notebooks and remove the old modified-pycdt `chemical_potentials.py` code.
 
 ## Defect calculations set up
 - Check supercell generation algorithm, worth using ASE's optimal supercell generation tools?
