@@ -121,14 +121,16 @@ def get_vasprun(vasprun_path, **kwargs):
     )
     if os.path.exists(vasprun_path):
         vasprun = Vasprun(vasprun_path)
+        read_vasprun_path = vasprun_path
     elif os.path.exists(vasprun_path + ".gz", **kwargs):
         vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
+        read_vasprun_path = vasprun_path + ".gz"
     else:
         raise FileNotFoundError(
             f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for parsing defect 
             calculations."""
         )
-    return vasprun
+    return vasprun, read_vasprun_path
 
 
 def get_locpot(locpot_path):
@@ -430,12 +432,12 @@ class SingleDefectParser:
         }
 
         # add bulk simple properties
-        bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+        bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
         bulk_energy = bulk_vr.final_energy
         bulk_sc_structure = bulk_vr.initial_structure.copy()
 
         # add defect simple properties
-        defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+        defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
         defect_energy = defect_vr.final_energy
         # Can specify initial defect structure (to help PyCDT find the defect site if
         # multiple relaxations were required, else use from defect relaxation OUTCAR:
@@ -779,11 +781,11 @@ class SingleDefectParser:
 
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
 
         if not self.defect_vr:
             path_to_defect = self.defect_entry.parameters["defect_path"]
-            self.defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+            self.defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
 
         # standard bulk metadata
         bulk_energy = self.bulk_vr.final_energy
@@ -863,7 +865,7 @@ class SingleDefectParser:
         """
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
 
         bulk_sc_structure = self.bulk_vr.initial_structure
         mpid = self.defect_entry.parameters["mpid"]
@@ -960,7 +962,7 @@ class SingleDefectParser:
 
         if actual_bulk_path:
             print(f"Using actual bulk path: {actual_bulk_path}")
-            actual_bulk_vr = get_vasprun(os.path.join(actual_bulk_path, "vasprun.xml"))
+            actual_bulk_vr, actual_bulk_vr_path = get_vasprun(os.path.join(actual_bulk_path, "vasprun.xml"))
             bandgap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
 
         gap_parameters.update({"mpid": mpid, "cbm": cbm, "vbm": vbm, "gap": bandgap})
@@ -1051,7 +1053,7 @@ class PostProcess:
                 return (None, error_msg)  # Further processing is not useful
 
             try:
-                vr = get_vasprun(vr_file, parse_potcar_file=False)
+                vr, vr_path = get_vasprun(vr_file, parse_potcar_file=False)
             except:
                 logger.warning("Couldn't parse {}".format(vr_file))
                 error_msg = ": Failure, couldn't parse vasprun.xml file."
@@ -1247,7 +1249,7 @@ class PostProcess:
                 "This may not be appropriate if the VBM/CBM occur at reciprocal points "
                 "not included in the bulk calculation."
             )
-            vr = get_vasprun(
+            vr, vr_path = get_vasprun(
                 os.path.join(self._root_fldr, "bulk", "vasprun.xml"),
                 parse_potcar_file=False,
             )
@@ -1275,7 +1277,7 @@ class PostProcess:
                 mapi_key=self._mapi_key,
             )
         else:
-            bulkvr = get_vasprun(
+            bulkvr, bulkvr_path = get_vasprun(
                 os.path.join(self._root_fldr, "bulk", "vasprun.xml"),
                 parse_potcar_file=False,
             )
@@ -1308,7 +1310,7 @@ class PostProcess:
         """
 
         try:
-            vr = get_vasprun(
+            vr, vr_path = get_vasprun(
                 os.path.join(self._root_fldr, "dielectric", "vasprun.xml"),
                 parse_potcar_file=False,
             )
