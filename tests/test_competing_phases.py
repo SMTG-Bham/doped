@@ -15,7 +15,15 @@ class ChemPotsTestCase(unittest.TestCase):
         self.csv_path = self.path / 'zro2_competing_phase_energies.csv'
         self.csv_path_ext = self.path / 'zro2_la_competing_phase_energies.csv'
 
+    def tearDown(self) -> None:
+        if os.path.isfile('chempot_limits.csv'): 
+            os.remove('chempot_limits.csv')
+
+        if os.path.isfile('competing_phases.csv'): 
+            os.remove('competing_phases.csv')
         
+        return super().tearDown()
+    
     def test_cpa_csv(self): 
         stable_cpa = CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
@@ -46,10 +54,6 @@ class ChemPotsTestCase(unittest.TestCase):
         self.assertEqual(list(df['La_limiting_phase'])[0], 'La2Zr2O7')
         self.assertAlmostEqual(list(df['La'])[0], -9.46298748)
 
-        if os.path.isfile('chempot_limits.csv'): 
-            os.remove('chempot_limits.csv')
-
-
     # test vaspruns 
     def test_vaspruns(self): 
         cpa = CompetingPhasesAnalyzer(self.stable_system) 
@@ -70,5 +74,29 @@ class ChemPotsTestCase(unittest.TestCase):
         ext_cpa.from_vaspruns(path=path2, folder='relax', csv_fname=self.csv_path_ext)
         self.assertEqual(len(ext_cpa.elemental), 3)
         self.assertEqual(ext_cpa.data[1]['formula'], 'Zr')
+
+        # check if it works from a list
+        all_paths = []
+        for p in path.iterdir():
+            if not p.name.startswith('.'): 
+                pp = p / 'relax' / 'vasprun.xml' 
+                ppgz = p / 'relax' / 'vasprun.xml.gz' 
+                if pp.is_file():
+                    all_paths.append(pp)
+                elif ppgz.is_file(): 
+                    all_paths.append(ppgz) 
+        lst_cpa = CompetingPhasesAnalyzer(self.stable_system) 
+        lst_cpa.from_vaspruns(path=all_paths)
+        self.assertEqual(len(lst_cpa.elemental), 2)   
+        self.assertEqual(len(lst_cpa.vasprun_paths), 8)   
+
+        all_fols = []
+        for p in path.iterdir():
+            if not p.name.startswith('.'): 
+                pp = p / 'relax' 
+                all_fols.append(pp)
+        lst_fols_cpa = CompetingPhasesAnalyzer(self.stable_system)
+        lst_fols_cpa.from_vaspruns(path=all_fols)
+        self.assertEqual(len(lst_fols_cpa.elemental), 2)
 
 
