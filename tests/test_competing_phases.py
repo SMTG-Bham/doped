@@ -1,6 +1,7 @@
 import copy
 import os
 from pathlib import Path
+import shutil
 import numpy as np
 import unittest
 import warnings
@@ -189,3 +190,93 @@ class CombineExtrinsicTestCase(unittest.TestCase):
         
         with self.assertRaises(ValueError): 
             combine_extrinsic(self.first, self.second, 'R')
+
+# not sure how legit this is but since I can't figure out how to
+# patch mock get_entries_in_chemsys that's in the init of the class
+class MockedishCompetingPhases(CompetingPhases): 
+    # sets up a fake class that can read in competing phases
+    # that were already collected from MP 
+    def __init__(self, competing_phases):
+        self.competing_phases = competing_phases
+        
+
+class CompetingPhasesTestCase(unittest.TestCase): 
+    def setUp(self) -> None:
+        self.comp_phases = loadfn('tests/comp_phases_test.json')
+        return super().setUp()
+
+    def test_convergence_setup(self): 
+        mcp = MockedishCompetingPhases(self.comp_phases)
+        
+        with self.assertRaises(OSError):
+            mcp.convergence_setup()
+        
+            self.assertEqual(len(mcp.metals), 6)
+            self.assertEqual(mcp.metals[0]['bandgap'], 0)
+            self.assertEqual(mcp.nonmetals[0]['molecule'], False)
+
+        # potcar spec doesnt need potcars set up for pmg and it still works 
+        mcp.convergence_setup(potcar_spec=True)
+        
+        # this shouldnt exist - dont need to convergence test for molecules
+        self.assertFalse(Path('competing_phases/O2_EaH_0.0').is_dir())
+
+        # test if it writes out the files correctly
+        path1 = 'competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/'
+        self.assertTrue(Path(path1).is_dir())
+        with open(f'{path1}/KPOINTS', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[3], '2 1 1\n')
+        
+        with open(f'{path1}/POTCAR.spec', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[0], 'Zr_sv\n')
+        
+        with open(f'{path1}/INCAR', 'r') as f: 
+            contents = f.readlines() 
+            self.assertEqual(contents[4], 'GGA = Ps\n')
+            self.assertEqual(contents[6], 'ISIF = 2\n')
+
+    def test_vasp_std_setup(self): 
+        mcp = MockedishCompetingPhases(self.comp_phases)
+        
+        with self.assertRaises(OSError):
+            mcp.vasp_std_setup()
+        
+            self.assertEqual(len(mcp.nonmetals), 2)
+            self.assertEqual(mcp.molecules[0]['formula'], 'O2')
+            self.assertEqual(mcp.molecules[0]['magnetisation'], 2)
+            self.assertEqual(mcp.nonmetals[0]['molecule'], False)
+        
+        mcp.vasp_std_setup(potcar_spec=True)
+        path1 = 'competing_phases/ZrO2_EaH_0.0/vasp_std/'
+        self.assertTrue(Path(path1).is_dir())
+        with open(f'{path1}/KPOINTS', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[0], 'pymatgen with grid density = 911 / number of atoms\n')
+            self.assertEqual(contents[3], '4 4 4\n')
+        
+        with open(f'{path1}/POTCAR.spec', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents, ['Zr_sv\n', 'O'])
+
+        with open(f'{path1}/INCAR', 'r') as f: 
+            contents = f.readlines() 
+            self.assertEqual(contents[0], 'AEXX = 0.25\n')
+            self.assertEqual(contents[8], 'ISIF = 3\n')
+            self.assertEqual(contents[5], 'GGA = Pe\n')
+
+        path2 = 'competing_phases/O2_EaH_0.0/vasp_std'
+        self.assertTrue(Path(path2).is_dir())
+        with open(f'{path2}/KPOINTS', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[3], '1 1 1\n')
+        
+        with open(f'{path2}/POSCAR', 'r') as f: 
+            contents = f.readlines()
+            self.assertEqual(contents[-1], '0.500000 0.500000 0.540667 O\n')
+    
+    def tearDown(self) -> None:
+        if Path('competing_phases').is_dir(): 
+            shutil.rmtree('competing_phases')
+        return super().tearDown()
