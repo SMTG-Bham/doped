@@ -20,8 +20,7 @@ from doped.pycdt.utils.parse_calculations import get_vasprun
 
 class CompetingPhases:
     """
-    Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous
-    molecules
+    Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules
     """
 
     def __init__(self, system, e_above_hull=0.02, api_key=None):
@@ -334,8 +333,6 @@ class CompetingPhases:
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
             dis.write_input(fname)
-
-
 class AdditionalCompetingPhases(CompetingPhases):
     """
     If you want to add some extrinsic doping, or add another element to your chemical system,
@@ -366,7 +363,6 @@ class AdditionalCompetingPhases(CompetingPhases):
                 self.competing_phases.append(ext)
 
 
-# separate class for read from file with this as base class? can still use different init?
 class CompetingPhasesAnalyzer:
     """
     Post processing competing phases data to calculate chemical potentials.
@@ -568,10 +564,18 @@ class CompetingPhasesAnalyzer:
             )
 
         chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
+        # remove Element to make it jsonable
+        no_element_chem_lims = {} 
+        for k, v in chem_lims.items(): 
+            temp_dict = {}
+            for kk, vv in v.items():   
+                temp_dict[str(kk)] = vv
+            no_element_chem_lims[k] = temp_dict
+        
         self.intrinsic_chem_limits = {
-            "facets": chem_lims,
+            "facets": no_element_chem_lims,
             "elemental_refs": {
-                elt: ent.energy_per_atom
+                str(elt): ent.energy_per_atom
                 for elt, ent in self.intrinsic_phase_diagram.el_refs.items()
             },
             "facets_wrt_el_refs": {},
@@ -640,7 +644,7 @@ class CompetingPhasesAnalyzer:
             df4 = df.copy().to_dict(orient="records")
             cl2 = {
                 "elemental_refs": {
-                    Element(elt): ene for elt, ene in self.elemental_energies.items()
+                    elt: ene for elt, ene in self.elemental_energies.items()
                 },
                 "facets_wrt_el_refs": {},
                 "facets": {},
@@ -655,7 +659,7 @@ class CompetingPhasesAnalyzer:
                 new_vals = list(
                     self.intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
-                new_vals[Element(f"{self.extrinsic_species}")] = d[
+                new_vals[f"{self.extrinsic_species}"] = d[
                     f"{self.extrinsic_species}"
                 ]
                 cl2["facets_wrt_el_refs"][key] = new_vals
@@ -805,3 +809,59 @@ def _calculate_formation_energies(data, elemental):
     df.reset_index(drop=True, inplace=True)
 
     return df
+
+
+def combine_extrinsic(first, second, extrinsic_species):
+    """
+    Combines chemical limits for different extrinsic species using chemical limits json file from ChemicalPotentialAnalysis. Usage explained in the example jupyter notebook
+    Args: 
+        first (dict): First chempot dict, can contain extrinsic species other than 
+        second (dict): Second chempot dict, must contain the extrinsic species 
+        extrinsic_species (str): Self explanatory 
+    
+    Returns: 
+        dict  
+    """ 
+    keys = ['elemental_refs', 'facets', 'facets_wrt_el_refs']
+    if not all(key in first for key in keys): 
+        raise KeyError("the first dictionary doesn't contain the correct keys - it should include elemental_refs, facets and facets_wrt_el_refs")
+    
+    if not all(key in second for key in keys): 
+        raise KeyError("the second dictionary doesn't contain the correct keys - it should include elemental_refs, facets and facets_wrt_el_refs")
+    
+    if extrinsic_species not in second['elemental_refs'].keys(): 
+        raise ValueError("extrinsic species is not present in the second dictionary")
+
+    cpa1 = copy.deepcopy(first)
+    cpa2 = copy.deepcopy(second)
+    new_facets = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1['facets'].items()), list(cpa2['facets'].items())):
+        if k2.rsplit('-', 1)[0] in k1: 
+            new_key = k1 + '-' + k2.rsplit('-', 1)[1] 
+        else: 
+            raise ValueError('The facets aren\'t matching, make sure you\'ve used the correct dicitonary')
+        
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets[new_key] = v1 
+    
+    new_facets_wrt_elt = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1['facets_wrt_el_refs'].items()), list(cpa2['facets_wrt_el_refs'].items())):
+        if k2.rsplit('-', 1)[0] in k1: 
+            new_key = k1 + '-' + k2.rsplit('-', 1)[1] 
+        else: 
+            raise ValueError('The facets aren\'t matching, make sure you\'ve used the correct dicitonary')
+        
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets_wrt_elt[new_key] = v1 
+    
+    new_elements = copy.deepcopy(cpa1['elemental_refs'])
+    new_elements[extrinsic_species] = copy.deepcopy(cpa2['elemental_refs'])[extrinsic_species]
+
+    new_dict = {} 
+    new_dict = {
+        'elemental_refs': new_elements, 
+        'facets': new_facets, 
+        'facets_wrt_el_refs': new_facets_wrt_elt
+    }
+
+    return new_dict
