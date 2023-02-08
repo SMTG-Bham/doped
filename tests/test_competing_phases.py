@@ -1,11 +1,13 @@
+import copy
 import os
 from pathlib import Path
 import numpy as np
 import unittest
 import warnings
 from unittest.mock import patch
-from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases, make_molecule_in_a_box, _calculate_formation_energies
+from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases, make_molecule_in_a_box, _calculate_formation_energies, combine_extrinsic
 from pymatgen.core.structure import Structure
+from monty.serialization import loadfn, dumpfn
 
 class ChemPotsTestCase(unittest.TestCase): 
     def setUp(self): 
@@ -46,6 +48,8 @@ class ChemPotsTestCase(unittest.TestCase):
         stable_cpa.from_csv(self.csv_path)
         df1 = stable_cpa.calculate_chempots()
         self.assertEqual(list(df1['O'])[0], 0)
+        #check if it's no longer Element
+        self.assertEqual(type(list(stable_cpa.intrinsic_chem_limits['elemental_refs'].keys())[0]), str)
 
         self.unstable_cpa = CompetingPhasesAnalyzer(self.unstable_system)
         self.unstable_cpa.from_csv(self.csv_path)
@@ -159,4 +163,29 @@ class FormationEnergyTestCase(unittest.TestCase):
         self.assertAlmostEqual(df['formation_energy'][4], -5.728958971666668 )
         self.assertEqual(df[df['formula']=='O2']['formation_energy'][0], 0)
 
-
+class CombineExtrinsicTestCase(unittest.TestCase): 
+    def setUp(self) -> None:
+        self.path = Path(__file__).parents[1].joinpath('examples/competing_phases')
+        first = self.path / 'zro2_la_chempots.json'
+        second = self.path / 'zro2_y_chempots.json'
+        self.first = loadfn(first)
+        self.second = loadfn(second)
+        self.extrinsic_species = 'Y'
+        return super().setUp()
+    
+    def test_combine_extrinsic(self): 
+        d = combine_extrinsic(self.first, self.second, self.extrinsic_species) 
+        self.assertEqual(len(d['elemental_refs'].keys()), 4)
+        facets = list(d['facets'].keys())
+        self.assertEqual(facets[0].rsplit('-', 1)[1], 'Y2Zr2O7')
+    
+    def test_combine_extrinsic_errors(self): 
+        d = {'a': 1}
+        with self.assertRaises(KeyError): 
+            combine_extrinsic(d, self.second, self.extrinsic_species)
+        
+        with self.assertRaises(KeyError): 
+            combine_extrinsic(self.first, d, self.extrinsic_species)
+        
+        with self.assertRaises(ValueError): 
+            combine_extrinsic(self.first, self.second, 'R')
