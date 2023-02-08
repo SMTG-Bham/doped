@@ -117,6 +117,7 @@ class CompetingPhases:
         potcar_functional=None,
         user_potcar_settings=None,
         user_incar_settings=None,
+        **kwargs
     ):
         """
         Sets up input files for kpoints convergence testing
@@ -133,6 +134,8 @@ class CompetingPhases:
         Returns:
             writes input files
         """
+        # NB kwargs should only be used for testing 
+
         # by default uses pbesol, but easy to switch to pbe or
         # pbe+u by using user_incar_settings
         # user incar settings applies the same settings so both
@@ -182,7 +185,7 @@ class CompetingPhases:
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
                     e["formula"], float(f"{e['ehull']:.4f}"), kname
                 )
-                dis.write_input(fname)
+                dis.write_input(fname, **kwargs)
 
         for e in self.metals:
             if user_incar_settings is not None:
@@ -212,7 +215,7 @@ class CompetingPhases:
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
                     e["formula"], float(f"{e['ehull']:.4f}"), kname
                 )
-                dis.write_input(fname)
+                dis.write_input(fname, **kwargs)
 
     def vasp_std_setup(
         self,
@@ -221,6 +224,7 @@ class CompetingPhases:
         potcar_functional=None,
         user_potcar_settings=None,
         user_incar_settings=None,
+        **kwargs
     ):
         """
         Sets up input files for vasp_std relaxations
@@ -235,6 +239,8 @@ class CompetingPhases:
         Returns:
             saves to file
         """
+        # kwargs should only be used for tests 
+        
         file = str(Path(__file__).parent.joinpath("HSE06_config_relax.json"))
         with open(file) as f:
             cd = json.load(f)
@@ -274,7 +280,7 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
+            dis.write_input(fname, **kwargs)
 
         for e in self.metals:
             if user_incar_settings is not None:
@@ -301,7 +307,7 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
+            dis.write_input(fname, **kwargs)
 
         for e in self.molecules:
 
@@ -324,7 +330,7 @@ class CompetingPhases:
                 e["structure"],
                 cd,
                 user_potcar_functional=potcar_functional,
-                user_kpoints_settings=Kpoints(kpts=[[2, 2, 2]]),
+                user_kpoints_settings=Kpoints(kpts=[[1, 1, 1]]),
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
@@ -332,7 +338,8 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
+            dis.write_input(fname, **kwargs)
+
 class AdditionalCompetingPhases(CompetingPhases):
     """
     If you want to add some extrinsic doping, or add another element to your chemical system,
