@@ -28,6 +28,7 @@ from doped import aide_murphy_correction
 
 default_fonts = [
     "Whitney Book Extended",
+    "Whitney Pro",
     "Arial",
     "Whitney Book",
     "Helvetica",
