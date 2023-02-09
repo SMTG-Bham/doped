@@ -193,31 +193,37 @@ class CombineExtrinsicTestCase(unittest.TestCase):
 
 # not sure how legit this is but since I can't figure out how to
 # patch mock get_entries_in_chemsys that's in the init of the class
-class MockedishCompetingPhases(CompetingPhases): 
-    # sets up a fake class that can read in competing phases
+class MockedIshCompetingPhases(CompetingPhases): 
+    # sets up a fake class that can read in entries
     # that were already collected from MP 
-    def __init__(self, competing_phases):
-        self.competing_phases = competing_phases
+    def __init__(self, entries, system, e_above_hull):
+        self.entries = entries
+        super().__init__(system, e_above_hull=e_above_hull)
         
 
 class CompetingPhasesTestCase(unittest.TestCase): 
     def setUp(self) -> None:
-        self.comp_phases = loadfn('tests/comp_phases_test.json')
-        return super().setUp()
+        # this json was generated 09/02/2023 using
+        # CompetingPhases(['Zr', 'O'], e_above_hull=0.01) 
+        self.entries = loadfn('tests/entries_test_data.json')
+        self.system = ['Zr', 'O']
+        self.e_above_hull = 0.01
+        return super().setUp()  
+
+    def test_init(self):
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
+        self.assertEqual(len(mcp.entries), 11)
+        self.assertEqual(len(mcp.competing_phases), 9)
+        self.assertEqual(mcp.competing_phases[0]['magnetisation'], 2)
 
     def test_convergence_setup(self): 
-        mcp = MockedishCompetingPhases(self.comp_phases)
-        
-        with self.assertRaises(OSError):
-            mcp.convergence_setup()
-        
-            self.assertEqual(len(mcp.metals), 6)
-            self.assertEqual(mcp.metals[0]['bandgap'], 0)
-            self.assertEqual(mcp.nonmetals[0]['molecule'], False)
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
 
         # potcar spec doesnt need potcars set up for pmg and it still works 
         mcp.convergence_setup(potcar_spec=True)
-        
+        self.assertEqual(len(mcp.metals), 6)
+        self.assertEqual(mcp.metals[0]['band_gap'], 0)
+        self.assertEqual(mcp.nonmetals[0]['molecule'], False)
         # this shouldnt exist - dont need to convergence test for molecules
         self.assertFalse(Path('competing_phases/O2_EaH_0.0').is_dir())
 
@@ -238,17 +244,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
             self.assertEqual(contents[6], 'ISIF = 2\n')
 
     def test_vasp_std_setup(self): 
-        mcp = MockedishCompetingPhases(self.comp_phases)
-        
-        with self.assertRaises(OSError):
-            mcp.vasp_std_setup()
-        
-            self.assertEqual(len(mcp.nonmetals), 2)
-            self.assertEqual(mcp.molecules[0]['formula'], 'O2')
-            self.assertEqual(mcp.molecules[0]['magnetisation'], 2)
-            self.assertEqual(mcp.nonmetals[0]['molecule'], False)
-        
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
+
         mcp.vasp_std_setup(potcar_spec=True)
+        self.assertEqual(len(mcp.nonmetals), 2)
+        self.assertEqual(mcp.molecules[0]['formula'], 'O2')
+        self.assertEqual(mcp.molecules[0]['magnetisation'], 2)
+        self.assertEqual(mcp.nonmetals[0]['molecule'], False)
+        
         path1 = 'competing_phases/ZrO2_EaH_0.0/vasp_std/'
         self.assertTrue(Path(path1).is_dir())
         with open(f'{path1}/KPOINTS', 'r') as f: 
@@ -280,3 +283,28 @@ class CompetingPhasesTestCase(unittest.TestCase):
         if Path('competing_phases').is_dir(): 
             shutil.rmtree('competing_phases')
         return super().tearDown()
+
+class MockedIshAdditionalCompetingPhases(AdditionalCompetingPhases): 
+    # sets up a fake class that can read in entries
+    # that were already collected from MP 
+    def __init__(self, og_competing_phases, ext_comp_phases, system, extrinsic_species, e_above_hull):
+        self.og_competing_phases = og_competing_phases
+        self.ext_competing_phases = ext_comp_phases
+        super().__init__(system, extrinsic_species, e_above_hull)
+
+class AdditionalCompetingPhasesTestCase(unittest.TestCase): 
+    # this could be done a lot better but it works for now, also included entries in the test_data folder to make it easier to test later on if someone manages to refractor the actual code to make it more testable
+    def setUp(self) -> None:
+        # this json was generated 09/02/2023 using
+        # AdditionalCompetingPhases(['Zr', 'O'], 'La', e_above_hull=0.015) 
+        self.og_competing_phases = loadfn('tests/phases_test_data.json')
+        self.ext_competing_phases = loadfn('tests/phases_la_test_data.json')
+        self.system = ['Zr', 'O']
+        self.extrinsic_species = 'La'
+        self.e_above_hull = 0.01
+        return super().setUp()  
+
+    def test_init(self):
+        macp = MockedIshAdditionalCompetingPhases(self.og_competing_phases, self.ext_competing_phases, system=self.system, extrinsic_species=self.extrinsic_species, e_above_hull=self.e_above_hull)
+        self.assertEqual(len(macp.competing_phases), 4)
+        self.assertEqual(macp.competing_phases[0]['formula'], 'La')
