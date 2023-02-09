@@ -60,9 +60,11 @@ class CompetingPhases:
         else:
             m = MPRester()
 
-        self.entries = m.get_entries_in_chemsys(
-            self.system, inc_structure=stype, property_data=self.data
-        )
+        # the has attr is there just for testing, so we don't have to keep querying MP    
+        if not hasattr(self, "entries"): 
+            self.entries = m.get_entries_in_chemsys(
+                self.system, inc_structure=stype, property_data=self.data
+            )
         self.entries = [
             e for e in self.entries if e.data["e_above_hull"] <= e_above_hull
         ]
