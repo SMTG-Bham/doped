@@ -357,13 +357,17 @@ class AdditionalCompetingPhases(CompetingPhases):
             api_key (str): Materials Project Legacy API key
         """
         # the competing phases & entries of the OG system
-        super().__init__(system, e_above_hull, api_key)
-        self.og_competing_phases = copy.deepcopy(self.competing_phases)
+        # same hack for testing as in the CompetingPhases class
+        if not hasattr(self, 'og_competing_phases'):
+            super().__init__(system, e_above_hull, api_key)
+            self.og_competing_phases = copy.deepcopy(self.competing_phases)
+        
         # the competing phases & entries of the OG system + all the additional
         # stuff from the extrinsic species
         system.append(extrinsic_species)
-        super().__init__(system, e_above_hull, api_key)
-        self.ext_competing_phases = copy.deepcopy(self.competing_phases)
+        if not hasattr(self, 'ext_competing_phases'):
+            super().__init__(system, e_above_hull, api_key)
+            self.ext_competing_phases = copy.deepcopy(self.competing_phases)
 
         # only keep the ones that are actually new
         self.competing_phases = []
