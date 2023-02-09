@@ -13,16 +13,14 @@ from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.pycdt.utils.parse_calculations import get_vasprun
-
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
 
+from doped.pycdt.utils.parse_calculations import get_vasprun
 
 class CompetingPhases:
     """
-    Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous
-    molecules
+    Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules
     """
 
     def __init__(self, system, e_above_hull=0.02, api_key=None):
@@ -119,6 +117,7 @@ class CompetingPhases:
         potcar_functional=None,
         user_potcar_settings=None,
         user_incar_settings=None,
+        **kwargs
     ):
         """
         Sets up input files for kpoints convergence testing
@@ -135,6 +134,8 @@ class CompetingPhases:
         Returns:
             writes input files
         """
+        # NB kwargs should only be used for testing 
+
         # by default uses pbesol, but easy to switch to pbe or
         # pbe+u by using user_incar_settings
         # user incar settings applies the same settings so both
@@ -184,7 +185,7 @@ class CompetingPhases:
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
                     e["formula"], float(f"{e['ehull']:.4f}"), kname
                 )
-                dis.write_input(fname)
+                dis.write_input(fname, **kwargs)
 
         for e in self.metals:
             if user_incar_settings is not None:
@@ -214,7 +215,7 @@ class CompetingPhases:
                 fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
                     e["formula"], float(f"{e['ehull']:.4f}"), kname
                 )
-                dis.write_input(fname)
+                dis.write_input(fname, **kwargs)
 
     def vasp_std_setup(
         self,
@@ -223,6 +224,7 @@ class CompetingPhases:
         potcar_functional=None,
         user_potcar_settings=None,
         user_incar_settings=None,
+        **kwargs
     ):
         """
         Sets up input files for vasp_std relaxations
@@ -237,6 +239,8 @@ class CompetingPhases:
         Returns:
             saves to file
         """
+        # kwargs should only be used for tests 
+        
         file = str(Path(__file__).parent.joinpath("HSE06_config_relax.json"))
         with open(file) as f:
             cd = json.load(f)
@@ -276,7 +280,7 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
+            dis.write_input(fname, **kwargs)
 
         for e in self.metals:
             if user_incar_settings is not None:
@@ -303,7 +307,7 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
+            dis.write_input(fname, **kwargs)
 
         for e in self.molecules:
 
@@ -326,7 +330,7 @@ class CompetingPhases:
                 e["structure"],
                 cd,
                 user_potcar_functional=potcar_functional,
-                user_kpoints_settings=Kpoints(kpts=[[2, 2, 2]]),
+                user_kpoints_settings=Kpoints(kpts=[[1, 1, 1]]),
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
@@ -334,8 +338,7 @@ class CompetingPhases:
             fname = "competing_phases/{}_EaH_{}/vasp_std".format(
                 e["formula"], float(f"{e['ehull']:.4f}")
             )
-            dis.write_input(fname)
-
+            dis.write_input(fname, **kwargs)
 
 class AdditionalCompetingPhases(CompetingPhases):
     """
@@ -367,7 +370,6 @@ class AdditionalCompetingPhases(CompetingPhases):
                 self.competing_phases.append(ext)
 
 
-# separate class for read from file with this as base class? can still use different init?
 class CompetingPhasesAnalyzer:
     """
     Post processing competing phases data to calculate chemical potentials.
@@ -385,7 +387,7 @@ class CompetingPhasesAnalyzer:
         self.extrinsic_species = extrinsic_species
 
         if extrinsic_species:
-            self.elemental.append(extrinsic_species)
+            self.elemental.append(extrinsic_species)      
 
     def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
         """
@@ -396,13 +398,12 @@ class CompetingPhasesAnalyzer:
             files, or a path to the base folder in which you have your
             formula_EaH_/vasp_std/vasprun.xml
             folder (str): The folder in which vasprun is, only use if you set base path
-            (i.e. change to vasp_ncl, relax whatever you've called it).
+            (i.e. change to vasp_ncl or "" if vaspruns are in the formula_EaH folder).
             csv_fname (str): csv filename
         Returns:
             saves csv with formation energies to file
         """
-        # TODO: "It isn't the best at removing higher energy elemental phases (if multiple are
-        #  present), so double check that" – this should be fixed
+
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
@@ -418,7 +419,7 @@ class CompetingPhasesAnalyzer:
 
                 else:
                     print(
-                        f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution"
+                        f"Can't find a vasprun.xml(.gz) file in {p}, proceed with caution"
                     )
 
         # if path provided points to the doped created directories
@@ -452,7 +453,7 @@ class CompetingPhasesAnalyzer:
 
         else:
             raise ValueError(
-                "path should either be a list of paths, a string or a pathlib Path object"
+                "Path should either be a list of paths, a string or a pathlib Path object"
             )
 
         # Ignore POTCAR warnings when loading vasprun.xml
@@ -530,7 +531,7 @@ class CompetingPhasesAnalyzer:
             raise ValueError(
                 "supplied csv does not contain the correct headers, cannot read in the data"
             )
-
+    
     def calculate_chempots(self, csv_fname="chempot_limits.csv"):
         """
         Calculates chemcial potential limits. For dopant species, it calculates the limiting
@@ -570,10 +571,18 @@ class CompetingPhasesAnalyzer:
             )
 
         chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
+        # remove Element to make it jsonable
+        no_element_chem_lims = {} 
+        for k, v in chem_lims.items(): 
+            temp_dict = {}
+            for kk, vv in v.items():   
+                temp_dict[str(kk)] = vv
+            no_element_chem_lims[k] = temp_dict
+        
         self.intrinsic_chem_limits = {
-            "facets": chem_lims,
+            "facets": no_element_chem_lims,
             "elemental_refs": {
-                elt: ent.energy_per_atom
+                str(elt): ent.energy_per_atom
                 for elt, ent in self.intrinsic_phase_diagram.el_refs.items()
             },
             "facets_wrt_el_refs": {},
@@ -642,7 +651,7 @@ class CompetingPhasesAnalyzer:
             df4 = df.copy().to_dict(orient="records")
             cl2 = {
                 "elemental_refs": {
-                    Element(elt): ene for elt, ene in self.elemental_energies.items()
+                    elt: ene for elt, ene in self.elemental_energies.items()
                 },
                 "facets_wrt_el_refs": {},
                 "facets": {},
@@ -657,7 +666,7 @@ class CompetingPhasesAnalyzer:
                 new_vals = list(
                     self.intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
-                new_vals[Element(f"{self.extrinsic_species}")] = d[
+                new_vals[f"{self.extrinsic_species}"] = d[
                     f"{self.extrinsic_species}"
                 ]
                 cl2["facets_wrt_el_refs"][key] = new_vals
@@ -679,13 +688,15 @@ class CompetingPhasesAnalyzer:
 
         return df
 
-    def cplap_input(self, dependent_variable=None):
-        """For completeness' sake, automatically saves to input.dat
+    def cplap_input(self, dependent_variable=None, filename='input.dat'):
+        """For completeness' sake, automatically saves to input.dat for cplap
         Args:
-            dependent variable (str) gotta pick one of the variables as dependent, the first
-            element is chosen from the composition if this isn't set
+            dependent_variable (str) Pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
+            filename (str): filename, should end in .dat 
+        Returns 
+            None, saves to file 
         """
-        with open("input.dat", "w") as f:
+        with open(filename, "w") as f:
             with contextlib.redirect_stdout(f):
                 for i in self.data:
                     comp = Composition(i["formula"]).as_dict()
@@ -805,3 +816,59 @@ def _calculate_formation_energies(data, elemental):
     df.reset_index(drop=True, inplace=True)
 
     return df
+
+
+def combine_extrinsic(first, second, extrinsic_species):
+    """
+    Combines chemical limits for different extrinsic species using chemical limits json file from ChemicalPotentialAnalysis. Usage explained in the example jupyter notebook
+    Args: 
+        first (dict): First chempot dict, can contain extrinsic species other than 
+        second (dict): Second chempot dict, must contain the extrinsic species 
+        extrinsic_species (str): Self explanatory 
+    
+    Returns: 
+        dict  
+    """ 
+    keys = ['elemental_refs', 'facets', 'facets_wrt_el_refs']
+    if not all(key in first for key in keys): 
+        raise KeyError("the first dictionary doesn't contain the correct keys - it should include elemental_refs, facets and facets_wrt_el_refs")
+    
+    if not all(key in second for key in keys): 
+        raise KeyError("the second dictionary doesn't contain the correct keys - it should include elemental_refs, facets and facets_wrt_el_refs")
+    
+    if extrinsic_species not in second['elemental_refs'].keys(): 
+        raise ValueError("extrinsic species is not present in the second dictionary")
+
+    cpa1 = copy.deepcopy(first)
+    cpa2 = copy.deepcopy(second)
+    new_facets = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1['facets'].items()), list(cpa2['facets'].items())):
+        if k2.rsplit('-', 1)[0] in k1: 
+            new_key = k1 + '-' + k2.rsplit('-', 1)[1] 
+        else: 
+            raise ValueError('The facets aren\'t matching, make sure you\'ve used the correct dicitonary')
+        
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets[new_key] = v1 
+    
+    new_facets_wrt_elt = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1['facets_wrt_el_refs'].items()), list(cpa2['facets_wrt_el_refs'].items())):
+        if k2.rsplit('-', 1)[0] in k1: 
+            new_key = k1 + '-' + k2.rsplit('-', 1)[1] 
+        else: 
+            raise ValueError('The facets aren\'t matching, make sure you\'ve used the correct dicitonary')
+        
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets_wrt_elt[new_key] = v1 
+    
+    new_elements = copy.deepcopy(cpa1['elemental_refs'])
+    new_elements[extrinsic_species] = copy.deepcopy(cpa2['elemental_refs'])[extrinsic_species]
+
+    new_dict = {} 
+    new_dict = {
+        'elemental_refs': new_elements, 
+        'facets': new_facets, 
+        'facets_wrt_el_refs': new_facets_wrt_elt
+    }
+
+    return new_dict
