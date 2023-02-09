@@ -284,3 +284,27 @@ class CompetingPhasesTestCase(unittest.TestCase):
             shutil.rmtree('competing_phases')
         return super().tearDown()
 
+class MockedIshAdditionalCompetingPhases(AdditionalCompetingPhases): 
+    # sets up a fake class that can read in entries
+    # that were already collected from MP 
+    def __init__(self, og_competing_phases, ext_comp_phases, system, extrinsic_species, e_above_hull):
+        self.og_competing_phases = og_competing_phases
+        self.ext_competing_phases = ext_comp_phases
+        super().__init__(system, extrinsic_species, e_above_hull)
+
+class AdditionalCompetingPhasesTestCase(unittest.TestCase): 
+    # this could be done a lot better but it works for now, also included entries in the test_data folder to make it easier to test later on if someone manages to refractor the actual code to make it more testable
+    def setUp(self) -> None:
+        # this json was generated 09/02/2023 using
+        # AdditionalCompetingPhases(['Zr', 'O'], 'La', e_above_hull=0.015) 
+        self.og_competing_phases = loadfn('tests/phases_test_data.json')
+        self.ext_competing_phases = loadfn('tests/phases_la_test_data.json')
+        self.system = ['Zr', 'O']
+        self.extrinsic_species = 'La'
+        self.e_above_hull = 0.01
+        return super().setUp()  
+
+    def test_init(self):
+        macp = MockedIshAdditionalCompetingPhases(self.og_competing_phases, self.ext_competing_phases, system=self.system, extrinsic_species=self.extrinsic_species, e_above_hull=self.e_above_hull)
+        self.assertEqual(len(macp.competing_phases), 4)
+        self.assertEqual(macp.competing_phases[0]['formula'], 'La')
