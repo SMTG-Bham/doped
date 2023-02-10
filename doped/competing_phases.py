@@ -23,12 +23,13 @@ class CompetingPhases:
     Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules
     """
 
-    def __init__(self, system, e_above_hull=0.02, api_key=None):
+    def __init__(self, system, e_above_hull=0.02, api_key=None, full_phase_diagram=False):
         """
         Args:
-            system (list): Chemical system under investigation, e.g. ['Mg', 'O']
+            system (list or str): Chemical system under investigation, e.g. ['Mg', 'O'] or 'MgO'
             e_above_hull (float): Maximum considered energy above hull
             api_key (str): Materials Project Legacy API key
+            full_phase_diagram (bool): Whether to include all phases in the phase diagram (default: False)
         """
         # create list of entries
         molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
@@ -47,7 +48,16 @@ class CompetingPhases:
             "nelements",
             "elements",
         ]
-        self.system = system
+
+        if type(system) == list:
+            self.system = system
+        elif type(system) == str: 
+            self.system = [str(c) for c in Composition(system).elements]
+            self.system_formula = system
+        else:
+            raise ValueError("system must be a list or a string")
+        
+        # always use the initial structure
         stype = "initial"
 
         # TODO: This will need to be updated to use the new Materials Project API at some point
@@ -65,13 +75,35 @@ class CompetingPhases:
             self.entries = m.get_entries_in_chemsys(
                 self.system, inc_structure=stype, property_data=self.data
             )
-        self.entries = [
-            e for e in self.entries if e.data["e_above_hull"] <= e_above_hull
-        ]
+        
+        if full_phase_diagram:
+            self.parsed_entries = [
+                e for e in self.entries if e.data["e_above_hull"] <= e_above_hull
+            ]
+
+        # elif the other smart algoritm method = true? or like order them how you see fit 
+
+        else:
+            if not hasattr(self, 'system_formula'):
+                raise ValueError("system must be set provided as a string (i.e. ZrO2 not [Zr,O]) if full_phase_diagram is False")
+            
+            pd = PhaseDiagram(self.entries)
+            chempots = pd.get_all_chempots(Composition(self.system_formula))
+            
+            # add all non-elemental phases to the MP stable entries
+            mp_stable_entries = self.system
+            for k in chempots.keys(): 
+                for i in k.split('-'): 
+                    if i not in mp_stable_entries: 
+                        mp_stable_entries.append(i)
+
+            self.parsed_entries = [
+                e for e in self.entries if e.data["e_above_hull"] <= e_above_hull and e.composition.reduced_formula in mp_stable_entries
+            ]            
 
         competing_phases = []
         # check that none of the elemental ones aren't on the naughty list
-        for e in self.entries:
+        for e in self.parsed_entries:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
@@ -358,15 +390,16 @@ class AdditionalCompetingPhases(CompetingPhases):
         """
         # the competing phases & entries of the OG system
         # same hack for testing as in the CompetingPhases class
+        # full phase diagram must be true for both to get the same competing phases because that wouldn't make sense for extrinsic species? like chances are you're using this either the second time with the same system or with a different system where you're looking at the full phase space anyway? 
         if not hasattr(self, 'og_competing_phases'):
-            super().__init__(system, e_above_hull, api_key)
+            super().__init__(system, e_above_hull, api_key, full_phase_diagram=True)
             self.og_competing_phases = copy.deepcopy(self.competing_phases)
         
         # the competing phases & entries of the OG system + all the additional
         # stuff from the extrinsic species
         system.append(extrinsic_species)
         if not hasattr(self, 'ext_competing_phases'):
-            super().__init__(system, e_above_hull, api_key)
+            super().__init__(system, e_above_hull, api_key, full_phase_diagram=True)
             self.ext_competing_phases = copy.deepcopy(self.competing_phases)
 
         # only keep the ones that are actually new
