@@ -1,12 +1,10 @@
-import copy
 import os
 from pathlib import Path
 import shutil
 import numpy as np
 import unittest
-import warnings
 from unittest.mock import patch
-from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases, make_molecule_in_a_box, _calculate_formation_energies, combine_extrinsic
+from doped.competing_phases import CompetingPhases, CompetingPhasesAnalyzer, AdditionalCompetingPhases, _make_molecule_in_a_box, _calculate_formation_energies, combine_extrinsic
 from pymatgen.core.structure import Structure
 from monty.serialization import loadfn, dumpfn
 
@@ -122,13 +120,13 @@ class ChemPotsTestCase(unittest.TestCase):
 
 class BoxedMoleculesTestCase(unittest.TestCase): 
     def test_elements(self): 
-        s,f,m = make_molecule_in_a_box('O2')
+        s,f,m = _make_molecule_in_a_box('O2')
         self.assertEqual(f, 'O2')
         self.assertEqual(m, 2)
         self.assertEqual(type(s), Structure)
         
         with self.assertRaises(UnboundLocalError): 
-            s2, f2, m2 = make_molecule_in_a_box('R2')
+            s2, f2, m2 = _make_molecule_in_a_box('R2')
 
 
 class FormationEnergyTestCase(unittest.TestCase):
@@ -196,10 +194,10 @@ class CombineExtrinsicTestCase(unittest.TestCase):
 class MockedIshCompetingPhases(CompetingPhases): 
     # sets up a fake class that can read in entries
     # that were already collected from MP 
-    def __init__(self, entries, system, e_above_hull, full_phase_diagram):
+    def __init__(self, entries, system, e_above_hull, full_phase_diagram, api_key=None):
         self.entries = entries
-        super().__init__(system, e_above_hull=e_above_hull, full_phase_diagram=full_phase_diagram)
-        
+        self.eah = 'e_above_hull' # for legacy MPRester
+        super().__init__(system, e_above_hull=e_above_hull, full_phase_diagram=full_phase_diagram, api_key=api_key)
 
 class CompetingPhasesTestCase(unittest.TestCase): 
     def setUp(self) -> None:
@@ -208,6 +206,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.entries = loadfn('tests/entries_test_data.json')
         self.system = ['Zr', 'O']
         self.e_above_hull = 0.01
+
+        # not sure if this actually works tbh 
+        path = Path('~/.pmgrc.yaml').expanduser()
+        if path.is_file(): 
+            path2 = str(path) + '.bak'
+            os.rename(str(path), path2)
         return super().setUp()  
 
     def test_init(self):
@@ -217,6 +221,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(len(mcp.competing_phases), 9)
         self.assertEqual(mcp.competing_phases[0]['magnetisation'], 2)
 
+    def test_api_keys_errors(self): 
+        with self.assertRaisesRegex(ValueError, "API key test is not a valid Materials Project API key."):
+            mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull, full_phase_diagram=True, api_key='test')
+
+        with self.assertRaisesRegex(ValueError, 'You are trying to use the new Materials Project API key without the mp-api client, which is not supported by doped. Please use the legacy API key.'): 
+            mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull, full_phase_diagram=True, api_key='testabcdefghijklmnopqrstuvwxyz12')
+        
     def test_convergence_setup(self): 
         mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull,full_phase_diagram=True)
 
@@ -284,7 +295,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull,full_phase_diagram=False)
         
-        system = 'ZrO2'
         mcp = MockedIshCompetingPhases(self.entries, 'ZrO2', self.e_above_hull,full_phase_diagram=False)
         self.assertEqual(len(mcp.entries), 13)
         self.assertEqual(len(mcp.parsed_entries), 9)
@@ -294,6 +304,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         if Path('competing_phases').is_dir(): 
             shutil.rmtree('competing_phases')
+        
+        path = Path('~/.pmgrc.yaml.bak').expanduser()
+        if path.is_file(): 
+            path2 = str(path)
+            os.rename(path2, path2[:-4])
+
         return super().tearDown()
 
 class MockedIshAdditionalCompetingPhases(AdditionalCompetingPhases): 
