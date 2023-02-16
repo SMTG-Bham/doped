@@ -17,6 +17,7 @@ warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", message="You are using the legacy MPRester")
 
 from doped.pycdt.utils.parse_calculations import get_vasprun
+from doped.pycdt.utils.vasp import _import_psp
 
 class CompetingPhases:
     """
@@ -30,23 +31,19 @@ class CompetingPhases:
             e_above_hull (float): Maximum considered energy above hull
             api_key (str): Materials Project Legacy API key
             full_phase_diagram (bool): Whether to include all phases in the phase diagram (default: False)
+        Returns:
+            None, sets self.competing_phases
         """
         # create list of entries
         molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
         # all data collected from materials project
         self.data = [
             "pretty_formula",
-            "e_above_hull",
             "band_gap",
             "nsites",
-            "volume",
-            "icsd_id",
             "formation_energy_per_atom",
             "energy_per_atom",
-            "energy",
-            "total_magnetization",
-            "nelements",
-            "elements",
+            "total_magnetization"
         ]
 
         if type(system) == list:
@@ -63,13 +60,26 @@ class CompetingPhases:
         # TODO: This will need to be updated to use the new Materials Project API at some point
         # (currently uses the legacy version). The main changes for this are just that MPRester
         # is instead imported from mp_api.client (which will also need to be added as a doped
-        # requirement) with a new API key, and 'e_above_hull' is now 'energy_above_hull`
+        # requirement) with a new API key, and 'e_above_hull' is now 'energy_above_hull`, also changed formula_pretty to pretty_formula and removed band_gap and total_magnetization from the get_entries_in_chemsys call so will need to rewrite to use search or something like that?  
+            
+        if api_key is None:
+            api_key_dict = _import_psp()
+            if 'PMG_MAPI_KEY' in list(api_key_dict.keys()): 
+                api_key = api_key_dict['PMG_MAPI_KEY']
 
-        if api_key:
-            m = MPRester(api_key=api_key)
-        else:
-            m = MPRester()
+        m = MPRester(api_key=api_key)
 
+        # first if just for the tests
+        if api_key is not None:
+            if len(api_key) == 32:
+                raise ValueError("You are trying to use the new Materials Project API key without the mp-api client, which is not supported by doped. Please use the legacy API key.")
+            elif 15 <= len(api_key) <= 20: 
+                self.eah = 'e_above_hull'
+            else: 
+                raise ValueError(f"API key {api_key} is not a valid Materials Project API key.")
+        
+        self.data.append(self.eah)
+        
         # the has attr is there just for testing, so we don't have to keep querying MP    
         if not hasattr(self, "entries"): 
             self.entries = m.get_entries_in_chemsys(
@@ -78,7 +88,7 @@ class CompetingPhases:
         
         if full_phase_diagram:
             self.parsed_entries = [
-                e for e in self.entries if e.data["e_above_hull"] <= e_above_hull
+                e for e in self.entries if e.data[self.eah] <= e_above_hull
             ]
 
         # elif the other smart algoritm method = true? or like order them how you see fit 
@@ -98,7 +108,7 @@ class CompetingPhases:
                         mp_stable_entries.append(i)
 
             self.parsed_entries = [
-                e for e in self.entries if e.data["e_above_hull"] <= e_above_hull and e.composition.reduced_formula in mp_stable_entries
+                e for e in self.entries if e.data[self.eah] <= e_above_hull and e.composition.reduced_formula in mp_stable_entries
             ]            
 
         competing_phases = []
@@ -107,7 +117,7 @@ class CompetingPhases:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
-                struc, formula, magnetisation = make_molecule_in_a_box(
+                struc, formula, magnetisation = _make_molecule_in_a_box(
                     e.data["pretty_formula"]
                 )
                 competing_phases.append(
@@ -129,7 +139,7 @@ class CompetingPhases:
                         "formula": e.data["pretty_formula"],
                         "formation_energy": e.data["formation_energy_per_atom"],
                         "nsites": e.data["nsites"],
-                        "ehull": e.data["e_above_hull"],
+                        "ehull": e.data[self.eah],
                         "magnetisation": e.data["total_magnetization"],
                         "molecule": False,
                         "band_gap": e.data["band_gap"],
@@ -156,17 +166,13 @@ class CompetingPhases:
         """
         Sets up input files for kpoints convergence testing
         Args:
-            kpoints_metals (tuple): Kpoint density per inverse volume (Å-3) to be tested in
-            (min, max, step) format for metals
-            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å-3) to be tested in (
-            min, max, step) format for nonmetals
+            kpoints_metals (tuple): Kpoint density per reciprocal volume (Å-3) to be tested in (min, max, step) format for metals
+            kpoints_nonmetals (tuple): Kpoint density per reciprocal volume (Å-3) to be tested in (min, max, step) format for nonmetals
             potcar_functional (str): POTCAR to use
             user_potcar_settings (dict): Override the default POTCARs
-            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5,
-            "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input
-            as strings with quotation marks (e.g. `{"ALGO": "All"}`).
+            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input as strings with quotation marks (e.g. `{"ALGO": "All"}`).
         Returns:
-            writes input files
+            Writes VASP input files
         """
         # NB kwargs should only be used for testing 
 
@@ -263,15 +269,13 @@ class CompetingPhases:
         """
         Sets up input files for vasp_std relaxations
         Args:
-            kpoints_metals (int): Kpoint density per inverse volume (Å-3) for metals
-            kpoints_nonmetals (int): Kpoint density per inverse volume (Å-3) for nonmetals
-            potcar_functional (str): POTCAR to use
+            kpoints_metals (int): Kpoint density per reciprocal volume (Å-3) for metals
+            kpoints_nonmetals (int): Kpoint density per reciprocal volume (Å-3) for nonmetals
+            potcar_functional (str): POTCAR to use (i.e. LDA, PBE, PBE_52, PBE_54)
             user_potcar_settings (dict): Override the default POTCARs
-            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5,
-            "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input
-            as strings with quotation marks (e.g. `{"ALGO": "All"}`).
+            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False}. Note that any flags that aren't numbers or True/False need to be input as strings with quotation marks (e.g. `{"ALGO": "All"}`).
         Returns:
-            saves to file
+            Writes VASP input files
         """
         # kwargs should only be used for tests 
         
@@ -387,6 +391,8 @@ class AdditionalCompetingPhases(CompetingPhases):
             extrinsic_species (str): Dopant species
             e_above_hull (float): Maximum considered energy above hull
             api_key (str): Materials Project Legacy API key
+        Returns:
+            None, sets self.competing_phases
         """
         # the competing phases & entries of the OG system
         # same hack for testing as in the CompetingPhases class
@@ -418,7 +424,7 @@ class CompetingPhasesAnalyzer:
         """
         Args:
             system (str): The  'reduced formula' of the bulk composition
-            extrinsic_species (str): Dopant species
+            extrinsic_species (str): Dopant species - can only deal with one at a time (see notebook in examples folder for more complex cases)
         """
 
         self.bulk_composition = Composition(system)
@@ -428,7 +434,7 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)      
 
-    def from_vaspruns(self, path, folder="vasp_std", csv_fname="competing_phases.csv"):
+    def from_vaspruns(self, path, folder="vasp_std", csv_fname=None):
         """
         Reads in vaspruns, collates energies to csv.
 
@@ -438,9 +444,9 @@ class CompetingPhasesAnalyzer:
             formula_EaH_/vasp_std/vasprun.xml
             folder (str): The folder in which vasprun is, only use if you set base path
             (i.e. change to vasp_ncl or "" if vaspruns are in the formula_EaH folder).
-            csv_fname (str): csv filename
+            csv_fname (str): If set will save to csv with this name
         Returns:
-            saves csv with formation energies to file
+            None, sets self.data and self.elemental_energies
         """
 
         self.vasprun_paths = []
@@ -542,14 +548,20 @@ class CompetingPhasesAnalyzer:
             temp_data.append(d)
 
         df = _calculate_formation_energies(temp_data, self.elemental_energies)
-        df.to_csv(csv_fname, index=False)
-        print(f"Competing phase formation energies have been saved to {csv_fname}.")
+        if csv_fname is not None:
+            df.to_csv(csv_fname, index=False)
+            print(f"Competing phase formation energies have been saved to {csv_fname}.")
+
         self.data = df.to_dict(orient="records")
 
     def from_csv(self, csv):
         """
-        Read in data from csv. Must have columns 'formula', 'energy_per_fu', 'energy' and
-        'formation_energy'
+        Read in data from csv. 
+        Args: 
+            csv (str): Path to csv file. Must have columns 'formula', 
+                'energy_per_fu', 'energy' and 'formation_energy'
+        Returns: 
+            None, sets self.data and self.elemental_energies
         """
         df = pd.read_csv(csv)
         columns = ["formula", "energy_per_fu", 'energy_per_atom', "energy", "formation_energy"]
@@ -571,15 +583,13 @@ class CompetingPhasesAnalyzer:
                 "supplied csv does not contain the correct headers, cannot read in the data"
             )
     
-    def calculate_chempots(self, csv_fname="chempot_limits.csv"):
+    def calculate_chempots(self, csv_fname=None):
         """
-        Calculates chemcial potential limits. For dopant species, it calculates the limiting
-        potential based on the intrinsic chemical potentials (i.e. same as
-        `full_sub_approach=False` in pycdt)
+        Calculates chemcial potential limits. For dopant/extrinsic species, it calculates the limiting potential based on the intrinsic chemical potentials (i.e. same as `full_sub_approach=False` in pyCDT).
         Args:
-            csv_fname (str): name of csv file to which chempot limits are saved
+            csv_fname (str): If set, will save chemical potential limits to csv
         Retruns:
-            pandas dataframe
+            Pandas DataFrame, optionally saved to csv
         """
 
         pd_entries_intrinsic = []
@@ -604,9 +614,9 @@ class CompetingPhasesAnalyzer:
 
         # check if it's stable and if not error out
         if self.bulk_pde not in self.intrinsic_phase_diagram.stable_entries:
+            eah = self.intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
             raise ValueError(
-                f"{self.bulk_composition.reduced_formula} is not stable with respect to "
-                f"competing phases"
+                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, EaH={eah:.4f} eV/atom"
             )
 
         chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
@@ -721,7 +731,10 @@ class CompetingPhasesAnalyzer:
             self.chem_limits = cl2
 
         # save and print
-        df.to_csv(csv_fname, index=False)
+        if csv_fname is not None:
+            df.to_csv(csv_fname, index=False)
+            print('Saved chemical potential limits to csv file: ', csv_fname)
+
         print("Calculated chemical potential limits: \n")
         print(df)
 
@@ -733,7 +746,7 @@ class CompetingPhasesAnalyzer:
             dependent_variable (str) Pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
             filename (str): filename, should end in .dat 
         Returns 
-            None, saves to file 
+            None, writes input.dat file
         """
         with open(filename, "w") as f:
             with contextlib.redirect_stdout(f):
@@ -758,7 +771,7 @@ class CompetingPhasesAnalyzer:
                         print(i["formation_energy"])
 
 
-def make_molecule_in_a_box(element):
+def _make_molecule_in_a_box(element):
     # (but do try to fix it so that the nupdown is the same as magnetisation
     # so that it makes that assignment easier later on when making files)
     # the bond distances are taken from various sources and *not* thoroughly vetted
@@ -861,10 +874,9 @@ def combine_extrinsic(first, second, extrinsic_species):
     """
     Combines chemical limits for different extrinsic species using chemical limits json file from ChemicalPotentialAnalysis. Usage explained in the example jupyter notebook
     Args: 
-        first (dict): First chempot dict, can contain extrinsic species other than 
-        second (dict): Second chempot dict, must contain the extrinsic species 
-        extrinsic_species (str): Self explanatory 
-    
+        first (dict): First chemical potential dictionary, it can contain extrinsic species other than the set extrinsic species
+        second (dict): Second chemical potential dictionary, it must contain the extrinsic species 
+        extrinsic_species (str): Extrinsic species in the second dictionary 
     Returns: 
         dict  
     """ 
