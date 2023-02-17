@@ -196,9 +196,9 @@ class CombineExtrinsicTestCase(unittest.TestCase):
 class MockedIshCompetingPhases(CompetingPhases): 
     # sets up a fake class that can read in entries
     # that were already collected from MP 
-    def __init__(self, entries, system, e_above_hull):
+    def __init__(self, entries, system, e_above_hull, full_phase_diagram):
         self.entries = entries
-        super().__init__(system, e_above_hull=e_above_hull)
+        super().__init__(system, e_above_hull=e_above_hull, full_phase_diagram=full_phase_diagram)
         
 
 class CompetingPhasesTestCase(unittest.TestCase): 
@@ -211,13 +211,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
         return super().setUp()  
 
     def test_init(self):
-        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
-        self.assertEqual(len(mcp.entries), 11)
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull, full_phase_diagram=True)
+        self.assertEqual(len(mcp.entries), 13)
+        self.assertEqual(len(mcp.parsed_entries), 11)
         self.assertEqual(len(mcp.competing_phases), 9)
         self.assertEqual(mcp.competing_phases[0]['magnetisation'], 2)
 
     def test_convergence_setup(self): 
-        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull,full_phase_diagram=True)
 
         # potcar spec doesnt need potcars set up for pmg and it still works 
         mcp.convergence_setup(potcar_spec=True)
@@ -244,7 +245,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             self.assertEqual(contents[6], 'ISIF = 2\n')
 
     def test_vasp_std_setup(self): 
-        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull)
+        mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull,full_phase_diagram=True)
 
         mcp.vasp_std_setup(potcar_spec=True)
         self.assertEqual(len(mcp.nonmetals), 2)
@@ -278,6 +279,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with open(f'{path2}/POSCAR', 'r') as f: 
             contents = f.readlines()
             self.assertEqual(contents[-1], '0.500000 0.500000 0.540667 O\n')
+
+    def test_mp_phase_diagram(self):
+        with self.assertRaises(ValueError):
+            mcp = MockedIshCompetingPhases(self.entries, self.system, self.e_above_hull,full_phase_diagram=False)
+        
+        system = 'ZrO2'
+        mcp = MockedIshCompetingPhases(self.entries, 'ZrO2', self.e_above_hull,full_phase_diagram=False)
+        self.assertEqual(len(mcp.entries), 13)
+        self.assertEqual(len(mcp.parsed_entries), 9)
+        self.assertEqual(len(mcp.competing_phases), 7)
+        self.assertNotIn('Zr4O', [e['formula'] for e in mcp.competing_phases])
     
     def tearDown(self) -> None:
         if Path('competing_phases').is_dir(): 
