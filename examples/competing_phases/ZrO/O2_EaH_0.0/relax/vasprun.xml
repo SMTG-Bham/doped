@@ -40,7 +40,7 @@
   <i type="int" name="NELM">   200</i>
   <i type="logical" name="LHFCALC"> T  </i>
   <i type="string" name="GGA"> PE        ! PBEsol exchange-correlation</i>
-  <i name="HFSCREEN">      0.20000000</i>
+  <i name="HFSCREEN">      0.20786986</i>
   <i name="AEXX">      0.25000000</i>
   <i type="string" name="PRECFOCK">fast</i>
   <i type="logical" name="LASPH"> T  </i>
