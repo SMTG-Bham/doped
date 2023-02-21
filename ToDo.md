@@ -47,7 +47,7 @@
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Used `monty` JSON encoding rather than `pickle` (like `pymatgen`) as less senstitive to environment and human-readable.
-- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, and warn user if not.
+- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
 - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, check how much the error is, and if small enough ignore and force the charge correction function to run (current method is to warn user this is the case, and to check it manually).
 
 ## Housekeeping
