@@ -79,7 +79,7 @@ class PotcarSingleMod(PotcarSingle):
     def from_symbol_and_functional(symbol, functional=None):
         settings = _import_psp()
         if functional is None:
-            functional = settings.get("PMG_DEFAULT_FUNCTIONAL", "PBE")
+            functional = settings.get("PMG_DEFAULT_FUNCTIONAL", "PBE_54")
         funcdir = PotcarSingle.functional_dir[functional]
 
         if not os.path.isdir(os.path.join(
@@ -130,7 +130,7 @@ class PotcarMod(Potcar):
             symbols ([str]): A list of element symbols
             functional (str): The functional to use. If None, the setting
                 PMG_DEFAULT_FUNCTIONAL in .pmgrc.yaml is used, or if this is
-                not set, it will default to PBE.
+                not set, it will default to PBE_54.
             sym_potcar_map (dict): A map of symbol:raw POTCAR string. If
                 sym_potcar_map is specified, POTCARs will be generated from
                 the given map data rather than the config file location.
@@ -355,7 +355,7 @@ def make_vasp_defect_files(defects, path_base, user_settings={}, hse=False):
     user_incar_def.update(user_incar_blk_def)
     user_kpoints = user_settings.pop('KPOINTS', {})
     potcar_settings = user_settings.pop('POTCAR', {})
-    potcar_functional = potcar_settings.pop('functional', 'PBE')
+    potcar_functional = potcar_settings.pop('functional', 'PBE_54')
 
     for defect in comb_defs:
         for charge in defect['charges']:
@@ -401,7 +401,7 @@ def make_vasp_defect_files(defects, path_base, user_settings={}, hse=False):
     s = bulk_sys
     dict_transf = {'defect_type': 'bulk', 'supercell': s['size']}
 
-    #potcar_functional = user_potcar.get('functional', 'PBE')
+    #potcar_functional = user_potcar.get('functional', 'PBE_54')
     blk_static_set = DefectStaticSet(s['structure'],
                                      user_incar_settings=user_incar_blk,
                                      user_potcar_settings=potcar_settings,
@@ -593,7 +593,7 @@ def make_vasp_dielectric_files(struct, path=None, user_settings={}, hse=False):
     user_kpoints = user_settings.pop('KPOINTS', {})
     grid_density = user_kpoints.get('grid_density', 1000)
     potcar_settings = user_settings.pop('POTCAR', {})
-    potcar_functional = potcar_settings.pop('functional', 'PBE')
+    potcar_functional = potcar_settings.pop('functional', 'PBE_54')
     dielectric_set = DielectricSet(struct,
                                    user_incar_settings=user_incar,
                                    user_potcar_settings=potcar_settings,
