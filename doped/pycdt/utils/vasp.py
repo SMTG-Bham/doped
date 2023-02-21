@@ -494,7 +494,7 @@ def make_vasp_defect_files_dos(defects, path_base, user_settings={},
                 incar.update({"LWAVE": True})
                 incar.write_file(os.path.join(path,"INCAR.relax.gga"))
                 incar.update({
-                    'LHFCALC': True, "ALGO": "All", "HFSCREEN": 0.2,
+                    'LHFCALC': True, "ALGO": "All", "HFSCREEN": 0.208,
                     "PRECFOCK": "Fast", 'NKRED': 2})
                 incar.write_file(os.path.join(path,"INCAR.relax.hse1"))
                 del incar['PRECFOCK']
