@@ -27,6 +27,7 @@
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
+- Should test the `pymatgen-analysis-defects` `ChargeInterstitialGenerator` and see how it compares to Voronoi tesselation plus screening (current approach). Does this return multiple interstitial sites or just one? Would work in previous cases like split-interstitials or inequivalent interstitials where relative energies are charge-state-dependent? (Like Cd_i in CdTe etc) 
 
 ## Post-processing / analysis / plotting
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
