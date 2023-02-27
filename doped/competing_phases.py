@@ -2,6 +2,10 @@ import contextlib
 import copy
 from pathlib import Path, PurePath
 import warnings
+import json
+
+import pandas as pd
+
 from pymatgen.ext.matproj import MPRester
 from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
 from pymatgen.io.vasp.sets import DictSet
@@ -9,13 +13,16 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-import json
-import pandas as pd
 
 # globally ignore this shit
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
 
+# TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
+#  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
+#  correspond to `pymatgen`'s `DictSet` format.
+# TODO: Add warning for when input `potcar_settings` don't match the expected format (i.e. if one
+#  of the dict entries is not an element symbol)
 
 class CompetingPhases:
     """
@@ -109,11 +116,14 @@ class CompetingPhases:
         """
         Sets up input files for kpoints convergence testing
         Args:
-            kpoints_metals (tuple): Kpoint density per inverse volume (Å-3) to be tested in (min, max, step) format for metals
-            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å-3) to be tested in (min, max, step) format for nonmetals
-            potcar_functional (str): POTCAR to use
-            user_potcar_settings (dict): Override the default POTCARs
-            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False}
+            kpoints_metals (tuple): Kpoint density per inverse volume (Å-3) to be tested in
+                (min, max, step) format for metals
+            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å-3) to be tested in
+                (min, max, step) format for nonmetals
+            potcar_functional (str): POTCAR functional to use (e.g. PBE_54)
+            user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
+            user_incar_settings (dict): Override the default INCAR settings
+                e.g. {"EDIFF": 1e-5, "LDAU": False}
         Returns:
             writes input files
         """
@@ -211,9 +221,10 @@ class CompetingPhases:
         Args:
             kpoints_metals (int): Kpoint density per inverse volume (Å-3) for metals
             kpoints_nonmetals (int): Kpoint density per inverse volume (Å-3) for nonmetals
-            potcar_functional (str): POTCAR to use
-            user_potcar_settings (dict): Override the default POTCARs
-            user_incar_settings (dict): Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False}
+            potcar_functional (str): POTCAR to use (e.g. PBE_54)
+            user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
+            user_incar_settings (dict): Override the default INCAR settings
+                e.g. {"EDIFF": 1e-5, "LDAU": False}
         Returns:
             saves to file
         """
