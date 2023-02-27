@@ -177,7 +177,10 @@ def get_defect_type_and_composition_diff(bulk, defect):
     elif len(composition_diff) == 2:
         defect_type = "substitution"
     else:
-        raise RuntimeError("Could not determine defect type")
+        raise RuntimeError(
+            "Could not determine defect type from composition difference of bulk "
+            "and defect structures."
+        )
 
     return defect_type, composition_diff
 
@@ -527,23 +530,36 @@ class SingleDefectParser:
                 # likely to be the initial interstitial site
                 try:
                     voronoi_frac_coords = loadfn("./bulk_voronoi_nodes.json")
-                    print("Using parsed Voronoi sites in bulk_voronoi_nodes.json (should "
-                          "correspond to same bulk supercell)")
+                    print(
+                        "Using parsed Voronoi sites in bulk_voronoi_nodes.json (should "
+                        "correspond to same bulk supercell)"
+                    )
                 except FileNotFoundError:  # first time parsing
                     topography = TopographyAnalyzer(
-                        bulk_sc_structure, bulk_sc_structure.symbol_set, [], check_volume=False
+                        bulk_sc_structure,
+                        bulk_sc_structure.symbol_set,
+                        [],
+                        check_volume=False,
                     )
                     topography.cluster_nodes()
                     topography.remove_collisions()
-                    voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
-                    dumpfn(voronoi_frac_coords, "./bulk_voronoi_nodes.json")  # for efficient
+                    voronoi_frac_coords = [
+                        site.frac_coords for site in topography.vnodes
+                    ]
+                    dumpfn(
+                        voronoi_frac_coords, "./bulk_voronoi_nodes.json"
+                    )  # for efficient
                     # parsing of multiple defects at once
-                    print("Saving parsed Voronoi sites (for interstitial site-matching) to "
-                          "bulk_voronoi_sites.json to speed up future parsing.")
+                    print(
+                        "Saving parsed Voronoi sites (for interstitial site-matching) to "
+                        "bulk_voronoi_sites.json to speed up future parsing."
+                    )
 
                 closest_node_frac_coords = min(
                     voronoi_frac_coords,
-                    key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
+                    key=lambda node: defect_site.distance_and_image_from_frac_coords(
+                        node
+                    )[0],
                 )
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
