@@ -7,6 +7,7 @@ import json
 import pandas as pd
 
 from pymatgen.ext.matproj import MPRester
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
 from pymatgen.io.vasp.sets import DictSet
 from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
@@ -24,19 +25,106 @@ warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fi
 # TODO: Add warning for when input `potcar_settings` don't match the expected format (i.e. if one
 #  of the dict entries is not an element symbol)
 
-class CompetingPhases:
+
+class ChemPotAnalyzer:
     """
-    Sets up the phase diagram for the system based on MP data, accounting for diatomic gaseous molecules
+    Post processing for atomic chemical potentials used in defect calculations.
     """
 
-    def __init__(self, system, e_above_hull=0.02):
+    def __init__(self, **kwargs):
         """
         Args:
-            system (list): Chemical system under investigation, e.g. ['Mg', 'O']
-            e_above_hull (float): Maximum considered energy above hull
+            bulk_ce: Pymatgen ComputedStructureEntry object for bulk entry / supercell
+        """
+        self.bulk_ce = kwargs.get("bulk_ce", None)
+
+    def get_chempots_from_pd(self, pd):
+
+        if not self.bulk_ce:
+            msg = (
+                "No bulk entry supplied. "
+                "Cannot compute atomic chempots without knowing the bulk entry of interest."
+            )
+            raise ValueError(msg)
+
+        bulk_composition = self.bulk_ce.composition
+        redcomp = bulk_composition.reduced_composition
+        # append bulk_ce to phase diagram, if not present
+        entries = pd.all_entries
+        if not any(
+            [
+                (
+                    ent.composition == self.bulk_ce.composition
+                    and ent.energy == self.bulk_ce.energy
+                )
+                for ent in entries
+            ]
+        ):
+            entries.append(
+                PDEntry(
+                    self.bulk_ce.composition,
+                    self.bulk_ce.energy,
+                    attribute="Bulk Material",
+                )
+            )
+            pd = PhaseDiagram(entries)
+
+        chem_lims = pd.get_all_chempots(redcomp)
+
+        return chem_lims
+
+    def diff_bulk_sub_phases(self, face_list, sub_el=None):
+        # method for pulling out phases within a facet of a phase diagram
+        # which may include a substitutional element...
+        # face_list is an array of phases in a facet
+        # sub_el is the element to look out for within the face_list array
+        blk = []
+        sub_spcs = []
+        for face in face_list:
+            if sub_el:
+                if sub_el in face:
+                    sub_spcs.append(face)
+                else:
+                    blk.append(face)
+            else:
+                blk.append(face)
+        blk.sort()
+        sub_spcs.sort()
+        blknom = "-".join(blk)
+        subnom = "-".join(sub_spcs)
+        return blk, blknom, subnom
+
+
+class CompetingPhases:
+    """
+    Class to generate the input files for competing phases on the phase diagram for the host
+    material (determining the chemical potential limits). Materials Project (MP) data is used,
+    along with an uncertainty range specified by `e_above_hull`, to determine the relevant
+    competing phases. Diatomic gaseous molecules are generated as molecules-in-a-box as appropriate.
+
+    TODO: Add full_phase_diagram option.
+    """
+
+    def __init__(self, composition, e_above_hull=0.1):
+        """
+        Args:
+            composition (str, Composition): Composition of host material
+                (e.g. 'LiFePO4', or Composition('LiFePO4'), or Composition({"Li":1, "Fe":1,
+                "P":1, "O":4}))
+            e_above_hull (float): Maximum energy-above-hull of Materials Project entries to be
+                considered as competing phases. This is an uncertainty range for the
+                MP-calculated formation energies, which may not be accurate due to functional
+                choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                Any phases that would border the host material on the phase diagram, if their
+                relative energy was downshifted by `e_above_hull`, are included.
+                Default is 0.1 eV/atom.
         """
         # create list of entries
-        molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2", "Br2"]
+        molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
+
+        # TODO: Should hard code S (solid + S8), P and Se in here too. Common anions with a lot of
+        #  unnecessary polymorphs on MP
+
         # all data collected from materials project
         self.data = [
             "pretty_formula",
@@ -52,58 +140,110 @@ class CompetingPhases:
             "nelements",
             "elements",
         ]
-        self.system = system
+
+        # set bulk composition (Composition(Composition("LiFePO4")) = Composition("LiFePO4")))
+        self.bulk_comp = Composition(composition)
+
         stype = "initial"
         m = MPRester()
-        self.entries = m.get_entries_in_chemsys(
-            self.system, inc_structure=stype, property_data=self.data
+        cp_entries = m.get_entries_in_chemsys(
+            list(self.bulk_comp.as_dict().keys()),
+            inc_structure=stype,
+            property_data=self.data,
         )
-        self.entries = [
-            e for e in self.entries if e.data["e_above_hull"] <= e_above_hull
-        ]
+        cp_entries = [e for e in cp_entries if e.data["e_above_hull"] <= e_above_hull]
+        cp_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
 
-        competing_phases = []
-        # check that none of the elemental ones aren't on the naughty list
-        for e in self.entries:
+        pd_entries = []
+        # check that none of the elemental ones are on the naughty list... (molecules in a box)
+        for e in cp_entries:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
+                assert (
+                    e.data["e_above_hull"] == 0
+                )  # should be zero as only first matching entry
                 struc, formula, magnetisation = make_molecule_in_a_box(
                     e.data["pretty_formula"]
                 )
-                competing_phases.append(
-                    {
-                        "structure": struc,
-                        "formula": formula,
-                        "formation_energy": 0,
-                        "nsites": 2,
-                        "ehull": 0,
-                        "magnetisation": magnetisation,
-                        "molecule": True,
-                    }
+                molecular_entry = ComputedStructureEntry(
+                    structure=struc,
+                    energy=e.energy,  # set entry energy to be hull energy
+                    composition=Composition(formula),
+                    parameters=None,
                 )
+                molecular_entry.data["oxide_type"] = "None"
+                molecular_entry.data["pretty_formula"] = formula
+                molecular_entry.data["e_above_hull"] = 0
+                molecular_entry.data["band_gap"] = None
+                molecular_entry.data["nsites"] = 2
+                molecular_entry.data["volume"] = 0
+                molecular_entry.data["icsd_id"] = None
+                molecular_entry.data["formation_energy_per_atom"] = 0
+                molecular_entry.data["energy_per_atom"] = e.data["energy_per_atom"]
+                molecular_entry.data["energy"] = e.data["energy"]
+                molecular_entry.data["total_magnetization"] = magnetisation
+                molecular_entry.data["nelements"] = 1
+                molecular_entry.data["elements"] = [formula]
+                molecular_entry.data["molecule"] = True
+                pd_entries.append(molecular_entry)
+
+                # remove all other entries with the same reduced_composition
+                cp_entries = [
+                    e
+                    for e in cp_entries
+                    if e.composition.reduced_composition
+                    != Composition(formula).reduced_composition
+                ]
 
             else:
-                competing_phases.append(
-                    {
-                        "structure": struc,
-                        "formula": e.data["pretty_formula"],
-                        "formation_energy": e.data["formation_energy_per_atom"],
-                        "nsites": e.data["nsites"],
-                        "ehull": e.data["e_above_hull"],
-                        "magnetisation": e.data["total_magnetization"],
-                        "molecule": False,
-                        "band_gap": e.data["band_gap"],
-                    }
-                )
+                pd_entries.append(e)
+                e.data["molecule"] = False
 
-        # remove make sure it's only unique competing phases
-        self.competing_phases = []
-        [
-            self.competing_phases.append(x)
-            for x in competing_phases
-            if x not in self.competing_phases
+        # cull to only include any phases that would border the host material on the phase
+        # diagram, if their relative energy was downshifted by `e_above_hull`:
+        pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
+        pd = PhaseDiagram(pd_entries)
+        bulk_entries = [
+            entry
+            for entry in pd_entries
+            if entry.composition.reduced_composition
+            == self.bulk_comp.reduced_composition
         ]
+        bulk_ce = bulk_entries[
+            0
+        ]  # lowest energy entry for bulk composition (after sorting)
+
+        cpc = ChemPotAnalyzer(bulk_ce=bulk_ce)
+        MP_gga_chempots = cpc.get_chempots_from_pd(pd)
+
+        MP_bordering_phases = set(
+            [phase for facet in MP_gga_chempots.keys() for phase in facet.split("-")]
+        )
+        self.entries = [
+            entry
+            for entry in pd_entries
+            if entry.name in MP_bordering_phases or entry.is_element
+        ]
+
+        # add any phases that would border the host material on the phase diagram, if their relative
+        # energy was downshifted by `e_above_hull`:
+        for entry in pd_entries:
+            if entry.name not in MP_bordering_phases and not entry.is_element:
+                # decrease entry energy per atom by `e_above_hull` eV/atom
+                renormalised_entry_dict = entry.as_dict().copy()
+                renormalised_entry_dict["energy"] -= e_above_hull * sum(
+                    entry.composition.values()
+                )
+                renormalised_entry = PDEntry.from_dict(renormalised_entry_dict)
+                new_pd = PhaseDiagram(pd.entries + [renormalised_entry])
+                new_MP_gga_chempots = cpc.get_chempots_from_pd(new_pd)
+
+                if new_MP_gga_chempots != MP_gga_chempots:
+                    # new bordering phase, add to list
+                    self.entries.append(entry)
+
+        self.entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
 
     def convergence_setup(
         self,
@@ -141,15 +281,15 @@ class CompetingPhases:
         # separate metals and non-metals
         self.nonmetals = []
         self.metals = []
-        for e in self.competing_phases:
-            if not e["molecule"]:
-                if e["band_gap"] > 0:
+        for e in self.entries:
+            if not e.data["molecule"]:
+                if e.data["band_gap"] > 0:
                     self.nonmetals.append(e)
                 else:
                     self.metals.append(e)
             else:
                 print(
-                    f"{e['formula']} is a molecule in a box, does not need convergence testing"
+                    f"{e.name} is a molecule in a box, does not need convergence testing"
                 )
 
         for e in self.nonmetals:
@@ -157,13 +297,13 @@ class CompetingPhases:
                 uis = copy.deepcopy(user_incar_settings)
             else:
                 uis = {}
-            if e["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["magnetisation"] > 1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
 
             for kpoint in range(min_nm, max_nm, step_nm):
                 dis = DictSet(
-                    e["structure"],
+                    e.structure,
                     cd,
                     user_potcar_functional=potcar_functional,
                     user_potcar_settings=user_potcar_settings,
@@ -187,13 +327,13 @@ class CompetingPhases:
             uis["ISMEAR"] = -5
             uis["SIGMA"] = 0.2
 
-            if e["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["magnetisation"] > 1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
 
             for kpoint in range(min_m, max_m, step_m):
                 dis = DictSet(
-                    e["structure"],
+                    e.structure,
                     cd,
                     user_potcar_functional=potcar_functional,
                     user_potcar_settings=user_potcar_settings,
@@ -219,8 +359,8 @@ class CompetingPhases:
         """
         Sets up input files for vasp_std relaxations
         Args:
-            kpoints_metals (int): Kpoint density per inverse volume (Å-3) for metals
-            kpoints_nonmetals (int): Kpoint density per inverse volume (Å-3) for nonmetals
+            kpoints_metals (int): Kpoint density per inverse volume (Å^-3) for metals
+            kpoints_nonmetals (int): Kpoint density per inverse volume (Å^-3) for nonmetals
             potcar_functional (str): POTCAR to use (e.g. PBE_54)
             user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
             user_incar_settings (dict): Override the default INCAR settings
@@ -236,11 +376,11 @@ class CompetingPhases:
         self.nonmetals = []
         self.metals = []
         self.molecules = []
-        for e in self.competing_phases:
-            if e["molecule"]:
+        for e in self.entries:
+            if e.data["molecule"]:
                 self.molecules.append(e)
             else:
-                if e["band_gap"] > 0:
+                if e.data["band_gap"] > 0:
                     self.nonmetals.append(e)
                 else:
                     self.metals.append(e)
@@ -250,12 +390,12 @@ class CompetingPhases:
                 uis = copy.deepcopy(user_incar_settings)
             else:
                 uis = {}
-            if e["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["magnetisation"] > 1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
 
             dis = DictSet(
-                e["structure"],
+                e.structure,
                 cd,
                 user_potcar_functional=potcar_functional,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
@@ -278,12 +418,12 @@ class CompetingPhases:
             uis["ISMEAR"] = 1
             uis["SIGMA"] = 0.2
 
-            if e["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["magnetisation"] > 1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
 
             dis = DictSet(
-                e["structure"],
+                e.structure,
                 cd,
                 user_potcar_functional=potcar_functional,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
@@ -296,8 +436,7 @@ class CompetingPhases:
             )
             dis.write_input(fname)
 
-        for e in self.molecules:
-
+        for e in self.molecules:  # gamma-only for molecules
             if user_incar_settings is not None:
                 uis = copy.deepcopy(user_incar_settings)
             else:
@@ -305,19 +444,23 @@ class CompetingPhases:
 
             uis["ISIF"] = 2  # can't change the volume
 
-            if e["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["magnetisation"] > 1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
                 # the molecule set up to set this automatically?
                 if e["formula"] == "O2":
                     uis["NUPDOWN"] = 2
 
-            # set up for 2x2x2 kpoints automatically
             dis = DictSet(
-                e["structure"],
+                e.structure,
                 cd,
                 user_potcar_functional=potcar_functional,
-                user_kpoints_settings=Kpoints(kpts=[[2, 2, 2]]),
+                user_kpoints_settings=Kpoints().from_dict(
+                    {
+                        "comment": "Gamma-only kpoints for molecule-in-a-box",
+                        "generation_style": "Gamma",
+                    }
+                ),
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
@@ -330,10 +473,11 @@ class CompetingPhases:
 
 class AdditionalCompetingPhases(CompetingPhases):
     """
-    If you want to add some extrinsic doping, or add another element to your chemical system, this is the class for you. Will make sure you're only calculating the extra phases
+    If you want to add some extrinsic doping, or add another element to your chemical system,
+    this is the class for you. Will make sure you're only calculating the extra phases
     """
 
-    def __init__(self, system, extrinsic_species, e_above_hull=0.02):
+    def __init__(self, system, extrinsic_species, e_above_hull=0.1):
         """
         Args:
             system (list): Chemical system under investigation, e.g. ['Mg', 'O']
@@ -379,10 +523,13 @@ class CompetingPhasesAnalyzer:
         self, path, folder="vasp_std", csv_fname="competing_phases_energies.csv"
     ):
         """
-        Reads in vaspruns, collates energies to csv. It isn't the best at removing higher energy elemental phases (if multiple are present), so double check that
+        Reads in vaspruns, collates energies to csv. It isn't the best at removing higher energy
+        elemental phases (if multiple are present), so double check that
         Args:
-            path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz) files, or a path to the base folder in which you have your formula_EaH_/vasp_std/vasprun.xml
-            folder (str): The folder in which vasprun is, only use if you set base path (ie. change to vasp_ncl, relax whatever youve called it)
+            path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz)
+            files, or a path to the base folder in which you have your formula_EaH_/vasp_std/vasprun.xml
+            folder (str): The folder in which vasprun is, only use if you set base path
+            (ie. change to vasp_ncl, relax whatever youve called it)
             csv_fname (str): csv filename
         Returns:
             saves csv with formation energies to file
@@ -707,27 +854,8 @@ def make_molecule_in_a_box(element):
             "formula": "Cl2",
             "magnetisation": 0,
         },
-        "Br2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["Br", "Br"],
-                coords=[[15, 15, 15], [15, 15, 17.30]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "Br2",
-            "magnetisation": 0,
-        },
-        "I2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["I", "I"],
-                coords=[[15, 15, 15], [15, 15, 17.67]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "I2",
-            "magnetisation": 0,
-        },
     }
+
     if element in all_structures.keys():
         structure = all_structures[element]["structure"]
         formula = all_structures[element]["formula"]
