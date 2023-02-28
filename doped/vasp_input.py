@@ -250,7 +250,7 @@ def vasp_gam_files(
         "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
         "EDIFFG": -0.01,
-        "HFSCREEN": 0.2,  # assuming HSE06
+        "HFSCREEN": 0.208,  # assuming HSE06
         "ISIF": 2,
         "ISYM": "0 # Symmetry breaking extremely likely for defects",
         "ISMEAR": 0,
@@ -423,7 +423,7 @@ def vasp_std_files(
         "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
         "EDIFF": f"{scaled_ediff(supercell.num_sites)} # May need to reduce for tricky relaxations",
         "EDIFFG": -0.01,
-        "HFSCREEN": 0.2,  # assuming HSE06
+        "HFSCREEN": 0.208,  # assuming HSE06
         "IBRION": "1 # May need to change to 2 for difficult/poorly-convergent relaxations",
         "ISIF": 2,
         "ISYM": "0 # Symmetry breaking extremely likely for defects",
