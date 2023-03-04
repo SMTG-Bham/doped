@@ -24,17 +24,16 @@ Within your `VASP pseudopotential top directory`, you should have a folder named
 `POT_GGA_PAW_PBE`/`potpaw_PBE.54`/`POT_GGA_PAW_PBE_54` which contains `POTCAR.X(.gz)` files, generated using `pmg config`.
 
 If you have not previously setup your `POTCAR` directory in this way with `pymatgen`, then follow these steps:
-    1. Download and unzip your VASP pseudopotentials:
-    ```bash
-    mkdir potpaw_PBE  # make a folder to store the unzipped POTCARs
-    cp potpaw_PBE.54.tar.gz potpaw_PBE  # copy your zipped VASP POTCAR source to this folder
-    cd potpaw_PBE
-    tar -xf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
-    pmg config -p . POT_PAW_GGA_PBE
-    pmg config --add PMG_VASP_PSP_DIR ./POT_PAW_GGA_PBE
-    ```
-    If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show 
-    `PAW_PBE Na_pv {date}` 
+```bash
+mkdir potpaw_PBE  # make a folder to store the unzipped POTCARs
+cp potpaw_PBE.54.tar.gz potpaw_PBE  # copy your zipped VASP POTCAR source to this folder
+cd potpaw_PBE
+tar -xf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
+pmg config -p . POT_PAW_GGA_PBE
+pmg config --add PMG_VASP_PSP_DIR ./POT_PAW_GGA_PBE
+```
+If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show 
+`PAW_PBE Na_pv {date}` 
 
 This is necessary to generate `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for charged 
 defects.
