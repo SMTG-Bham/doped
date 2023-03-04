@@ -15,9 +15,11 @@ from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.core import Structure, Composition, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-# globally ignore this shit
+# globally ignore:
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+warnings.filterwarnings("ignore", message="You are using the legacy MPRester")  # currently rely
+# on this so shouldn't show warning
 
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
@@ -124,6 +126,8 @@ class CompetingPhases:
 
         # TODO: Should hard code S (solid + S8), P and Se in here too. Common anions with a lot of
         #  unnecessary polymorphs on MP
+        # P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo
+        # stable at RT), so only need to generate these
 
         # all data collected from materials project
         self.data = [
@@ -160,41 +164,32 @@ class CompetingPhases:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
-                assert (
-                    e.data["e_above_hull"] == 0
-                )  # should be zero as only first matching entry
-                struc, formula, magnetisation = make_molecule_in_a_box(
-                    e.data["pretty_formula"]
-                )
-                molecular_entry = ComputedStructureEntry(
-                    structure=struc,
-                    energy=e.energy,  # set entry energy to be hull energy
-                    composition=Composition(formula),
-                    parameters=None,
-                )
-                molecular_entry.data["oxide_type"] = "None"
-                molecular_entry.data["pretty_formula"] = formula
-                molecular_entry.data["e_above_hull"] = 0
-                molecular_entry.data["band_gap"] = None
-                molecular_entry.data["nsites"] = 2
-                molecular_entry.data["volume"] = 0
-                molecular_entry.data["icsd_id"] = None
-                molecular_entry.data["formation_energy_per_atom"] = 0
-                molecular_entry.data["energy_per_atom"] = e.data["energy_per_atom"]
-                molecular_entry.data["energy"] = e.data["energy"]
-                molecular_entry.data["total_magnetization"] = magnetisation
-                molecular_entry.data["nelements"] = 1
-                molecular_entry.data["elements"] = [formula]
-                molecular_entry.data["molecule"] = True
-                pd_entries.append(molecular_entry)
-
-                # remove all other entries with the same reduced_composition
-                cp_entries = [
-                    e
-                    for e in cp_entries
-                    if e.composition.reduced_composition
-                    != Composition(formula).reduced_composition
-                ]
+                if e.data["e_above_hull"] == 0:
+                    # only first matching molecular entry
+                    struc, formula, magnetisation = make_molecule_in_a_box(
+                        e.data["pretty_formula"]
+                    )
+                    molecular_entry = ComputedStructureEntry(
+                        structure=struc,
+                        energy=e.energy_per_atom*2,  # set entry energy to be hull energy
+                        composition=Composition(formula),
+                        parameters=None,
+                    )
+                    molecular_entry.data["oxide_type"] = "None"
+                    molecular_entry.data["pretty_formula"] = formula
+                    molecular_entry.data["e_above_hull"] = 0
+                    molecular_entry.data["band_gap"] = None
+                    molecular_entry.data["nsites"] = 2
+                    molecular_entry.data["volume"] = 0
+                    molecular_entry.data["icsd_id"] = None
+                    molecular_entry.data["formation_energy_per_atom"] = 0
+                    molecular_entry.data["energy_per_atom"] = e.data["energy_per_atom"]
+                    molecular_entry.data["energy"] = e.data["energy_per_atom"]*2
+                    molecular_entry.data["total_magnetization"] = magnetisation
+                    molecular_entry.data["nelements"] = 1
+                    molecular_entry.data["elements"] = [formula]
+                    molecular_entry.data["molecule"] = True
+                    pd_entries.append(molecular_entry)
 
             else:
                 pd_entries.append(e)
@@ -232,9 +227,9 @@ class CompetingPhases:
             if entry.name not in MP_bordering_phases and not entry.is_element:
                 # decrease entry energy per atom by `e_above_hull` eV/atom
                 renormalised_entry_dict = entry.as_dict().copy()
-                renormalised_entry_dict["energy"] -= e_above_hull * sum(
+                renormalised_entry_dict["energy"] = entry.energy - e_above_hull * sum(
                     entry.composition.values()
-                )
+                )  # entry.energy includes MP corrections as desired
                 renormalised_entry = PDEntry.from_dict(renormalised_entry_dict)
                 new_pd = PhaseDiagram(pd.entries + [renormalised_entry])
                 new_MP_gga_chempots = cpc.get_chempots_from_pd(new_pd)
