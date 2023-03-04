@@ -195,9 +195,12 @@ def vasp_gam_files(
     if potcars:
         defect_relax_set.potcar.write_file(vaspgaminputdir + "POTCAR")
     else: # make the folders without POTCARs
-        warnings.warn("POTCAR directory not set up with pymatgen, so only POSCAR files will be "
-                      "generated (POTCARs also needed to determine appropriate NELECT setting in "
-                      "INCAR files)")
+        warnings.warn("POTCAR directory not set up with pymatgen (see the doped homepage: "
+                      "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
+                      "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
+                      "and `NUPDOWN`), so only `POSCAR` files will be generated.")
+
+
         vaspgamposcar = defect_relax_set.poscar
         if poscar_comment:
             vaspgamposcar.comment = poscar_comment
@@ -333,11 +336,11 @@ def vasp_std_files(
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
     potcars = _check_psp_dir()
     if not potcars:
-        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
-                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
-                      "relaxation files, then continue from this pre-converged structure with "
-                      "vasp_std)")
-        return  # exit here
+        raise ValueError("POTCAR directory not set up with pymatgen (see the doped homepage: "
+                      "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
+                      "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
+                      "and `NUPDOWN`), so no input files will be generated here.")
+
     defect_relax_set.potcar.write_file(vaspstdinputdir + "POTCAR")
 
     relax_set_incar = defect_relax_set.incar
@@ -468,11 +471,11 @@ def vasp_ncl_files(
                                       user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"])
     potcars = _check_psp_dir()
     if not potcars:
-        warnings.warn("POTCAR directory not set up with pymatgen, so no input files will be "
-                      "generated (you should use vasp_input.vasp_gam_files to create the initial "
-                      "relaxation files, then continue from this pre-converged structure with "
-                      "vasp_std and finally vasp_ncl if SOC important)")
-        return  # exit here
+        raise ValueError("POTCAR directory not set up with pymatgen (see the doped homepage: "
+                      "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
+                      "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
+                      "and `NUPDOWN`), so no input files will be generated here.")
+
     defect_relax_set.potcar.write_file(vaspnclinputdir + "POTCAR")
 
     relax_set_incar = defect_relax_set.incar
