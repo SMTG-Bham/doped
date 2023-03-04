@@ -20,9 +20,9 @@ warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
-)  # currently rely on
-# this so shouldn't show warning
+)  # currently rely on this so shouldn't show warning
 
+# TODO: Confirm `README` potcar instructions do indeed work as expected!
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
 #  correspond to `pymatgen`'s `DictSet` format.
@@ -226,8 +226,18 @@ class CompetingPhases:
     competing phases. Diatomic gaseous molecules are generated as molecules-in-a-box as appropriate.
 
     TODO: Add full_phase_diagram option.
+    TODO: Need to add functionality to deal with cases where the bulk composition is not listed
+    on the MP – warn user (i.e. check your shit) and generate the competing phases according to
+    composition position within phase diagram.
+    E.g. from pycdt chemical_potentials:
+    #                 "However, no stable entry with this composition exists "
+    #                 "in the MP database!\nPlease consider submitting the "
+    #                 "POSCAR to the MP xtaltoolkit, so future users will "
+    #                 "know about this structure:"
+    #                 " https://materialsproject.org/#apps/xtaltoolkit\n"
+    TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
+    (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
     """
-
     def __init__(self, composition, e_above_hull=0.1, api_key=None):
         """
         Args:
@@ -241,10 +251,12 @@ class CompetingPhases:
                 Any phases that would border the host material on the phase diagram, if their
                 relative energy was downshifted by `e_above_hull`, are included.
                 Default is 0.1 eV/atom.
-            api_key (str): Materials Project API key to access database, if not in ~/.pmgrc.yaml
-                already – see {pymatgen setup page} to set this up. API key available at {legacy
-                MP web address}
-                TODO: Get URLs for this docstring
+            api_key (str): Materials Project (MP) API key, needed to access the MP database for
+                competing phase generation. If not supplied, will attempt to read from
+                environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) – see the `doped`
+                homepage (https://github.com/SMTG-UCL/doped) for instructions on setting this up.
+                This should correspond to the legacy MP API; from
+                https://legacy.materialsproject.org/open.
         """
         # create list of entries
         molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
@@ -575,7 +587,12 @@ class CompetingPhases:
             )
             dis.write_input(fname)
 
-
+# TODO: Add full_sub_approach option
+        # TODO: Add co-doping option (i.e. not full_sub_approach, but allowing for facets with 2
+        #  compositions with the extrinsic species present (if 2 extrinsic species etc)
+        # TODO: Add warnings for full_sub_approach=True, especially if done with multiple
+        #  extrinsic species.
+        # TODO: Update api key docstring here
 class AdditionalCompetingPhases(CompetingPhases):
     """
     If you want to add some extrinsic doping, or add another element to your chemical system,
