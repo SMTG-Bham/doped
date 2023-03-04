@@ -152,19 +152,19 @@ class CompetingPhases:
         # set bulk composition (Composition(Composition("LiFePO4")) = Composition("LiFePO4")))
         self.bulk_comp = Composition(composition)
 
-        stype = "initial"
         with MPRester(api_key=api_key) as mpr:
-            cp_entries = mpr.get_entries_in_chemsys(
+            full_pd_entries = mpr.get_entries_in_chemsys(
                 list(self.bulk_comp.as_dict().keys()),
-                inc_structure=stype,
+                inc_structure="initial",
                 property_data=self.data,
             )
-        cp_entries = [e for e in cp_entries if e.data["e_above_hull"] <= e_above_hull]
-        cp_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+        full_pd_entries = [e for e in full_pd_entries if e.data["e_above_hull"] <= e_above_hull]
+        full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+        self.full_pd_entries = full_pd_entries
 
         pd_entries = []
         # check that none of the elemental ones are on the naughty list... (molecules in a box)
-        for e in cp_entries:
+        for e in full_pd_entries:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
@@ -194,6 +194,7 @@ class CompetingPhases:
                     molecular_entry.data["elements"] = [formula]
                     molecular_entry.data["molecule"] = True
                     pd_entries.append(molecular_entry)
+                    self.full_pd_entries.append(molecular_entry)
 
             else:
                 pd_entries.append(e)
