@@ -18,19 +18,107 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 # globally ignore:
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-warnings.filterwarnings("ignore", message="You are using the legacy MPRester")  # currently rely
-# on this so shouldn't show warning
+warnings.filterwarnings(
+    "ignore", message="You are using the legacy MPRester"
+)  # currently rely on
+# this so shouldn't show warning
 
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
 #  correspond to `pymatgen`'s `DictSet` format.
 # TODO: Add warning for when input `potcar_settings` don't match the expected format (i.e. if one
 #  of the dict entries is not an element symbol)
+# TODO: Should refactor all this to "Chemical Potentials" etc rather than 'competing phases' as
+#  this is a more common term in the field so likely more familiar to users. Will do when all
+#  chempot functionality has been transferred over and old `pycdt` chempot code deleted
+# TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
+#  sufficiently informative, add try except catch to give more informative error message for this.
+
+
+def make_molecule_in_a_box(element):
+    # (but do try to fix it so that the nupdown is the same as magnetisation
+    # so that it makes that assignment easier later on when making files)
+    # the bond distances are taken from various sources and *not* thoroughly vetted
+    lattice = [[30, 0, 0], [0, 30, 0], [0, 0, 30]]
+    all_structures = {
+        "O2": {
+            "structure": Structure(
+                lattice=lattice,
+                species=["O", "O"],
+                coords=[[15, 15, 15], [15, 15, 16.22]],
+                coords_are_cartesian=True,
+            ),
+            "formula": "O2",
+            "magnetisation": 2,
+        },
+        "N2": {
+            "structure": Structure(
+                lattice=lattice,
+                species=["N", "N"],
+                coords=[[15, 15, 15], [15, 15, 16.09]],
+                coords_are_cartesian=True,
+            ),
+            "formula": "N2",
+            "magnetisation": 0,
+        },
+        "H2": {
+            "structure": Structure(
+                lattice=lattice,
+                species=["H", "H"],
+                coords=[[15, 15, 15], [15, 15, 15.74]],
+                coords_are_cartesian=True,
+            ),
+            "formula": "H2",
+            "magnetisation": 0,
+        },
+        "F2": {
+            "structure": Structure(
+                lattice=lattice,
+                species=["F", "F"],
+                coords=[[15, 15, 15], [15, 15, 16.44]],
+                coords_are_cartesian=True,
+            ),
+            "formula": "F2",
+            "magnetisation": 0,
+        },
+        "Cl2": {
+            "structure": Structure(
+                lattice=lattice,
+                species=["Cl", "Cl"],
+                coords=[[15, 15, 15], [15, 15, 16.99]],
+                coords_are_cartesian=True,
+            ),
+            "formula": "Cl2",
+            "magnetisation": 0,
+        },
+    }
+
+    if element in all_structures.keys():
+        structure = all_structures[element]["structure"]
+        formula = all_structures[element]["formula"]
+        magnetisation = all_structures[element]["magnetisation"]
+
+    return structure, formula, magnetisation
+
+
+def _calculate_formation_energies(data, elemental):
+    df = pd.DataFrame(data)
+    for d in data:
+        for e in elemental.keys():
+            d[e] = Composition(d["formula"]).as_dict()[e]
+
+    df2 = pd.DataFrame(data)
+    df2["formation_energy"] = df2["energy_per_fu"]
+    for k, v in elemental.items():
+        df2["formation_energy"] -= df2[k] * v
+
+    df["formation_energy"] = df2["formation_energy"]
+    return df
 
 
 class ChemPotAnalyzer:
     """
-    Post processing for atomic chemical potentials used in defect calculations.
+    Post-processing for atomic chemical potentials used in defect calculations.
     """
 
     def __init__(self, **kwargs):
@@ -153,18 +241,21 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         with MPRester(api_key=api_key) as mpr:
-            full_pd_entries = mpr.get_entries_in_chemsys(
+            self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
                 list(self.bulk_comp.as_dict().keys()),
                 inc_structure="initial",
                 property_data=self.data,
             )
-        full_pd_entries = [e for e in full_pd_entries if e.data["e_above_hull"] <= e_above_hull]
-        full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
-        self.full_pd_entries = full_pd_entries
+        self.MP_full_pd_entries = [
+            e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= e_above_hull
+        ]
+        self.MP_full_pd_entries.sort(
+            key=lambda x: x.data["e_above_hull"]
+        )  # sort by e_above_hull
 
         pd_entries = []
         # check that none of the elemental ones are on the naughty list... (molecules in a box)
-        for e in full_pd_entries:
+        for e in self.MP_full_pd_entries:
             sym = SpacegroupAnalyzer(e.structure)
             struc = sym.get_primitive_standard_structure()
             if e.data["pretty_formula"] in molecules_in_a_box:
@@ -175,7 +266,8 @@ class CompetingPhases:
                     )
                     molecular_entry = ComputedStructureEntry(
                         structure=struc,
-                        energy=e.energy_per_atom*2,  # set entry energy to be hull energy
+                        energy=e.energy_per_atom
+                        * 2,  # set entry energy to be hull energy
                         composition=Composition(formula),
                         parameters=None,
                     )
@@ -188,13 +280,13 @@ class CompetingPhases:
                     molecular_entry.data["icsd_id"] = None
                     molecular_entry.data["formation_energy_per_atom"] = 0
                     molecular_entry.data["energy_per_atom"] = e.data["energy_per_atom"]
-                    molecular_entry.data["energy"] = e.data["energy_per_atom"]*2
+                    molecular_entry.data["energy"] = e.data["energy_per_atom"] * 2
                     molecular_entry.data["total_magnetization"] = magnetisation
                     molecular_entry.data["nelements"] = 1
                     molecular_entry.data["elements"] = [formula]
                     molecular_entry.data["molecule"] = True
                     pd_entries.append(molecular_entry)
-                    self.full_pd_entries.append(molecular_entry)
+                    self.MP_full_pd_entries.append(molecular_entry)
 
             else:
                 pd_entries.append(e)
@@ -213,6 +305,7 @@ class CompetingPhases:
         bulk_ce = bulk_entries[
             0
         ]  # lowest energy entry for bulk composition (after sorting)
+        self.MP_bulk_ce = bulk_ce
 
         cpc = ChemPotAnalyzer(bulk_ce=bulk_ce)
         MP_gga_chempots = cpc.get_chempots_from_pd(pd)
@@ -534,6 +627,9 @@ class CompetingPhasesAnalyzer:
         Returns:
             saves csv with formation energies to file
         """
+        # TODO: Change this to just recursively search for vaspruns within the specified path
+        # TODO: Add check for matching INCAR and POTCARs from these calcs, as we also want with
+        #  defect parsing
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
@@ -796,84 +892,3 @@ class CompetingPhasesAnalyzer:
                         for k, v in comp.items():
                             print(int(v), k, end=" ")
                         print(i["formation_energy"])
-
-
-def make_molecule_in_a_box(element):
-    # (but do try to fix it so that the nupdown is the same as magnetisation
-    # so that it makes that assignment easier later on when making files)
-    # the bond distances are taken from various sources and *not* thoroughly vetted
-    lattice = [[30, 0, 0], [0, 30, 0], [0, 0, 30]]
-    all_structures = {
-        "O2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["O", "O"],
-                coords=[[15, 15, 15], [15, 15, 16.22]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "O2",
-            "magnetisation": 2,
-        },
-        "N2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["N", "N"],
-                coords=[[15, 15, 15], [15, 15, 16.09]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "N2",
-            "magnetisation": 0,
-        },
-        "H2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["H", "H"],
-                coords=[[15, 15, 15], [15, 15, 15.74]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "H2",
-            "magnetisation": 0,
-        },
-        "F2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["F", "F"],
-                coords=[[15, 15, 15], [15, 15, 16.44]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "F2",
-            "magnetisation": 0,
-        },
-        "Cl2": {
-            "structure": Structure(
-                lattice=lattice,
-                species=["Cl", "Cl"],
-                coords=[[15, 15, 15], [15, 15, 16.99]],
-                coords_are_cartesian=True,
-            ),
-            "formula": "Cl2",
-            "magnetisation": 0,
-        },
-    }
-
-    if element in all_structures.keys():
-        structure = all_structures[element]["structure"]
-        formula = all_structures[element]["formula"]
-        magnetisation = all_structures[element]["magnetisation"]
-
-    return structure, formula, magnetisation
-
-
-def _calculate_formation_energies(data, elemental):
-    df = pd.DataFrame(data)
-    for d in data:
-        for e in elemental.keys():
-            d[e] = Composition(d["formula"]).as_dict()[e]
-
-    df2 = pd.DataFrame(data)
-    df2["formation_energy"] = df2["energy_per_fu"]
-    for k, v in elemental.items():
-        df2["formation_energy"] -= df2[k] * v
-
-    df["formation_energy"] = df2["formation_energy"]
-    return df
