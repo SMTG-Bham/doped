@@ -107,7 +107,7 @@ class CompetingPhases:
     TODO: Add full_phase_diagram option.
     """
 
-    def __init__(self, composition, e_above_hull=0.1):
+    def __init__(self, composition, e_above_hull=0.1, api_key=None):
         """
         Args:
             composition (str, Composition): Composition of host material
@@ -120,6 +120,10 @@ class CompetingPhases:
                 Any phases that would border the host material on the phase diagram, if their
                 relative energy was downshifted by `e_above_hull`, are included.
                 Default is 0.1 eV/atom.
+            api_key (str): Materials Project API key to access database, if not in ~/.pmgrc.yaml
+                already – see {pymatgen setup page} to set this up. API key available at {legacy
+                MP web address}
+                TODO: Get URLs for this docstring
         """
         # create list of entries
         molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
@@ -149,12 +153,12 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         stype = "initial"
-        m = MPRester()
-        cp_entries = m.get_entries_in_chemsys(
-            list(self.bulk_comp.as_dict().keys()),
-            inc_structure=stype,
-            property_data=self.data,
-        )
+        with MPRester(api_key=api_key) as mpr:
+            cp_entries = mpr.get_entries_in_chemsys(
+                list(self.bulk_comp.as_dict().keys()),
+                inc_structure=stype,
+                property_data=self.data,
+            )
         cp_entries = [e for e in cp_entries if e.data["e_above_hull"] <= e_above_hull]
         cp_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
 
