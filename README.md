@@ -14,19 +14,34 @@ Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](exampl
 ## Installation
 1. `doped` can be installed from `PyPI` with `pip install doped`. 
 
-2. (If not set) Set the VASP pseudopotential directory in `$HOME/.pmgrc.yaml` as follows::
+2. (If not set) Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml` 
+(`pymatgen` config file) as follows:
 ```bash
   PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
+  PMG_MAPI_KEY: <Your MP API key obtained from https://legacy.materialsproject.org/open>
 ```
-Within your `VASP pseudopotential top directory`, you should have a folder named `POT_GGA_PAW_PBE` which contains the `POTCAR.X(.gz)` files (in this case for PBE `POTCAR`s).
+Within your `VASP pseudopotential top directory`, you should have a folder named 
+`POT_GGA_PAW_PBE`/`potpaw_PBE.54`/`POT_GGA_PAW_PBE_54` which contains `POTCAR.X(.gz)` files, generated using `pmg config`.
 
-(Necessary to generate `POTCAR` files, auto-determine `INCAR` settings such as `NELECT` for charged defects...)
+If you have not previously setup your `POTCAR` directory in this way with `pymatgen`, then follow these steps:
+    1. Download and unzip your VASP pseudopotentials:
+    ```bash
+    mkdir potpaw_PBE  # make a folder to store the unzipped POTCARs
+    cp potpaw_PBE.54.tar.gz potpaw_PBE  # copy your zipped VASP POTCAR source to this folder
+    cd potpaw_PBE
+    tar -xf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
+    pmg config -p . POT_PAW_GGA_PBE
+    pmg config --add PMG_VASP_PSP_DIR ./POT_PAW_GGA_PBE
+    ```
+    If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show 
+    `PAW_PBE Na_pv {date}` 
 
-3(Optional) Set the Materials Project API key in `$HOME/.pmgrc.yaml` as follows::
-```bash
-  MAPI_KEY: <Your mapi key obtained from www.materialsproject.org>
-```
-(For pulling structures and comparing properties with the Materials Project database).
+This is necessary to generate `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for charged 
+defects.
+
+The Materials Project API key is required for determining the necessary competing phases to calculate in order to 
+determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy 
+MP API, with your unique key available at: https://legacy.materialsproject.org/open.
 
 
 ## `ShakeNBreak`
