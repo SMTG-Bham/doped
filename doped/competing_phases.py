@@ -101,6 +101,39 @@ def make_molecule_in_a_box(element):
     return structure, formula, magnetisation
 
 
+def _make_molecular_entry(computed_entry):
+    """
+    Generate a new ComputedStructureEntry for a molecule in a box, for the input elemental
+    ComputedEntry
+    """
+    assert len(computed_entry.composition.elements) == 1  # Elemental!
+    struc, formula, magnetisation = make_molecule_in_a_box(
+        computed_entry.data["pretty_formula"]
+    )
+    molecular_entry = ComputedStructureEntry(
+        structure=struc,
+        energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
+        composition=Composition(formula),
+        parameters=None,
+    )
+    molecular_entry.data["oxide_type"] = "None"
+    molecular_entry.data["pretty_formula"] = formula
+    molecular_entry.data["e_above_hull"] = 0
+    molecular_entry.data["band_gap"] = None
+    molecular_entry.data["nsites"] = 2
+    molecular_entry.data["volume"] = 0
+    molecular_entry.data["icsd_id"] = None
+    molecular_entry.data["formation_energy_per_atom"] = 0
+    molecular_entry.data["energy_per_atom"] = computed_entry.data["energy_per_atom"]
+    molecular_entry.data["energy"] = computed_entry.data["energy_per_atom"]*2
+    molecular_entry.data["total_magnetization"] = magnetisation
+    molecular_entry.data["nelements"] = 1
+    molecular_entry.data["elements"] = [formula]
+    molecular_entry.data["molecule"] = True
+
+    return molecular_entry
+
+
 def _calculate_formation_energies(data, elemental):
     df = pd.DataFrame(data)
     for d in data:
@@ -261,30 +294,9 @@ class CompetingPhases:
             if e.data["pretty_formula"] in molecules_in_a_box:
                 if e.data["e_above_hull"] == 0:
                     # only first matching molecular entry
-                    struc, formula, magnetisation = make_molecule_in_a_box(
-                        e.data["pretty_formula"]
-                    )
-                    molecular_entry = ComputedStructureEntry(
-                        structure=struc,
-                        energy=e.energy_per_atom
-                        * 2,  # set entry energy to be hull energy
-                        composition=Composition(formula),
-                        parameters=None,
-                    )
-                    molecular_entry.data["oxide_type"] = "None"
-                    molecular_entry.data["pretty_formula"] = formula
-                    molecular_entry.data["e_above_hull"] = 0
-                    molecular_entry.data["band_gap"] = None
-                    molecular_entry.data["nsites"] = 2
-                    molecular_entry.data["volume"] = 0
-                    molecular_entry.data["icsd_id"] = None
-                    molecular_entry.data["formation_energy_per_atom"] = 0
-                    molecular_entry.data["energy_per_atom"] = e.data["energy_per_atom"]
-                    molecular_entry.data["energy"] = e.data["energy_per_atom"] * 2
-                    molecular_entry.data["total_magnetization"] = magnetisation
-                    molecular_entry.data["nelements"] = 1
-                    molecular_entry.data["elements"] = [formula]
-                    molecular_entry.data["molecule"] = True
+
+                    # generate molecular entry
+                    molecular_entry = _make_molecular_entry(e)
                     pd_entries.append(molecular_entry)
                     self.MP_full_pd_entries.append(molecular_entry)
 
