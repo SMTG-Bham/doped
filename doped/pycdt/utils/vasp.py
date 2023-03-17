@@ -201,6 +201,13 @@ class DefectRelaxSet(MPRelaxSet):
                     'KPOINTS': kpoints,
                     'POSCAR': self.poscar}
 
+    @property
+    def structure(self):
+        """
+        :return: Structure
+        """
+        return self._structure
+
 
 class DefectStaticSet(MPStaticSet):
     """
