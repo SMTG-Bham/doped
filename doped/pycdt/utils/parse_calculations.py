@@ -419,6 +419,7 @@ class SingleDefectParser:
         :param dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
         :param defect_charge (int):
         :param mpid (str):
+        :initial_defect_structure (str):  Path to the unrelaxed defect structure.
         :param compatibility (DefectCompatibility): Compatibility class instance for
             performing compatibility analysis on defect entry.
 
