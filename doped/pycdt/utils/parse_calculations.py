@@ -1346,7 +1346,7 @@ class PostProcess:
         return output
 
 
-def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=0.5):
+def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=1.0):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
     The template structure may have a different species ordering to the `input_structure`.
@@ -1363,20 +1363,23 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     for index in range(len(input_fcoords)):
         dists = dmat[index]
         template_index = dists.argmin()
+        current_dist = dists.min()
         min_dist_with_index.append(
             [
-            dists.min(),
+            current_dist,
             index,
             template_index,
             ]
         )
-    max_disp = max(tmp[0] for tmp in min_dist_with_index)
-    if max_disp > threshold:
-        raise RuntimeError("Maximum displacement")
+
+        if current_dist > threshold:
+            sitea = structure_a[index]
+            siteb = structure_b[template_index]
+            warnings.warn(f"Large site displacement {current_dist} detected when matching atomic sites: {sitea}->{siteb}.")
     return min_dist_with_index
 
 
-def reorder_unrelaxed_structure(unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=0.5):
+def reorder_unrelaxed_structure(unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=1.0):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
     The template structure may have a different species ordering to the `input_structure`.
