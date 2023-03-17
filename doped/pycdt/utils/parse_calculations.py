@@ -1375,7 +1375,7 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
         if current_dist > threshold:
             sitea = structure_a[index]
             siteb = structure_b[template_index]
-            warnings.warn(f"Large site displacement {current_dist} detected when matching atomic sites: {sitea}->{siteb}.")
+            warnings.warn(f"Large site displacement {current_dist:.4f} detected when matching atomic sites: {sitea}-> {siteb}.")
     return min_dist_with_index
 
 
