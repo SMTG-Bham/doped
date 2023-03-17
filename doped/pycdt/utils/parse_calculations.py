@@ -10,6 +10,7 @@ import glob
 import logging
 import os
 import warnings
+from copy import deepcopy
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -466,6 +467,7 @@ class SingleDefectParser:
         bulk_site_idx = None
         defect_site_idx = None
         unrelaxed_defect_structure = None
+        # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
         try:
             (
                 bulk_site_idx,
@@ -477,6 +479,7 @@ class SingleDefectParser:
         except RuntimeError as exc:
             # try transformation.json
             # if auto site-matching failed, try use transformation.json
+            # Bonan: I don't think does anything?
             transformation_path = os.path.join(path_to_defect, "transformation.json")
             if not os.path.exists(transformation_path):  # try next folder up
                 orig_transformation_path = transformation_path
@@ -595,7 +598,13 @@ class SingleDefectParser:
                 )
                 defect_site = unrelaxed_defect_structure[defect_site_idx]
 
+            # Use the unrelaxed_defect_structure to fix the initial defect structure
+            initial_defect_structure = reorder_unrelaxed_structure(unrelaxed_defect_structure, 
+                                                                        initial_defect_structure)
+            parameters["initial_defect_structure"] = initial_defect_structure
             parameters["unrelaxed_defect_structure"] = unrelaxed_defect_structure
+        else:
+            warnings.warn("Cannot determine the unrelaxed `initial_defect_structure`. Please the the `initial_defect_structure` is indeed unrelaxed.")
 
         for_monty_defect = {
             "@module": "pymatgen.analysis.defects.core",
@@ -717,17 +726,9 @@ class SingleDefectParser:
 
         bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
-        if "initial_defect_structure" in self.defect_entry.parameters:
-            defect_structure = self.defect_entry.parameters["initial_defect_structure"]
-            initsites = [site.frac_coords for site in defect_structure]
-        elif "unrelaxed_defect_structure" in self.defect_entry.parameters:
-            defect_structure = self.defect_entry.parameters[
-                "unrelaxed_defect_structure"
-            ]
-            initsites = [site.frac_coords for site in defect_structure]
-        else:
-            defect_structure = self.defect_entry.defect.generate_defect_structure()
-            initsites = [site.frac_coords for site in defect_structure]
+
+        defect_structure = self.defect_entry.parameters['initial_defect_structure']
+        initsites = [site.frac_coords for site in defect_structure]
 
         distmatrix = bulk_structure.lattice.get_all_distances(
             bulksites, initsites
@@ -771,7 +772,6 @@ class SingleDefectParser:
                 "site_matching_indices": site_matching_indices,
                 "sampling_radius": sampling_radius,
                 "defect_frac_sc_coords": self.defect_entry.site.frac_coords,
-                "initial_defect_structure": defect_structure,
             }
         )
 
@@ -1343,3 +1343,51 @@ class PostProcess:
         output["gap"] = gap
 
         return output
+
+
+def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=0.5):
+    """
+    Reset the position of a partially relaxed structure to its unrelaxed positions.
+    The template structure may have a different species ordering to the `input_structure`.
+    """
+
+    ## Generate a site matching table between the input and the template
+    input_fcoords = [site.frac_coords for site in structure_a] 
+    template_fcoords = [site.frac_coords for site in structure_b] 
+
+    dmat = structure_a.lattice.get_all_distances(
+        input_fcoords, template_fcoords 
+    ) 
+    min_dist_with_index = []
+    for index in range(len(input_fcoords)):
+        dists = dmat[index]
+        template_index = dists.argmin()
+        min_dist_with_index.append(
+            [
+            dists.min(),
+            index,
+            template_index,
+            ]
+        )
+    max_disp = max(tmp[0] for tmp in min_dist_with_index)
+    if max_disp > threshold:
+        raise RuntimeError("Maximum displacement")
+    return min_dist_with_index
+
+
+def reorder_unrelaxed_structure(unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=0.5):
+    """
+    Reset the position of a partially relaxed structure to its unrelaxed positions.
+    The template structure may have a different species ordering to the `input_structure`.
+    """
+
+    # Obtain site mapping between the initial_relax_structure nad the unrelaxed structure
+    mapping = get_site_mapping_indices(initial_relax_structure, unrelaxed_structure, threshold=threshold)
+
+    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (from the acutal calculation)
+    reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
+    new_structure = Structure.from_sites(reordered_sites)
+
+    assert len(new_structure) == len(unrelaxed_structure)
+
+    return new_structure
