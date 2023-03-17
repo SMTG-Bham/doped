@@ -717,13 +717,13 @@ class SingleDefectParser:
 
         bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
-        if "unrelaxed_defect_structure" in self.defect_entry.parameters:
+        if "initial_defect_structure" in self.defect_entry.parameters:
+            defect_structure = self.defect_entry.parameters["initial_defect_structure"]
+            initsites = [site.frac_coords for site in defect_structure]
+        elif "unrelaxed_defect_structure" in self.defect_entry.parameters:
             defect_structure = self.defect_entry.parameters[
                 "unrelaxed_defect_structure"
             ]
-            initsites = [site.frac_coords for site in defect_structure]
-        elif "initial_defect_structure" in self.defect_entry.parameters:
-            defect_structure = self.defect_entry.parameters["initial_defect_structure"]
             initsites = [site.frac_coords for site in defect_structure]
         else:
             defect_structure = self.defect_entry.defect.generate_defect_structure()
