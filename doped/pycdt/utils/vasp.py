@@ -466,7 +466,7 @@ def make_vasp_defect_files_dos(defects, path_base, user_settings={},
             incar.update({
                 'IBRION': 2, 'ISIF': 2, 'ISPIN': 2, 'LWAVE': False, 
                 'EDIFF': 1e-5, 'EDIFFG': -1e-2, 'ISMEAR': 0, 'SIGMA': 0.05, 
-                'LVTOT': True, 'LVHAR': True, 'LORBIT': 11, 'ALGO': "Fast",
+                'LVTOT': True, 'LVHAR': True, 'LORBIT': 14, 'ALGO': "Fast",
                 'ISYM': 0})
             if user_settings:
                 if 'INCAR' in user_settings.get('defects', {}):
