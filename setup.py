@@ -29,7 +29,7 @@ setup(
         "ase",
         "shakenbreak",
     ],
-    package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["default_POTCARs.yaml"]},
+    package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["*.yaml", "*.json"]},
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",
     maintainer="Seán Kavanagh",
