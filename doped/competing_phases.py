@@ -33,6 +33,8 @@ warnings.filterwarnings(
 #  chempot functionality has been transferred over and old `pycdt` chempot code deleted
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
+# TODO: Make sure elements in output `chempot_limits` are in the form of string objects so are
+#  JSONable
 
 
 def make_molecule_in_a_box(element):
@@ -149,73 +151,53 @@ def _calculate_formation_energies(data, elemental):
     return df
 
 
-class ChemPotAnalyzer:
+def _renormalise_entry(entry, renormalisation_energy_per_atom):
     """
-    Post-processing for atomic chemical potentials used in defect calculations.
+    Regenerate the input entry with an energy per atom decreased by renormalisation_energy_per_atom
     """
+    renormalised_entry_dict = entry.as_dict().copy()
+    renormalised_entry_dict[
+        "energy"] = entry.energy - renormalisation_energy_per_atom * sum(
+        entry.composition.values()
+    )  # entry.energy includes MP corrections as desired
+    renormalised_entry = PDEntry.from_dict(
+        renormalised_entry_dict)
+    return renormalised_entry
 
-    def __init__(self, **kwargs):
-        """
-        Args:
-            bulk_ce: Pymatgen ComputedStructureEntry object for bulk entry / supercell
-        """
-        self.bulk_ce = kwargs.get("bulk_ce", None)
 
-    def get_chempots_from_pd(self, pd):
+def get_chempots_from_pd(bulk_ce, pd):
+    """
+    Get the chemical potential limits for the bulk computed entry in the supplied phase diagram.
 
-        if not self.bulk_ce:
-            msg = (
-                "No bulk entry supplied. "
-                "Cannot compute atomic chempots without knowing the bulk entry of interest."
+    Args:
+        bulk_ce: Pymatgen ComputedStructureEntry object for bulk entry / supercell
+        pd: Pymatgen PhaseDiagram object for the system of interest
+    """
+    bulk_composition = bulk_ce.composition
+    redcomp = bulk_composition.reduced_composition
+    # append bulk_ce to phase diagram, if not present
+    entries = pd.all_entries
+    if not any(
+        [
+            (
+                ent.composition == bulk_ce.composition
+                and ent.energy == bulk_ce.energy
             )
-            raise ValueError(msg)
-
-        bulk_composition = self.bulk_ce.composition
-        redcomp = bulk_composition.reduced_composition
-        # append bulk_ce to phase diagram, if not present
-        entries = pd.all_entries
-        if not any(
-            [
-                (
-                    ent.composition == self.bulk_ce.composition
-                    and ent.energy == self.bulk_ce.energy
-                )
-                for ent in entries
-            ]
-        ):
-            entries.append(
-                PDEntry(
-                    self.bulk_ce.composition,
-                    self.bulk_ce.energy,
-                    attribute="Bulk Material",
-                )
+            for ent in entries
+        ]
+    ):
+        entries.append(
+            PDEntry(
+                bulk_ce.composition,
+                bulk_ce.energy,
+                attribute="Bulk Material",
             )
-            pd = PhaseDiagram(entries)
+        )
+        pd = PhaseDiagram(entries)
 
-        chem_lims = pd.get_all_chempots(redcomp)
+    chem_lims = pd.get_all_chempots(redcomp)
 
-        return chem_lims
-
-    def diff_bulk_sub_phases(self, face_list, sub_el=None):
-        # method for pulling out phases within a facet of a phase diagram
-        # which may include a substitutional element...
-        # face_list is an array of phases in a facet
-        # sub_el is the element to look out for within the face_list array
-        blk = []
-        sub_spcs = []
-        for face in face_list:
-            if sub_el:
-                if sub_el in face:
-                    sub_spcs.append(face)
-                else:
-                    blk.append(face)
-            else:
-                blk.append(face)
-        blk.sort()
-        sub_spcs.sort()
-        blknom = "-".join(blk)
-        subnom = "-".join(sub_spcs)
-        return blk, blknom, subnom
+    return chem_lims
 
 
 class CompetingPhases:
@@ -234,7 +216,8 @@ class CompetingPhases:
     #                 "in the MP database!\nPlease consider submitting the "
     #                 "POSCAR to the MP xtaltoolkit, so future users will "
     #                 "know about this structure:"
-    #                 " https://materialsproject.org/#apps/xtaltoolkit\n"
+    #                 " https://materialsproject.org/#apps/xtaltoolkit\n" – see
+    analyze_GGA_chempots code for example.
     TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
     """
@@ -258,8 +241,10 @@ class CompetingPhases:
                 This should correspond to the legacy MP API; from
                 https://legacy.materialsproject.org/open.
         """
+        self.api_key = api_key
+
         # create list of entries
-        molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
+        self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
 
         # TODO: Should hard code S (solid + S8), P and Se in here too. Common anions with a lot of
         #  unnecessary polymorphs on MP
@@ -285,7 +270,7 @@ class CompetingPhases:
         # set bulk composition (Composition(Composition("LiFePO4")) = Composition("LiFePO4")))
         self.bulk_comp = Composition(composition)
 
-        with MPRester(api_key=api_key) as mpr:
+        with MPRester(api_key=self.api_key) as mpr:
             self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
                 list(self.bulk_comp.as_dict().keys()),
                 inc_structure="initial",
@@ -301,13 +286,9 @@ class CompetingPhases:
         pd_entries = []
         # check that none of the elemental ones are on the naughty list... (molecules in a box)
         for e in self.MP_full_pd_entries:
-            sym = SpacegroupAnalyzer(e.structure)
-            struc = sym.get_primitive_standard_structure()
-            if e.data["pretty_formula"] in molecules_in_a_box:
-                if e.data["e_above_hull"] == 0:
-                    # only first matching molecular entry
-
-                    # generate molecular entry
+            if e.data["pretty_formula"] in self._molecules_in_a_box:
+                if e.data["e_above_hull"] == 0:  # only first matching molecular entry
+                    # generate molecular entry:
                     molecular_entry = _make_molecular_entry(e)
                     pd_entries.append(molecular_entry)
                     self.MP_full_pd_entries.append(molecular_entry)
@@ -331,8 +312,7 @@ class CompetingPhases:
         ]  # lowest energy entry for bulk composition (after sorting)
         self.MP_bulk_ce = bulk_ce
 
-        cpc = ChemPotAnalyzer(bulk_ce=bulk_ce)
-        MP_gga_chempots = cpc.get_chempots_from_pd(pd)
+        MP_gga_chempots = get_chempots_from_pd(bulk_ce, pd)
 
         MP_bordering_phases = set(
             [phase for facet in MP_gga_chempots.keys() for phase in facet.split("-")]
@@ -348,13 +328,9 @@ class CompetingPhases:
         for entry in pd_entries:
             if entry.name not in MP_bordering_phases and not entry.is_element:
                 # decrease entry energy per atom by `e_above_hull` eV/atom
-                renormalised_entry_dict = entry.as_dict().copy()
-                renormalised_entry_dict["energy"] = entry.energy - e_above_hull * sum(
-                    entry.composition.values()
-                )  # entry.energy includes MP corrections as desired
-                renormalised_entry = PDEntry.from_dict(renormalised_entry_dict)
+                renormalised_entry = _renormalise_entry(entry, e_above_hull)
                 new_pd = PhaseDiagram(pd.entries + [renormalised_entry])
-                new_MP_gga_chempots = cpc.get_chempots_from_pd(new_pd)
+                new_MP_gga_chempots = get_chempots_from_pd(bulk_ce, new_pd)
 
                 if new_MP_gga_chempots != MP_gga_chempots:
                     # new bordering phase, add to list
@@ -485,6 +461,9 @@ class CompetingPhases:
         Returns:
             saves to file
         """
+        # TODO: Update this to use:
+        #  sym = SpacegroupAnalyzer(e.structure)
+        #  struc = sym.get_primitive_standard_structure() -> output this structure
         file = str(Path(__file__).parent.joinpath("HSE06_config_relax.json"))
         with open(file) as f:
             cd = json.load(f)
@@ -588,38 +567,251 @@ class CompetingPhases:
             dis.write_input(fname)
 
 # TODO: Add full_sub_approach option
-        # TODO: Add co-doping option (i.e. not full_sub_approach, but allowing for facets with 2
-        #  compositions with the extrinsic species present (if 2 extrinsic species etc)
-        # TODO: Add warnings for full_sub_approach=True, especially if done with multiple
-        #  extrinsic species.
-        # TODO: Update api key docstring here
-class AdditionalCompetingPhases(CompetingPhases):
+# TODO: Add warnings for full_sub_approach=True, especially if done with multiple
+#  extrinsic species.
+class ExtrinsicCompetingPhases(CompetingPhases):
     """
-    If you want to add some extrinsic doping, or add another element to your chemical system,
-    this is the class for you. Will make sure you're only calculating the extra phases
+    This class generates the competing phases that need to be calculated to obtain the chemical
+    potential limits when doping with extrinsic species / impurities. Ensures that only the
+    necessary additional competing phases are generated.
     """
 
-    def __init__(self, system, extrinsic_species, e_above_hull=0.1):
+    def __init__(self, composition, extrinsic_species, e_above_hull=0.1, full_sub_approach=False,
+                 codoping=False, api_key=None):
         """
         Args:
-            system (list): Chemical system under investigation, e.g. ['Mg', 'O']
-            extrinsic_species (str): Dopant species
-            e_above_hull (float): Maximum considered energy above hull
+            composition (str, Composition): Composition of host material
+                (e.g. 'LiFePO4', or Composition('LiFePO4'), or Composition({"Li":1, "Fe":1,
+                "P":1, "O":4}))
+            extrinsic_species (str, list): Extrinsic dopant/impurity species
+                (e.g. "Mg" or ["Mg", "Na"])
+            e_above_hull (float): Maximum energy-above-hull of Materials Project entries to be
+                considered as competing phases. This is an uncertainty range for the
+                MP-calculated formation energies, which may not be accurate due to functional
+                choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                Any phases that would border the host material on the phase diagram, if their
+                relative energy was downshifted by `e_above_hull`, are included.
+                Default is 0.1 eV/atom.
+            full_sub_approach (bool): Generate competing phases by considering the full phase
+                diagram, including chemical potential limits with multiple extrinsic phases.
+                Only recommended when looking at high (non-dilute) doping concentrations.
+                Default = False. Described in further detail below.
+            codoping (bool): Whether to consider extrinsic competing phases containing multiple
+                extrinsic species. Only relevant to high (non-dilute) co-doping concentrations.
+                If set to True, then `full_sub_approach` is also set to True.
+                Default = False.
+            api_key (str): Materials Project (MP) API key, needed to access the MP database for
+                competing phase generation. If not supplied, will attempt to read from
+                environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) – see the `doped`
+                homepage (https://github.com/SMTG-UCL/doped) for instructions on setting this up.
+                This should correspond to the legacy MP API; from
+                https://legacy.materialsproject.org/open.
+
+        This code uses the Materials Project (MP) phase diagram data along with the
+        `e_above_hull` error range to generate potential competing phases.
+
+        NOTE on 'full_sub_approach':
+            The default approach for substitutional elements (`full_sub_approach = False`) is to
+            only consider chemical potential limits with a maximum of 1 extrinsic phase
+            (composition with extrinsic species present). This is a valid approximation for the
+            case of dilute dopant/impurity concentrations. For high (non-dilute) concentrations
+            of extrinsic species, use `full_sub_approach = True`.
         """
         # the competing phases & entries of the OG system
-        super().__init__(system, e_above_hull)
-        self.og_competing_phases = copy.deepcopy(self.competing_phases)
-        # the competing phases & entries of the OG system + all the additional
-        # stuff from the extrinsic species
-        system.append(extrinsic_species)
-        super().__init__(system, e_above_hull)
-        self.ext_competing_phases = copy.deepcopy(self.competing_phases)
-
-        # only keep the ones that are actually new
+        super().__init__(composition, e_above_hull, api_key)
+        self.intrinsic_competing_phases = copy.deepcopy(self.competing_phases)
         self.competing_phases = []
-        for ext in self.ext_competing_phases:
-            if ext not in self.og_competing_phases:
-                self.competing_phases.append(ext)
+        self.intrinsic_species = [s.symbol for s in self.bulk_comp.reduced_composition.elements]
+        self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
+
+        if isinstance(extrinsic_species, str):
+            extrinsic_species = [extrinsic_species,]
+        elif not isinstance(extrinsic_species, list):
+            raise TypeError(f"`extrinsic_species` must be a string (i.e. the extrinsic species "
+                            f"symbol, e.g. 'Mg') or a list (e.g. ['Mg', 'Na']), got type "
+                            f"{type(extrinsic_species)} instead!")
+        self.extrinsic_species = extrinsic_species
+
+        # if codoping = True, should have multiple extrinsic species
+        if codoping:
+            if len(extrinsic_species) < 2:
+                warnings.warn("`codoping` is set to True, but `extrinsic_species` only contains 1 "
+                              "element, so `codoping` will be set to False.")
+                codoping = False
+
+            elif not full_sub_approach:
+                full_sub_approach = True
+
+        if full_sub_approach:  # can be time-consuming if several extrinsic_species supplied
+            if codoping:
+                # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
+                #  this code block and just use:
+                #  super()__init__(composition = (
+                #  self.intrinsic_species+self.extrinsic_species).join(""), e_above_hull, api_key)
+                #  )
+                #  self.intrinsic_competing_phases = [phase for phase in self.competing_phases if
+                #  not any([extrinsic in phase for extrinsic in self.extrinsic_species])]
+                #  competing_phases = [phase for phase in self.competing_phases if phase not in
+                #  self.intrinsic_competing_phases]
+                #  self.competing_phases = competing_phases
+                #  self.MP_intrinsic_full_pd_entries = [entry for entry in
+                #  self.MP_full_pd_entries if not any([extrinsic in entry.composition.reduced_formula
+                #  for extrinsic in self.extrinsic_species])]
+                #  MP_full_pd_entries = [entry for entry in self.MP_full_pd_entries if entry not in
+                #  self.MP_intrinsic_full_pd_entries]
+                #  self.MP_full_pd_entries = MP_full_pd_entries  # includes molecules-in-boxes
+
+                with MPRester(api_key=self.api_key) as mpr:
+                    self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
+                        self.intrinsic_species + self.extrinsic_species,
+                        inc_structure="initial",
+                        property_data=self.data,
+                    )
+                self.MP_full_pd_entries = [e for e in self.MP_full_pd_entries
+                                   if e.data["e_above_hull"] <= e_above_hull]
+
+                # sort by e_above_hull:
+                self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
+
+                for entry in self.MP_full_pd_entries:
+                    if any([sub_elt in entry.composition for sub_elt in self.extrinsic_species]):
+                        if entry.data["pretty_formula"] in self._molecules_in_a_box:
+                            if entry.data["e_above_hull"] == 0:  # only first matching entry
+                                # generate molecular entry:
+                                molecular_entry = _make_molecular_entry(entry)
+                                self.MP_full_pd_entries.append(molecular_entry)
+                                self.competing_phases.append(molecular_entry)
+                        else:
+                            self.competing_phases.append(entry)
+
+            else:  # full_sub_approach but not co-doping
+                self.MP_full_pd_entries = []
+                for sub_elt in self.extrinsic_species:
+                    with MPRester(api_key=self.api_key) as mpr:
+                        MP_full_pd_entries = mpr.get_entries_in_chemsys(
+                            self.intrinsic_species + [sub_elt,],
+                            inc_structure="initial",
+                            property_data=self.data,
+                        )
+                    MP_full_pd_entries = [e for e in MP_full_pd_entries
+                                       if e.data["e_above_hull"] <= e_above_hull]
+                    # sort by e_above_hull:
+                    MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
+
+                    for entry in MP_full_pd_entries:
+                        if entry not in self.MP_full_pd_entries:
+                            self.MP_full_pd_entries.append(entry)
+                        if sub_elt in entry.composition:
+                            if entry.data["pretty_formula"] in self._molecules_in_a_box:
+                                if entry.data["e_above_hull"] == 0:  # only first matching entry
+                                    # generate molecular entry:
+                                    molecular_entry = _make_molecular_entry(entry)
+                                    self.MP_full_pd_entries.append(molecular_entry)
+                                    self.competing_phases.append(molecular_entry)
+                            else:
+                                self.competing_phases.append(entry)
+
+        else:  # full_sub_approach = False; recommended approach for extrinsic species (assumes
+            # dilute concentrations)
+
+            # now compile substitution entries:
+            self.MP_full_pd_entries = []
+            for sub_elt in self.extrinsic_species:
+                with MPRester(api_key=self.api_key) as mpr:
+                    MP_full_pd_entries = mpr.get_entries_in_chemsys(
+                        self.intrinsic_species + [sub_elt,],
+                        inc_structure="initial",
+                        property_data=self.data,
+                    )
+                MP_full_pd_entries = [e for e in self.MP_full_pd_entries
+                                           if e.data["e_above_hull"] <= e_above_hull]
+                # sort by e_above_hull:
+                MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
+
+                for entry in MP_full_pd_entries:
+                    if entry not in self.MP_full_pd_entries:
+                        self.MP_full_pd_entries.append(entry)
+                    if (
+                            sub_elt in entry.composition and
+                            entry not in self.competing_phases and
+                            entry not in self.intrinsic_competing_phases
+                    ):
+                        if entry.data["pretty_formula"] in self._molecules_in_a_box:
+                            if entry.data["e_above_hull"] == 0:  # only first matching entry
+                                # generate molecular entry:
+                                molecular_entry = _make_molecular_entry(entry)
+                                if molecular_entry not in self.MP_full_pd_entries:
+                                    self.MP_full_pd_entries.append(molecular_entry)
+                                MP_full_pd_entries.append(molecular_entry)
+
+                # Adding substitutional phases to extrinsic competing phases list only when the
+                # phases in equilibria are those from the bulk phase diagram. This is essentially
+                # the assumption that the majority of elements in the total composition will be
+                # from the host composition rather than the extrinsic species (a good
+                # approximation for dilute concentrations)
+
+                extrinsic_pd = PhaseDiagram(MP_full_pd_entries)
+                MP_extrinsic_gga_chempots = get_chempots_from_pd(self.MP_bulk_ce, extrinsic_pd)
+                MP_extrinsic_bordering_phases = []
+
+                for facet in MP_extrinsic_gga_chempots.keys():
+                    # if the number of intrinsic competing phases for this facet is equal to the
+                    # number of species in the bulk composition, then include the extrinsic phase(s)
+                    # for this facet (full_sub_approach = False approach)
+                    MP_intrinsic_bordering_phases = set(
+                        [phase for phase in facet.split("-") if sub_elt not in phase]
+                    )
+                    if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
+                        MP_extrinsic_bordering_phases.append([phase for phase in facet.split("-")
+                                                              if sub_elt in phase and phase not in
+                                                              MP_extrinsic_bordering_phases])
+
+                # add any phases that would border the host material on the phase diagram,
+                # if their relative energy was downshifted by `e_above_hull`:
+                for entry in MP_full_pd_entries:
+                    if entry.name not in MP_extrinsic_bordering_phases and not entry.is_element \
+                            and sub_elt in entry.composition:
+                        # decrease entry energy per atom by `e_above_hull` eV/atom
+                        renormalised_entry = _renormalise_entry(entry, e_above_hull)
+                        new_extrinsic_pd = PhaseDiagram(extrinsic_pd.entries + [renormalised_entry])
+                        new_MP_extrinsic_gga_chempots = get_chempots_from_pd(
+                            self.MP_bulk_ce, new_extrinsic_pd)
+
+                        if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
+                            # new bordering phase, check if not an over-dependent facet:
+
+                            for facet in new_MP_extrinsic_gga_chempots.keys():
+                                if facet not in MP_extrinsic_gga_chempots.keys():
+                                    # new facet, check if not an over-dependent facet:
+                                    MP_intrinsic_bordering_phases = set(
+                                        [phase for phase in facet.split("-") if sub_elt not in phase]
+                                    )
+                                    if len(MP_intrinsic_bordering_phases) == len(
+                                            self.intrinsic_species):
+                                        MP_extrinsic_bordering_phases.append(
+                                            [phase for phase in facet.split("-")
+                                             if sub_elt in phase and phase not in
+                                             MP_extrinsic_bordering_phases])
+
+                extrinsic_entries = [entry for entry in MP_full_pd_entries if entry.name in
+                                     MP_extrinsic_bordering_phases or (
+                                             entry.is_element and entry.name == sub_elt)
+                                     ]
+
+                # check that extrinsic competing phases list is not empty (can happen with
+                # 'over-dependent' facets); if so then set full_sub_approach = True and re-run
+                # the extrinsic phase addition process
+                if not extrinsic_entries:
+                    warnings.warn("Determined chemical potentials to be over dependent on an "
+                                  "extrinsic species. This means we need to revert to "
+                                  "`full_sub_approach = True` – running now.")
+                    full_sub_approach = True
+                    extrinsic_entries = [entry for entry in self.MP_full_pd_entries if
+                                         sub_elt in entry.composition
+                                         ]
+
+                extrinsic_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+                self.competing_phases += extrinsic_entries
 
 
 # separate class for read from file with this as base class? can still use different init?
@@ -786,7 +978,9 @@ class CompetingPhasesAnalyzer:
 
     def calculate_chempots(self, csv_fname="chempot_limits.csv"):
         """
-        Calculates chemcial potential limits. For dopant species, it calculates the limiting potential based on the intrinsic chemical potentials (i.e. same as `full_sub_approach=False` in pycdt)
+        Calculates chemcial potential limits. For dopant species, it calculates the limiting
+        potential based on the intrinsic chemical potentials (i.e. same as
+        `full_sub_approach=False` in pycdt)
         Args:
             csv_fname (str): name of csv file to which chempot limits are saved
         Retruns:
