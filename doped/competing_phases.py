@@ -619,8 +619,8 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         """
         # the competing phases & entries of the OG system
         super().__init__(composition, e_above_hull, api_key)
-        self.intrinsic_competing_phases = copy.deepcopy(self.competing_phases)
-        self.competing_phases = []
+        self.intrinsic_entries = copy.deepcopy(self.entries)
+        self.entries = []
         self.intrinsic_species = [s.symbol for s in self.bulk_comp.reduced_composition.elements]
         self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
 
@@ -649,11 +649,11 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 #  super()__init__(composition = (
                 #  self.intrinsic_species+self.extrinsic_species).join(""), e_above_hull, api_key)
                 #  )
-                #  self.intrinsic_competing_phases = [phase for phase in self.competing_phases if
+                #  self.intrinsic_entries = [phase for phase in self.entries if
                 #  not any([extrinsic in phase for extrinsic in self.extrinsic_species])]
-                #  competing_phases = [phase for phase in self.competing_phases if phase not in
-                #  self.intrinsic_competing_phases]
-                #  self.competing_phases = competing_phases
+                #  entries = [phase for phase in self.entries if phase not in
+                #  self.intrinsic_entries]
+                #  self.entries = entries
                 #  self.MP_intrinsic_full_pd_entries = [entry for entry in
                 #  self.MP_full_pd_entries if not any([extrinsic in entry.composition.reduced_formula
                 #  for extrinsic in self.extrinsic_species])]
@@ -680,9 +680,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                 # generate molecular entry:
                                 molecular_entry = _make_molecular_entry(entry)
                                 self.MP_full_pd_entries.append(molecular_entry)
-                                self.competing_phases.append(molecular_entry)
+                                self.entries.append(molecular_entry)
                         else:
-                            self.competing_phases.append(entry)
+                            self.entries.append(entry)
 
             else:  # full_sub_approach but not co-doping
                 self.MP_full_pd_entries = []
@@ -707,9 +707,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                     # generate molecular entry:
                                     molecular_entry = _make_molecular_entry(entry)
                                     self.MP_full_pd_entries.append(molecular_entry)
-                                    self.competing_phases.append(molecular_entry)
+                                    self.entries.append(molecular_entry)
                             else:
-                                self.competing_phases.append(entry)
+                                self.entries.append(entry)
 
         else:  # full_sub_approach = False; recommended approach for extrinsic species (assumes
             # dilute concentrations)
@@ -723,25 +723,20 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         inc_structure="initial",
                         property_data=self.data,
                     )
-                MP_full_pd_entries = [e for e in self.MP_full_pd_entries
-                                           if e.data["e_above_hull"] <= e_above_hull]
+                MP_full_pd_entries = [e for e in MP_full_pd_entries if e.data[
+                    "e_above_hull"] <= e_above_hull]
                 # sort by e_above_hull:
                 MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
                 for entry in MP_full_pd_entries:
                     if entry not in self.MP_full_pd_entries:
                         self.MP_full_pd_entries.append(entry)
-                    if (
-                            sub_elt in entry.composition and
-                            entry not in self.competing_phases and
-                            entry not in self.intrinsic_competing_phases
-                    ):
-                        if entry.data["pretty_formula"] in self._molecules_in_a_box:
+                    if sub_elt in entry.composition and entry.data[
+                        "pretty_formula"] in self._molecules_in_a_box:
                             if entry.data["e_above_hull"] == 0:  # only first matching entry
                                 # generate molecular entry:
                                 molecular_entry = _make_molecular_entry(entry)
-                                if molecular_entry not in self.MP_full_pd_entries:
-                                    self.MP_full_pd_entries.append(molecular_entry)
+                                self.MP_full_pd_entries.append(molecular_entry)
                                 MP_full_pd_entries.append(molecular_entry)
 
                 # Adding substitutional phases to extrinsic competing phases list only when the
@@ -749,6 +744,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 # the assumption that the majority of elements in the total composition will be
                 # from the host composition rather than the extrinsic species (a good
                 # approximation for dilute concentrations)
+
+                if not MP_full_pd_entries:
+                    raise ValueError(f"No Materials Project entries found for the given chemical "
+                                     f"system: {self.intrinsic_species + [sub_elt,]}")
 
                 extrinsic_pd = PhaseDiagram(MP_full_pd_entries)
                 MP_extrinsic_gga_chempots = get_chempots_from_pd(self.MP_bulk_ce, extrinsic_pd)
@@ -762,8 +761,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         [phase for phase in facet.split("-") if sub_elt not in phase]
                     )
                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
-                        MP_extrinsic_bordering_phases.append([phase for phase in facet.split("-")
-                                                              if sub_elt in phase and phase not in
+                        # add to list of extrinsic bordering phases, if not already present:
+                        MP_extrinsic_bordering_phases.extend([phase for phase in facet.split("-") if
+                                                              sub_elt in phase and phase not in
                                                               MP_extrinsic_bordering_phases])
 
                 # add any phases that would border the host material on the phase diagram,
@@ -811,7 +811,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                          ]
 
                 extrinsic_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
-                self.competing_phases += extrinsic_entries
+                self.entries += extrinsic_entries
 
 
 # separate class for read from file with this as base class? can still use different init?
