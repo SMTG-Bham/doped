@@ -480,7 +480,8 @@ class SingleDefectParser:
         except RuntimeError as exc:
             # try transformation.json
             # if auto site-matching failed, try use transformation.json
-            # Bonan: I don't think does anything?
+            # The goal is to find the `defect_site_idx` or `defect_site_idx` based on the tranformation. 
+            # Probably worth refectoring into a function.
             transformation_path = os.path.join(path_to_defect, "transformation.json")
             if not os.path.exists(transformation_path):  # try next folder up
                 orig_transformation_path = transformation_path
