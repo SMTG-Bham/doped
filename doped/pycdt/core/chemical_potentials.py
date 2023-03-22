@@ -530,7 +530,7 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     print("loading ", structfile)
                     from doped.pycdt.utils.parse_calculations import get_vasprun
 
-                    vr = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
+                    vr, vr_path = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
                     vr_entry = vr.get_computed_entry()
                     pdentry = PDEntry(vr_entry.composition, vr_entry.energy, attribute=structfile)
                     personal_entry_list.append(pdentry)
@@ -547,10 +547,10 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 print("loading bulk computed entry")
                 from doped.pycdt.utils.parse_calculations import get_vasprun
 
-                bulkvr = get_vasprun(vr_path)
+                bulkvr, bulkvr_path = get_vasprun(vr_path)
                 bulkvr_entry = bulkvr.get_computed_entry()
                 self.bulk_ce = PDEntry(
-                    bulkvr_entry.composition, bulkvr_entry.energy, attribute=vr_path
+                    bulkvr_entry.composition, bulkvr_entry.energy, attribute=bulkvr_path
                 )
             else:
                 print(
