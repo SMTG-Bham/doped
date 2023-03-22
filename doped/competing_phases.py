@@ -282,18 +282,28 @@ class CompetingPhases:
         )  # sort by e_above_hull
 
         pd_entries = []
-        # check that none of the elemental ones are on the naughty list... (molecules in a box)
-        for e in self.MP_full_pd_entries:
-            if e.data["pretty_formula"] in self._molecules_in_a_box:
-                if e.data["e_above_hull"] == 0:  # only first matching molecular entry
-                    # generate molecular entry:
-                    molecular_entry = _make_molecular_entry(e)
+        # check that none of the elemental ones are molecules in a box
+        for entry in self.MP_full_pd_entries.copy():
+            if (
+                entry.data["pretty_formula"] in self._molecules_in_a_box
+                and entry.data["e_above_hull"] == 0
+            ):
+                # only first matching molecular entry
+                molecular_entry = _make_molecular_entry(entry)
+                if not any(
+                    [
+                        ent.data["molecule"]
+                        and ent.data["pretty_formula"]
+                        == molecular_entry.data["pretty_formula"]
+                        for ent in pd_entries
+                    ]
+                ):  # first entry only
                     pd_entries.append(molecular_entry)
                     self.MP_full_pd_entries.append(molecular_entry)
 
-            else:
-                pd_entries.append(e)
-                e.data["molecule"] = False
+            elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                entry.data["molecule"] = False
+                pd_entries.append(entry)
 
         # cull to only include any phases that would border the host material on the phase
         # diagram, if their relative energy was downshifted by `e_above_hull`:
@@ -694,22 +704,30 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 # sort by e_above_hull:
                 self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
-                for entry in self.MP_full_pd_entries:
+                for entry in self.MP_full_pd_entries.copy():
                     if any(
                         [
                             sub_elt in entry.composition
                             for sub_elt in self.extrinsic_species
                         ]
                     ):
-                        if entry.data["pretty_formula"] in self._molecules_in_a_box:
-                            if (
-                                entry.data["e_above_hull"] == 0
-                            ):  # only first matching entry
-                                # generate molecular entry:
-                                molecular_entry = _make_molecular_entry(entry)
+                        if (
+                            entry.data["pretty_formula"] in self._molecules_in_a_box
+                            and entry.data["e_above_hull"] == 0
+                        ):  # only first matching entry
+                            molecular_entry = _make_molecular_entry(entry)
+                            if not any(
+                                [
+                                    entry.data["molecule"]
+                                    and entry.data["pretty_formula"]
+                                    == molecular_entry.data["pretty_formula"]
+                                    for entry in self.entries
+                                ]
+                            ):  # first entry only
                                 self.MP_full_pd_entries.append(molecular_entry)
                                 self.entries.append(molecular_entry)
-                        else:
+                        elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                            entry.data["molecule"] = False
                             self.entries.append(entry)
 
             else:  # full_sub_approach but not co-doping
@@ -732,19 +750,28 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     # sort by e_above_hull:
                     MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
-                    for entry in MP_full_pd_entries:
+                    for entry in MP_full_pd_entries.copy():
                         if entry not in self.MP_full_pd_entries:
                             self.MP_full_pd_entries.append(entry)
                         if sub_elt in entry.composition:
-                            if entry.data["pretty_formula"] in self._molecules_in_a_box:
-                                if (
-                                    entry.data["e_above_hull"] == 0
-                                ):  # only first matching entry
-                                    # generate molecular entry:
-                                    molecular_entry = _make_molecular_entry(entry)
+                            if (
+                                entry.data["pretty_formula"] in self._molecules_in_a_box
+                                and entry.data["e_above_hull"] == 0
+                            ):
+                                # only first matching entry
+                                molecular_entry = _make_molecular_entry(entry)
+                                if not any(
+                                    [
+                                        entry.data["molecule"]
+                                        and entry.data["pretty_formula"]
+                                        == molecular_entry.data["pretty_formula"]
+                                        for entry in self.entries
+                                    ]
+                                ):  # first entry only
                                     self.MP_full_pd_entries.append(molecular_entry)
                                     self.entries.append(molecular_entry)
-                            else:
+                            elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                                entry.data["molecule"] = False
                                 self.entries.append(entry)
 
         else:  # full_sub_approach = False; recommended approach for extrinsic species (assumes
@@ -752,6 +779,8 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
             # now compile substitution entries:
             self.MP_full_pd_entries = []
+            extrinsic_pd_entries = []
+
             for sub_elt in self.extrinsic_species:
                 with MPRester(api_key=self.api_key) as mpr:
                     MP_full_pd_entries = mpr.get_entries_in_chemsys(
@@ -762,26 +791,34 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         inc_structure="initial",
                         property_data=self.data,
                     )
-                MP_full_pd_entries = [
+                self.MP_full_pd_entries = [
                     e
                     for e in MP_full_pd_entries
                     if e.data["e_above_hull"] <= e_above_hull
                 ]
                 # sort by e_above_hull:
-                MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
+                self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
-                for entry in MP_full_pd_entries:
-                    if entry not in self.MP_full_pd_entries:
-                        self.MP_full_pd_entries.append(entry)
+                for entry in self.MP_full_pd_entries.copy():
                     if (
-                        sub_elt in entry.composition
-                        and entry.data["pretty_formula"] in self._molecules_in_a_box
+                        entry.data["pretty_formula"] in self._molecules_in_a_box
+                        and entry.data["e_above_hull"] == 0
                     ):
-                        if entry.data["e_above_hull"] == 0:  # only first matching entry
-                            # generate molecular entry:
-                            molecular_entry = _make_molecular_entry(entry)
+                        # only first matching entry
+                        molecular_entry = _make_molecular_entry(entry)
+                        if not any(
+                            [
+                                entry.data["molecule"]
+                                and entry.data["pretty_formula"]
+                                == molecular_entry.data["pretty_formula"]
+                                for entry in extrinsic_pd_entries
+                            ]
+                        ):  # first entry only
                             self.MP_full_pd_entries.append(molecular_entry)
-                            MP_full_pd_entries.append(molecular_entry)
+                            extrinsic_pd_entries.append(molecular_entry)
+                    elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                        entry.data["molecule"] = False
+                        extrinsic_pd_entries.append(entry)
 
                 # Adding substitutional phases to extrinsic competing phases list only when the
                 # phases in equilibria are those from the bulk phase diagram. This is essentially
@@ -789,13 +826,13 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 # from the host composition rather than the extrinsic species (a good
                 # approximation for dilute concentrations)
 
-                if not MP_full_pd_entries:
+                if not extrinsic_pd_entries:
                     raise ValueError(
                         f"No Materials Project entries found for the given chemical "
                         f"system: {self.intrinsic_species + [sub_elt,]}"
                     )
 
-                extrinsic_pd = PhaseDiagram(MP_full_pd_entries)
+                extrinsic_pd = PhaseDiagram(extrinsic_pd_entries)
                 MP_extrinsic_gga_chempots = get_chempots_from_pd(
                     self.MP_bulk_ce, extrinsic_pd
                 )
@@ -854,7 +891,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                     if len(MP_intrinsic_bordering_phases) == len(
                                         self.intrinsic_species
                                     ):
-                                        MP_extrinsic_bordering_phases.append(
+                                        MP_extrinsic_bordering_phases.extend(
                                             [
                                                 phase
                                                 for phase in facet.split("-")
@@ -866,9 +903,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
                 extrinsic_entries = [
                     entry
-                    for entry in MP_full_pd_entries
+                    for entry in extrinsic_pd_entries
                     if entry.name in MP_extrinsic_bordering_phases
-                    or (entry.is_element and entry.name == sub_elt)
+                    or (entry.is_element and sub_elt in entry.name)
                 ]
 
                 # check that extrinsic competing phases list is not empty (can happen with
