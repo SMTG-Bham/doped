@@ -277,13 +277,16 @@ class CompetingPhases:
                 raise ValueError(
                     "You are trying to use the new Materials Project (MP) API which is not "
                     "supported by doped. Please use the legacy MP API ("
-                    "https://legacy.materialsproject.org/open).")
+                    "https://legacy.materialsproject.org/open)."
+                )
             elif 15 <= len(api_key) <= 20:
-                self.eah = 'e_above_hull'
+                self.eah = "e_above_hull"
             else:
-                raise ValueError(f"API key {api_key} is not a valid legacy Materials Project API "
-                                 f"key. These are available at "
-                                 f"https://legacy.materialsproject.org/open")
+                raise ValueError(
+                    f"API key {api_key} is not a valid legacy Materials Project API "
+                    f"key. These are available at "
+                    f"https://legacy.materialsproject.org/open"
+                )
 
         with MPRester(api_key=self.api_key) as mpr:
             self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
@@ -376,7 +379,7 @@ class CompetingPhases:
         potcar_functional="PBE_54",
         user_potcar_settings=None,
         user_incar_settings=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Sets up input files for kpoints convergence testing
@@ -480,7 +483,7 @@ class CompetingPhases:
         potcar_functional="PBE_54",
         user_potcar_settings=None,
         user_incar_settings=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Sets up input files for vasp_std relaxations
@@ -751,7 +754,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             ):  # first entry only
                                 self.MP_full_pd_entries.append(molecular_entry)
                                 self.entries.append(molecular_entry)
-                        elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                        elif (
+                            entry.data["pretty_formula"] not in self._molecules_in_a_box
+                        ):
                             entry.data["molecule"] = False
                             self.entries.append(entry)
 
@@ -795,7 +800,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                 ):  # first entry only
                                     self.MP_full_pd_entries.append(molecular_entry)
                                     self.entries.append(molecular_entry)
-                            elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
+                            elif (
+                                entry.data["pretty_formula"]
+                                not in self._molecules_in_a_box
+                            ):
                                 entry.data["molecule"] = False
                                 self.entries.append(entry)
 
@@ -955,7 +963,6 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 self.entries += extrinsic_entries
 
 
-
 class CompetingPhasesAnalyzer:
     """
     Post processing competing phases data to calculate chemical potentials.
@@ -1079,7 +1086,9 @@ class CompetingPhasesAnalyzer:
                         self.extrinsic_species = elt
                         self.elemental.append(elt)
 
-                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]:
+                elif (
+                    v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]
+                ):
                     # only include lowest energy elemental polymorph
                     self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
 
@@ -1087,7 +1096,7 @@ class CompetingPhasesAnalyzer:
                 "formula": v["pretty_formula"],
                 "kpoints": kpoints,
                 "energy_per_fu": final_energy / formulas_per_unit,
-                'energy_per_atom': v["output"]["final_energy_per_atom"],
+                "energy_per_atom": v["output"]["final_energy_per_atom"],
                 "energy": final_energy,
             }
             temp_data.append(d)
@@ -1109,7 +1118,13 @@ class CompetingPhasesAnalyzer:
             None, sets self.data and self.elemental_energies
         """
         df = pd.read_csv(csv)
-        columns = ["formula", "energy_per_fu", 'energy_per_atom', "energy", "formation_energy"]
+        columns = [
+            "formula",
+            "energy_per_fu",
+            "energy_per_atom",
+            "energy",
+            "formation_energy",
+        ]
         if all(x in list(df.columns) for x in columns):
             droplist = [i for i in df.columns if i not in columns]
             df.drop(droplist, axis=1, inplace=True)
@@ -1118,10 +1133,10 @@ class CompetingPhasesAnalyzer:
 
             self.elemental_energies = {}
             for i in d:
-                c = Composition(i['formula'])
+                c = Composition(i["formula"])
                 if len(c.elements) == 1:
                     elt = c.chemical_system
-                    self.elemental_energies[elt] = i['energy_per_atom']
+                    self.elemental_energies[elt] = i["energy_per_atom"]
 
         else:
             raise ValueError(
@@ -1262,9 +1277,7 @@ class CompetingPhasesAnalyzer:
                 new_vals = list(
                     self.intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
-                new_vals[f"{self.extrinsic_species}"] = d[
-                    f"{self.extrinsic_species}"
-                ]
+                new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
 
             # relate the facets to the elemental
@@ -1280,14 +1293,14 @@ class CompetingPhasesAnalyzer:
         # save and print
         if csv_fname is not None:
             df.to_csv(csv_fname, index=False)
-            print('Saved chemical potential limits to csv file: ', csv_fname)
+            print("Saved chemical potential limits to csv file: ", csv_fname)
 
         print("Calculated chemical potential limits: \n")
         print(df)
 
         return df
 
-    def cplap_input(self, dependent_variable=None, filename='input.dat'):
+    def cplap_input(self, dependent_variable=None, filename="input.dat"):
         """For completeness' sake, automatically saves to input.dat for cplap
         Args:
             dependent_variable (str) Pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
