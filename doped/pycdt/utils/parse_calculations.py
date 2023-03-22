@@ -265,11 +265,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        #Place defect in same location as output from DFT
+        # Place defect in same location as output from DFT
         unrelaxed_defect_structure.insert(
-            defect_site_idx,
-            new_species,
-            bulk_coords[bulk_site_idx])
+            defect_site_idx, new_species, bulk_coords[bulk_site_idx]
+        )
 
     elif defect_type == "vacancy":
         old_species = list(composition_diff.keys())[0]
@@ -350,11 +349,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
-        #Place defect in same location as output from DFT
+        # Place defect in same location as output from DFT
         unrelaxed_defect_structure.insert(
-            defect_site_idx,
-            new_species,
-            defect_site_coords)
+            defect_site_idx, new_species, defect_site_coords
+        )
         bulk_site_idx = None
 
     else:
@@ -440,7 +438,9 @@ class SingleDefectParser:
         bulk_sc_structure = bulk_vr.initial_structure.copy()
 
         # add defect simple properties
-        defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+        defect_vr, defect_vr_path = get_vasprun(
+            os.path.join(path_to_defect, "vasprun.xml")
+        )
         defect_energy = defect_vr.final_energy
         # Can specify initial defect structure (to help PyCDT find the defect site if
         # multiple relaxations were required, else use from defect relaxation OUTCAR:
@@ -554,14 +554,16 @@ class SingleDefectParser:
                 try:
                     struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
                     if not StructureMatcher(
-                            stol=0.05,
-                            primitive_cell=False,
-                            scale=False,
-                            attempt_supercell=False,
-                            allow_subset=False,
+                        stol=0.05,
+                        primitive_cell=False,
+                        scale=False,
+                        attempt_supercell=False,
+                        allow_subset=False,
                     ).fit(struc_and_node_dict["bulk_supercell"], bulk_sc_structure):
-                        warnings.warn("Previous bulk_voronoi_nodes.json detected, but does not "
-                                      "match current bulk supercell. Recalculating Voronoi nodes.")
+                        warnings.warn(
+                            "Previous bulk_voronoi_nodes.json detected, but does not "
+                            "match current bulk supercell. Recalculating Voronoi nodes."
+                        )
                         raise FileNotFoundError
 
                     else:
@@ -576,12 +578,16 @@ class SingleDefectParser:
                     )
                     topography.cluster_nodes()
                     topography.remove_collisions()
-                    voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
+                    voronoi_frac_coords = [
+                        site.frac_coords for site in topography.vnodes
+                    ]
                     struc_and_node_dict = {
                         "bulk_supercell": bulk_sc_structure,
-                        "Voronoi nodes": voronoi_frac_coords
+                        "Voronoi nodes": voronoi_frac_coords,
                     }
-                    dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
+                    dumpfn(
+                        struc_and_node_dict, "./bulk_voronoi_nodes.json"
+                    )  # for efficient
                     # parsing of multiple defects at once
                     print(
                         "Saving parsed Voronoi sites (for interstitial site-matching) to "
@@ -597,7 +603,7 @@ class SingleDefectParser:
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
                 unrelaxed_defect_structure.insert(
-                    defect_site_idx, #Place defect at same position as in DFT calculation
+                    defect_site_idx,  # Place defect at same position as in DFT calculation
                     int_site.species_string,
                     closest_node_frac_coords,
                     coords_are_cartesian=False,
@@ -791,11 +797,15 @@ class SingleDefectParser:
 
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(
+                os.path.join(path_to_bulk, "vasprun.xml")
+            )
 
         if not self.defect_vr:
             path_to_defect = self.defect_entry.parameters["defect_path"]
-            self.defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+            self.defect_vr, defect_vr_path = get_vasprun(
+                os.path.join(path_to_defect, "vasprun.xml")
+            )
 
         # standard bulk metadata
         bulk_energy = self.bulk_vr.final_energy
@@ -875,7 +885,9 @@ class SingleDefectParser:
         """
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(
+                os.path.join(path_to_bulk, "vasprun.xml")
+            )
 
         bulk_sc_structure = self.bulk_vr.initial_structure
         mpid = self.defect_entry.parameters["mpid"]
@@ -972,7 +984,9 @@ class SingleDefectParser:
 
         if actual_bulk_path:
             print(f"Using actual bulk path: {actual_bulk_path}")
-            actual_bulk_vr, actual_bulk_vr_path = get_vasprun(os.path.join(actual_bulk_path, "vasprun.xml"))
+            actual_bulk_vr, actual_bulk_vr_path = get_vasprun(
+                os.path.join(actual_bulk_path, "vasprun.xml")
+            )
             bandgap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
 
         gap_parameters.update({"mpid": mpid, "cbm": cbm, "vbm": vbm, "gap": bandgap})
