@@ -8,11 +8,34 @@ philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dyn
 
 Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and usage.
 
+### Example Outputs:
+Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
+
+<img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_chempot_plotting.png" width="420">   &nbsp;&nbsp;  <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_TLD_plot.png" width="390">
+
 ## Requirements
-`doped` requires pymatgen (and its dependencies).
+`doped` requires `pymatgen<2022.8.23` and its dependencies.
 
 ## Installation
-1. `doped` can be installed from `PyPI` with `pip install doped`. 
+- Because of breaking changes made to the `pymatgen` defects code in version `2022.8.23`, `doped` requires 
+`pymatgen<2022.8.23`, which is installed automatically when installing `doped`. 
+However, as discussed briefly below and in the example notebooks, the 
+[`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach is highly recommended when calculating 
+defects in solids, and this package has been updated to be compatible with the latest version of `pymatgen`.
+As such, it is recommended to install `doped` in a virtual python environment as follows:
+
+1. 
+```bash
+conda create -n doped  # create conda environment named doped
+conda activate doped  # activate doped conda environment
+pip install doped  # install doped package and dependencies
+```
+And then use this environment whenever using `doped`.
+Instead of `conda` you can also use `venv` to setup virtual environments, 
+see [here](https://www.freecodecamp.org/news/how-to-setup-virtual-environments-in-python/) for more.
+
+If you want to use the [example files](examples), 
+you should clone the repository and install with `pip install -e .` from the `doped` directory.
 
 2. (If not set) Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml` 
 (`pymatgen` config file) as follows:
@@ -52,8 +75,6 @@ Summary GIF:
 `SnB` CLI Usage:
 ![ShakeNBreak CLI](files/SnB_CLI.gif)
 
-Note that while [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) is built to be compatible with the latest `pymatgen` version, the defects corrections code has been removed from the current `pymatgen` version, so when installing [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) the `2022.11.1` version should be used, with: `pip install shakenbreak==2022.11.1`.
-
 
 ### Developer Installation
 
@@ -69,10 +90,6 @@ Note that while [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) is 
 ```bash
   pip install -e .
 ```
-This command tries to obtain the required packages and their dependencies and install them automatically.
-Access to root may be needed if ``virtualenv`` is not used.
 
-
-## Word of Caution
-There is quite possibly a couple of bugs in this code, as it is very much still experimental and in development.
-If you find any, please let us know!
+## Acknowledgments
+`doped` has benefitted from feedback from many users, in particular members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Katarina Brlec, Adair Nicolson and Sabrine Hachmioune. Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
