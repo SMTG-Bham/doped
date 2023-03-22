@@ -110,7 +110,8 @@ def convert_cd_to_de(cd, b_cse):
 
 
 def get_vasprun(vasprun_path, **kwargs):
-    """Read the vasprun.xml(.gz) file as a pymatgen Locpot object"""
+    """Read the vasprun.xml(.gz) file as a pymatgen Vasprun object"""
+    vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore POTCAR warnings when loading vasprun.xml
@@ -120,18 +121,21 @@ def get_vasprun(vasprun_path, **kwargs):
     )
     if os.path.exists(vasprun_path):
         vasprun = Vasprun(vasprun_path)
+        read_vasprun_path = vasprun_path
     elif os.path.exists(vasprun_path + ".gz", **kwargs):
         vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
+        read_vasprun_path = vasprun_path + ".gz"
     else:
         raise FileNotFoundError(
             f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for parsing defect 
             calculations."""
         )
-    return vasprun
+    return vasprun, read_vasprun_path
 
 
 def get_locpot(locpot_path):
     """Read the LOCPOT(.gz) file as a pymatgen Locpot object"""
+    locpot_path = str(locpot_path)  # convert to string if Path object
     if os.path.exists(locpot_path):
         locpot = Locpot.from_file(locpot_path)
     elif os.path.exists(locpot_path + ".gz"):
@@ -146,6 +150,7 @@ def get_locpot(locpot_path):
 
 def get_outcar(outcar_path):
     """Read the OUTCAR(.gz) file as a pymatgen Outcar object"""
+    outcar_path = str(outcar_path)  # convert to string if Path object
     if os.path.exists(outcar_path):
         outcar = Outcar(outcar_path)
     elif os.path.exists(outcar_path + ".gz"):
@@ -200,6 +205,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
@@ -223,6 +231,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_idx = 0
 
         defect_coords = defect_new_species_coords[defect_site_idx]
+
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
@@ -254,8 +265,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        unrelaxed_defect_structure.append(new_species, bulk_coords[bulk_site_idx])
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species,
+            bulk_coords[bulk_site_idx])
 
     elif defect_type == "vacancy":
         old_species = list(composition_diff.keys())[0]
@@ -304,6 +318,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_new_species_coords = np.array(
             [site.frac_coords for site in defect if site.specie.name == new_species]
         )
+        defect_new_species_idx = np.array(
+            [defect.index(site) for site in defect if site.specie.name == new_species]
+        )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
             # make sure to take into account periodic boundaries
@@ -328,11 +345,17 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         defect_site_coords = defect_new_species_coords[defect_site_idx]
 
+        # Get the site index of the defect that was used in the VASP calculation
+        defect_site_idx = defect_new_species_idx[defect_site_idx]
+
         # create unrelaxed defect structure
         unrelaxed_defect_structure = bulk.copy()
-        unrelaxed_defect_structure.append(new_species, defect_site_coords)
+        #Place defect in same location as output from DFT
+        unrelaxed_defect_structure.insert(
+            defect_site_idx,
+            new_species,
+            defect_site_coords)
         bulk_site_idx = None
-        defect_site_idx = len(unrelaxed_defect_structure) - 1  # last one to be added
 
     else:
         raise ValueError(f"Invalid defect type: {defect_type}")
@@ -412,12 +435,12 @@ class SingleDefectParser:
         }
 
         # add bulk simple properties
-        bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+        bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
         bulk_energy = bulk_vr.final_energy
         bulk_sc_structure = bulk_vr.initial_structure.copy()
 
         # add defect simple properties
-        defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+        defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
         defect_energy = defect_vr.final_energy
         # Can specify initial defect structure (to help PyCDT find the defect site if
         # multiple relaxations were required, else use from defect relaxation OUTCAR:
@@ -529,11 +552,21 @@ class SingleDefectParser:
                 # get closest Voronoi site in bulk supercell to final interstitial site as this is
                 # likely to be the initial interstitial site
                 try:
-                    voronoi_frac_coords = loadfn("./bulk_voronoi_nodes.json")
-                    print(
-                        "Using parsed Voronoi sites in bulk_voronoi_nodes.json (should "
-                        "correspond to same bulk supercell)"
-                    )
+                    struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
+                    if not StructureMatcher(
+                            stol=0.05,
+                            primitive_cell=False,
+                            scale=False,
+                            attempt_supercell=False,
+                            allow_subset=False,
+                    ).fit(struc_and_node_dict["bulk_supercell"], bulk_sc_structure):
+                        warnings.warn("Previous bulk_voronoi_nodes.json detected, but does not "
+                                      "match current bulk supercell. Recalculating Voronoi nodes.")
+                        raise FileNotFoundError
+
+                    else:
+                        voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
+
                 except FileNotFoundError:  # first time parsing
                     topography = TopographyAnalyzer(
                         bulk_sc_structure,
@@ -543,12 +576,12 @@ class SingleDefectParser:
                     )
                     topography.cluster_nodes()
                     topography.remove_collisions()
-                    voronoi_frac_coords = [
-                        site.frac_coords for site in topography.vnodes
-                    ]
-                    dumpfn(
-                        voronoi_frac_coords, "./bulk_voronoi_nodes.json"
-                    )  # for efficient
+                    voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
+                    struc_and_node_dict = {
+                        "bulk_supercell": bulk_sc_structure,
+                        "Voronoi nodes": voronoi_frac_coords
+                    }
+                    dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
                     # parsing of multiple defects at once
                     print(
                         "Saving parsed Voronoi sites (for interstitial site-matching) to "
@@ -563,7 +596,8 @@ class SingleDefectParser:
                 )
                 int_site = unrelaxed_defect_structure[defect_site_idx]
                 unrelaxed_defect_structure.remove_sites([defect_site_idx])
-                unrelaxed_defect_structure.append(
+                unrelaxed_defect_structure.insert(
+                    defect_site_idx, #Place defect at same position as in DFT calculation
                     int_site.species_string,
                     closest_node_frac_coords,
                     coords_are_cartesian=False,
@@ -732,8 +766,6 @@ class SingleDefectParser:
                 if mindist < 0.5 and species_match:
                     site_matching_indices.append([bulk_index, defect_index])
 
-        defect_frac_sc_coords = self.defect_entry.site.frac_coords
-
         # user Wigner-Seitz radius for sampling radius
         wz = defect_structure.lattice.get_wigner_seitz_cell()
         dist = []
@@ -748,7 +780,7 @@ class SingleDefectParser:
                 "defect_atomic_site_averages": defect_atomic_site_averages,
                 "site_matching_indices": site_matching_indices,
                 "sampling_radius": sampling_radius,
-                "defect_frac_sc_coords": defect_frac_sc_coords,
+                "defect_frac_sc_coords": self.defect_entry.site.frac_coords,
                 "initial_defect_structure": defect_structure,
             }
         )
@@ -759,11 +791,11 @@ class SingleDefectParser:
 
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
 
         if not self.defect_vr:
             path_to_defect = self.defect_entry.parameters["defect_path"]
-            self.defect_vr = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
+            self.defect_vr, defect_vr_path = get_vasprun(os.path.join(path_to_defect, "vasprun.xml"))
 
         # standard bulk metadata
         bulk_energy = self.bulk_vr.final_energy
@@ -843,7 +875,7 @@ class SingleDefectParser:
         """
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
-            self.bulk_vr = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+            self.bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
 
         bulk_sc_structure = self.bulk_vr.initial_structure
         mpid = self.defect_entry.parameters["mpid"]
@@ -940,7 +972,7 @@ class SingleDefectParser:
 
         if actual_bulk_path:
             print(f"Using actual bulk path: {actual_bulk_path}")
-            actual_bulk_vr = get_vasprun(os.path.join(actual_bulk_path, "vasprun.xml"))
+            actual_bulk_vr, actual_bulk_vr_path = get_vasprun(os.path.join(actual_bulk_path, "vasprun.xml"))
             bandgap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
 
         gap_parameters.update({"mpid": mpid, "cbm": cbm, "vbm": vbm, "gap": bandgap})
@@ -969,8 +1001,8 @@ Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
 scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
 look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if
-charge correction scheme still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
+`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if the charge 
+correction scheme is still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
 to apply it (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
 You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
 in `SingleDefectParser.from_paths()`."""
@@ -1031,7 +1063,7 @@ class PostProcess:
                 return (None, error_msg)  # Further processing is not useful
 
             try:
-                vr = get_vasprun(vr_file, parse_potcar_file=False)
+                vr, vr_path = get_vasprun(vr_file, parse_potcar_file=False)
             except:
                 logger.warning("Couldn't parse {}".format(vr_file))
                 error_msg = ": Failure, couldn't parse vasprun.xml file."
@@ -1227,7 +1259,7 @@ class PostProcess:
                 "This may not be appropriate if the VBM/CBM occur at reciprocal points "
                 "not included in the bulk calculation."
             )
-            vr = get_vasprun(
+            vr, vr_path = get_vasprun(
                 os.path.join(self._root_fldr, "bulk", "vasprun.xml"),
                 parse_potcar_file=False,
             )
@@ -1255,7 +1287,7 @@ class PostProcess:
                 mapi_key=self._mapi_key,
             )
         else:
-            bulkvr = get_vasprun(
+            bulkvr, bulkvr_path = get_vasprun(
                 os.path.join(self._root_fldr, "bulk", "vasprun.xml"),
                 parse_potcar_file=False,
             )
@@ -1288,7 +1320,7 @@ class PostProcess:
         """
 
         try:
-            vr = get_vasprun(
+            vr, vr_path = get_vasprun(
                 os.path.join(self._root_fldr, "dielectric", "vasprun.xml"),
                 parse_potcar_file=False,
             )
