@@ -97,8 +97,6 @@ class ChemPotsTestCase(unittest.TestCase):
         path2 = self.path / "LaZrO"
         ext_cpa.from_vaspruns(path=path2, folder="relax", csv_fname=self.csv_path_ext)
         self.assertEqual(len(ext_cpa.elemental), 3)
-        print(ext_cpa.data[1]["formula"])
-        print(ext_cpa.data)
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
         # formation_energy
         self.assertEqual(
@@ -209,13 +207,13 @@ class ChemPotsTestCase(unittest.TestCase):
 
 class BoxedMoleculesTestCase(unittest.TestCase):
     def test_elements(self):
-        s, f, m = competing_phases._make_molecule_in_a_box("O2")
+        s, f, m = competing_phases.make_molecule_in_a_box("O2")
         self.assertEqual(f, "O2")
         self.assertEqual(m, 2)
         self.assertEqual(type(s), Structure)
 
         with self.assertRaises(UnboundLocalError):
-            s2, f2, m2 = competing_phases._make_molecule_in_a_box("R2")
+            s2, f2, m2 = competing_phases.make_molecule_in_a_box("R2")
 
 
 class FormationEnergyTestCase(unittest.TestCase):
@@ -261,9 +259,12 @@ class FormationEnergyTestCase(unittest.TestCase):
         ]
 
         df = competing_phases._calculate_formation_energies(data, elemental)
-        self.assertNotEqual(len(df["formula"]), len(data))  # check that it removes 1
-        self.assertAlmostEqual(df["formation_energy"][4], -5.728958971666668)
-        self.assertEqual(df[df["formula"] == "O2"]["formation_energy"][0], 0)
+        print(df)
+        self.assertEqual(df["formula"][0], "O2")  # definite order
+        self.assertEqual(df["formation_energy"][0], 0)
+        self.assertEqual(df["formula"][1], "Zr")
+        self.assertEqual(df["formation_energy"][1], 0)
+        self.assertAlmostEqual(df["formation_energy"][4], -10.975428440000002)  # lowest energy ZrO2
 
 
 class CombineExtrinsicTestCase(unittest.TestCase):
@@ -316,7 +317,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         # this json was generated 09/02/2023 using
         # CompetingPhases(['Zr', 'O'], e_above_hull=0.01)
-        self.entries = loadfn("tests/entries_test_data.json")
+        self.entries = loadfn("entries_test_data.json")
         self.system = ["Zr", "O"]
         self.e_above_hull = 0.01
 
@@ -476,8 +477,8 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         # this json was generated 09/02/2023 using
         # ExtrinsicCompetingPhases(['Zr', 'O'], 'La', e_above_hull=0.015)
-        self.og_competing_phases = loadfn("tests/phases_test_data.json")
-        self.ext_competing_phases = loadfn("tests/phases_la_test_data.json")
+        self.og_competing_phases = loadfn("phases_test_data.json")
+        self.ext_competing_phases = loadfn("phases_la_test_data.json")
         self.system = ["Zr", "O"]
         self.extrinsic_species = "La"
         self.e_above_hull = 0.01

@@ -1345,9 +1345,7 @@ class CompetingPhasesAnalyzer:
         if not hasattr(self, "chem_limits"):
             self.calculate_chempots(verbose=False)
 
-        with open(
-            filename, "w"
-        ) as f:
+        with open(filename, "w") as f:
             with contextlib.redirect_stdout(f):
                 # get lowest energy bulk phase
                 bulk_entries = [
@@ -1357,11 +1355,15 @@ class CompetingPhasesAnalyzer:
                     == Composition(sub_dict["formula"]).reduced_composition
                 ]
                 bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
-                print(f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk")
+                print(
+                    f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk"
+                )
                 for k, v in self.bulk_composition.as_dict().items():
                     print(int(v), k, end=" ")
-                print(f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy "
-                      "(bulk)")
+                print(
+                    f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy "
+                    "(bulk)"
+                )
 
                 if dependent_variable is not None:
                     print(f"{dependent_variable}  # dependent variable (element)")
@@ -1399,8 +1401,86 @@ class CompetingPhasesAnalyzer:
 
                 print(f"{len(culled_cplap_entries)}  # number of bordering phases")
                 for i in culled_cplap_entries.values():
-                    print(f"{len(Composition(i['formula']).as_dict())}  # number of elements in "
-                          "phase:")
+                    print(
+                        f"{len(Composition(i['formula']).as_dict())}  # number of elements in "
+                        "phase:"
+                    )
                     for k, v in Composition(i["formula"]).as_dict().items():
                         print(int(v), k, end=" ")
-                    print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
+                    print(
+                        f"{i['formation_energy']}  # num_atoms, element, formation_energy"
+                    )
+
+
+def combine_extrinsic(first, second, extrinsic_species):
+    """
+    Combines chemical limits for different extrinsic species using chemical limits json file from
+    ChemicalPotentialAnalysis. Usage explained in the example jupyter notebook
+    Args:
+        first (dict): First chemical potential dictionary, it can contain extrinsic species other
+        than the set extrinsic species
+        second (dict): Second chemical potential dictionary, it must contain the extrinsic species
+        extrinsic_species (str): Extrinsic species in the second dictionary
+    Returns:
+        dict
+    """
+    keys = ["elemental_refs", "facets", "facets_wrt_el_refs"]
+    if not all(key in first for key in keys):
+        raise KeyError(
+            "the first dictionary doesn't contain the correct keys - it should include "
+            "elemental_refs, facets and facets_wrt_el_refs"
+        )
+
+    if not all(key in second for key in keys):
+        raise KeyError(
+            "the second dictionary doesn't contain the correct keys - it should include "
+            "elemental_refs, facets and facets_wrt_el_refs"
+        )
+
+    if extrinsic_species not in second["elemental_refs"].keys():
+        raise ValueError("extrinsic species is not present in the second dictionary")
+
+    cpa1 = copy.deepcopy(first)
+    cpa2 = copy.deepcopy(second)
+    new_facets = {}
+    for (k1, v1), (k2, v2) in zip(
+        list(cpa1["facets"].items()), list(cpa2["facets"].items())
+    ):
+        if k2.rsplit("-", 1)[0] in k1:
+            new_key = k1 + "-" + k2.rsplit("-", 1)[1]
+        else:
+            raise ValueError(
+                "The facets aren't matching, make sure you've used the correct dicitonary"
+            )
+
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets[new_key] = v1
+
+    new_facets_wrt_elt = {}
+    for (k1, v1), (k2, v2) in zip(
+        list(cpa1["facets_wrt_el_refs"].items()),
+        list(cpa2["facets_wrt_el_refs"].items()),
+    ):
+        if k2.rsplit("-", 1)[0] in k1:
+            new_key = k1 + "-" + k2.rsplit("-", 1)[1]
+        else:
+            raise ValueError(
+                "The facets aren't matching, make sure you've used the correct dicitonary"
+            )
+
+        v1[extrinsic_species] = v2.pop(extrinsic_species)
+        new_facets_wrt_elt[new_key] = v1
+
+    new_elements = copy.deepcopy(cpa1["elemental_refs"])
+    new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[
+        extrinsic_species
+    ]
+
+    new_dict = {}
+    new_dict = {
+        "elemental_refs": new_elements,
+        "facets": new_facets,
+        "facets_wrt_el_refs": new_facets_wrt_elt,
+    }
+
+    return new_dict
