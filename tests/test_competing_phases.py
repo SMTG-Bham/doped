@@ -123,16 +123,35 @@ class ChemPotsTestCase(unittest.TestCase):
         lst_fols_cpa.from_vaspruns(path=all_fols)
         self.assertEqual(len(lst_fols_cpa.elemental), 2)
 
-    def test_cplap_input(self): 
-        cpa = CompetingPhasesAnalyzer(self.stable_system)
+    def test_cplap_input(self):
+        cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_csv(self.csv_path)
-        cpa.cplap_input(dependent_variable='O')
+        print(cpa.data)
+        cpa.cplap_input(dependent_variable="O")
 
-        self.assertTrue(Path('input.dat').is_file())
+        self.assertTrue(Path("input.dat").is_file())
 
-        with open('input.dat', 'r') as f: 
+        with open("input.dat", "r") as f:
             contents = f.readlines()
-            self.assertEqual(contents[5], '3 Zr 1 O -5.986573519999993\n')
+
+        print(contents)
+        # assert these lines are in the file:
+        for i in [
+            "2\n",
+            "1 Zr 2 O -10.975428440000002\n",
+            "O\n",
+            "5\n",
+            "2\n",
+            "2 Zr 1 O -5.728958971666668\n",
+            "2\n",
+            "3 Zr 1 O -5.935114089999992\n",
+            "2\n",
+            "3 Zr 1 O -5.986573519999993\n",
+        ]:
+            self.assertIn(i, contents)
+
+        self.assertNotIn("1 Zr 2 O -10.951109995000005\n", contents)  # shouldn't be included as
+        # is a higher energy polymorph of the bulk phase
 
 
 class BoxedMoleculesTestCase(unittest.TestCase): 

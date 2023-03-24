@@ -156,8 +156,10 @@ def _calculate_formation_energies(data, elemental):
     df["num_species"] = df["formula"].apply(lambda x: len(Composition(x).as_dict()))
 
     # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
-    df.sort_values(by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
-                   inplace=True)
+    df.sort_values(
+        by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
+        inplace=True,
+    )
     # drop num_atoms_in_fu and num_species
     df.drop(columns=["num_atoms_in_fu", "num_species"], inplace=True)
 
@@ -1183,10 +1185,12 @@ class CompetingPhasesAnalyzer:
                 )
 
         if len(bulk_pde_list) == 0:
-            raise ValueError(f"Could not find bulk phase for "
-                             f"{self.bulk_composition.reduced_formula} in the supplied data. "
-                             f"Found phases: "
-                             f"{set([e.composition.reduced_formula for e in pd_entries_intrinsic])}")
+            raise ValueError(
+                f"Could not find bulk phase for "
+                f"{self.bulk_composition.reduced_formula} in the supplied data. "
+                f"Found phases: "
+                f"{set([e.composition.reduced_formula for e in pd_entries_intrinsic])}"
+            )
         elif len(bulk_pde_list) > 0:
             # lowest energy bulk phase
             self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
@@ -1325,20 +1329,24 @@ class CompetingPhasesAnalyzer:
     def cplap_input(self, dependent_variable=None, filename="input.dat"):
         """For completeness' sake, automatically saves to input.dat for cplap
         Args:
-            dependent_variable (str) Pick one of the variables as dependent, the first element is chosen from the composition if this isn't set
+            dependent_variable (str) Pick one of the variables as dependent, the first element is
+                chosen from the composition if this isn't set
             filename (str): filename, should end in .dat
         Returns
             None, writes input.dat file
         """
         with open(filename, "w") as f:
             with contextlib.redirect_stdout(f):
-                for i in self.data:
-                    comp = Composition(i["formula"]).as_dict()
-                    if self.bulk_composition.as_dict() == comp:
-                        print(len(comp))
-                        for k, v in comp.items():
-                            print(int(v), k, end=" ")
-                        print(i["formation_energy"])
+                # get lowest energy bulk phase
+                bulk_entries = [sub_dict for sub_dict in self.data if
+                              self.bulk_composition.as_dict() == Composition(sub_dict[
+                                                                                 "formula"]).as_dict()]
+                bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
+                print(len(self.bulk_composition.as_dict()))
+                for k, v in self.bulk_composition.as_dict().items():
+                    print(int(v), k, end=" ")
+                print(bulk_entry["formation_energy"])
+
                 if dependent_variable is not None:
                     print(dependent_variable)
                 else:
