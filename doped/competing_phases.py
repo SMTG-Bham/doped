@@ -151,6 +151,16 @@ def _calculate_formation_energies(data, elemental):
         df2["formation_energy"] -= df2[k] * v
 
     df["formation_energy"] = df2["formation_energy"]
+
+    df["num_atoms_in_fu"] = df["energy_per_fu"] / df["energy_per_atom"]
+    df["num_species"] = df["formula"].apply(lambda x: len(Composition(x).as_dict()))
+
+    # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
+    df.sort_values(by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
+                   inplace=True)
+    # drop num_atoms_in_fu and num_species
+    df.drop(columns=["num_atoms_in_fu", "num_species"], inplace=True)
+
     return df
 
 
@@ -384,9 +394,9 @@ class CompetingPhases:
         """
         Sets up input files for kpoints convergence testing
         Args:
-            kpoints_metals (tuple): Kpoint density per inverse volume (Å-3) to be tested in
+            kpoints_metals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for metals
-            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å-3) to be tested in
+            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for nonmetals
             potcar_functional (str): POTCAR functional to use (e.g. PBE_54)
             user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
@@ -974,7 +984,8 @@ class CompetingPhasesAnalyzer:
             system (str): The  'reduced formula' of the bulk composition
             extrinsic_species (str): Dopant species
             system (str): The  'reduced formula' of the bulk composition
-            extrinsic_species (str): Dopant species - can only deal with one at a time (see notebook in examples folder for more complex cases)
+            extrinsic_species (str): Dopant species - can only deal with one at a time (see
+            notebook in examples folder for more complex cases)
         """
 
         self.bulk_composition = Composition(system)
