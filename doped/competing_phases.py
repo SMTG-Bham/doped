@@ -1318,6 +1318,9 @@ class CompetingPhasesAnalyzer:
 
             self.chem_limits = cl2
 
+        else:  # intrinsic only
+            self.chem_limits = self.intrinsic_chem_limits
+
         # save and print
         if csv_fname is not None:
             df.to_csv(csv_fname, index=False)
@@ -1339,14 +1342,19 @@ class CompetingPhasesAnalyzer:
         Returns
             None, writes input.dat file
         """
-        with open(filename, "w") as f:  # TODO: Add comments to each of the input.dat lines
+        if not hasattr(self, "chem_limits"):
+            self.calculate_chempots(verbose=False)
+
+        with open(
+            filename, "w"
+        ) as f:  # TODO: Add comments to each of the input.dat lines
             with contextlib.redirect_stdout(f):
                 # get lowest energy bulk phase
                 bulk_entries = [
                     sub_dict
                     for sub_dict in self.data
-                    if self.bulk_composition.as_dict()
-                    == Composition(sub_dict["formula"]).as_dict()
+                    if self.bulk_composition.reduced_composition
+                    == Composition(sub_dict["formula"]).reduced_composition
                 ]
                 bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
                 print(len(self.bulk_composition.as_dict()))
@@ -1358,11 +1366,39 @@ class CompetingPhasesAnalyzer:
                     print(dependent_variable)
                 else:
                     print(self.elemental[0])
-                print(len(self.data) - 1 - len(self.elemental))
-                for i in self.data:
-                    comp = Composition(i["formula"]).as_dict()
-                    if self.bulk_composition.as_dict() != comp and len(comp) != 1:
-                        print(len(comp))
-                        for k, v in comp.items():
-                            print(int(v), k, end=" ")
-                        print(i["formation_energy"])
+
+                # get only the lowest energy entries of compositions in self.data which are on a
+                # facet in self.intrinsic_chem_limits
+                bordering_phases = set(
+                    [
+                        phase
+                        for facet in self.chem_limits["facets"].keys()
+                        for phase in facet.split("-")
+                    ]
+                )
+                entries_for_cplap = [
+                    entry_dict
+                    for entry_dict in self.data
+                    if entry_dict["formula"] in bordering_phases
+                    and Composition(entry_dict["formula"]).reduced_composition
+                    != self.bulk_composition.reduced_composition
+                ]
+                # cull to only the lowest energy entries of each composition
+                culled_cplap_entries = {}
+                for entry in entries_for_cplap:
+                    reduced_comp = Composition(entry["formula"]).reduced_composition
+                    if reduced_comp not in culled_cplap_entries.keys():
+                        culled_cplap_entries[reduced_comp] = entry
+                    else:
+                        if (
+                            entry["formation_energy"]
+                            < culled_cplap_entries[reduced_comp]["formation_energy"]
+                        ):
+                            culled_cplap_entries[reduced_comp] = entry
+
+                print(len(culled_cplap_entries))
+                for i in culled_cplap_entries.values():
+                    print(len(Composition(i["formula"]).as_dict()))
+                    for k, v in Composition(i["formula"]).as_dict().items():
+                        print(int(v), k, end=" ")
+                    print(i["formation_energy"])
