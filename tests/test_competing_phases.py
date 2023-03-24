@@ -130,30 +130,30 @@ class ChemPotsTestCase(unittest.TestCase):
         cpa.from_csv(self.csv_path)
         print(cpa.data)
         cpa.cplap_input(dependent_variable="O")
+        print(cpa.chem_limits)
 
         self.assertTrue(Path("input.dat").is_file())
 
         with open("input.dat", "r") as f:
             contents = f.readlines()
 
-        print(contents)
         # assert these lines are in the file:
         for i in [
-            "2\n",
-            "1 Zr 2 O -10.975428440000002\n",
-            "O\n",
-            "5\n",
-            "2\n",
-            "2 Zr 1 O -5.728958971666668\n",
-            "2\n",
-            "3 Zr 1 O -5.935114089999992\n",
-            "2\n",
-            "3 Zr 1 O -5.986573519999993\n",
+            "2  # number of elements in bulk\n",
+            "1 Zr 2 O -10.975428440000002  # num_atoms, element, formation_energy (bulk)\n",
+            "O  # dependent variable (element)\n",
+            "2  # number of bordering phases\n",
+            "1  # number of elements in phase:\n",
+            "2 O 0.0  # num_atoms, element, formation_energy\n",
+            "2  # number of elements in phase:\n",
+            "3 Zr 1 O -5.986573519999993  # num_atoms, element, formation_energy\n",
         ]:
             self.assertIn(i, contents)
 
-        self.assertNotIn("1 Zr 2 O -10.951109995000005\n", contents)  # shouldn't be included as
-        # is a higher energy polymorph of the bulk phase
+        self.assertNotIn(
+            "1 Zr 2 O -10.951109995000005\n", contents
+        )  # shouldn't be included as is a higher energy polymorph of the bulk phase
+        self.assertFalse(any("2 Zr 1 O" in i for i in contents))  # non-bordering phase
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
