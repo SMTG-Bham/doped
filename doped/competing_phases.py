@@ -1156,13 +1156,14 @@ class CompetingPhasesAnalyzer:
                 "supplied csv does not contain the correct headers, cannot read in the data"
             )
 
-    def calculate_chempots(self, csv_fname=None):
+    def calculate_chempots(self, csv_fname=None, verbose=True):
         """
         Calculates chemcial potential limits. For dopant species, it calculates the limiting
         potential based on the intrinsic chemical potentials (i.e. same as
         `full_sub_approach=False` in pycdt)
         Args:
             csv_fname (str): If set, will save chemical potential limits to csv
+            verbose (bool): If True, will print out chemical potential limits.
         Retruns:
             Pandas DataFrame, optionally saved to csv
         """
@@ -1250,7 +1251,8 @@ class CompetingPhasesAnalyzer:
         df = pd.DataFrame(chemical_potentials, columns=columns)
 
         if self.extrinsic_species is not None:
-            print(f"Calculating chempots for {self.extrinsic_species}")
+            if verbose:
+                print(f"Calculating chempots for {self.extrinsic_species}")
             for e in extrinsic_formation_energies:
                 for el in self.elemental:
                     e[el] = Composition(e["formula"]).as_dict()[el]
@@ -1319,10 +1321,12 @@ class CompetingPhasesAnalyzer:
         # save and print
         if csv_fname is not None:
             df.to_csv(csv_fname, index=False)
-            print("Saved chemical potential limits to csv file: ", csv_fname)
+            if verbose:
+                print("Saved chemical potential limits to csv file: ", csv_fname)
 
-        print("Calculated chemical potential limits: \n")
-        print(df)
+        if verbose:
+            print("Calculated chemical potential limits: \n")
+            print(df)
 
         return df
 
@@ -1335,12 +1339,15 @@ class CompetingPhasesAnalyzer:
         Returns
             None, writes input.dat file
         """
-        with open(filename, "w") as f:
+        with open(filename, "w") as f:  # TODO: Add comments to each of the input.dat lines
             with contextlib.redirect_stdout(f):
                 # get lowest energy bulk phase
-                bulk_entries = [sub_dict for sub_dict in self.data if
-                              self.bulk_composition.as_dict() == Composition(sub_dict[
-                                                                                 "formula"]).as_dict()]
+                bulk_entries = [
+                    sub_dict
+                    for sub_dict in self.data
+                    if self.bulk_composition.as_dict()
+                    == Composition(sub_dict["formula"]).as_dict()
+                ]
                 bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
                 print(len(self.bulk_composition.as_dict()))
                 for k, v in self.bulk_composition.as_dict().items():
