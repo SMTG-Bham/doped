@@ -1347,7 +1347,7 @@ class CompetingPhasesAnalyzer:
 
         with open(
             filename, "w"
-        ) as f:  # TODO: Add comments to each of the input.dat lines
+        ) as f:
             with contextlib.redirect_stdout(f):
                 # get lowest energy bulk phase
                 bulk_entries = [
@@ -1357,15 +1357,16 @@ class CompetingPhasesAnalyzer:
                     == Composition(sub_dict["formula"]).reduced_composition
                 ]
                 bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
-                print(len(self.bulk_composition.as_dict()))
+                print(f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk")
                 for k, v in self.bulk_composition.as_dict().items():
                     print(int(v), k, end=" ")
-                print(bulk_entry["formation_energy"])
+                print(f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy "
+                      "(bulk)")
 
                 if dependent_variable is not None:
-                    print(dependent_variable)
+                    print(f"{dependent_variable}  # dependent variable (element)")
                 else:
-                    print(self.elemental[0])
+                    print(f"{self.elemental[0]}  # dependent variable (element)")
 
                 # get only the lowest energy entries of compositions in self.data which are on a
                 # facet in self.intrinsic_chem_limits
@@ -1396,9 +1397,10 @@ class CompetingPhasesAnalyzer:
                         ):
                             culled_cplap_entries[reduced_comp] = entry
 
-                print(len(culled_cplap_entries))
+                print(f"{len(culled_cplap_entries)}  # number of bordering phases")
                 for i in culled_cplap_entries.values():
-                    print(len(Composition(i["formula"]).as_dict()))
+                    print(f"{len(Composition(i['formula']).as_dict())}  # number of elements in "
+                          "phase:")
                     for k, v in Composition(i["formula"]).as_dict().items():
                         print(int(v), k, end=" ")
-                    print(i["formation_energy"])
+                    print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
