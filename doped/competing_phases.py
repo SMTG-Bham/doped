@@ -1167,6 +1167,7 @@ class CompetingPhasesAnalyzer:
 
         pd_entries_intrinsic = []
         extrinsic_formation_energies = []
+        bulk_pde_list = []
         for d in self.data:
             e = PDEntry(d["formula"], d["energy_per_fu"])
             # presumably checks if the phase is intrinsic
@@ -1174,12 +1175,21 @@ class CompetingPhasesAnalyzer:
                 self.bulk_composition.elements
             ):
                 pd_entries_intrinsic.append(e)
-                if e.composition == self.bulk_composition:
-                    self.bulk_pde = e
+                if e.composition == self.bulk_composition:  # bulk phase
+                    bulk_pde_list.append(e)
             else:
                 extrinsic_formation_energies.append(
                     {"formula": d["formula"], "formation_energy": d["formation_energy"]}
                 )
+
+        if len(bulk_pde_list) == 0:
+            raise ValueError(f"Could not find bulk phase for "
+                             f"{self.bulk_composition.reduced_formula} in the supplied data. "
+                             f"Found phases: "
+                             f"{set([e.composition.reduced_formula for e in pd_entries_intrinsic])}")
+        elif len(bulk_pde_list) > 0:
+            # lowest energy bulk phase
+            self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
         self.intrinsic_phase_diagram = PhaseDiagram(
             pd_entries_intrinsic, map(Element, self.bulk_composition.elements)
@@ -1189,7 +1199,8 @@ class CompetingPhasesAnalyzer:
         if self.bulk_pde not in self.intrinsic_phase_diagram.stable_entries:
             eah = self.intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
             raise ValueError(
-                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, EaH={eah:.4f} eV/atom"
+                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing "
+                f"phases, EaH={eah:.4f} eV/atom"
             )
 
         chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
