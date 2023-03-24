@@ -99,7 +99,60 @@ class ChemPotsTestCase(unittest.TestCase):
         self.assertEqual(len(ext_cpa.elemental), 3)
         print(ext_cpa.data[1]["formula"])
         print(ext_cpa.data)
-        self.assertEqual(ext_cpa.data[1]["formula"], "Zr")
+        # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
+        # formation_energy
+        self.assertEqual(
+            [entry["formula"] for entry in ext_cpa.data],
+            [
+                "La",
+                "O2",
+                "Zr",
+                "Zr",
+                "La2O3",
+                "Zr2O",
+                "Zr3O",
+                "Zr3O",
+                "ZrO2",
+                "ZrO2",
+                "La2Zr2O7",
+            ],
+        )
+        # spot check some values
+        # [{'formula': 'La', 'kpoints': '10x10x3', 'energy_per_fu': -5.00458616,
+        # 'energy_per_atom': -5.00458616, 'energy': -20.01834464, 'formation_energy': 0.0},
+        # {'formula': 'O2', 'kpoints': '2x2x2', 'energy_per_fu': -14.01320413, 'energy_per_atom':
+        # -7.006602065, 'energy': -14.01320413, 'formation_energy': 0.0}, {'formula': 'Zr',
+        # 'kpoints': '9x9x5', 'energy_per_fu': -9.84367624, 'energy_per_atom': -9.84367624,
+        # 'energy': -19.68735248, 'formation_energy': 0.0}, {'formula': 'Zr', 'kpoints': '6x6x6',
+        # 'energy_per_fu': -9.818516226666667, 'energy_per_atom': -9.818516226666667, 'energy':
+        # -58.91109736, 'formation_energy': 0.025160013333334064}, {'formula': 'La2O3',
+        # 'kpoints': '3x3x3', 'energy_per_fu': -49.046189555, 'energy_per_atom': -9.809237911,
+        # 'energy': -392.36951644, 'formation_energy': -18.01721104}, {'formula': 'Zr2O',
+        # 'kpoints': '5x5x2', 'energy_per_fu': -32.42291351666667, 'energy_per_atom':
+        # -10.807637838888889, 'energy': -194.5374811, 'formation_energy': -5.728958971666668},
+        # {'formula': 'Zr3O', 'kpoints': '5x5x5', 'energy_per_fu': -42.524204305,
+        # 'energy_per_atom': -10.63105107625, 'energy': -85.04840861, 'formation_energy':
+        # -5.986573519999993}, {'formula': 'Zr3O', 'kpoints': '5x5x5', 'energy_per_fu':
+        # -42.472744875, 'energy_per_atom': -10.61818621875, 'energy': -84.94548975,
+        # 'formation_energy': -5.935114089999992}, {'formula': 'ZrO2', 'kpoints': '3x3x3',
+        # 'energy_per_fu': -34.83230881, 'energy_per_atom': -11.610769603333333, 'energy':
+        # -139.32923524, 'formation_energy': -10.975428440000002}, {'formula': 'ZrO2', 'kpoints':
+        # '3x3x1', 'energy_per_fu': -34.807990365, 'energy_per_atom': -11.602663455, 'energy':
+        # -278.46392292, 'formation_energy': -10.951109995000003}, {'formula': 'La2Zr2O7',
+        # 'kpoints': '3x3x3', 'energy_per_fu': -119.619571095, 'energy_per_atom':
+        # -10.874506463181818, 'energy': -239.23914219, 'formation_energy': -40.87683184}]
+        self.assertEqual(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
+        self.assertEqual(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
+        self.assertEqual(ext_cpa.data[0]["energy"], -20.01834464)
+        self.assertEqual(ext_cpa.data[0]["formation_energy"], 0.0)
+        self.assertEqual(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
+        self.assertEqual(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
+        self.assertEqual(ext_cpa.data[-1]["energy"], -239.23914219)
+        self.assertEqual(ext_cpa.data[-1]["formation_energy"], -40.87683184)
+        self.assertEqual(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
+        self.assertEqual(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
+        self.assertEqual(ext_cpa.data[6]["energy"], -85.04840861)
+        self.assertEqual(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
 
         # check if it works from a list
         all_paths = []
@@ -128,9 +181,7 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_cplap_input(self):
         cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_csv(self.csv_path)
-        print(cpa.data)
         cpa.cplap_input(dependent_variable="O")
-        print(cpa.chem_limits)
 
         self.assertTrue(Path("input.dat").is_file())
 
