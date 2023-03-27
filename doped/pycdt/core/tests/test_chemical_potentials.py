@@ -4,24 +4,28 @@ from __future__ import division
 
 __status__ = "Development"
 
-import os
 import copy
 import inspect
+import os
 import unittest
 from shutil import copyfile
 
 from monty.serialization import loadfn
 from monty.tempfile import ScratchDir
-
-from doped.pycdt.core.chemical_potentials import ChemPotAnalyzer, MPChemPotAnalyzer, \
-    UserChemPotAnalyzer, UserChemPotInputGenerator, get_mp_chempots_from_dpd
-
-from pymatgen.core import Composition, Element
-from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
+from pymatgen.analysis.phase_diagram import PhaseDiagram
+from pymatgen.core import Composition, Element
 from pymatgen.entries.computed_entries import ComputedEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.util.testing import PymatgenTest
+
+from doped.pycdt.core.chemical_potentials import (
+    ChemPotAnalyzer,
+    MPChemPotAnalyzer,
+    UserChemPotAnalyzer,
+    UserChemPotInputGenerator,
+    get_mp_chempots_from_dpd,
+)
 
 file_loc = os.path.abspath(os.path.join(
     __file__, '..', '..', '..', '..', 'test_files'))

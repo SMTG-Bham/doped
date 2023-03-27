@@ -6,24 +6,23 @@ Code to generate VASP defect calculation input files.
 
 import functools
 import os
-from copy import deepcopy  # See https://stackoverflow.com/a/22341377/14020960 why
 import warnings
+from copy import deepcopy  # See https://stackoverflow.com/a/22341377/14020960 why
 from typing import TYPE_CHECKING
-import numpy as np
 
+import numpy as np
+from ase.dft.kpoints import monkhorst_pack
 from monty.io import zopen
 from monty.serialization import dumpfn, loadfn
 from pymatgen.io.vasp import Incar, Kpoints, Poscar
 from pymatgen.io.vasp.inputs import (
-    incar_params,
     BadIncarWarning,
     Kpoints_supported_modes,
+    incar_params,
 )
-from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
-from ase.dft.kpoints import monkhorst_pack
+from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 
 from doped.pycdt.utils.vasp import DefectRelaxSet, _check_psp_dir
-
 
 if TYPE_CHECKING:
     import pymatgen.core.periodic_table

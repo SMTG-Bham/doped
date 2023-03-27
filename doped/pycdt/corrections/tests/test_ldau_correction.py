@@ -38,5 +38,6 @@ class LDAUCorrectionTest(unittest.TestCase):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()

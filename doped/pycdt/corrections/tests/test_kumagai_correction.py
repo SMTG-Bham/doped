@@ -5,12 +5,13 @@ from __future__ import division
 __status__ = "Development"
 
 import os
-import numpy as np
 import unittest
 
+import numpy as np
 from pymatgen.io.vasp.outputs import Locpot
-from doped.pycdt.corrections.kumagai_correction import *
 from pymatgen.util.testing import PymatgenTest
+
+from doped.pycdt.corrections.kumagai_correction import *
 
 # Paths to files we are testing on
 bl_path = os.path.abspath(os.path.join(
@@ -153,5 +154,6 @@ class KumagaiSetupFunctionsTest(PymatgenTest):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()

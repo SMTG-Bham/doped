@@ -10,14 +10,13 @@ If you use the corrections implemented in this module, cite
    in addition to the pycdt paper
 """
 
-import sys
-import math
 import logging
+import math
+import sys
 
 import numpy as np
-
-from pymatgen.io.vasp.outputs import Locpot
 from pymatgen.core.structure import Structure
+from pymatgen.io.vasp.outputs import Locpot
 
 from doped.pycdt.corrections.utils import *
 from doped.pycdt.utils.units import hart_to_ev

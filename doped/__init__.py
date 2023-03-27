@@ -1,6 +1,7 @@
 import warnings
 from datetime import date
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
+
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 
 if date.today().weekday() in [5, 6]:

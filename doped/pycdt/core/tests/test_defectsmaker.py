@@ -6,10 +6,11 @@ __status__ = "Development"
 
 import os
 
-from pymatgen.core.structure import Structure
 from pymatgen.core import PeriodicSite
-from doped.pycdt.core.defectsmaker import *
+from pymatgen.core.structure import Structure
 from pymatgen.util.testing import PymatgenTest
+
+from doped.pycdt.core.defectsmaker import *
 
 file_loc = os.path.abspath(os.path.join(
     __file__, '..', '..', '..', '..', 'test_files'))
