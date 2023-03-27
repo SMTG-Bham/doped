@@ -423,7 +423,8 @@ class SingleDefectParser:
         :param dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
         :param defect_charge (int):
         :param mpid (str):
-        :initial_defect_structure (str):  Path to the unrelaxed defect structure.
+        :param initial_defect_structure (str):  Path to the unrelaxed defect structure,
+            if structure matching with the relaxed defect structure(s) fails.
         :param compatibility (DefectCompatibility): Compatibility class instance for
             performing compatibility analysis on defect entry.
 
@@ -484,9 +485,9 @@ class SingleDefectParser:
                 bulk_sc_structure, initial_defect_structure, def_type, comp_diff
             )
         except RuntimeError as exc:
-            # try transformation.json
             # if auto site-matching failed, try use transformation.json
-            # Bonan: I don't think does anything?
+            # The goal is to find the `defect_site_idx` or `defect_site_idx` based on the
+            # tranformation.
             transformation_path = os.path.join(path_to_defect, "transformation.json")
             if not os.path.exists(transformation_path):  # try next folder up
                 orig_transformation_path = transformation_path
@@ -619,12 +620,16 @@ class SingleDefectParser:
                 defect_site = unrelaxed_defect_structure[defect_site_idx]
 
             # Use the unrelaxed_defect_structure to fix the initial defect structure
-            initial_defect_structure = reorder_unrelaxed_structure(unrelaxed_defect_structure, 
-                                                                        initial_defect_structure)
+            initial_defect_structure = reorder_unrelaxed_structure(
+                unrelaxed_defect_structure, initial_defect_structure
+            )
             parameters["initial_defect_structure"] = initial_defect_structure
             parameters["unrelaxed_defect_structure"] = unrelaxed_defect_structure
         else:
-            warnings.warn("Cannot determine the unrelaxed `initial_defect_structure`. Please the the `initial_defect_structure` is indeed unrelaxed.")
+            warnings.warn(
+                "Cannot determine the unrelaxed `initial_defect_structure`. Please ensure the "
+                "`initial_defect_structure` is indeed unrelaxed."
+            )
 
         for_monty_defect = {
             "@module": "pymatgen.analysis.defects.core",
@@ -747,7 +752,7 @@ class SingleDefectParser:
         bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
 
-        defect_structure = self.defect_entry.parameters['initial_defect_structure']
+        defect_structure = self.defect_entry.parameters["initial_defect_structure"]
         initsites = [site.frac_coords for site in defect_structure]
 
         distmatrix = bulk_structure.lattice.get_all_distances(
@@ -1372,19 +1377,19 @@ class PostProcess:
         return output
 
 
-def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=1.0):
+def get_site_mapping_indices(
+    structure_a: Structure, structure_b: Structure, threshold=1.0
+):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
     The template structure may have a different species ordering to the `input_structure`.
     """
 
     ## Generate a site matching table between the input and the template
-    input_fcoords = [site.frac_coords for site in structure_a] 
-    template_fcoords = [site.frac_coords for site in structure_b] 
+    input_fcoords = [site.frac_coords for site in structure_a]
+    template_fcoords = [site.frac_coords for site in structure_b]
 
-    dmat = structure_a.lattice.get_all_distances(
-        input_fcoords, template_fcoords 
-    ) 
+    dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
     min_dist_with_index = []
     for index in range(len(input_fcoords)):
         dists = dmat[index]
@@ -1392,29 +1397,36 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
         current_dist = dists.min()
         min_dist_with_index.append(
             [
-            current_dist,
-            index,
-            template_index,
+                current_dist,
+                index,
+                template_index,
             ]
         )
 
         if current_dist > threshold:
             sitea = structure_a[index]
             siteb = structure_b[template_index]
-            warnings.warn(f"Large site displacement {current_dist:.4f} detected when matching atomic sites: {sitea}-> {siteb}.")
+            warnings.warn(
+                f"Large site displacement {current_dist:.4f} detected when matching atomic sites: {sitea}-> {siteb}."
+            )
     return min_dist_with_index
 
 
-def reorder_unrelaxed_structure(unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=1.0):
+def reorder_unrelaxed_structure(
+    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=1.0
+):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
     The template structure may have a different species ordering to the `input_structure`.
     """
 
-    # Obtain site mapping between the initial_relax_structure nad the unrelaxed structure
-    mapping = get_site_mapping_indices(initial_relax_structure, unrelaxed_structure, threshold=threshold)
+    # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
+    mapping = get_site_mapping_indices(
+        initial_relax_structure, unrelaxed_structure, threshold=threshold
+    )
 
-    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (from the acutal calculation)
+    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (
+    # from the actual calculation)
     reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
     new_structure = Structure.from_sites(reordered_sites)
 
