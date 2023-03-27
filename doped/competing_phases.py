@@ -1185,7 +1185,11 @@ class CompetingPhasesAnalyzer:
                 c = Composition(i["formula"])
                 if len(c.elements) == 1:
                     elt = c.chemical_system
-                    self.elemental_energies[elt] = i["energy_per_atom"]
+                    if (
+                        elt not in self.elemental_energies
+                        or i["energy_per_atom"] < self.elemental_energies[elt]
+                    ):
+                        self.elemental_energies[elt] = i["energy_per_atom"]
 
         else:
             raise ValueError(
