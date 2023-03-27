@@ -17,9 +17,11 @@ class DopedParsingTestCase(unittest.TestCase):
         self.BULK_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
         self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
-        self.ytos_dielectric = [[40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
-                           [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
-                           [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023]]
+        self.ytos_dielectric = [
+            [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
+            [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
+            [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
+        ]
         # from legacy Materials Project
 
     def test_vacancy_parsing_and_freysoldt(self):
@@ -193,9 +195,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
     def test_extrinsic_interstitial_defect_ID(self):
         """Test parsing of extrinsic F in YTOS interstitial"""
-        bulk_sc_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR"
-        )
+        bulk_sc_structure = Structure.from_file(f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
         initial_defect_structure = Structure.from_file(
             f"{self.EXAMPLE_DIR}/YTOS/Int_F_-1/Relaxed_CONTCAR"
         )
@@ -220,11 +220,16 @@ class DopedParsingTestCase(unittest.TestCase):
         # assert auto-determined interstitial site is correct
         print(unrelaxed_defect_structure[defect_site_idx].frac_coords)
         self.assertAlmostEqual(
-            unrelaxed_defect_structure[defect_site_idx].distance_and_image_from_frac_coords(
-                [-0.0005726049122470, -0.0001544430438804, 0.47800736578014720])[0],
+            unrelaxed_defect_structure[
+                defect_site_idx
+            ].distance_and_image_from_frac_coords(
+                [-0.0005726049122470, -0.0001544430438804, 0.47800736578014720]
+            )[
+                0
+            ],
             0.0,
-            places=2)  # approx match, not exact because relaxed bulk supercell
-
+            places=2,
+        )  # approx match, not exact because relaxed bulk supercell
 
     def test_extrinsic_substitution_defect_ID(self):
         """Test parsing of extrinsic U_on_Cd in CdTe"""
@@ -292,12 +297,14 @@ class DopedParsingTestCase(unittest.TestCase):
             )
         # assert auto-determined interstitial site is correct
         self.assertAlmostEqual(
-            int_F_minus1_ent.site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
+            int_F_minus1_ent.site.distance_and_image_from_frac_coords([0, 0, 0.4847])[
+                0
+            ],
             0.0,
-            places=2)  # approx match, not exact because relaxed bulk supercell
+            places=2,
+        )  # approx match, not exact because relaxed bulk supercell
 
         os.remove("bulk_voronoi_nodes.json")
-
 
     def test_extrinsic_substitution_parsing_and_freysoldt_and_kumagai(self):
         """
@@ -338,7 +345,8 @@ class DopedParsingTestCase(unittest.TestCase):
         self.assertAlmostEqual(
             F_O_1_ent.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
-            places=2)
+            places=2,
+        )
 
         # now using Kumagai-Oba (eFNV) correction
         for i in os.listdir(self.EXAMPLE_DIR):
@@ -373,8 +381,8 @@ class DopedParsingTestCase(unittest.TestCase):
         self.assertAlmostEqual(
             F_O_1_ent.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
-            places=2)
-
+            places=2,
+        )
 
     def test_voronoi_structure_mismatch_and_reparse(self):
         """
@@ -423,8 +431,10 @@ class DopedParsingTestCase(unittest.TestCase):
                     sdp.run_compatibility()
                     int_F_minus1_ent = sdp.defect_entry
 
-        warning_message = "Previous bulk_voronoi_nodes.json detected, but does not " \
-                          "match current bulk supercell. Recalculating Voronoi nodes."
+        warning_message = (
+            "Previous bulk_voronoi_nodes.json detected, but does not "
+            "match current bulk supercell. Recalculating Voronoi nodes."
+        )
         user_warnings = [warning for warning in w if warning.category == UserWarning]
         self.assertEqual(len(user_warnings), 1)
         self.assertIn(warning_message, str(user_warnings[0].message))
