@@ -476,10 +476,12 @@ def _aide_pmg_plot(
         a matplotlib object
     """
     if mu_elts is None:
-        warnings.warn("No chemical potentials specified, so chemical potentials are set to zero "
-                      "for each species. Note that this will give large errors in the absolute "
-                      "values of formation energies, but the transition level positions will be "
-                      "unaffected.")
+        warnings.warn(
+            "No chemical potentials specified, so chemical potentials are set to zero "
+            "for each species. Note that this will give large errors in the absolute "
+            "values of formation energies, but the transition level positions will be "
+            "unaffected."
+        )
 
     if xlim is None:
         xlim = (-0.4, defect_phase_diagram.band_gap + 0.4)
@@ -750,7 +752,9 @@ some defects will have the same line colour). Recommended to change/set colormap
     ax.yaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol="-"))
     if chempot_table:
         if elt_refs is not None:
-            facets_wrt_elt_refs = {elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()}
+            facets_wrt_elt_refs = {
+                elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()
+            }
             _plot_chemical_potential_table(
                 plt,
                 facets_wrt_elt_refs,
@@ -853,7 +857,6 @@ class _CustomScalarFormatter(ticker.ScalarFormatter):
 
 
 def pretty_axis(ax=None, fonts=None):
-
     ticklabelsize = 9
     ticksize = 8
     linewidth = 1.0
@@ -1316,7 +1319,9 @@ some defects will have the same line colour). Recommended to change/set colormap
     ax.yaxis.set_major_formatter(_CustomScalarFormatter(minus_symbol="-"))
     if chempot_table:
         if elt_refs is not None:
-            facets_wrt_elt_refs = {elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()}
+            facets_wrt_elt_refs = {
+                elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()
+            }
             _plot_chemical_potential_table(
                 plt,
                 facets_wrt_elt_refs,
