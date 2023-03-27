@@ -6,9 +6,10 @@ __status__ = "Development"
 
 import os
 import unittest
-import numpy as np
 
+import numpy as np
 from pymatgen.core.structure import Structure
+
 from doped.pycdt.corrections.utils import *
 
 bs_path = os.path.abspath(os.path.join(
@@ -66,5 +67,6 @@ class StructureFunctionsTest(unittest.TestCase):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()

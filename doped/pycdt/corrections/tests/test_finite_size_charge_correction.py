@@ -5,13 +5,16 @@ from __future__ import division
 __status__ = "Development"
 
 import unittest
-import numpy as np
 
+import numpy as np
+from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.util.testing import PymatgenTest
-from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 
-from doped.pycdt.corrections.finite_size_charge_correction import get_correction_freysoldt, get_correction_kumagai
+from doped.pycdt.corrections.finite_size_charge_correction import (
+    get_correction_freysoldt,
+    get_correction_kumagai,
+)
 
 
 class FiniteSizeChargeCorrectionTest(PymatgenTest):

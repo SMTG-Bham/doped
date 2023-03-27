@@ -6,12 +6,13 @@ __status__ = "Development"
 
 import os
 
+from pymatgen.analysis.defects.core import DefectEntry, Vacancy
+from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 from pymatgen.core import Element
-from pymatgen.core.structure import PeriodicSite, Structure, Lattice
+from pymatgen.core.structure import Lattice, PeriodicSite, Structure
+
 # from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.testing import PymatgenTest
-from pymatgen.analysis.defects.core import Vacancy, DefectEntry
-from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 
 from doped.pycdt.utils.plotter import DefectPlotter
 
@@ -54,5 +55,6 @@ class DefectPlotterTest(PymatgenTest):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()

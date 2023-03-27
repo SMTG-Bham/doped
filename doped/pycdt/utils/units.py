@@ -3,9 +3,9 @@ This module contains unit conversion constants and  functions
 """
 
 import math
-import numpy as np
-
 import warnings
+
+import numpy as np
 
 # Define conversion_constants
 hart_to_ev = 27.2114
