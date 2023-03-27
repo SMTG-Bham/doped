@@ -1,12 +1,12 @@
 """This is a setup.py script to install doped"""
 
-import os
 import glob
+import os
 import subprocess
 import sys
 import warnings
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
 from setuptools.command.install import install

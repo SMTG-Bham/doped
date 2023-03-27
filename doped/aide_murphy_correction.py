@@ -1,6 +1,7 @@
-import logging
 import itertools
-from math import exp, erfc
+import logging
+from math import erfc, exp
+
 import numpy as np
 
 ## These functions are taken from the AIDE package developed by

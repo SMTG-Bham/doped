@@ -8,12 +8,11 @@ Created 8/11/15 (right after I finished the first version of the wrapper class)
 __status__ = "Development"
 
 import os
-import numpy as np
-
-from pymatgen.io.vasp.outputs import Locpot
-import matplotlib.pyplot as plt
-
 import warnings
+
+import matplotlib.pyplot as plt
+import numpy as np
+from pymatgen.io.vasp.outputs import Locpot
 
 warnings.warn("Replacing PyCDT usage of Freysoldt base classes with calls to "
               "corresponding objects in pymatgen.analysis.defects.corrections\n"

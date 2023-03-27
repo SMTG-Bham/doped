@@ -4,8 +4,8 @@ from __future__ import division
 
 __status__ = "Development"
 
-from copy import deepcopy
 import warnings
+from copy import deepcopy
 
 
 class LDAUCorrection(object):
