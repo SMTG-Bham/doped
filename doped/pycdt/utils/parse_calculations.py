@@ -408,6 +408,8 @@ class SingleDefectParser:
             atomic_site_minmax_tol=0.3,
             tot_relax_tol=5.0,
             defect_tot_relax_tol=5.0,
+            use_bandfilling=False,  # don't include bandfilling by default
+            use_bandedgeshift=False,  # don't include band edge shift by default
         ),
         initial_defect_structure=None,
     ):
