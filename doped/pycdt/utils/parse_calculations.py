@@ -5,7 +5,6 @@ Parses the computed data from VASP defect calculations.
 # from __future__ import unicode_literals
 from __future__ import division
 
-
 import glob
 import logging
 import os
@@ -13,12 +12,12 @@ import warnings
 
 import numpy as np
 from monty.json import MontyDecoder
-from monty.serialization import loadfn, dumpfn
+from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import (
-    Vacancy,
-    Substitution,
-    Interstitial,
     DefectEntry,
+    Interstitial,
+    Substitution,
+    Vacancy,
 )
 from pymatgen.analysis.defects.defect_compatibility import DefectCompatibility
 from pymatgen.analysis.defects.utils import TopographyAnalyzer
@@ -27,7 +26,7 @@ from pymatgen.core import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Potcar, UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Vasprun, Locpot, Outcar, Poscar
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Poscar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped.pycdt.core import chemical_potentials

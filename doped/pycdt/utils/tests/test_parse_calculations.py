@@ -5,23 +5,26 @@ from __future__ import division
 __status__ = "Development"
 
 import os
-import unittest
 import tarfile
+import unittest
 from shutil import copyfile
 
-from monty.serialization import dumpfn
 from monty.json import MontyEncoder
+from monty.serialization import dumpfn
 from monty.tempfile import ScratchDir
-
 from pymatgen import __file__ as initfilep
+from pymatgen.analysis.defects.core import DefectEntry, Substitution, Vacancy
 from pymatgen.core import Element, PeriodicSite
-from pymatgen.io.vasp import Vasprun, Locpot
-from pymatgen.analysis.defects.core import DefectEntry, Vacancy, Substitution
 from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.io.vasp import Locpot, Vasprun
 from pymatgen.util.testing import PymatgenTest
 
 from doped.pycdt.core.defects_analyzer import ComputedDefect
-from doped.pycdt.utils.parse_calculations import PostProcess, convert_cd_to_de, SingleDefectParser
+from doped.pycdt.utils.parse_calculations import (
+    PostProcess,
+    SingleDefectParser,
+    convert_cd_to_de,
+)
 
 pmgtestfiles_loc = os.path.join(
         os.path.split(os.path.split(initfilep)[0])[0], "test_files")

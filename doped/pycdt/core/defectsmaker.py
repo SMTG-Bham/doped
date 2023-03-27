@@ -9,16 +9,20 @@ Code to generate charged defects structure files.
 import abc
 import re
 
-
 #from monty.string import str2unicode
 from monty.serialization import dumpfn
-from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.core.periodic_table import Element, Specie, get_el_sp
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.analysis.defects.core import Interstitial
-from pymatgen.analysis.defects.generators import VacancyGenerator, \
-    SubstitutionGenerator, InterstitialGenerator, VoronoiInterstitialGenerator, SimpleChargeGenerator
+from pymatgen.analysis.defects.generators import (
+    InterstitialGenerator,
+    SimpleChargeGenerator,
+    SubstitutionGenerator,
+    VacancyGenerator,
+    VoronoiInterstitialGenerator,
+)
 from pymatgen.analysis.local_env import ValenceIonicRadiusEvaluator as VIRE
+from pymatgen.core.periodic_table import Element, Specie, get_el_sp
+from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 
 def get_optimized_sc_scale(inp_struct, final_site_no):

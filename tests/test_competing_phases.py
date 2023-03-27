@@ -1,11 +1,13 @@
 import os
-from pathlib import Path
 import shutil
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-from doped import competing_phases
+
+from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
-from monty.serialization import loadfn, dumpfn
+
+from doped import competing_phases
 
 
 class ChemPotsTestCase(unittest.TestCase):

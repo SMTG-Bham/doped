@@ -22,10 +22,11 @@ If you use the corrections implemented in this module, cite
 
 
 import copy
+
 import numpy as np
+from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
 from doped.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
-from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
 
 def get_correction_freysoldt(defect_entry, epsilon, plot: bool = False, filename=None,

@@ -4,19 +4,16 @@ from __future__ import print_function
 
 __status__ = "Development"
 
+import functools
 import os
 from copy import deepcopy
-import functools
-import numpy as np
 
-from monty.serialization import loadfn, dumpfn
+import numpy as np
 from monty.json import MontyEncoder
 from monty.os.path import zpath
-
-from pymatgen.io.vasp.inputs import Kpoints
+from monty.serialization import dumpfn, loadfn
+from pymatgen.io.vasp.inputs import Kpoints, Potcar, PotcarSingle
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
-from pymatgen.io.vasp.inputs import PotcarSingle, Potcar
-
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
