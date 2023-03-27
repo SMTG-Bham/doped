@@ -465,8 +465,10 @@ class CompetingPhases:
                 )
 
                 kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
-                fname = f"competing_phases/{e.name}_EaH" \
-                        f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
+                fname = (
+                    f"competing_phases/{e.name}_EaH"
+                    f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
+                )
                 dis.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -496,8 +498,10 @@ class CompetingPhases:
                 )
 
                 kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
-                fname = f"competing_phases/{e.name}_EaH_" \
-                        f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
+                fname = (
+                    f"competing_phases/{e.name}_EaH_"
+                    f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
+                )
                 dis.write_input(fname, **kwargs)
 
     def vasp_std_setup(
@@ -562,8 +566,10 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{e.name}_EaH_" \
-                    f"{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = (
+                f"competing_phases/{e.name}_EaH_"
+                f"{round(e.data['e_above_hull'],4)}/vasp_std"
+            )
             dis.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -590,8 +596,10 @@ class CompetingPhases:
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_" \
-                    f"{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = (
+                f"competing_phases/{e.name}_EaH_"
+                f"{round(e.data['e_above_hull'],4)}/vasp_std"
+            )
             dis.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
