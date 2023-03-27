@@ -164,7 +164,8 @@ def get_outcar(outcar_path):
 
 def get_defect_type_and_composition_diff(bulk, defect):
     """Get the difference in composition between a bulk structure and a defect structure.
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species"""
+    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species
+    """
     bulk_comp = bulk.composition.get_el_amt_dict()
     defect_comp = defect.composition.get_el_amt_dict()
 
@@ -193,7 +194,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     bulk, defect, defect_type, composition_diff, unique_tolerance=1
 ):
     """Get the defect site and unrelaxed structure.
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species"""
+    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for extrinsic species
+    """
     if defect_type == "substitution":
         old_species = [el for el, amt in composition_diff.items() if amt == -1][0]
         new_species = [el for el, amt in composition_diff.items() if amt == 1][0]
@@ -793,7 +795,6 @@ class SingleDefectParser:
         return bulk_outcar
 
     def get_stdrd_metadata(self):
-
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
             self.bulk_vr, bulk_vr_path = get_vasprun(

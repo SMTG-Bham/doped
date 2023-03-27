@@ -11,13 +11,17 @@ from pymatgen.io.vasp.outputs import Locpot
 
 from doped.pycdt.corrections.freysoldt_correction import *
 
-#Paths to files we are testing on
-bl_path = os.path.abspath(os.path.join(
-    __file__, '..', '..', '..', '..', 'test_files', 'bLOCPOT.gz'))
-dl_path = os.path.abspath(os.path.join(
-    __file__, '..', '..', '..', '..', 'test_files', 'dLOCPOT.gz'))
-fad_path = os.path.abspath(os.path.join(
-    __file__, '..', '..', '..', '..', 'test_files', 'testFreyAxisData.npz'))
+# Paths to files we are testing on
+bl_path = os.path.abspath(
+    os.path.join(__file__, "..", "..", "..", "..", "test_files", "bLOCPOT.gz")
+)
+dl_path = os.path.abspath(
+    os.path.join(__file__, "..", "..", "..", "..", "test_files", "dLOCPOT.gz")
+)
+fad_path = os.path.abspath(
+    os.path.join(__file__, "..", "..", "..", "..", "test_files", "testFreyAxisData.npz")
+)
+
 
 class FreysoldtCorrectionTest(unittest.TestCase):
     def setUp(self):
@@ -43,29 +47,29 @@ class FreysoldtCorrPlotterTest(unittest.TestCase):
         self.fcp = FreysoldtCorrPlotter(x, v_R, dft_diff, final_shift, check)
 
     def test_plot(self):
-        self.fcp.plot(title='TMPplot')
-        self.assertTrue(os.path.exists('TMPplotFreyplnravgPlot.pdf'))
-        os.system('rm TMPplotFreyplnravgPlot.pdf')
+        self.fcp.plot(title="TMPplot")
+        self.assertTrue(os.path.exists("TMPplotFreyplnravgPlot.pdf"))
+        os.system("rm TMPplotFreyplnravgPlot.pdf")
 
     def test_to_datafile(self):
-        self.fcp.to_datafile(file_name='TMPFreyAxisData')
-        self.assertTrue(os.path.exists('TMPFreyAxisData.npz'))
-        os.system('rm TMPFreyAxisData.npz')
+        self.fcp.to_datafile(file_name="TMPFreyAxisData")
+        self.assertTrue(os.path.exists("TMPFreyAxisData.npz"))
+        os.system("rm TMPFreyAxisData.npz")
 
     def test_plot_from_datafile(self):
-        self.fcp.plot_from_datfile(file_name=fad_path, title='TMPplot')
-        self.assertTrue(os.path.exists('TMPplotFreyplnravgPlot.pdf'))
-        os.system('rm TMPplotFreyplnravgPlot.pdf')
+        self.fcp.plot_from_datfile(file_name=fad_path, title="TMPplot")
+        self.assertTrue(os.path.exists("TMPplotFreyplnravgPlot.pdf"))
+        os.system("rm TMPplotFreyplnravgPlot.pdf")
 
 
 class QModelTest(unittest.TestCase):
     def setUp(self):
         self.qm = QModel()
-        self.modqm = QModel(beta=2., expnorm=0.5, gamma=0.1)
+        self.modqm = QModel(beta=2.0, expnorm=0.5, gamma=0.1)
 
     def test_rho_rec(self):
-        self.assertEqual(self.qm.rho_rec(1.), 0.77880078307140488)
-        self.assertEqual(self.modqm.rho_rec(1.), 0.6814583156907158)
+        self.assertEqual(self.qm.rho_rec(1.0), 0.77880078307140488)
+        self.assertEqual(self.modqm.rho_rec(1.0), 0.6814583156907158)
 
     def test_rho_rec_limit0(self):
         self.assertEqual(self.qm.rho_rec_limit0(), -0.25)
@@ -74,5 +78,5 @@ class QModelTest(unittest.TestCase):
 
 import unittest
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
