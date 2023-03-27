@@ -474,7 +474,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
         )
 
         cp = competing_phases.ExtrinsicCompetingPhases(
-            "ZrO2", extrinsic_species="La"
+            "ZrO2", extrinsic_species="La", api_key=self.api_key
         )  # default e_above_hull=0.1
         self.assertEqual(len(cp.entries), 5)
         self.assertEqual(
