@@ -81,7 +81,7 @@ class ChemPotsTestCase(unittest.TestCase):
     # test vaspruns
     def test_vaspruns(self):
         cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
-        path = self.path / "ZrO"
+        path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
         self.assertEqual(len(cpa.elemental), 2)
         self.assertEqual(cpa.data[0]["formula"], "O2")
@@ -96,7 +96,7 @@ class ChemPotsTestCase(unittest.TestCase):
         ext_cpa = competing_phases.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
-        path2 = self.path / "LaZrO"
+        path2 = self.path / "La_ZrO2"
         ext_cpa.from_vaspruns(path=path2, folder="relax", csv_fname=self.csv_path_ext)
         self.assertEqual(len(ext_cpa.elemental), 3)
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
