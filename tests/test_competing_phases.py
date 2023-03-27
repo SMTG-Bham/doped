@@ -317,7 +317,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         return super().tearDown()
 
-
     def test_init(self):
         self.assertEqual(len(self.cp.entries), 13)
         self.assertEqual(self.cp.entries[0].name, "O2")
@@ -327,7 +326,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
         self.assertEqual(self.cp.entries[0].data["energy"], -9.8959109375)
         self.assertEqual(self.cp.entries[1].name, "Zr")
-        self.assertAlmostEqual(self.cp.entries[1].data["total_magnetization"], 0, places=3)
+        self.assertAlmostEqual(
+            self.cp.entries[1].data["total_magnetization"], 0, places=3
+        )
         self.assertEqual(self.cp.entries[1].data["e_above_hull"], 0)
         self.assertFalse(self.cp.entries[1].data["molecule"])
         self.assertEqual(self.cp.entries[2].name, "Zr3O")
@@ -350,11 +351,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with self.assertRaises(ValueError) as e:
             nonvalid_api_key_error = ValueError(
                 "API key test is not a valid legacy Materials Project API key. These are "
-                        "available at https://legacy.materialsproject.org/open"
+                "available at https://legacy.materialsproject.org/open"
             )
             cp = competing_phases.CompetingPhases(
                 "ZrO2",
-                self.e_above_hull,
                 api_key="test",
             )
             self.assertIn(nonvalid_api_key_error, e.exception)
@@ -362,15 +362,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with self.assertRaises(ValueError) as e:
             new_api_key_error = ValueError(
                 "You are trying to use the new Materials Project (MP) API which is not supported by "
-            "doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
+                "doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
             )
             cp = competing_phases.CompetingPhases(
                 "ZrO2",
-                self.e_above_hull,
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
             self.assertIn(new_api_key_error, e.exception)
-
 
     def test_convergence_setup(self):
         # potcar spec doesnt need potcars set up for pmg and it still works
@@ -396,7 +394,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = f.readlines()
             self.assertEqual(contents[4], "GGA = Ps\n")
             self.assertEqual(contents[6], "ISIF = 2\n")
-
 
     def test_vasp_std_setup(self):
         self.cp.vasp_std_setup(potcar_spec=True)
@@ -438,42 +435,57 @@ class CompetingPhasesTestCase(unittest.TestCase):
             self.assertEqual(contents[-1], "0.500000 0.500000 0.540667 O\n")
 
 
-class MockedIshExtrinsicCompetingPhases(competing_phases.ExtrinsicCompetingPhases):
-    # sets up a fake class that can read in entries
-    # that were already collected from MP
-    def __init__(
-        self,
-        og_competing_phases,
-        ext_comp_phases,
-        system,
-        extrinsic_species,
-        e_above_hull,
-    ):
-        self.og_competing_phases = og_competing_phases
-        self.ext_competing_phases = ext_comp_phases
-        super().__init__(system, extrinsic_species, e_above_hull)
-
-
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
-    # this could be done a lot better but it works for now, also included entries in the test_data folder to make it easier to test later on if someone manages to refractor the actual code to make it more testable
     def setUp(self) -> None:
-        # this json was generated 09/02/2023 using
-        # ExtrinsicCompetingPhases(['Zr', 'O'], 'La', e_above_hull=0.015)
         self.path = Path(__file__).parents[0]
-        self.og_competing_phases = loadfn(self.path/"phases_test_data.json")
-        self.ext_competing_phases = loadfn(self.path/"phases_la_test_data.json")
-        self.system = ["Zr", "O"]
-        self.extrinsic_species = "La"
-        self.e_above_hull = 0.01
+        self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
+        self.ex_cp = competing_phases.ExtrinsicCompetingPhases(
+            "ZrO2", extrinsic_species="La", e_above_hull=0, api_key=self.api_key
+        )
         return super().setUp()
 
+    def tearDown(self) -> None:
+        if Path("competing_phases").is_dir():
+            shutil.rmtree("competing_phases")
+
+        return super().tearDown()
+
     def test_init(self):
-        macp = MockedIshExtrinsicCompetingPhases(
-            self.og_competing_phases,
-            self.ext_competing_phases,
-            system=self.system,
-            extrinsic_species=self.extrinsic_species,
-            e_above_hull=self.e_above_hull,
+        self.assertEqual(len(self.ex_cp.entries), 2)
+        self.assertEqual(self.ex_cp.entries[0].name, "La")  # definite ordering
+        self.assertEqual(self.ex_cp.entries[1].name, "La2Zr2O7")  # definite ordering
+        self.assertTrue(
+            [entry.data["e_above_hull"] == 0 for entry in self.ex_cp.entries]
         )
-        self.assertEqual(len(macp.competing_phases), 4)
-        self.assertEqual(macp.competing_phases[0]["formula"], "La")
+
+        # names of intrinsic entries: ['O2', 'Zr', 'Zr3O', 'ZrO2']
+        self.assertEqual(len(self.ex_cp.intrinsic_entries), 4)
+        self.assertEqual(self.ex_cp.intrinsic_entries[0].name, "O2")
+        self.assertEqual(self.ex_cp.intrinsic_entries[1].name, "Zr")
+        self.assertEqual(self.ex_cp.intrinsic_entries[2].name, "Zr3O")
+        self.assertEqual(self.ex_cp.intrinsic_entries[3].name, "ZrO2")
+        self.assertTrue(
+            all(
+                [
+                    entry.data["e_above_hull"] == 0
+                    for entry in self.ex_cp.intrinsic_entries
+                ]
+            )
+        )
+
+        cp = competing_phases.ExtrinsicCompetingPhases(
+            "ZrO2", extrinsic_species="La"
+        )  # default e_above_hull=0.1
+        self.assertEqual(len(cp.entries), 5)
+        self.assertEqual(
+            cp.entries[2].name, "La"
+        )  # definite ordering, same 1st & 2nd as before
+        self.assertEqual(cp.entries[3].name, "LaZr9O20")  # definite ordering
+        self.assertEqual(cp.entries[4].name, "LaZr9O20")  # definite ordering
+        self.assertTrue(
+            all([entry.data["e_above_hull"] == 0 for entry in cp.entries[:2]])
+        )
+        self.assertFalse(
+            any([entry.data["e_above_hull"] == 0 for entry in cp.entries[2:]])
+        )
+        self.assertEqual(len(cp.intrinsic_entries), 28)
