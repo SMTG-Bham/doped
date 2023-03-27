@@ -264,7 +264,9 @@ class FormationEnergyTestCase(unittest.TestCase):
         self.assertEqual(df["formation_energy"][0], 0)
         self.assertEqual(df["formula"][1], "Zr")
         self.assertEqual(df["formation_energy"][1], 0)
-        self.assertAlmostEqual(df["formation_energy"][4], -10.975428440000002)  # lowest energy ZrO2
+        self.assertAlmostEqual(
+            df["formation_energy"][4], -10.975428440000002
+        )  # lowest energy ZrO2
 
 
 class CombineExtrinsicTestCase(unittest.TestCase):
@@ -326,6 +328,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         if path.is_file():
             path2 = str(path) + ".bak"
             os.rename(str(path), path2)
+
+        self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
+
         return super().setUp()
 
     def test_init(self):
@@ -337,29 +342,61 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(len(mcp.competing_phases), 9)
         self.assertEqual(mcp.competing_phases[0]["magnetisation"], 2)
 
+    def test_live_init(self):
+        cp = competing_phases.CompetingPhases(
+            "ZrO2", e_above_hull=0.03, api_key=self.api_key
+        )
+        self.assertEqual(len(cp.entries), 13)
+        self.assertEqual(cp.entries[0].name, "O2")
+        self.assertEqual(cp.entries[0].data["total_magnetization"], 2)
+        self.assertEqual(cp.entries[0].data["e_above_hull"], 0)
+        self.assertTrue(cp.entries[0].data["molecule"])
+        self.assertEqual(cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        self.assertEqual(cp.entries[0].data["energy"], -9.8959109375)
+        self.assertEqual(cp.entries[1].name, "Zr")
+        self.assertAlmostEqual(cp.entries[1].data["total_magnetization"], 0, places=3)
+        self.assertEqual(cp.entries[1].data["e_above_hull"], 0)
+        self.assertFalse(cp.entries[1].data["molecule"])
+        self.assertEqual(cp.entries[2].name, "Zr3O")
+        self.assertEqual(cp.entries[2].data["e_above_hull"], 0)
+        self.assertEqual(cp.entries[3].name, "ZrO2")
+        self.assertEqual(cp.entries[3].data["e_above_hull"], 0)
+        self.assertEqual(cp.entries[4].name, "Zr3O")
+        self.assertEqual(cp.entries[5].name, "Zr3O")
+        self.assertEqual(cp.entries[6].name, "Zr2O")
+        self.assertEqual(cp.entries[7].name, "ZrO2")
+        self.assertEqual(cp.entries[8].name, "ZrO2")
+        self.assertEqual(cp.entries[9].name, "Zr")
+        self.assertEqual(cp.entries[10].name, "ZrO2")
+        self.assertEqual(cp.entries[11].name, "ZrO2")
+        self.assertEqual(cp.entries[12].name, "ZrO2")
+
+        self.assertNotIn("Zr4O", [e.name for e in cp.entries])
+
     def test_api_keys_errors(self):
-        with self.assertRaisesRegex(
-            ValueError, "API key test is not a valid Materials Project API key."
-        ):
-            mcp = MockedIshCompetingPhases(
-                self.entries,
-                self.system,
+        with self.assertRaises(ValueError) as e:
+            nonvalid_api_key_error = ValueError(
+                "API key test is not a valid legacy Materials Project API key. These are "
+                        "available at https://legacy.materialsproject.org/open"
+            )
+            cp = competing_phases.CompetingPhases(
+                "ZrO2",
                 self.e_above_hull,
-                full_phase_diagram=True,
                 api_key="test",
             )
+            self.assertIn(nonvalid_api_key_error, e.exception)
 
-        with self.assertRaisesRegex(
-            ValueError,
-            "You are trying to use the new Materials Project API key without the mp-api client, which is not supported by doped. Please use the legacy API key.",
-        ):
-            mcp = MockedIshCompetingPhases(
-                self.entries,
-                self.system,
+        with self.assertRaises(ValueError) as e:
+            new_api_key_error = ValueError(
+                "You are trying to use the new Materials Project (MP) API which is not supported by "
+            "doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
+            )
+            cp = competing_phases.CompetingPhases(
+                "ZrO2",
                 self.e_above_hull,
-                full_phase_diagram=True,
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
+            self.assertIn(new_api_key_error, e.exception)
 
     def test_convergence_setup(self):
         mcp = MockedIshCompetingPhases(
@@ -373,6 +410,36 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(mcp.nonmetals[0]["molecule"], False)
         # this shouldnt exist - dont need to convergence test for molecules
         self.assertFalse(Path("competing_phases/O2_EaH_0.0").is_dir())
+
+        # test if it writes out the files correctly
+        path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
+        self.assertTrue(Path(path1).is_dir())
+        with open(f"{path1}/KPOINTS", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[3], "2 1 1\n")
+
+        with open(f"{path1}/POTCAR.spec", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[0], "Zr_sv\n")
+
+        with open(f"{path1}/INCAR", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[4], "GGA = Ps\n")
+            self.assertEqual(contents[6], "ISIF = 2\n")
+
+
+    def test_live_convergence_setup(self):
+        cp = competing_phases.CompetingPhases(
+            "ZrO2", e_above_hull=0.03, api_key=self.api_key
+        )
+
+        # potcar spec doesnt need potcars set up for pmg and it still works
+        cp.convergence_setup(potcar_spec=True)
+        self.assertEqual(len(cp.metals), 6)
+        self.assertEqual(cp.metals[0].data["band_gap"], 0)
+        self.assertEqual(cp.nonmetals[0].data["molecule"], False)
+        # this shouldnt exist - dont need to convergence test for molecules
+        self.assertFalse(Path("competing_phases/O2_EaH_0").is_dir())
 
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
@@ -430,7 +497,51 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = f.readlines()
             self.assertEqual(contents[-1], "0.500000 0.500000 0.540667 O\n")
 
+
+    def test_live_vasp_std_setup(self):
+        cp = competing_phases.CompetingPhases(
+            "ZrO2", e_above_hull=0.03, api_key=self.api_key
+        )
+        cp.vasp_std_setup(potcar_spec=True)
+        self.assertEqual(len(cp.nonmetals), 6)
+        self.assertEqual(len(cp.metals), 6)
+        self.assertEqual(len(cp.molecules), 1)
+        self.assertEqual(cp.molecules[0].name, "O2")
+        self.assertEqual(cp.molecules[0].data["total_magnetization"], 2)
+        self.assertEqual(cp.molecules[0].data["molecule"], True)
+        self.assertEqual(cp.nonmetals[0].data["molecule"], False)
+
+        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
+        self.assertTrue(Path(path1).is_dir())
+        with open(f"{path1}/KPOINTS", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(
+                contents[0], "pymatgen with grid density = 911 / number of atoms\n"
+            )
+            self.assertEqual(contents[3], "4 4 4\n")
+
+        with open(f"{path1}/POTCAR.spec", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents, ["Zr_sv\n", "O"])
+
+        with open(f"{path1}/INCAR", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[0], "AEXX = 0.25\n")
+            self.assertEqual(contents[8], "ISIF = 3\n")
+            self.assertEqual(contents[5], "GGA = Pe\n")
+
+        path2 = "competing_phases/O2_EaH_0/vasp_std"
+        self.assertTrue(Path(path2).is_dir())
+        with open(f"{path2}/KPOINTS", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[3], "1 1 1\n")
+
+        with open(f"{path2}/POSCAR", "r") as f:
+            contents = f.readlines()
+            self.assertEqual(contents[-1], "0.500000 0.500000 0.540667 O\n")
+
     def test_mp_phase_diagram(self):
+        # now tested above in the live tests
         with self.assertRaises(ValueError):
             mcp = MockedIshCompetingPhases(
                 self.entries, self.system, self.e_above_hull, full_phase_diagram=False
