@@ -7,9 +7,15 @@ import numpy as np
 ## These functions are taken from the AIDE package developed by
 ## Adam Jackson and Alex Ganose (https://github.com/SMTG-UCL/aide)
 
-def get_image_charge_correction(lattice, dielectric_matrix, conv=0.3,
-                                factor=30, motif=[0.0, 0.0, 0.0],
-                                verbose=False):
+
+def get_image_charge_correction(
+    lattice,
+    dielectric_matrix,
+    conv=0.3,
+    factor=30,
+    motif=[0.0, 0.0, 0.0],
+    verbose=False,
+):
     """Calculates the anisotropic image charge correction by Sam Murphy in eV.
 
     This a rewrite of the code 'madelung.pl' written by Sam Murphy (see [1]).
@@ -48,27 +54,36 @@ def get_image_charge_correction(lattice, dielectric_matrix, conv=0.3,
     # contains r_c). This defines the size of the supercell in which
     # the real space section is performed, however only atoms within rc
     # will be conunted.
-    axis = np.array([int(r_c/a + 10) for a in latt])
+    axis = np.array([int(r_c / a + 10) for a in latt])
 
     # Calculate supercell parallelpiped and dimensions
     sup_latt = np.dot(np.diag(axis), lattice)
 
     # Determine which of the lattice parameters is the largest and determine
     # reciprocal space supercell
-    recip_axis = np.array([int(x) for x in factor * max(latt)/latt])
+    recip_axis = np.array([int(x) for x in factor * max(latt) / latt])
     recip_volume = abs(np.dot(np.cross(lattice[0], lattice[1]), lattice[2]))
 
     # Calculatate the reciprocal lattice vectors (need factor of 2 pi)
     recip_latt = np.linalg.inv(lattice).T * 2 * np.pi
 
-    real_space = _get_real_space(conv, inv_diel, det_diel, latt, longest,
-                                 r_c, axis, sup_latt)
-    reciprocal = _get_recip(conv, inv_diel, det_diel, latt, recip_axis,
-                            recip_volume, recip_latt, dielectric_matrix)
+    real_space = _get_real_space(
+        conv, inv_diel, det_diel, latt, longest, r_c, axis, sup_latt
+    )
+    reciprocal = _get_recip(
+        conv,
+        inv_diel,
+        det_diel,
+        latt,
+        recip_axis,
+        recip_volume,
+        recip_latt,
+        dielectric_matrix,
+    )
 
     # calculate the other terms and the final Madelung potential
-    third_term = -2*conv/np.sqrt(np.pi*det_diel)
-    fourth_term = -3.141592654/(recip_volume*conv**2)
+    third_term = -2 * conv / np.sqrt(np.pi * det_diel)
+    fourth_term = -3.141592654 / (recip_volume * conv**2)
     madelung = -(real_space + reciprocal + third_term + fourth_term)
 
     # convert to atomic units
@@ -85,9 +100,10 @@ def get_image_charge_correction(lattice, dielectric_matrix, conv=0.3,
         lany = 0.65 * makov
         correction[q] = makov
 
-# TODO: Use tabulate
+    # TODO: Use tabulate
     if verbose:
-        logging.info("""
+        logging.info(
+            """
     Results                      v_M^scr    dE(q=1) /eV
     -----------------------------------------------------
     Real space contribution    =  {:.6f}     {:.6f}
@@ -97,26 +113,38 @@ def get_image_charge_correction(lattice, dielectric_matrix, conv=0.3,
     -----------------------------------------------------
     Final Madelung potential   = {:.6f}     {:.6f}
     -----------------------------------------------------""".format(
-            real_space, real_ev, reciprocal, recip_ev, third_term, third_ev,
-            fourth_term, fourth_ev, madelung, madelung_ev))
+                real_space,
+                real_ev,
+                reciprocal,
+                recip_ev,
+                third_term,
+                third_ev,
+                fourth_term,
+                fourth_ev,
+                madelung,
+                madelung_ev,
+            )
+        )
 
-        logging.info("""
+        logging.info(
+            """
     Here are your final corrections:
     +--------+------------------+-----------------+
     | Charge | Point charge /eV | Lany-Zunger /eV |
-    +--------+------------------+-----------------+""")
+    +--------+------------------+-----------------+"""
+        )
         for q in range(1, 8):
             makov = 0.5 * madelung * q**2 * conversion
             lany = 0.65 * makov
             correction[q] = makov
-            logging.info("|   {}    |     {:10f}   |    {:10f}   |".
-                         format(q, makov, lany))
+            logging.info(
+                "|   {}    |     {:10f}   |    {:10f}   |".format(q, makov, lany)
+            )
         logging.info("+--------+------------------+-----------------+")
     return correction
 
 
-def _get_real_space(conv, inv_diel, det_diel, latt, longest, r_c, axis,
-                    sup_latt):
+def _get_real_space(conv, inv_diel, det_diel, latt, longest, r_c, axis, sup_latt):
     # Calculate real space component
     real_space = 0.0
     axis_ranges = [range(-a, a) for a in axis]
@@ -137,17 +165,27 @@ def _get_real_space(conv, inv_diel, det_diel, latt, longest, r_c, axis,
             mod = np.dot(d_super_cart, inv_diel)
             dot_prod = np.dot(mod, d_super_cart)
             N = np.sqrt(dot_prod)
-            contribution = 1/np.sqrt(det_diel) * erfc(conv * N)/N
+            contribution = 1 / np.sqrt(det_diel) * erfc(conv * N) / N
             return contribution
         else:
-            return 0.
-    real_space = sum(_real_loop_function(mno) for mno in
-                     itertools.product(*axis_ranges))
+            return 0.0
+
+    real_space = sum(
+        _real_loop_function(mno) for mno in itertools.product(*axis_ranges)
+    )
     return real_space
 
 
-def _get_recip(conv, inv_diel, det_diel, latt, recip_axis, recip_volume,
-               recip_latt, dielectric_matrix):
+def _get_recip(
+    conv,
+    inv_diel,
+    det_diel,
+    latt,
+    recip_axis,
+    recip_volume,
+    recip_latt,
+    dielectric_matrix,
+):
     # convert factional motif to reciprocal space and
     # calculate reciprocal space supercell parallelpiped
     recip_sup_latt = np.dot(np.diag(recip_axis), recip_latt)
@@ -163,11 +201,13 @@ def _get_recip(conv, inv_diel, det_diel, latt, recip_axis, recip_volume,
         if any(mno):
             mod = np.dot(d_super_cart, dielectric_matrix)
             dot_prod = np.dot(mod, d_super_cart)
-            contribution = (exp(-dot_prod / (4 * conv**2)) / dot_prod)
+            contribution = exp(-dot_prod / (4 * conv**2)) / dot_prod
             return contribution
         else:
-            return 0.
-    reciprocal = sum(_recip_loop_function(mno) for mno in
-                     itertools.product(*axis_ranges))
+            return 0.0
+
+    reciprocal = sum(
+        _recip_loop_function(mno) for mno in itertools.product(*axis_ranges)
+    )
     scale_factor = 4 * np.pi / recip_volume
     return reciprocal * scale_factor
