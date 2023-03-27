@@ -3,7 +3,7 @@
         "ALGO": "Normal",
         "EDIFF": 1e-06,
         "EDIFFG": -0.01,
-        "ENCUT": 480,
+        "ENCUT": 350,
         "GGA": "PS",
         "ICORELEVEL": 1,
         "ISIF": 2,
