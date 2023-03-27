@@ -2,15 +2,16 @@
 
 from __future__ import division
 
-import os
 import glob
+import os
 import unittest
 
 from monty.json import MontyDecoder
-from monty.tempfile import ScratchDir
 from monty.serialization import loadfn
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
+from monty.tempfile import ScratchDir
 from pymatgen.core.structure import Structure
+from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
+
 from doped.pycdt.utils.vasp import *
 
 __status__ = "Development"

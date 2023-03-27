@@ -2,15 +2,15 @@
 
 __status__ = "Development"
 
-import numpy as np
 import matplotlib
-matplotlib.use('agg')
+import numpy as np
 
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+matplotlib.use('agg')
 
 import warnings
 
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 
 warnings.warn("Replaced PyCDT usage of DefectPlotter objects with plotting ability of"
               "DefectPhaseDiagram from pymatgen.analysis.defects.thermodynamics\n"

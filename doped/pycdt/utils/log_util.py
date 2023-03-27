@@ -2,9 +2,9 @@
 
 __status__ = "Development"
 
-import os
 import logging
 import logging.config
+import os
 
 from monty.serialization import loadfn
 

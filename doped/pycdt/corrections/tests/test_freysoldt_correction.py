@@ -8,6 +8,7 @@ import os
 import unittest
 
 from pymatgen.io.vasp.outputs import Locpot
+
 from doped.pycdt.corrections.freysoldt_correction import *
 
 #Paths to files we are testing on
@@ -72,5 +73,6 @@ class QModelTest(unittest.TestCase):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()
