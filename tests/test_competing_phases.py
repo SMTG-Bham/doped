@@ -319,7 +319,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         # this json was generated 09/02/2023 using
         # CompetingPhases(['Zr', 'O'], e_above_hull=0.01)
-        self.entries = loadfn("entries_test_data.json")
+        self.path = Path(__file__).parents[0]
+        self.entries = loadfn(self.path/"entries_test_data.json")
         self.system = ["Zr", "O"]
         self.e_above_hull = 0.01
 
@@ -588,8 +589,9 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         # this json was generated 09/02/2023 using
         # ExtrinsicCompetingPhases(['Zr', 'O'], 'La', e_above_hull=0.015)
-        self.og_competing_phases = loadfn("phases_test_data.json")
-        self.ext_competing_phases = loadfn("phases_la_test_data.json")
+        self.path = Path(__file__).parents[0]
+        self.og_competing_phases = loadfn(self.path/"phases_test_data.json")
+        self.ext_competing_phases = loadfn(self.path/"phases_la_test_data.json")
         self.system = ["Zr", "O"]
         self.extrinsic_species = "La"
         self.e_above_hull = 0.01
