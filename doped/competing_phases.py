@@ -1,21 +1,21 @@
 import contextlib
 import copy
-from pathlib import Path, PurePath
-import warnings
 import json
-import pandas as pd
+import warnings
+from pathlib import Path, PurePath
 
-from pymatgen.ext.matproj import MPRester
+import pandas as pd
+from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
+from pymatgen.core import Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
-from pymatgen.io.vasp.sets import DictSet, BadInputSetWarning
+from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
-from pymatgen.core import Structure, Composition, Element
+from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+
 from doped.pycdt.utils.parse_calculations import get_vasprun
 from doped.pycdt.utils.vasp import _import_psp
-
 
 # globally ignore:
 warnings.filterwarnings("ignore", category=BadInputSetWarning)

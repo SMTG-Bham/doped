@@ -13,12 +13,13 @@ sxdefectalign functionalities with a python wrapper.
 
 __status__ = "Development"
 
-import subprocess
 import os
-import numpy as np
+import subprocess
 
-from pymatgen.io.vasp.outputs import Locpot
+import numpy as np
 from monty.tempfile import ScratchDir
+from pymatgen.io.vasp.outputs import Locpot
+
 from doped.pycdt.utils.parse_calculations import get_locpot
 
 

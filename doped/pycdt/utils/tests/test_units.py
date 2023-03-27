@@ -5,7 +5,9 @@ from __future__ import division
 __status__ = "Development"
 
 import unittest
-from doped.pycdt.utils.units import k_to_eV, eV_to_k
+
+from doped.pycdt.utils.units import eV_to_k, k_to_eV
+
 
 class EnergyFunctionsTest(unittest.TestCase):
     def test_k_to_eV(self):
@@ -17,5 +19,6 @@ class EnergyFunctionsTest(unittest.TestCase):
 
 
 import unittest
+
 if __name__ == '__main__':
     unittest.main()

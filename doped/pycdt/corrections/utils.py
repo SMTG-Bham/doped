@@ -5,10 +5,12 @@ correction metodules
 
 import math
 import warnings
+
 import numpy as np
+
 norm = np.linalg.norm
 
-from doped.pycdt.utils.units import eV_to_k, invang_to_ev, ang_to_bohr
+from doped.pycdt.utils.units import ang_to_bohr, eV_to_k, invang_to_ev
 
 warnings.warn("Replacing PyCDT correction utils with use "
               "corresponding objects in pymatgen.analysis.defects.corrections\n"
