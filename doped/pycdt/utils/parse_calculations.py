@@ -371,7 +371,9 @@ class SingleDefectParser:
     def __init__(
         self,
         defect_entry,
-        compatibility=DefectCompatibility(plnr_avg_var_tol=0.0002),
+        compatibility=DefectCompatibility(plnr_avg_var_tol=0.0002,
+                                          use_bandfilling=False,
+                                          use_bandedgeshift=False),
         defect_vr=None,
         bulk_vr=None,
     ):

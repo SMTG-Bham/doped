@@ -18,6 +18,8 @@ class ChemPotsTestCase(unittest.TestCase):
         self.extrinsic_species = "La"
         self.csv_path = self.path / "zro2_competing_phase_energies.csv"
         self.csv_path_ext = self.path / "zro2_la_competing_phase_energies.csv"
+        self.parsed_chempots = loadfn(self.path / "zro2_chempots.json")
+        self.parsed_ext_chempots = loadfn(self.path / "zro2_la_chempots.json")
 
     def tearDown(self) -> None:
         if Path("chempot_limits.csv").is_file():
@@ -77,6 +79,21 @@ class ChemPotsTestCase(unittest.TestCase):
         df = self.ext_cpa.calculate_chempots()
         self.assertEqual(list(df["La_limiting_phase"])[0], "La2Zr2O7")
         self.assertAlmostEqual(list(df["La"])[0], -9.46298748)
+
+
+    def test_cpa_chem_limits(self):
+        # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
+        stable_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa.from_csv(self.csv_path)
+        self.assertDictEqual(stable_cpa.chem_limits, self.parsed_chempots)
+
+        self.ext_cpa = competing_phases.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        self.ext_cpa.from_csv(self.csv_path_ext)
+        self.assertDictEqual(self.ext_cpa.chem_limits["elemental_refs"], self.parsed_ext_chempots[
+            "elemental_refs"])
+
 
     # test vaspruns
     def test_vaspruns(self):
