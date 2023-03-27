@@ -15,10 +15,10 @@ class EnergyFunctionsTest(unittest.TestCase):
         self.assertAlmostEqual(k_to_eV(g), 0.5333804)
 
     def test_eV_to_k(self):
-        self.assertAlmostEqual(eV_to_k(1.), 0.9681404248678961)
+        self.assertAlmostEqual(eV_to_k(1.0), 0.9681404248678961)
 
 
 import unittest
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

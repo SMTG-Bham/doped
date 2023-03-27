@@ -30,7 +30,9 @@ def get_mp_chempots_from_dpd(dpd):
                 bulk_struct = Structure.from_dict(bulk_struct)
             bulk_energy = dpd.entries[0].parameters["bulk_energy"]
         except:
-            print("Failure in grabbing bulk energy and structure for chemical potential parsing.")
+            print(
+                "Failure in grabbing bulk energy and structure for chemical potential parsing."
+            )
     if not bulk_energy:
         print(
             "Grabbing chemical potentials without analyzing stability of bulk structure. "
@@ -86,12 +88,19 @@ class ChemPotAnalyzer:
         entries = pd.all_entries
         if not any(
             [
-                (ent.composition == self.bulk_ce.composition and ent.energy == self.bulk_ce.energy)
+                (
+                    ent.composition == self.bulk_ce.composition
+                    and ent.energy == self.bulk_ce.energy
+                )
                 for ent in entries
             ]
         ):
             entries.append(
-                PDEntry(self.bulk_ce.composition, self.bulk_ce.energy, attribute="Bulk Material")
+                PDEntry(
+                    self.bulk_ce.composition,
+                    self.bulk_ce.energy,
+                    attribute="Bulk Material",
+                )
             )
             pd = PhaseDiagram(entries)
 
@@ -197,7 +206,9 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         entry_list = self.entries["bulk_derived"]
         pd = PhaseDiagram(entry_list)
 
-        decomp_en = round(pd.get_decomp_and_e_above_hull(self.bulk_ce, allow_negative=True)[1], 4)
+        decomp_en = round(
+            pd.get_decomp_and_e_above_hull(self.bulk_ce, allow_negative=True)[1], 4
+        )
 
         stable_composition_exists = False
         for i in pd.stable_entries:
@@ -269,7 +280,9 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
 
                 for key in chem_lims.keys():
                     face_list = key.split("-")
-                    blk, blknom, subnom = self.diff_bulk_sub_phases(face_list, sub_el=sub_el)
+                    blk, blknom, subnom = self.diff_bulk_sub_phases(
+                        face_list, sub_el=sub_el
+                    )
                     # if number of facets from bulk phase diagram is
                     # equal to bulk species then full_sub_approach says this
                     # can be grouped with rest of structures
@@ -277,7 +290,9 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                         if blknom not in finchem_lims.keys():
                             finchem_lims[blknom] = chem_lims[key]
                         else:
-                            finchem_lims[blknom][Element(sub_el)] = chem_lims[key][Element(sub_el)]
+                            finchem_lims[blknom][Element(sub_el)] = chem_lims[key][
+                                Element(sub_el)
+                            ]
                         if "name-append" not in finchem_lims[blknom].keys():
                             finchem_lims[blknom]["name-append"] = subnom
                         else:
@@ -290,8 +305,12 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
             overdependent_chempot = False
             facets_to_delete = []
             for facet_name, cps in finchem_lims.items():
-                cp_key_num = (len(cps.keys()) - 1) if "name-append" in cps else len(cps.keys())
-                if cp_key_num != (len(self.bulk_species_symbol) + len(self.sub_species)):
+                cp_key_num = (
+                    (len(cps.keys()) - 1) if "name-append" in cps else len(cps.keys())
+                )
+                if cp_key_num != (
+                    len(self.bulk_species_symbol) + len(self.sub_species)
+                ):
                     facets_to_delete.append(facet_name)
                     logger.info(
                         "Not using facet {} because insufficient number of bulk facets for "
@@ -311,7 +330,9 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                     "multiple sub species exist this could take a while/break the code..."
                 )
             else:
-                finchem_lims = {k: v for k, v in finchem_lims.items() if k not in facets_to_delete}
+                finchem_lims = {
+                    k: v for k, v in finchem_lims.items() if k not in facets_to_delete
+                }
 
             if not overdependent_chempot:
                 chem_lims = {}
@@ -357,13 +378,17 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         self.bulk_species_symbol = [s.symbol for s in redcomp.elements]
 
         if not self.entries:
-            if full_sub_approach:  # this can be time consuming if several sub species exist
+            if (
+                full_sub_approach
+            ):  # this can be time consuming if several sub species exist
                 species_symbols = self.bulk_species_symbol[:]
                 for sub_el in self.sub_species:
                     species_symbols.append(sub_el)
 
                 with MPRester(api_key=self.mapi_key) as mp:
-                    self.entries["bulk_derived"] = mp.get_entries_in_chemsys(species_symbols)
+                    self.entries["bulk_derived"] = mp.get_entries_in_chemsys(
+                        species_symbols
+                    )
 
                 self.entries["subs_set"] = {sub_el: [] for sub_el in self.sub_species}
                 for entry in self.entries["bulk_derived"]:
@@ -395,13 +420,17 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         logger = logging.getLogger(__name__)
 
         if self.bulk_ce:
-            self.bulk_species_symbol = [s.symbol for s in self.bulk_ce.composition.elements]
+            self.bulk_species_symbol = [
+                s.symbol for s in self.bulk_ce.composition.elements
+            ]
             self.redcomp = self.bulk_ce.composition.reduced_composition
             bce_override = True
         elif self.mpid:
             with MPRester(api_key=self.mapi_key) as mp:
                 self.bulk_ce = mp.get_entry_by_material_id(self.mpid)
-            self.bulk_species_symbol = [s.symbol for s in self.bulk_ce.composition.elements]
+            self.bulk_species_symbol = [
+                s.symbol for s in self.bulk_ce.composition.elements
+            ]
             self.redcomp = self.bulk_ce.composition.reduced_composition
             bce_override = False
         else:
@@ -418,7 +447,9 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                 species_symbols.append(sub_el)
 
             with MPRester(api_key=self.mapi_key) as mp:
-                self.entries["bulk_derived"] = mp.get_entries_in_chemsys(species_symbols)
+                self.entries["bulk_derived"] = mp.get_entries_in_chemsys(
+                    species_symbols
+                )
 
             self.entries["subs_set"] = {sub_el: [] for sub_el in self.sub_species}
             for entry in self.entries["bulk_derived"]:
@@ -429,11 +460,16 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         else:  # this is recommended approach for running sub species seperately (assumes subs
             # are in dilute concentrations)
             with MPRester(api_key=self.mapi_key) as mp:
-                self.entries["bulk_derived"] = mp.get_entries_in_chemsys(self.bulk_species_symbol)
+                self.entries["bulk_derived"] = mp.get_entries_in_chemsys(
+                    self.bulk_species_symbol
+                )
                 if self.mpid and bce_override:  # overriding bulk_ce if mp-id is given.
                     self.bulk_ce = mp.get_entry_by_material_id(self.mpid)
             if not self.entries:
-                msg = "Could not fetch bulk entries for atomic chempots!" "MPRester query error."
+                msg = (
+                    "Could not fetch bulk entries for atomic chempots!"
+                    "MPRester query error."
+                )
                 logger.warning(msg)
                 raise ValueError(msg)
 
@@ -491,7 +527,9 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         self.entries = kwargs.get("entries", {})
         self.mapi_key = kwargs.get("mapi_key", None)
 
-    def read_phase_diagram_and_chempots(self, full_sub_approach=False, include_mp_entries=True):
+    def read_phase_diagram_and_chempots(
+        self, full_sub_approach=False, include_mp_entries=True
+    ):
         """
         Once phase diagram has been set up and run by user (in a folder
         called "PhaseDiagram"), this method parses and prints the chemical
@@ -523,16 +561,20 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         # pymatgen functionality for importing computed entries below...
         personal_entry_list = []
         for structfile in os.listdir(pdfile):
-            if os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml")) or os.path.exists(
-                os.path.join(pdfile, structfile, "vasprun.xml.gz")
-            ):
+            if os.path.exists(
+                os.path.join(pdfile, structfile, "vasprun.xml")
+            ) or os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml.gz")):
                 try:
                     print("loading ", structfile)
                     from doped.pycdt.utils.parse_calculations import get_vasprun
 
-                    vr, vr_path = get_vasprun(os.path.join(pdfile, structfile, "vasprun.xml"))
+                    vr, vr_path = get_vasprun(
+                        os.path.join(pdfile, structfile, "vasprun.xml")
+                    )
                     vr_entry = vr.get_computed_entry()
-                    pdentry = PDEntry(vr_entry.composition, vr_entry.energy, attribute=structfile)
+                    pdentry = PDEntry(
+                        vr_entry.composition, vr_entry.energy, attribute=structfile
+                    )
                     personal_entry_list.append(pdentry)
                 except:
                     print("Could not load ", structfile)
@@ -566,14 +608,20 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         # Supplement entries to phase diagram with those from MP database
         if include_mp_entries:
             mpcpa = MPChemPotAnalyzer(
-                bulk_ce=self.bulk_ce, sub_species=self.sub_species, mapi_key=self.mapi_key
+                bulk_ce=self.bulk_ce,
+                sub_species=self.sub_species,
+                mapi_key=self.mapi_key,
             )
             tempcl = mpcpa.analyze_GGA_chempots(
                 full_sub_approach=full_sub_approach
             )  # Use MPentries
 
             curr_pd = PhaseDiagram(
-                list(set().union(mpcpa.entries["bulk_derived"], mpcpa.entries["subs_set"]))
+                list(
+                    set().union(
+                        mpcpa.entries["bulk_derived"], mpcpa.entries["subs_set"]
+                    )
+                )
             )
             stable_idlist = {
                 i.composition.reduced_composition: [i.energy_per_atom, i.entry_id, i]
@@ -590,7 +638,12 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                         #     personal_entry_list.append(mplist[2])
                         matched = True
                 if not matched:
-                    print("Adding entry from MP-database:", mpcomp, "(entry-id:", mplist[1])
+                    print(
+                        "Adding entry from MP-database:",
+                        mpcomp,
+                        "(entry-id:",
+                        mplist[1],
+                    )
                     personal_entry_list.append(mplist[2])
         else:
             # personal_entry_list.append(self.bulk_ce)
@@ -599,12 +652,17 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             # THIS
             eltcount = {elt: 0 for elt in set(self.bulk_ce.composition.elements)}
             for pentry in personal_entry_list:
-                if pentry.is_element and pentry.composition.elements[0] in eltcount.keys():
+                if (
+                    pentry.is_element
+                    and pentry.composition.elements[0] in eltcount.keys()
+                ):
                     eltcount[pentry.composition.elements[0]] += 1
             for elt, eltnum in eltcount.items():
                 if not eltnum:
                     s = Structure(
-                        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [elt], [[0, 0, 0]]
+                        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                        [elt],
+                        [[0, 0, 0]],
                     )
                     eltentry = ComputedStructureEntry(s, 0.0)
                     print(
@@ -615,12 +673,18 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                         "potential results for regions "
                         "of phase diagram that involve the element " + str(elt)
                     )
-                    personal_entry_list.append(PDEntry(eltentry.composition, eltentry.energy))
+                    personal_entry_list.append(
+                        PDEntry(eltentry.composition, eltentry.energy)
+                    )
 
         personal_entry_list.append(
-            PDEntry(self.bulk_ce.composition, self.bulk_ce.energy, attribute="Bulk Material")
+            PDEntry(
+                self.bulk_ce.composition, self.bulk_ce.energy, attribute="Bulk Material"
+            )
         )
-        unique_entries = list(set(personal_entry_list))  # remove duplicate entries if present
+        unique_entries = list(
+            set(personal_entry_list)
+        )  # remove duplicate entries if present
 
         # compute chemical potentials
         if full_sub_approach:
@@ -669,7 +733,9 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
 
                 for key in chem_lims.keys():
                     face_list = key.split("-")
-                    blk, blknom, subnom = self.diff_bulk_sub_phases(face_list, sub_el=sub_el)
+                    blk, blknom, subnom = self.diff_bulk_sub_phases(
+                        face_list, sub_el=sub_el
+                    )
                     # if one less than number of bulk species then can be
                     # grouped with rest of structures
                     if len(blk) == len(self.bulk_species_symbol):
@@ -690,8 +756,12 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             overdependent_chempot = False
             facets_to_delete = []
             for facet_name, cps in finchem_lims.items():
-                cp_key_num = (len(cps.keys()) - 1) if "name-append" in cps else len(cps.keys())
-                if cp_key_num != (len(self.bulk_species_symbol) + len(self.sub_species)):
+                cp_key_num = (
+                    (len(cps.keys()) - 1) if "name-append" in cps else len(cps.keys())
+                )
+                if cp_key_num != (
+                    len(self.bulk_species_symbol) + len(self.sub_species)
+                ):
                     facets_to_delete.append(facet_name)
                     print(
                         "Not using facet {} because insufficient number of bulk facets for "
@@ -711,7 +781,9 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     "multiple sub species exist this could take a while/break the code..."
                 )
             else:
-                finchem_lims = {k: v for k, v in finchem_lims.items() if k not in facets_to_delete}
+                finchem_lims = {
+                    k: v for k, v in finchem_lims.items() if k not in facets_to_delete
+                }
 
             if not overdependent_chempot:
                 chem_lims = {}
@@ -739,7 +811,8 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
         chem_lims = {
             "facets": chem_lims,
             "elemental_refs": {
-                elt: ent.energy_per_atom for elt, ent in self.phase_diagram.el_refs.items()
+                elt: ent.energy_per_atom
+                for elt, ent in self.phase_diagram.el_refs.items()
             },
             "facets_wrt_elt_refs": {},
         }
@@ -756,7 +829,9 @@ class UserChemPotInputGenerator(object):
     For setting up phase diagram for user, based on structures that exist in the MP database
     """
 
-    def __init__(self, bulk_composition, sub_species=set(), path_base=".", mapi_key=None):
+    def __init__(
+        self, bulk_composition, sub_species=set(), path_base=".", mapi_key=None
+    ):
         """
         Args:
             bulk_composition : Composition of bulk as a pymatgen Composition
@@ -843,7 +918,9 @@ class UserChemPotInputGenerator(object):
             )  # all elements in
             # phase diagram
         else:
-            if len(self.bulk_composition) == 2:  # neccessary because binary species have chempots
+            if (
+                len(self.bulk_composition) == 2
+            ):  # neccessary because binary species have chempots
                 # written as "A-rich, B-rich"
                 setupphases = set(
                     [
@@ -854,16 +931,26 @@ class UserChemPotInputGenerator(object):
                 )
             else:
                 setupphases = set(
-                    [phase for facet in MPgga_muvals.keys() for phase in facet.split("-")]
+                    [
+                        phase
+                        for facet in MPgga_muvals.keys()
+                        for phase in facet.split("-")
+                    ]
                 )  # just local facets
 
-            if include_elements:  # add elemental reference phases to structures to setup
+            if (
+                include_elements
+            ):  # add elemental reference phases to structures to setup
                 for localentry in self.MPC.entries["bulk_derived"]:
                     if localentry.is_element:
-                        setupphases.add(localentry.name)  # set.add() only adds entry if not
+                        setupphases.add(
+                            localentry.name
+                        )  # set.add() only adds entry if not
                         # already in set
 
-        structures_to_setup = {}  # this will be a list of structure objects which need to be
+        structures_to_setup = (
+            {}
+        )  # this will be a list of structure objects which need to be
         # setup locally
 
         # create phase diagram object for analyzing PBE-GGA energetics of structures computed in
@@ -873,7 +960,8 @@ class UserChemPotInputGenerator(object):
 
         for entry in full_structure_entries:
             if (entry.name in setupphases) and (
-                pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[1] <= energy_above_hull
+                pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[1]
+                <= energy_above_hull
             ):
                 with MPRester(api_key=self.mapi_key) as mp:
                     localstruct = mp.get_structure_by_material_id(entry.entry_id)
@@ -884,7 +972,9 @@ class UserChemPotInputGenerator(object):
                     + "_EaH="
                     + f"{pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[1]:.2g}"
                 )
-                if name in structures_to_setup.keys():  # Is 2 sig. figures rounding to same
+                if (
+                    name in structures_to_setup.keys()
+                ):  # Is 2 sig. figures rounding to same
                     # value for two entries?
                     name = (
                         str(entry.name)
@@ -904,9 +994,9 @@ class UserChemPotInputGenerator(object):
 
                 structures_to_setup[name] = {
                     "Structure": localstruct,
-                    "Energy above Hull": pd.get_decomp_and_e_above_hull(entry, allow_negative=True)[
-                        1
-                    ],
+                    "Energy above Hull": pd.get_decomp_and_e_above_hull(
+                        entry, allow_negative=True
+                    )[1],
                     "MP Entry ID": entry.entry_id,
                     "Space Group": sg_symbol,
                 }
@@ -915,12 +1005,18 @@ class UserChemPotInputGenerator(object):
         if not write_files:
             print("Returning chempot structures, but not making POSCAR files.")
         else:
-            if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and not overwrite:
+            if (
+                os.path.exists(os.path.join(self.path_base, "PhaseDiagram"))
+                and not overwrite
+            ):
                 print(
                     "PhaseDiagram folder already exists! Set overwrite = True if you want me to overwrite it"
                 )
             else:
-                if os.path.exists(os.path.join(self.path_base, "PhaseDiagram")) and overwrite:
+                if (
+                    os.path.exists(os.path.join(self.path_base, "PhaseDiagram"))
+                    and overwrite
+                ):
                     print(
                         "PhaseDiagram folder already exists, but f@ck it we're gonna (over)write files"
                     )
