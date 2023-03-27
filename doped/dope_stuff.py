@@ -249,9 +249,10 @@ def single_formation_energy_table(
             ]  # With 0 chemical potentials, at the calculation
             # fermi level
         header += ["Formation Energy"]
-        row += [
-            f"{defect_entry.formation_energy(chemical_potentials=chempots, fermi_level=fermi_level):.2f} eV"
-        ]
+        formation_energy = defect_entry.formation_energy(
+            chemical_potentials=chempots, fermi_level=fermi_level
+        )
+        row += [f"{formation_energy:.2f} eV"]
 
         table.append(row)
     table = sorted(table, key=itemgetter(0, 1))
@@ -622,7 +623,7 @@ some defects will have the same line colour). Recommended to change/set colormap
                     )
             y_trans.append(form_en)
             tl_labels.append(
-                f"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
+                rf"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
                 f"{min(chargeset):{'+' if min(chargeset) else ''}})"
             )
             tl_label_type.append(
@@ -659,14 +660,14 @@ some defects will have the same line colour). Recommended to change/set colormap
     for dfct in for_legend:
         flds = dfct.name.split("_")
         if flds[0] == "Vac":
-            base = "$\mathrm{V"
+            base = r"$\mathrm{V"
             sub_str = "_{" + flds[1] + "}}$"
         elif flds[0] == "Sub":
             flds = dfct.name.split("_")
-            base = "$\mathrm{" + flds[1]
+            base = r"$\mathrm{" + flds[1]
             sub_str = "_{" + flds[3] + "}}$"
         elif flds[0] == "Int":
-            base = "$\mathrm{" + flds[1]
+            base = r"$\mathrm{" + flds[1]
             sub_str = "_{i}}$"
         else:
             base = dfct.name
@@ -801,8 +802,7 @@ def _plot_chemical_potential_table(
         ax = plt.gca()
 
     labels = [""] + [
-        "$\mathregular{{\mu_{{{}}}}}$,".format(s)
-        for s in sorted(chemical_potentials.keys())
+        rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(chemical_potentials.keys())
     ]
     # add if else here, to use 'facets' if no wrt_elts, and don't say wrt elt_refs etc.
     labels[1] = "(" + labels[1]
@@ -919,18 +919,16 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
             potalign = defect_entry.parameters["freysoldt_meta"][
                 "freysoldt_potential_alignment_correction"
             ]
-            makove_payne_pc_correction = lz_image_charge_corrections[
+            mp_pc_corr = lz_image_charge_corrections[
                 abs(defect_entry.charge)
-            ]
+            ]  # Makov-Payne PC correction
             defect_entry.parameters.update(
                 {
                     "Lany-Zunger_Corrections": {
                         "(Freysoldt)_Potential_Alignment_Correction": potalign,
-                        "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
-                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65
-                        * makove_payne_pc_correction,
-                        "Total_Lany-Zunger_Correction": potalign
-                        + 0.65 * makove_payne_pc_correction,
+                        "Makov-Payne_Image_Charge_Correction": mp_pc_corr,
+                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * mp_pc_corr,
+                        "Total_Lany-Zunger_Correction": potalign + 0.65 * mp_pc_corr,
                     }
                 }
             )
@@ -1177,14 +1175,14 @@ def _all_lines_aide_pmg_plot(
         defnom = chg_ent.name + f"_{chg_ent.charge}"
         flds = defnom.split("_")
         if flds[0] == "Vac":
-            base = "$\mathrm{V"
+            base = r"$\mathrm{V"
             sub_str = "_{" + flds[1] + "}}$"
         elif flds[0] == "Sub":
             flds = defnom.split("_")
-            base = "$\mathrm{" + flds[1]
+            base = r"$\mathrm{" + flds[1]
             sub_str = "_{" + flds[3] + "}}$"
         elif flds[0] == "Int":
-            base = "$\mathrm{" + flds[1]
+            base = r"$\mathrm{" + flds[1]
             sub_str = "_{i}}$"
         else:
             base = defnom

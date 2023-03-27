@@ -23,9 +23,9 @@ def _check_pmg_compatibility():
 
     if v_pmg_def:
         raise TypeError(
-            f"You have the `pymatgen-analysis-defects` package installed, which is currently "
-            f"incompatible with `doped`. Please uninstall `pymatgen-analysis-defects` (with `pip "
-            f"uninstall pymatgen-analysis-defects`) and restart the kernel."
+            "You have the `pymatgen-analysis-defects` package installed, which is currently "
+            "incompatible with `doped`. Please uninstall `pymatgen-analysis-defects` (with `pip "
+            "uninstall pymatgen-analysis-defects`) and restart the kernel."
         )
 
     if v_pmg > "2022.7.25":
