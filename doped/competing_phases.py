@@ -283,7 +283,7 @@ class CompetingPhases:
         # set bulk composition (Composition(Composition("LiFePO4")) = Composition("LiFePO4")))
         self.bulk_comp = Composition(composition)
 
-        # first if just for the tests
+        # test api_key:
         if api_key is not None:
             if len(api_key) == 32:
                 raise ValueError(
@@ -312,15 +312,6 @@ class CompetingPhases:
         self.MP_full_pd_entries.sort(
             key=lambda x: x.data["e_above_hull"]
         )  # sort by e_above_hull
-
-        # the has attr is there just for testing, so we don't have to keep querying MP
-        if not hasattr(self, "MP_full_pd_entries"):
-            with MPRester(api_key=self.api_key) as mpr:
-                self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                    list(self.bulk_comp.as_dict().keys()),
-                    inc_structure="initial",
-                    property_data=self.data,
-                )
 
         pd_entries = []
         # check that none of the elemental ones are molecules in a box
@@ -1031,8 +1022,6 @@ class CompetingPhasesAnalyzer:
         """
         Args:
             system (str): The  'reduced formula' of the bulk composition
-            extrinsic_species (str): Dopant species
-            system (str): The  'reduced formula' of the bulk composition
             extrinsic_species (str): Dopant species - can only deal with one at a time (see
             notebook in examples folder for more complex cases)
         """
@@ -1243,19 +1232,21 @@ class CompetingPhasesAnalyzer:
             # lowest energy bulk phase
             self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
-        self.intrinsic_phase_diagram = PhaseDiagram(
+        self._intrinsic_phase_diagram = PhaseDiagram(
             pd_entries_intrinsic, map(Element, self.bulk_composition.elements)
         )
 
         # check if it's stable and if not error out
-        if self.bulk_pde not in self.intrinsic_phase_diagram.stable_entries:
-            eah = self.intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
+        if self.bulk_pde not in self._intrinsic_phase_diagram.stable_entries:
+            eah = self._intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
             raise ValueError(
                 f"{self.bulk_composition.reduced_formula} is not stable with respect to competing "
                 f"phases, EaH={eah:.4f} eV/atom"
             )
 
-        chem_lims = self.intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
+        chem_lims = self._intrinsic_phase_diagram.get_all_chempots(
+            self.bulk_composition
+        )
         # remove Element to make it jsonable
         no_element_chem_lims = {}
         for k, v in chem_lims.items():
@@ -1264,29 +1255,29 @@ class CompetingPhasesAnalyzer:
                 temp_dict[str(kk)] = vv
             no_element_chem_lims[k] = temp_dict
 
-        self.intrinsic_chem_limits = {
+        self._intrinsic_chem_limits = {
             "facets": no_element_chem_lims,
             "elemental_refs": {
                 str(elt): ent.energy_per_atom
-                for elt, ent in self.intrinsic_phase_diagram.el_refs.items()
+                for elt, ent in self._intrinsic_phase_diagram.el_refs.items()
             },
             "facets_wrt_el_refs": {},
         }
 
         # relate the facets to the elemental energies
-        for facet, chempot_dict in self.intrinsic_chem_limits["facets"].items():
+        for facet, chempot_dict in self._intrinsic_chem_limits["facets"].items():
             relative_chempot_dict = copy.deepcopy(chempot_dict)
             for e in relative_chempot_dict.keys():
-                relative_chempot_dict[e] -= self.intrinsic_chem_limits[
+                relative_chempot_dict[e] -= self._intrinsic_chem_limits[
                     "elemental_refs"
                 ][e]
-            self.intrinsic_chem_limits["facets_wrt_el_refs"].update(
+            self._intrinsic_chem_limits["facets_wrt_el_refs"].update(
                 {facet: relative_chempot_dict}
             )
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
-        for k, v in self.intrinsic_chem_limits["facets_wrt_el_refs"].items():
+        for k, v in self._intrinsic_chem_limits["facets_wrt_el_refs"].items():
             lst = []
             columns = []
             for k, v in v.items():
@@ -1349,12 +1340,12 @@ class CompetingPhasesAnalyzer:
 
             for i, d in enumerate(df4):
                 key = (
-                    list(self.intrinsic_chem_limits["facets_wrt_el_refs"].keys())[i]
+                    list(self._intrinsic_chem_limits["facets_wrt_el_refs"].keys())[i]
                     + "-"
                     + d[col_name]
                 )
                 new_vals = list(
-                    self.intrinsic_chem_limits["facets_wrt_el_refs"].values()
+                    self._intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
@@ -1367,10 +1358,10 @@ class CompetingPhasesAnalyzer:
                     relative_chempot_dict[e] += cl2["elemental_refs"][e]
                 cl2["facets"].update({facet: relative_chempot_dict})
 
-            self.chem_limits = cl2
+            self._chem_limits = cl2
 
         else:  # intrinsic only
-            self.chem_limits = self.intrinsic_chem_limits
+            self._chem_limits = self._intrinsic_chem_limits
 
         # save and print
         if csv_fname is not None:
@@ -1383,6 +1374,27 @@ class CompetingPhasesAnalyzer:
             print(df)
 
         return df
+
+    @property
+    def chem_limits(self) -> dict:
+        """Returns the calculated chemical potential limits"""
+        if not hasattr(self, "_chem_limits"):
+            self.calculate_chempots()
+        return self._chem_limits
+
+    @property
+    def intrinsic_chem_limits(self) -> dict:
+        """Returns the calculated intrinsic chemical potential limits"""
+        if not hasattr(self, "_intrinsic_chem_limits"):
+            self.calculate_chempots()
+        return self._intrinsic_chem_limits
+
+    @property
+    def intrinsic_phase_diagram(self) -> dict:
+        """Returns the calculated intrinsic phase diagram"""
+        if not hasattr(self, "_intrinsic_phase_diagram"):
+            self.calculate_chempots()
+        return self._intrinsic_phase_diagram
 
     def cplap_input(self, dependent_variable=None, filename="input.dat"):
         """For completeness' sake, automatically saves to input.dat for cplap
@@ -1422,11 +1434,11 @@ class CompetingPhasesAnalyzer:
                     print(f"{self.elemental[0]}  # dependent variable (element)")
 
                 # get only the lowest energy entries of compositions in self.data which are on a
-                # facet in self.intrinsic_chem_limits
+                # facet in self._intrinsic_chem_limits
                 bordering_phases = set(
                     [
                         phase
-                        for facet in self.chem_limits["facets"].keys()
+                        for facet in self._chem_limits["facets"].keys()
                         for phase in facet.split("-")
                     ]
                 )
