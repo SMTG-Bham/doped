@@ -13,18 +13,16 @@ If you use the corrections implemented in this module, cite
 in addition to the pycdt paper
 """
 
-import math
 import logging
+import math
+import warnings
 
 import numpy as np
-
-from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.core.lattice import Lattice
+from pymatgen.io.vasp.outputs import Locpot, Outcar
 
 from doped.pycdt.corrections.utils import *
 from doped.pycdt.utils.units import hart_to_ev
-
-import warnings
 
 norm = np.linalg.norm
 
@@ -880,8 +878,8 @@ class KumagaiCorrection(object):
                 KumagaiCorrection.plot(forplot, title=title)
             else:
                 #TODO: use a more descriptive fname that describes the defect
-                from monty.serialization import dumpfn
                 from monty.json import MontyEncoder
+                from monty.serialization import dumpfn
                 fname = 'KumagaiData.json'
                 dumpfn(forplot, fname, cls=MontyEncoder)
 
@@ -969,8 +967,8 @@ class KumagaiCorrection(object):
         Good for later plotting of locpot data after running run_correction()
 
         """
-        from monty.serialization import loadfn
         from monty.json import MontyDecoder
+        from monty.serialization import loadfn
 
         forplot = loadfn(name, cls=MontyDecoder)
         cls.plot(forplot, title=title)

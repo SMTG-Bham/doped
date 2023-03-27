@@ -9,8 +9,8 @@ import copy
 import logging
 import os
 
-from pymatgen.analysis.phase_diagram import PhaseDiagram, PDEntry
-from pymatgen.core.structure import Structure, Element
+from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
+from pymatgen.core.structure import Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 

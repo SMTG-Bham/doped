@@ -1,10 +1,12 @@
 import os
-import numpy as np
 import unittest
 import warnings
 from unittest.mock import patch
-from doped.pycdt.utils import parse_calculations
+
+import numpy as np
 from pymatgen.core.structure import Structure
+
+from doped.pycdt.utils import parse_calculations
 
 
 class DopedParsingTestCase(unittest.TestCase):

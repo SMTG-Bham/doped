@@ -8,22 +8,22 @@ efficient, user-friendly package for managing and analysing defect calculations,
 with publication-quality outputs
 """
 
-from operator import itemgetter
-import pickle
-from typing import Any
-import warnings
-import numpy as np
 import copy
-import pandas as pd
+import pickle
+import warnings
+from operator import itemgetter
+from typing import Any
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import numpy as np
+import pandas as pd
 from matplotlib import rc
-
-from tabulate import tabulate
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 from pymatgen.util.string import latexify, unicodeify
+from tabulate import tabulate
+
 from doped import aide_murphy_correction
 
 default_fonts = [
