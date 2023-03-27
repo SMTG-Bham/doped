@@ -4,8 +4,8 @@ from math import erfc, exp
 
 import numpy as np
 
-## These functions are taken from the AIDE package developed by
-## Adam Jackson and Alex Ganose (https://github.com/SMTG-UCL/aide)
+# These functions are taken from the AIDE package developed by
+# Adam Jackson and Alex Ganose (https://github.com/SMTG-UCL/aide)
 
 
 def get_image_charge_correction(
