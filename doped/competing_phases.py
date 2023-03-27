@@ -504,6 +504,7 @@ class CompetingPhases:
                 )
                 dis.write_input(fname, **kwargs)
 
+    # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
         self,
         kpoints_metals=95,
@@ -1043,7 +1044,7 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
-    def from_vaspruns(self, path, folder="vasp_std", csv_fname=None):
+    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_fname=None):
         """
         Reads in vaspruns, collates energies to csv.
 
@@ -1331,6 +1332,10 @@ class CompetingPhasesAnalyzer:
             #    canonical chemical potential for that dopant species and the
             #    competing phase is the 'limiting phase' right?
             # 4. update the chemical potential limits table to reflect this?
+            # TODO: I don't think this is right. Here it's just getting the extrinsic chempots at
+            #  the intrinsic chempot limits, but actually it should be recalculating the chempot
+            #  limits with the extrinsic competing phases, then reducing _these_ facets down to
+            #  those with only one extrinsic competing phase bordering
 
             # reverse engineer chem lims for extrinsic
             df4 = df.copy().to_dict(orient="records")
@@ -1459,6 +1464,8 @@ class CompetingPhasesAnalyzer:
 
 
 def combine_extrinsic(first, second, extrinsic_species):
+    # TODO: Can we just integrate this to `CompetingPhaseAnalyzer`, so you just pass in a list of
+    # extrinsic species and it does the right thing?
     """
     Combines chemical limits for different extrinsic species using chemical limits json file from
     ChemicalPotentialAnalysis. Usage explained in the example jupyter notebook
