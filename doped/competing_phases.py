@@ -54,7 +54,7 @@ def make_molecule_in_a_box(element):
                 coords_are_cartesian=True,
             ),
             "formula": "O2",
-            "magnetisation": 2,
+            "total_magnetization": 2,
         },
         "N2": {
             "structure": Structure(
@@ -64,7 +64,7 @@ def make_molecule_in_a_box(element):
                 coords_are_cartesian=True,
             ),
             "formula": "N2",
-            "magnetisation": 0,
+            "total_magnetization": 0,
         },
         "H2": {
             "structure": Structure(
@@ -74,7 +74,7 @@ def make_molecule_in_a_box(element):
                 coords_are_cartesian=True,
             ),
             "formula": "H2",
-            "magnetisation": 0,
+            "total_magnetization": 0,
         },
         "F2": {
             "structure": Structure(
@@ -84,7 +84,7 @@ def make_molecule_in_a_box(element):
                 coords_are_cartesian=True,
             ),
             "formula": "F2",
-            "magnetisation": 0,
+            "total_magnetization": 0,
         },
         "Cl2": {
             "structure": Structure(
@@ -94,16 +94,16 @@ def make_molecule_in_a_box(element):
                 coords_are_cartesian=True,
             ),
             "formula": "Cl2",
-            "magnetisation": 0,
+            "total_magnetization": 0,
         },
     }
 
     if element in all_structures.keys():
         structure = all_structures[element]["structure"]
         formula = all_structures[element]["formula"]
-        magnetisation = all_structures[element]["magnetisation"]
+        total_magnetization = all_structures[element]["total_magnetization"]
 
-    return structure, formula, magnetisation
+    return structure, formula, total_magnetization
 
 
 def _make_molecular_entry(computed_entry):
@@ -112,7 +112,7 @@ def _make_molecular_entry(computed_entry):
     ComputedEntry
     """
     assert len(computed_entry.composition.elements) == 1  # Elemental!
-    struc, formula, magnetisation = make_molecule_in_a_box(
+    struc, formula, total_magnetization = make_molecule_in_a_box(
         computed_entry.data["pretty_formula"]
     )
     molecular_entry = ComputedStructureEntry(
@@ -131,7 +131,7 @@ def _make_molecular_entry(computed_entry):
     molecular_entry.data["formation_energy_per_atom"] = 0
     molecular_entry.data["energy_per_atom"] = computed_entry.data["energy_per_atom"]
     molecular_entry.data["energy"] = computed_entry.data["energy_per_atom"] * 2
-    molecular_entry.data["total_magnetization"] = magnetisation
+    molecular_entry.data["total_magnetization"] = total_magnetization
     molecular_entry.data["nelements"] = 1
     molecular_entry.data["elements"] = [formula]
     molecular_entry.data["molecule"] = True
@@ -314,10 +314,13 @@ class CompetingPhases:
         )  # sort by e_above_hull
 
         # the has attr is there just for testing, so we don't have to keep querying MP
-        if not hasattr(self, "entries"):
-            self.entries = m.get_entries_in_chemsys(
-                self.system, inc_structure=stype, property_data=self.data
-            )
+        if not hasattr(self, "MP_full_pd_entries"):
+            with MPRester(api_key=self.api_key) as mpr:
+                self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
+                    list(self.bulk_comp.as_dict().keys()),
+                    inc_structure="initial",
+                    property_data=self.data,
+                )
 
         pd_entries = []
         # check that none of the elemental ones are molecules in a box
@@ -382,7 +385,14 @@ class CompetingPhases:
                     # new bordering phase, add to list
                     self.entries.append(entry)
 
-        self.entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+        # sort entries by e_above_hull, and then by num_species, then alphabetically:
+        self.entries.sort(
+            key=lambda x: (
+                x.data["e_above_hull"],
+                len(Composition(x.name).as_dict()),
+                x.name,
+            )
+        )
 
     def convergence_setup(
         self,
@@ -437,9 +447,11 @@ class CompetingPhases:
                 uis = copy.deepcopy(user_incar_settings)
             else:
                 uis = {}
-            if e.data["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
+                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
+                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             for kpoint in range(min_nm, max_nm, step_nm):
                 dis = DictSet(
@@ -453,9 +465,8 @@ class CompetingPhases:
                 )
 
                 kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
-                fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
-                    e["formula"], float(f"{e['ehull']:.4f}"), kname
-                )
+                fname = f"competing_phases/{e.name}_EaH" \
+                        f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 dis.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -467,9 +478,11 @@ class CompetingPhases:
             uis["ISMEAR"] = -5
             uis["SIGMA"] = 0.2
 
-            if e.data["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
+                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
+                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             for kpoint in range(min_m, max_m, step_m):
                 dis = DictSet(
@@ -483,9 +496,8 @@ class CompetingPhases:
                 )
 
                 kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
-                fname = "competing_phases/{}_EaH_{}/kpoint_converge/{}".format(
-                    e["formula"], float(f"{e['ehull']:.4f}"), kname
-                )
+                fname = f"competing_phases/{e.name}_EaH_" \
+                        f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 dis.write_input(fname, **kwargs)
 
     def vasp_std_setup(
@@ -534,9 +546,11 @@ class CompetingPhases:
                 uis = copy.deepcopy(user_incar_settings)
             else:
                 uis = {}
-            if e.data["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
+                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
+                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             dis = DictSet(
                 e.structure,
@@ -548,9 +562,8 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = "competing_phases/{}_EaH_{}/vasp_std".format(
-                e["formula"], float(f"{e['ehull']:.4f}")
-            )
+            fname = f"competing_phases/{e.name}_EaH_" \
+                    f"{round(e.data['e_above_hull'],4)}/vasp_std"
             dis.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -562,9 +575,11 @@ class CompetingPhases:
             uis["ISMEAR"] = 1
             uis["SIGMA"] = 0.2
 
-            if e.data["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
+                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
+                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             dis = DictSet(
                 e.structure,
@@ -575,9 +590,8 @@ class CompetingPhases:
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
-            fname = "competing_phases/{}_EaH_{}/vasp_std".format(
-                e["formula"], float(f"{e['ehull']:.4f}")
-            )
+            fname = f"competing_phases/{e.name}_EaH_" \
+                    f"{round(e.data['e_above_hull'],4)}/vasp_std"
             dis.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -588,12 +602,11 @@ class CompetingPhases:
 
             uis["ISIF"] = 2  # can't change the volume
 
-            if e.data["magnetisation"] > 1:  # account for magnetic moment
+            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
                     uis["ISPIN"] = 2
-                # the molecule set up to set this automatically?
-                if e["formula"] == "O2":
-                    uis["NUPDOWN"] = 2
+                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
+                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             dis = DictSet(
                 e.structure,
@@ -609,9 +622,7 @@ class CompetingPhases:
                 user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
-            fname = "competing_phases/{}_EaH_{}/vasp_std".format(
-                e["formula"], float(f"{e['ehull']:.4f}")
-            )
+            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
             dis.write_input(fname, **kwargs)
 
 
@@ -772,9 +783,19 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             entry.data["molecule"] = False
                             self.entries.append(entry)
 
+                # sort entries by e_above_hull, and then by num_species, then alphabetically:
+                self.entries.sort(
+                    key=lambda x: (
+                        x.data["e_above_hull"],
+                        len(Composition(x.name).as_dict()),
+                        x.name,
+                    )
+                )
+
             else:  # full_sub_approach but not co-doping
                 self.MP_full_pd_entries = []
                 for sub_elt in self.extrinsic_species:
+                    extrinsic_entries = []
                     with MPRester(api_key=self.api_key) as mpr:
                         MP_full_pd_entries = mpr.get_entries_in_chemsys(
                             self.intrinsic_species
@@ -811,22 +832,34 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                     ]
                                 ):  # first entry only
                                     self.MP_full_pd_entries.append(molecular_entry)
-                                    self.entries.append(molecular_entry)
+                                    extrinsic_entries.append(molecular_entry)
+
                             elif (
                                 entry.data["pretty_formula"]
                                 not in self._molecules_in_a_box
                             ):
                                 entry.data["molecule"] = False
-                                self.entries.append(entry)
+                                extrinsic_entries.append(entry)
+
+                            # sort entries by e_above_hull, and then by num_species,
+                            # then alphabetically:
+                            extrinsic_entries.sort(
+                                key=lambda x: (
+                                    x.data["e_above_hull"],
+                                    len(Composition(x.name).as_dict()),
+                                    x.name,
+                                )
+                            )
+                            self.entries += extrinsic_entries
 
         else:  # full_sub_approach = False; recommended approach for extrinsic species (assumes
             # dilute concentrations)
 
             # now compile substitution entries:
             self.MP_full_pd_entries = []
-            extrinsic_pd_entries = []
 
             for sub_elt in self.extrinsic_species:
+                extrinsic_pd_entries = []
                 with MPRester(api_key=self.api_key) as mpr:
                     MP_full_pd_entries = mpr.get_entries_in_chemsys(
                         self.intrinsic_species
@@ -969,9 +1002,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         if sub_elt in entry.composition
                     ]
 
+                # sort entries by e_above_hull, and then by num_species, then alphabetically:
                 extrinsic_entries.sort(
-                    key=lambda x: x.data["e_above_hull"]
-                )  # sort by e_above_hull
+                    key=lambda x: (
+                        x.data["e_above_hull"],
+                        len(Composition(x.name).as_dict()),
+                        x.name,
+                    )
+                )
                 self.entries += extrinsic_entries
 
 
