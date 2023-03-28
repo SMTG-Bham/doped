@@ -363,7 +363,7 @@ def formation_energy_plot(
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
-            elt_refs = chempot_limits["elemental_refs"][facet]
+            elt_refs = chempot_limits["elemental_refs"]
             if title:
                 plot_title = title
             else:
@@ -1057,7 +1057,7 @@ def all_lines_formation_energy_plot(
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:
             mu_elts = chempot_limits["facets"][facet]
-            elt_refs = chempot_limits["elemental_refs"][facet]
+            elt_refs = chempot_limits["elemental_refs"]
             plot_filename = filename
             if title:
                 plot_title = title
