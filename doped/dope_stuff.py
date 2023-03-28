@@ -9,7 +9,6 @@ with publication-quality outputs
 """
 
 import copy
-import pickle
 import warnings
 from operator import itemgetter
 from typing import Any
@@ -40,16 +39,6 @@ default_fonts = [
 def bold_print(string: str) -> None:
     """Does what it says on the tin. Prints the input string in bold."""
     print("\033[1m" + string + "\033[0m")
-
-
-def save_to_pickle(python_object: Any, filename: str) -> None:
-    with open(filename, "wb") as fp:
-        pickle.dump(python_object, fp)
-
-
-def load_from_pickle(filepath: str) -> None:
-    with open(filepath, "rb") as fp:
-        return pickle.load(fp)
 
 
 def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
