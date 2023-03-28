@@ -36,8 +36,6 @@ warnings.filterwarnings(
 #  chempot functionality has been transferred over and old `pycdt` chempot code deleted
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
-# TODO: Make sure elements in output `chempot_limits` are in the form of string objects so are
-#  JSONable
 
 
 def make_molecule_in_a_box(element):
