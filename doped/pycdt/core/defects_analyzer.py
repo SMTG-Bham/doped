@@ -21,6 +21,8 @@ from doped.pycdt.utils.parse_calculations import SingleDefectParser
 from doped.pycdt.utils.units import conv, hbar, kb
 
 warnings.simplefilter("default")
+warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
 def freysoldt_correction_from_paths(
