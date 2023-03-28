@@ -14,11 +14,14 @@ import numpy as np
 from ase.dft.kpoints import monkhorst_pack
 from monty.io import zopen
 from monty.serialization import dumpfn, loadfn
-from pymatgen.io.vasp import Incar, Kpoints, Poscar
 from pymatgen.io.vasp.inputs import (
     BadIncarWarning,
     Kpoints_supported_modes,
     incar_params,
+    UnknownPotcarWarning,
+    Incar,
+    Kpoints,
+    Poscar,
 )
 from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 
@@ -30,6 +33,16 @@ if TYPE_CHECKING:
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "default_POTCARs.yaml"))
+
+# globally ignore these POTCAR warnings
+warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
+warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
+
+# until updated from pymatgen==2022.7.25 :
+warnings.filterwarnings(
+    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
+)
 
 
 def scaled_ediff(natoms):  # 1e-5 for 50 atoms, up to max 1e-4
