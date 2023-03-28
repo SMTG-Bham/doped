@@ -34,6 +34,18 @@ from doped.pycdt.core import chemical_potentials
 
 angstrom = "\u212B"  # unicode symbol for angstrom to print in strings
 
+# globally ignore these POTCAR warnings
+warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
+warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
+
+# until updated from pymatgen==2022.7.25 :
+warnings.filterwarnings(
+    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
+)
+warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+
 
 def custom_formatwarning(msg, *args, **kwargs):
     """Reformat warnings to just print the warning message"""
