@@ -47,3 +47,5 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 warnings.filterwarnings(
     "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
 )
+warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
