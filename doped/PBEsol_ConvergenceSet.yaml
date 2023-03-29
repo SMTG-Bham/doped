@@ -1,0 +1,21 @@
+INCAR:
+  ALGO: Normal
+  EDIFF: 1e-06
+  EDIFFG: -0.01
+  ENCUT: 350
+  GGA: PS
+  ICORELEVEL: 1
+  ISIF: 2
+  ISMEAR: 0
+  ISYM: 2
+  IWAVPR: 1
+  LASPH: true
+  LCHARG: false
+  LWAVE: false
+  NELM: 150
+  NCORE: 10
+  NSW: 0
+  PREC: Accurate
+  SIGMA: 0.02
+KPOINTS:
+  reciprocal_density: 45
