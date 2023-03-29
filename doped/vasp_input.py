@@ -161,8 +161,8 @@ def prepare_vasp_defect_dict(
 def vasp_gam_files(
     single_defect_dict: dict,
     input_dir: str = None,
-    incar_settings: dict = None,
-    potcar_settings: dict = None,
+    user_incar_settings: dict = None,
+    user_potcar_settings: dict = None,
 ) -> None:
     """
     Generates input files for VASP Gamma-point-only rough relaxation
@@ -176,18 +176,17 @@ def vasp_gam_files(
             (Recommended to set as the key of the prepare_vasp_defect_inputs()
             output directory)
             (default: None)
-        incar_settings (dict):
+        user_incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
             source code, to see what the default INCAR settings are. Note that any flags that
             aren't numbers or True/False need to be input as strings with quotation marks
             (e.g. `{"ALGO": "All"}`).
-
             (default: None)
-        potcar_settings (dict):
+        user_potcar_settings (dict):
             Dictionary of user POTCAR settings to override default settings.
             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
-            the (Pymatgen) syntax and doped default settings are.
+            the (pymatgen) syntax and doped default settings are.
             (default: None)
     """
     supercell = single_defect_dict["Defect Structure"]
@@ -206,11 +205,11 @@ def vasp_gam_files(
         "ignore", category=BadInputSetWarning
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings.keys():
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings.keys():
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+    if user_potcar_settings:
+        if "POTCAR_FUNCTIONAL" in user_potcar_settings.keys():
+            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_settings["POTCAR_FUNCTIONAL"]
+        if "POTCAR" in user_potcar_settings.keys():
+            potcar_dict["POTCAR"].update(user_potcar_settings.pop("POTCAR"))
 
     defect_relax_set = DefectRelaxSet(
         supercell,
@@ -248,6 +247,7 @@ def vasp_gam_files(
         nelect = defect_relax_set.nelect
 
     # Variable parameters first
+    # TODO: Refactor this to a yaml file!
     vaspgamincardict = {
         "# May need to change NELECT, IBRION, NCORE, KPAR, AEXX, ENCUT, NUPDOWN, ISPIN, "
         "POTIM": "variable parameters",
@@ -284,21 +284,21 @@ def vasp_gam_files(
         "PRECFOCK": "Fast",
         "SIGMA": 0.05,
     }
-    if incar_settings:
+    if user_incar_settings:
         for (
             k
         ) in (
-            incar_settings.keys()
+            user_incar_settings.keys()
         ):  # check INCAR flags and warn if they don't exist (typos)
             if (
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your incar_settings in the list of INCAR flags"
+                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
                     % (k),
                     BadIncarWarning,
                 )
-        vaspgamincardict.update(incar_settings)
+        vaspgamincardict.update(user_incar_settings)
 
     vaspgamkpts = Kpoints().from_dict(
         {"comment": "Kpoints from doped.vasp_gam_files", "generation_style": "Gamma"}
@@ -313,9 +313,9 @@ def vasp_gam_files(
 def vasp_std_files(
     single_defect_dict: dict,
     input_dir: str = None,
-    incar_settings: dict = None,
-    kpoints_settings: dict = None,
-    potcar_settings: dict = None,
+    user_incar_settings: dict = None,
+    user_kpoints_settings: dict = None,
+    user_potcar_settings: dict = None,
     unperturbed_poscar: bool = False,
 ) -> None:
     """
@@ -331,20 +331,20 @@ def vasp_std_files(
             (Recommended to set as the key of the prepare_vasp_defect_inputs()
             output directory)
             (default: None)
-        incar_settings (dict):
+        user_incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
             source code, to see what the default INCAR settings are. Note that any flags that
             aren't numbers or True/False need to be input as strings with quotation marks
             (e.g. `{"ALGO": "All"}`).
             (default: None)
-        kpoints_settings (dict):
+        user_kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
             options would be "generation_style": "Monkhorst" (rather than "Gamma"),
             and/or "kpoints": [[3, 3, 1]] etc.
             Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
             (default: None)
-        potcar_settings (dict):
+        user_potcar_settings (dict):
             Dictionary of user POTCAR settings to override default settings.
             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
             the (Pymatgen) syntax and doped default settings are.
@@ -375,11 +375,11 @@ def vasp_std_files(
 
     # POTCAR
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings.keys():
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings.keys():
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+    if user_potcar_settings:
+        if "POTCAR_FUNCTIONAL" in user_potcar_settings.keys():
+            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_settings["POTCAR_FUNCTIONAL"]
+        if "POTCAR" in user_potcar_settings.keys():
+            potcar_dict["POTCAR"].update(user_potcar_settings.pop("POTCAR"))
 
     defect_relax_set = DefectRelaxSet(
         supercell,
@@ -457,28 +457,28 @@ def vasp_std_files(
         "PRECFOCK": "Fast",
         "SIGMA": 0.05,
     }
-    if incar_settings:
+    if user_incar_settings:
         for (
             k
         ) in (
-            incar_settings.keys()
+            user_incar_settings.keys()
         ):  # check INCAR flags and warn if they don't exist (typos)
             if (
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    f"Cannot find {k} from your incar_settings in the list of INCAR flags",
+                    f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                     BadIncarWarning,
                 )
-        vaspstdincardict.update(incar_settings)
+        vaspstdincardict.update(user_incar_settings)
 
     vaspstdkpointsdict = {
         "comment": "Kpoints from doped.vasp_std_files",
         "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
         "kpoints": [[2, 2, 2]],
     }
-    if kpoints_settings:
-        vaspstdkpointsdict.update(kpoints_settings)
+    if user_kpoints_settings:
+        vaspstdkpointsdict.update(user_kpoints_settings)
     vaspstdkpts = Kpoints.from_dict(vaspstdkpointsdict)
     vaspstdkpts.write_file(vaspstdinputdir + "KPOINTS")
 
@@ -489,9 +489,9 @@ def vasp_std_files(
 def vasp_ncl_files(
     single_defect_dict: dict,
     input_dir: str = None,
-    incar_settings: dict = None,
-    kpoints_settings: dict = None,
-    potcar_settings: dict = None,
+    user_incar_settings: dict = None,
+    user_kpoints_settings: dict = None,
+    user_potcar_settings: dict = None,
     unperturbed_poscar: bool = False,
 ) -> None:
     """
@@ -508,20 +508,20 @@ def vasp_ncl_files(
             (Recommended to set as the key of the prepare_vasp_defect_inputs()
             output directory)
             (default: None)
-        incar_settings (dict):
+        user_incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
             Highly recommended to look at output INCARs or doped.vasp_input
             source code, to see what the default INCAR settings are. Note that any flags that
             aren't numbers or True/False need to be input as strings with quotation marks
             (e.g. `{"ALGO": "All"}`).
             (default: None)
-        kpoints_settings (dict):
+        user_kpoints_settings (dict):
             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Most
             common option would be {"kpoints": [[3, 3, 1]]} etc.
             Will generate a non-symmetrised (i.e. explicitly listed) KPOINTS, as typically required
             for vasp_ncl calculations. Default is Gamma-centred 2 x 2 x 2 mesh.
             (default: None)
-        potcar_settings (dict):
+        user_potcar_settings (dict):
             Dictionary of user POTCAR settings to override default settings.
             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
             the (Pymatgen) syntax and doped default settings are.
@@ -552,11 +552,11 @@ def vasp_ncl_files(
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings.keys():
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings.keys():
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+    if user_potcar_settings:
+        if "POTCAR_FUNCTIONAL" in user_potcar_settings.keys():
+            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_settings["POTCAR_FUNCTIONAL"]
+        if "POTCAR" in user_potcar_settings.keys():
+            potcar_dict["POTCAR"].update(user_potcar_settings.pop("POTCAR"))
     defect_relax_set = DefectRelaxSet(
         supercell,
         charge=single_defect_dict["Transformation Dict"]["charge"],
@@ -630,30 +630,30 @@ def vasp_ncl_files(
         "PRECFOCK": "Fast",
         "SIGMA": 0.05,
     }
-    if incar_settings:
+    if user_incar_settings:
         for (
             k
         ) in (
-            incar_settings.keys()
+            user_incar_settings.keys()
         ):  # check INCAR flags and warn if they don't exist (typos)
             if (
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your incar_settings in the list of INCAR flags"
+                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
                     % (k),
                     BadIncarWarning,
                 )
-        vaspnclincardict.update(incar_settings)
+        vaspnclincardict.update(user_incar_settings)
 
     k_grid = (
-        kpoints_settings.pop("kpoints")[0]
-        if (kpoints_settings and "kpoints" in kpoints_settings)
+        user_kpoints_settings.pop("kpoints")[0]
+        if (user_kpoints_settings and "kpoints" in user_kpoints_settings)
         else [2, 2, 2]
     )
     shift = (
-        np.array(kpoints_settings.pop("usershift"))
-        if (kpoints_settings and "usershift" in kpoints_settings)
+        np.array(user_kpoints_settings.pop("usershift"))
+        if (user_kpoints_settings and "usershift" in user_kpoints_settings)
         else np.array([0, 0, 0])
     )
     vasp_ncl_kpt_array = monkhorst_pack(k_grid)
@@ -668,9 +668,9 @@ def vasp_ncl_files(
         ]
         * len(vasp_ncl_kpt_array),
     )
-    if kpoints_settings:
+    if user_kpoints_settings:
         modified_kpts_dict = vasp_ncl_kpts.as_dict()
-        modified_kpts_dict.update(kpoints_settings)
+        modified_kpts_dict.update(user_kpoints_settings)
         vasp_ncl_kpts = Kpoints.from_dict(modified_kpts_dict)
     vasp_ncl_kpts.write_file(vaspnclinputdir + "KPOINTS")
 
@@ -678,6 +678,7 @@ def vasp_ncl_files(
     vaspnclincar.write_file(vaspnclinputdir + "INCAR")
 
 
+# TODO: Remove these functions once confirming all functionality is in `competing_phases.py`
 def is_metal(element: "pymatgen.core.periodic_table.Element") -> bool:
     """
     Checks if the input element is metallic
@@ -770,7 +771,7 @@ def vasp_converge_files(
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your incar_settings in the list of INCAR flags"
+                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
                     % (k),
                     BadIncarWarning,
                 )
@@ -916,7 +917,7 @@ def vasp_std_chempot(
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your incar_settings in the list of INCAR flags"
+                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
                     % (k),
                     BadIncarWarning,
                 )
@@ -1045,7 +1046,7 @@ def vasp_ncl_chempot(
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your incar_settings in the list of INCAR flags"
+                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
                     % (k),
                     BadIncarWarning,
                 )
