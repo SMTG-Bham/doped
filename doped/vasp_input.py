@@ -157,7 +157,6 @@ def prepare_vasp_defect_dict(
     return overall_dict
 
 
-# noinspection DuplicatedCode
 def vasp_gam_files(
     single_defect_dict: dict,
     input_dir: str = None,
@@ -165,8 +164,10 @@ def vasp_gam_files(
     user_potcar_settings: dict = None,
 ) -> None:
     """
-    Generates input files for VASP Gamma-point-only rough relaxation
-    (before more expensive vasp_std relaxation)
+    Generates input files for VASP Gamma-point-only (`vasp_gam`) coarse defect supercell
+    relaxations. Note that any changes to the default `INCAR`/`POTCAR` settings should be
+    consistent with those used for competing phase (chemical potential) calculations.
+
     Args:
         single_defect_dict (dict):
             Single defect-dictionary from prepare_vasp_defect_inputs()
@@ -294,8 +295,7 @@ def vasp_gam_files(
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
-                    % (k),
+                    f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                     BadIncarWarning,
                 )
         vaspgamincardict.update(user_incar_settings)
@@ -319,9 +319,13 @@ def vasp_std_files(
     unperturbed_poscar: bool = False,
 ) -> None:
     """
-    Generates INCAR, POTCAR and KPOINTS for vasp_std expensive k-point mesh relaxation.
-    For POSCAR, use on command-line (to continue on from vasp_gam run):
-    'cp vasp_gam/CONTCAR vasp_std/POSCAR; cp vasp_gam/CHGCAR vasp_std/'
+    Generates INCAR, POTCAR and KPOINTS for `vasp_std` defect supercell relaxations. By default
+    does not generate POSCAR (input structure) files, as these should be taken from `ShakeNBreak`
+    calculations (via `snb-groundstate`) or `vasp_gam` calculations (using
+    `vasp_input.vasp_gam_files()`, and `cp vasp_gam/CONTCAR vasp_std/POSCAR`).
+    Note that any changes to the default `INCAR`/`POTCAR` settings should be consistent with
+    those used for competing phase (chemical potential) calculations.
+
     Args:
         single_defect_dict (dict):
             Single defect-dictionary from prepare_vasp_defect_inputs()
@@ -495,6 +499,13 @@ def vasp_ncl_files(
     unperturbed_poscar: bool = False,
 ) -> None:
     """
+    Generates INCAR, POTCAR and KPOINTS for `vasp_std` defect supercell relaxations. By default
+    does not generate POSCAR (input structure) files, as these should be taken from `ShakeNBreak`
+    calculations (via `snb-groundstate`) or `vasp_gam` calculations (using
+    `vasp_input.vasp_gam_files()`, and `cp vasp_gam/CONTCAR vasp_std/POSCAR`).
+    Note that any changes to the default `INCAR`/`POTCAR` settings should be consistent with
+    those used for competing phase (chemical potential) calculations.
+
     Generates INCAR, POTCAR and non-symmetrised KPOINTS for vasp_ncl single-shot SOC energy
     calculation on vasp_std-relaxed defect structure.
     For POSCAR, use on command-line (to continue on from vasp_std run):
@@ -640,8 +651,7 @@ def vasp_ncl_files(
                 k not in incar_params.keys()
             ):  # this code is taken from pymatgen.io.vasp.inputs
                 warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your user_incar_settings in the list of INCAR flags"
-                    % (k),
+                    f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                     BadIncarWarning,
                 )
         vaspnclincardict.update(user_incar_settings)
@@ -678,25 +688,12 @@ def vasp_ncl_files(
     vaspnclincar.write_file(vaspnclinputdir + "INCAR")
 
 
-# TODO: Remove these functions once confirming all functionality is in `competing_phases.py`
-def is_metal(element: "pymatgen.core.periodic_table.Element") -> bool:
-    """
-    Checks if the input element is metallic
-    Args:
-        element (Pymatgen Element object):
-            Element to check metallicity
-    """
-
-    return (
-        element.is_transition_metal
-        or element.is_post_transition_metal
-        or element.is_alkali
-        or element.is_alkaline
-        or element.is_rare_earth_metal
-    )
-
-
-# noinspection DuplicatedCode
+# TODO: Remove these functions once confirming all functionality is in `competing_phases.py`;
+# need `vasp_ncl_chempot` generation, `vaspup2.0` `input` folder with `CONFIG` generation as an
+# option, improve competing_phases docstrings (i.e. mention defaults, note in notebooks if changing
+# `INCAR`/`POTCAR` settings for competing phase production calcs, should also do with defect
+# supercell calcs (and note this in vasp_input as well)), ensure consistent INCAR tags in defect
+# supercell defaults and competing phase defaults
 def vasp_converge_files(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
