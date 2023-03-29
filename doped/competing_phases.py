@@ -1,6 +1,7 @@
 import contextlib
 import copy
-import json
+import os
+from monty.serialization import loadfn
 import warnings
 from pathlib import Path, PurePath
 
@@ -410,12 +411,12 @@ class CompetingPhases:
             user_incar_settings (dict): Override the default INCAR settings
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
-                `doped/PBEsol_config.json` for the default settings.
+                `doped/PBEsol_ConvergenceSet.yaml` for the default settings.
         """
         # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
-        file = str(Path(__file__).parent.joinpath("PBEsol_config.json"))
-        with open(file) as f:
-            cd = json.load(f)
+        pbesol_convrg_set = loadfn(
+            os.path.join(MODULE_DIR, "PBEsol_ConvergenceSet.yaml")
+        )
 
         # kpoints should be set as (min, max, step)
         min_nm, max_nm, step_nm = kpoints_nonmetals
@@ -426,6 +427,7 @@ class CompetingPhases:
             potcar_dict["POTCAR"].update(user_potcar_settings)
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
+        pbesol_convrg_set.update(potcar_dict)
 
         # separate metals and non-metals
         self.nonmetals = []
@@ -455,7 +457,7 @@ class CompetingPhases:
             for kpoint in range(min_nm, max_nm, step_nm):
                 dis = DictSet(
                     e.structure,
-                    cd,
+                    pbesol_convrg_set,
                     user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
                     user_potcar_settings=potcar_dict["POTCAR"],
                     user_kpoints_settings={"reciprocal_density": kpoint},
@@ -488,7 +490,7 @@ class CompetingPhases:
             for kpoint in range(min_m, max_m, step_m):
                 dis = DictSet(
                     e.structure,
-                    cd,
+                    pbesol_convrg_set,
                     user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
                     user_potcar_settings=potcar_dict["POTCAR"],
                     user_kpoints_settings={"reciprocal_density": kpoint},
@@ -528,20 +530,19 @@ class CompetingPhases:
             user_incar_settings (dict): Override the default INCAR settings
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
-                `doped/HSE06_config_relax.json` for the default settings.
+                `doped/HSE06_RelaxSet.yaml` for the default settings.
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
         #  struc = sym.get_primitive_standard_structure() -> output this structure
-        file = str(Path(__file__).parent.joinpath("HSE06_config_relax.json"))
-        with open(file) as f:
-            cd = json.load(f)
+        hse06_relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
 
         potcar_dict = copy.deepcopy(default_potcar_dict)
         if user_potcar_settings:
             potcar_dict["POTCAR"].update(user_potcar_settings)
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
+        hse06_relax_set.update(potcar_dict)
 
         # separate metals, non-metals and molecules
         self.nonmetals = []
@@ -569,7 +570,7 @@ class CompetingPhases:
 
             dis = DictSet(
                 e.structure,
-                cd,
+                hse06_relax_set,
                 user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
                 user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
@@ -600,7 +601,7 @@ class CompetingPhases:
 
             dis = DictSet(
                 e.structure,
-                cd,
+                hse06_relax_set,
                 user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
                 user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
@@ -629,7 +630,7 @@ class CompetingPhases:
 
             dis = DictSet(
                 e.structure,
-                cd,
+                hse06_relax_set,
                 user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
                 user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings=Kpoints().from_dict(
