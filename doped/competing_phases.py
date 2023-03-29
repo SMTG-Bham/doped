@@ -25,11 +25,10 @@ warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
 )  # currently rely on this so shouldn't show warning
 
-# TODO: Confirm `README` potcar instructions do indeed work as expected!
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
 #  correspond to `pymatgen`'s `DictSet` format.
-# TODO: Add warning for when input `potcar_settings` don't match the expected format (i.e. if one
+# TODO: Add warning for when input `user_potcar_settings` don't match the expected format (i.e. if one
 #  of the dict entries is not an element symbol)
 # TODO: Should refactor all this to "Chemical Potentials" etc rather than 'competing phases' as
 #  this is a more common term in the field so likely more familiar to users. Will do when all
