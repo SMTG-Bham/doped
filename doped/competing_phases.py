@@ -17,6 +17,9 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from doped.pycdt.utils.parse_calculations import get_vasprun
 from doped.pycdt.utils.vasp import _import_psp
 
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "default_POTCARs.yaml"))
+
 # globally ignore:
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
@@ -386,28 +389,30 @@ class CompetingPhases:
         self,
         kpoints_metals=(40, 120, 5),
         kpoints_nonmetals=(5, 60, 5),
-        potcar_functional="PBE_54",
+        user_potcar_functional="PBE_54",
         user_potcar_settings=None,
         user_incar_settings=None,
         **kwargs,
     ):
         """
-        Sets up input files for kpoints convergence testing
+        Generates VASP input files for kpoints convergence testing for competing phases,
+        using PBEsol (GGA) DFT by default. Automatically sets the `ISMEAR` `INCAR` tag to 2 (if
+        metallic) or 0 if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
+
         Args:
             kpoints_metals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for metals
             kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for nonmetals
-            potcar_functional (str): POTCAR functional to use (e.g. PBE_54)
-            user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
+            user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
+            user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                `doped/default_potcars.yaml` for the default `POTCAR` set.
             user_incar_settings (dict): Override the default INCAR settings
-                e.g. {"EDIFF": 1e-5, "LDAU": False}
-        Returns:
-            Writes VASP input files
+                e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
+                non-True/False flags need to be input as strings with quotation marks. See
+                `doped/PBEsol_config.json` for the default settings.
         """
-        # by default uses pbesol, but easy to switch to pbe or
-        # pbe+u by using user_incar_settings
-        # user incar settings applies the same settings so both
+        # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
         file = str(Path(__file__).parent.joinpath("PBEsol_config.json"))
         with open(file) as f:
             cd = json.load(f)
@@ -415,6 +420,12 @@ class CompetingPhases:
         # kpoints should be set as (min, max, step)
         min_nm, max_nm, step_nm = kpoints_nonmetals
         min_m, max_m, step_m = kpoints_metals
+
+        potcar_dict = copy.deepcopy(default_potcar_dict)
+        if user_potcar_settings:
+            potcar_dict["POTCAR"].update(user_potcar_settings)
+        if user_potcar_functional:
+            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
 
         # separate metals and non-metals
         self.nonmetals = []
@@ -445,8 +456,8 @@ class CompetingPhases:
                 dis = DictSet(
                     e.structure,
                     cd,
-                    user_potcar_functional=potcar_functional,
-                    user_potcar_settings=user_potcar_settings,
+                    user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
+                    user_potcar_settings=potcar_dict["POTCAR"],
                     user_kpoints_settings={"reciprocal_density": kpoint},
                     user_incar_settings=uis,
                     force_gamma=True,
@@ -478,8 +489,8 @@ class CompetingPhases:
                 dis = DictSet(
                     e.structure,
                     cd,
-                    user_potcar_functional=potcar_functional,
-                    user_potcar_settings=user_potcar_settings,
+                    user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
+                    user_potcar_settings=potcar_dict["POTCAR"],
                     user_kpoints_settings={"reciprocal_density": kpoint},
                     user_incar_settings=uis,
                     force_gamma=True,
@@ -497,22 +508,27 @@ class CompetingPhases:
         self,
         kpoints_metals=95,
         kpoints_nonmetals=45,
-        potcar_functional="PBE_54",
+        user_potcar_functional="PBE_54",
         user_potcar_settings=None,
         user_incar_settings=None,
         **kwargs,
     ):
         """
-        Sets up input files for vasp_std relaxations
+        Generates VASP input files for `vasp_std` relaxations of the competing phases,
+        using HSE06 (hybrid DFT) DFT by default. Automatically sets the `ISMEAR` `INCAR` tag to 2
+        (if metallic) or 0 if not. Note that any changes to the default `INCAR`/`POTCAR` settings
+        should be consistent with those used for the defect supercell calculations.
+
         Args:
             kpoints_metals (int): Kpoint density per inverse volume (Å^-3) for metals
             kpoints_nonmetals (int): Kpoint density per inverse volume (Å^-3) for nonmetals
-            potcar_functional (str): POTCAR to use (e.g. LDA, PBE, PBE_52, PBE_54)
-            user_potcar_settings (dict): Override the default POTCARs e.g. {"Li": "Li_sv"}
+            user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
+            user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                `doped/default_potcars.yaml` for the default `POTCAR` set.
             user_incar_settings (dict): Override the default INCAR settings
-                e.g. {"EDIFF": 1e-5, "LDAU": False}
-        Returns:
-            Writes VASP input files
+                e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
+                non-True/False flags need to be input as strings with quotation marks. See
+                `doped/HSE06_config_relax.json` for the default settings.
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
@@ -520,6 +536,12 @@ class CompetingPhases:
         file = str(Path(__file__).parent.joinpath("HSE06_config_relax.json"))
         with open(file) as f:
             cd = json.load(f)
+
+        potcar_dict = copy.deepcopy(default_potcar_dict)
+        if user_potcar_settings:
+            potcar_dict["POTCAR"].update(user_potcar_settings)
+        if user_potcar_functional:
+            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
 
         # separate metals, non-metals and molecules
         self.nonmetals = []
@@ -548,10 +570,10 @@ class CompetingPhases:
             dis = DictSet(
                 e.structure,
                 cd,
-                user_potcar_functional=potcar_functional,
+                user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
+                user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
                 user_incar_settings=uis,
-                user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
 
@@ -579,10 +601,10 @@ class CompetingPhases:
             dis = DictSet(
                 e.structure,
                 cd,
-                user_potcar_functional=potcar_functional,
+                user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
+                user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_incar_settings=uis,
-                user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
             fname = (
@@ -608,7 +630,8 @@ class CompetingPhases:
             dis = DictSet(
                 e.structure,
                 cd,
-                user_potcar_functional=potcar_functional,
+                user_potcar_functional=potcar_dict["POTCAR_FUNCTIONAL"],
+                user_potcar_settings=potcar_dict["POTCAR"],
                 user_kpoints_settings=Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
@@ -616,7 +639,6 @@ class CompetingPhases:
                     }
                 ),
                 user_incar_settings=uis,
-                user_potcar_settings=user_potcar_settings,
                 force_gamma=True,
             )
             fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
