@@ -9,7 +9,6 @@ Code to generate charged defects structure files.
 import abc
 import re
 
-# from monty.string import str2unicode
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects.core import Interstitial
 from pymatgen.analysis.defects.generators import (
@@ -250,7 +249,7 @@ class DefectChargerInsulator(DefectCharger):
         self.oxi_states = {}
         for key, val in oxi_states.items():
             strip_key = "".join([s for s in key if s.isalpha()])
-            self.oxi_states[str2unicode(strip_key)] = val
+            self.oxi_states[strip_key] = val
 
         self.min_max_oxi = {}
         for s in struct_species:
@@ -262,7 +261,7 @@ class DefectChargerInsulator(DefectCharger):
                 continue
             max_oxi = max(el.common_oxidation_states)
             min_oxi = min(el.common_oxidation_states)
-            self.min_max_oxi[str2unicode(el.symbol)] = (min_oxi, max_oxi)
+            self.min_max_oxi[el.symbol] = (min_oxi, max_oxi)
 
     def get_charges(self, defect_type, site_specie=None, sub_specie=None):
         """
@@ -278,7 +277,7 @@ class DefectChargerInsulator(DefectCharger):
         """
         if defect_type == "vacancy":
             vac_symbol = get_el_sp(site_specie).symbol
-            vac_oxi_state = self.oxi_states[str2unicode(vac_symbol)]
+            vac_oxi_state = self.oxi_states[vac_symbol]
             if vac_oxi_state < 0:
                 min_oxi = max(vac_oxi_state, self.min_max_oxi[vac_symbol][0])
                 max_oxi = 0
@@ -293,7 +292,7 @@ class DefectChargerInsulator(DefectCharger):
 
         elif defect_type == "antisite":
             vac_symbol = get_el_sp(site_specie).symbol
-            vac_oxi_state = self.oxi_states[str2unicode(vac_symbol)]
+            vac_oxi_state = self.oxi_states[vac_symbol]
             as_symbol = get_el_sp(sub_specie).symbol
             if vac_oxi_state > 0:
                 oxi_max = max(self.min_max_oxi[as_symbol][1], 0)
@@ -307,7 +306,7 @@ class DefectChargerInsulator(DefectCharger):
             site_specie = get_el_sp(site_specie)
             sub_specie = get_el_sp(sub_specie)
             vac_symbol = site_specie.symbol
-            vac_oxi_state = self.oxi_states[str2unicode(vac_symbol)]
+            vac_oxi_state = self.oxi_states[vac_symbol]
 
             max_oxi_sub = max(sub_specie.common_oxidation_states)
             min_oxi_sub = min(sub_specie.common_oxidation_states)
@@ -356,7 +355,7 @@ class DefectChargerIonic(DefectCharger):
         self.oxi_states = {}
         for key, val in oxi_states.items():
             strip_key = "".join([s for s in key if s.isalpha()])
-            self.oxi_states[str2unicode(strip_key)] = val
+            self.oxi_states[strip_key] = val
 
     def get_charges(self, defect_type, site_specie=None, sub_specie=None):
         """
@@ -372,7 +371,7 @@ class DefectChargerIonic(DefectCharger):
         """
         if defect_type == "vacancy":
             vac_symbol = get_el_sp(site_specie).symbol
-            vac_oxi_state = self.oxi_states[str2unicode(vac_symbol)]
+            vac_oxi_state = self.oxi_states[vac_symbol]
             if vac_oxi_state == 0:
                 return [-1, 0, 1]
             else:
@@ -383,9 +382,9 @@ class DefectChargerIonic(DefectCharger):
         elif defect_type in ["antisite", "substitution"]:
             # TODO: may cause some weird states for substitutions. Worth updating in future.
             vac_symbol = get_el_sp(site_specie).symbol
-            vac_oxi_state = self.oxi_states[str2unicode(vac_symbol)]
+            vac_oxi_state = self.oxi_states[vac_symbol]
             as_symbol = get_el_sp(sub_specie).symbol
-            as_oxi_state = self.oxi_states[str2unicode(as_symbol)]
+            as_oxi_state = self.oxi_states[as_symbol]
             expected_oxi = as_oxi_state - vac_oxi_state
             if expected_oxi == 0:
                 return [-1, 0, 1]
