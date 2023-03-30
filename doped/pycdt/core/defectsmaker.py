@@ -8,6 +8,7 @@ Code to generate charged defects structure files.
 
 import abc
 import re
+from tabulate import tabulate
 
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects.core import Interstitial
@@ -640,9 +641,7 @@ class ChargedDefectsStructures(object):
         if include_interstitials and interstitial_elements:
             for elem_str in interstitial_elements:
                 if not Element.is_valid_symbol(elem_str):
-                    raise ValueError(
-                        "invalid interstitial element" ' "{}"'.format(elem_str)
-                    )
+                    raise ValueError(f"invalid interstitial element {elem_str}")
 
         sc_scale = get_optimized_sc_scale(self.struct, cellmax)
         self.defects = {}
@@ -692,7 +691,7 @@ class ChargedDefectsStructures(object):
             for c in SimpleChargeGenerator(vac):
                 vacancies.append(
                     {
-                        "name": "vac_{}_{}".format(i + 1, vac_symbol),
+                        "name": f"vac_{i+1}_{vac_symbol}",
                         "unique_site": vac_site,
                         "bulk_supercell_site": vac_sc_site,
                         "defect_type": "vacancy",
@@ -712,7 +711,8 @@ class ChargedDefectsStructures(object):
                     as_symbol = as_specie.symbol
                     as_sc = sub.generate_defect_structure(sc_scale)
 
-                    # create a trivial defect structure to find where supercell transformation moves the defect
+                    # create a trivial defect structure to find where supercell transformation
+                    # moves the defect
                     struct_for_defect_site = Structure(
                         sub.bulk_structure.copy().lattice,
                         [sub.site.specie],
@@ -732,9 +732,7 @@ class ChargedDefectsStructures(object):
                     )
                     if not len(poss_deflist):
                         raise ValueError(
-                            "Could not find substitution site inside bulk structure for {}?".format(
-                                sub.name
-                            )
+                            f"Could not find substitution site inside bulk structure for {sub.name}?"
                         )
                     defindex = poss_deflist[0][2]
                     as_site = sub.bulk_structure[defindex]
@@ -747,9 +745,7 @@ class ChargedDefectsStructures(object):
                     for c in SimpleChargeGenerator(sub):
                         as_defs.append(
                             {
-                                "name": "as_{}_{}_on_{}".format(
-                                    i + 1, as_symbol, vac_symbol
-                                ),
+                                "name": f"as_{i+1}_{as_symbol}_on_{vac_symbol}",
                                 "unique_site": as_site,
                                 "bulk_supercell_site": as_sc_site,
                                 "defect_type": "antisite",
@@ -777,9 +773,7 @@ class ChargedDefectsStructures(object):
                     )
                     if not len(poss_deflist):
                         raise ValueError(
-                            "Could not find substitution site inside bulk structure for {}?".format(
-                                sub.name
-                            )
+                            f"Could not find substitution site inside bulk structure for {sub.name}?"
                         )
                     defindex = poss_deflist[0][2]
                     sub_site = self.struct[defindex]
@@ -792,7 +786,8 @@ class ChargedDefectsStructures(object):
                     else:
                         sub_sc = sub.generate_defect_structure(sc_scale)
 
-                        # create a trivial defect structure to find where supercell transformation moves the defect
+                        # create a trivial defect structure to find where supercell
+                        # transformation moves the defect
                         struct_for_defect_site = Structure(
                             sub.bulk_structure.copy().lattice,
                             [sub.site.specie],
@@ -809,9 +804,7 @@ class ChargedDefectsStructures(object):
                         for c in SimpleChargeGenerator(sub):
                             sub_defs.append(
                                 {
-                                    "name": "sub_{}_{}_on_{}".format(
-                                        i + 1, subspecie_symbol, vac_symbol
-                                    ),
+                                    "name": f"sub_{i+1}_{subspecie_symbol}_on_{vac_symbol}",
                                     "unique_site": sub_site,
                                     "bulk_supercell_site": sub_sc_site,
                                     "defect_type": "substitution",
@@ -846,7 +839,7 @@ class ChargedDefectsStructures(object):
                 # manual specification of interstitials
                 for i, intersite in enumerate(intersites):
                     elt = intersite.specie
-                    name = "inter_{}_{}".format(i + 1, elt)
+                    name = f"inter_{i+1}_{elt}"
 
                     if intersite.lattice != self.struct.lattice:
                         err_msg = "Lattice matching error occurs between provided interstitial and the bulk structure."
@@ -859,7 +852,8 @@ class ChargedDefectsStructures(object):
                     else:
                         intersite_object = Interstitial(self.struct, intersite)
 
-                    # create a trivial defect structure to find where supercell transformation moves the defect site
+                    # create a trivial defect structure to find where supercell transformation
+                    # moves the defect site
                     struct_for_defect_site = Structure(
                         intersite_object.bulk_structure.copy().lattice,
                         [intersite_object.site.specie],
@@ -893,9 +887,9 @@ class ChargedDefectsStructures(object):
 
             else:
                 print(
-                    "Searching for Voronoi interstitial sites (this can take a while)"
+                    "Searching for Voronoi interstitial sites (this can take a little while)"
                 )
-                # the use of O here is completely arbitrary i think
+                # the use of O here is completely arbitrary
                 IG = VoronoiInterstitialGenerator(self.struct, "O")
                 sites = []
                 for i in IG:
@@ -913,14 +907,18 @@ class ChargedDefectsStructures(object):
                 for i, intersite in enumerate(inters):
                     elt = intersite.specie
                     if intersite.lattice != self.struct.lattice:
-                        err_msg = "Lattice matching error occurs between provided interstitial and the bulk structure."
+                        err_msg = (
+                            "Lattice matching error occurs between provided interstitial "
+                            "and the bulk structure."
+                        )
                         raise ValueError(err_msg)
                     else:
                         intersite_object = Interstitial(self.struct, intersite)
 
-                    name = "inter_{}_{}".format(i + 1, elt)
+                    name = f"inter_{i+1}_{elt}"
 
-                    # create a trivial defect structure to find where supercell transformation moves the defect site
+                    # create a trivial defect structure to find where supercell transformation
+                    # moves the defect site
                     struct_for_defect_site = Structure(
                         intersite_object.bulk_structure.copy().lattice,
                         [intersite_object.site.specie],
@@ -954,22 +952,31 @@ class ChargedDefectsStructures(object):
 
             self.defects["interstitials"] = interstitials
 
-        print("\nNumber of jobs created:")
-        tottmp = 0
+        print("Defects generated:")
         for j in self.defects.keys():
-            if j == "bulk":
-                print("    bulk = 1")
-                tottmp += 1
-            else:
-                print("    {}:".format(j))
+            if j != "bulk":
+                table = []
                 for lis in self.defects[j]:
-                    print(
-                        "        {} = {} with site multiplicity {}".format(
-                            lis["name"], len(lis["charges"]), lis["site_multiplicity"]
-                        )
-                    )
-                    tottmp += len(lis["charges"])
-        print("Total (non dielectric) jobs created = {}\n".format(tottmp))
+                    header = [
+                        j.capitalize(),
+                        "Potential Charge States",
+                        "Supercell Site " "Multiplicity",
+                    ]
+                    row = [
+                        lis["name"],
+                        lis["charges"],
+                        lis["site_multiplicity"],
+                    ]
+                    table.append(row)
+                print(
+                    tabulate(
+                        table,
+                        headers=header,
+                        stralign="left",
+                        numalign="left",
+                    ),
+                    "\n",
+                )
 
     def to(self, outfile):
         dumpfn(self.defects, outfile)
