@@ -544,7 +544,7 @@ class ChargedDefectsStructures(object):
         oxi_states=None,
         cellmax=128,
         antisites_flag=True,
-        include_interstitials=False,
+        include_interstitials=True,
         interstitial_elements=None,
         intersites=None,
         standardized=False,
