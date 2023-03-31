@@ -1,11 +1,11 @@
 import contextlib
 import copy
 import os
-from monty.serialization import loadfn
 import warnings
 from pathlib import Path, PurePath
 
 import pandas as pd
+from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -13,10 +13,8 @@ from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.pycdt.utils.parse_calculations import get_vasprun
-from doped.pycdt.utils.vasp import _import_psp
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
@@ -26,8 +24,8 @@ warnings.filterwarnings("ignore", category=BadInputSetWarning)
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
 warnings.filterwarnings(
-        "ignore", message="POTCAR data with symbol"
-    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+    "ignore", message="POTCAR data with symbol"
+)  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
 )  # currently rely on this so shouldn't show warning
@@ -102,7 +100,7 @@ def make_molecule_in_a_box(element):
         },
     }
 
-    if element in all_structures.keys():
+    if element in all_structures:
         structure = all_structures[element]["structure"]
         formula = all_structures[element]["formula"]
         total_magnetization = all_structures[element]["total_magnetization"]
@@ -197,10 +195,8 @@ def get_chempots_from_pd(bulk_ce, pd):
     # append bulk_ce to phase diagram, if not present
     entries = pd.all_entries
     if not any(
-        [
-            (ent.composition == bulk_ce.composition and ent.energy == bulk_ce.energy)
-            for ent in entries
-        ]
+        (ent.composition == bulk_ce.composition and ent.energy == bulk_ce.energy)
+        for ent in entries
     ):
         entries.append(
             PDEntry(
@@ -295,7 +291,7 @@ class CompetingPhases:
                     "supported by doped. Please use the legacy MP API ("
                     "https://legacy.materialsproject.org/open)."
                 )
-            elif 15 <= len(api_key) <= 20:
+            if 15 <= len(api_key) <= 20:
                 self.eah = "e_above_hull"
             else:
                 raise ValueError(
@@ -327,12 +323,10 @@ class CompetingPhases:
                 # only first matching molecular entry
                 molecular_entry = _make_molecular_entry(entry)
                 if not any(
-                    [
-                        ent.data["molecule"]
-                        and ent.data["pretty_formula"]
-                        == molecular_entry.data["pretty_formula"]
-                        for ent in pd_entries
-                    ]
+                    ent.data["molecule"]
+                    and ent.data["pretty_formula"]
+                    == molecular_entry.data["pretty_formula"]
+                    for ent in pd_entries
                 ):  # first entry only
                     pd_entries.append(molecular_entry)
                     self.MP_full_pd_entries.append(molecular_entry)
@@ -358,9 +352,9 @@ class CompetingPhases:
 
         MP_gga_chempots = get_chempots_from_pd(bulk_ce, pd)
 
-        MP_bordering_phases = set(
-            [phase for facet in MP_gga_chempots.keys() for phase in facet.split("-")]
-        )
+        MP_bordering_phases = {
+            phase for facet in MP_gga_chempots for phase in facet.split("-")
+        }
         self.entries = [
             entry
             for entry in pd_entries
@@ -388,7 +382,6 @@ class CompetingPhases:
                 x.name,
             )
         )
-
 
     # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
     def convergence_setup(
@@ -772,10 +765,8 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
                 for entry in self.MP_full_pd_entries.copy():
                     if any(
-                        [
-                            sub_elt in entry.composition
-                            for sub_elt in self.extrinsic_species
-                        ]
+                        sub_elt in entry.composition
+                        for sub_elt in self.extrinsic_species
                     ):
                         if (
                             entry.data["pretty_formula"] in self._molecules_in_a_box
@@ -783,12 +774,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         ):  # only first matching entry
                             molecular_entry = _make_molecular_entry(entry)
                             if not any(
-                                [
-                                    entry.data["molecule"]
-                                    and entry.data["pretty_formula"]
-                                    == molecular_entry.data["pretty_formula"]
-                                    for entry in self.entries
-                                ]
+                                entry.data["molecule"]
+                                and entry.data["pretty_formula"]
+                                == molecular_entry.data["pretty_formula"]
+                                for entry in self.entries
                             ):  # first entry only
                                 self.MP_full_pd_entries.append(molecular_entry)
                                 self.entries.append(molecular_entry)
@@ -839,12 +828,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                 # only first matching entry
                                 molecular_entry = _make_molecular_entry(entry)
                                 if not any(
-                                    [
-                                        entry.data["molecule"]
-                                        and entry.data["pretty_formula"]
-                                        == molecular_entry.data["pretty_formula"]
-                                        for entry in self.entries
-                                    ]
+                                    entry.data["molecule"]
+                                    and entry.data["pretty_formula"]
+                                    == molecular_entry.data["pretty_formula"]
+                                    for entry in self.entries
                                 ):  # first entry only
                                     self.MP_full_pd_entries.append(molecular_entry)
                                     extrinsic_entries.append(molecular_entry)
@@ -900,12 +887,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         # only first matching entry
                         molecular_entry = _make_molecular_entry(entry)
                         if not any(
-                            [
-                                entry.data["molecule"]
-                                and entry.data["pretty_formula"]
-                                == molecular_entry.data["pretty_formula"]
-                                for entry in extrinsic_pd_entries
-                            ]
+                            entry.data["molecule"]
+                            and entry.data["pretty_formula"]
+                            == molecular_entry.data["pretty_formula"]
+                            for entry in extrinsic_pd_entries
                         ):  # first entry only
                             self.MP_full_pd_entries.append(molecular_entry)
                             extrinsic_pd_entries.append(molecular_entry)
@@ -935,9 +920,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     # if the number of intrinsic competing phases for this facet is equal to the
                     # number of species in the bulk composition, then include the extrinsic phase(s)
                     # for this facet (full_sub_approach = False approach)
-                    MP_intrinsic_bordering_phases = set(
-                        [phase for phase in facet.split("-") if sub_elt not in phase]
-                    )
+                    MP_intrinsic_bordering_phases = {
+                        phase for phase in facet.split("-") if sub_elt not in phase
+                    }
                     if len(MP_intrinsic_bordering_phases) == len(
                         self.intrinsic_species
                     ):
@@ -971,16 +956,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
                             # new bordering phase, check if not an over-dependent facet:
 
-                            for facet in new_MP_extrinsic_gga_chempots.keys():
-                                if facet not in MP_extrinsic_gga_chempots.keys():
+                            for facet in new_MP_extrinsic_gga_chempots:
+                                if facet not in MP_extrinsic_gga_chempots:
                                     # new facet, check if not an over-dependent facet:
-                                    MP_intrinsic_bordering_phases = set(
-                                        [
-                                            phase
-                                            for phase in facet.split("-")
-                                            if sub_elt not in phase
-                                        ]
-                                    )
+                                    MP_intrinsic_bordering_phases = {
+                                        phase
+                                        for phase in facet.split("-")
+                                        if sub_elt not in phase
+                                    }
                                     if len(MP_intrinsic_bordering_phases) == len(
                                         self.intrinsic_species
                                     ):
@@ -1084,7 +1067,7 @@ class CompetingPhasesAnalyzer:
                     )
 
         # if path provided points to the doped created directories
-        elif isinstance(path, PurePath) or isinstance(path, str):
+        elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
                 if p.glob("EaH"):
@@ -1245,9 +1228,9 @@ class CompetingPhasesAnalyzer:
                 f"Could not find bulk phase for "
                 f"{self.bulk_composition.reduced_formula} in the supplied data. "
                 f"Found phases: "
-                f"{set([e.composition.reduced_formula for e in pd_entries_intrinsic])}"
+                f"{ {e.composition.reduced_formula for e in pd_entries_intrinsic} }"
             )
-        elif len(bulk_pde_list) > 0:
+        if len(bulk_pde_list) > 0:
             # lowest energy bulk phase
             self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
@@ -1350,9 +1333,7 @@ class CompetingPhasesAnalyzer:
             # reverse engineer chem lims for extrinsic
             df4 = df.copy().to_dict(orient="records")
             cl2 = {
-                "elemental_refs": {
-                    elt: ene for elt, ene in self.elemental_energies.items()
-                },
+                "elemental_refs": self.elemental_energies,
                 "facets_wrt_el_refs": {},
                 "facets": {},
             }
@@ -1454,13 +1435,11 @@ class CompetingPhasesAnalyzer:
 
                 # get only the lowest energy entries of compositions in self.data which are on a
                 # facet in self._intrinsic_chem_limits
-                bordering_phases = set(
-                    [
-                        phase
-                        for facet in self._chem_limits["facets"].keys()
-                        for phase in facet.split("-")
-                    ]
-                )
+                bordering_phases = {
+                    phase
+                    for facet in self._chem_limits["facets"]
+                    for phase in facet.split("-")
+                }
                 entries_for_cplap = [
                     entry_dict
                     for entry_dict in self.data
@@ -1472,7 +1451,7 @@ class CompetingPhasesAnalyzer:
                 culled_cplap_entries = {}
                 for entry in entries_for_cplap:
                     reduced_comp = Composition(entry["formula"]).reduced_composition
-                    if reduced_comp not in culled_cplap_entries.keys():
+                    if reduced_comp not in culled_cplap_entries:
                         culled_cplap_entries[reduced_comp] = entry
                     else:
                         if (
