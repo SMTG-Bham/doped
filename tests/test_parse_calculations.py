@@ -14,8 +14,9 @@ class DopedParsingTestCase(unittest.TestCase):
         # get module path
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.BULK_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
-        self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+        self.CDTE_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
+        self.CDTE_BULK_DATA_DIR = os.path.join(self.CDTE_EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
+        self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
         self.ytos_dielectric = [
             [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
@@ -28,15 +29,15 @@ class DopedParsingTestCase(unittest.TestCase):
         """Test parsing of Cd vacancy calculations and correct Freysoldt correction calculated"""
         parsed_vac_Cd_dict = {}
 
-        for i in os.listdir(self.EXAMPLE_DIR):
+        for i in os.listdir(self.CDTE_EXAMPLE_DIR):
             if "vac_1_Cd" in i:  # loop folders and parse those with "vac_1_Cd" in name
-                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
                     path_to_defect=defect_file_path,
-                    path_to_bulk=self.BULK_DATA_DIR,
-                    dielectric=self.dielectric,
+                    path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                    dielectric=self.cdte_dielectric,
                     defect_charge=defect_charge,
                 )
                 bo = sdp.freysoldt_loader()
@@ -96,15 +97,15 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_interstitial_parsing_and_kumagai(self):
         """Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV) correction"""
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.EXAMPLE_DIR):
+            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
                         path_to_defect=defect_file_path,
-                        path_to_bulk=self.BULK_DATA_DIR,
-                        dielectric=self.dielectric,
+                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
                     sdp.kumagai_loader()
@@ -137,15 +138,15 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.EXAMPLE_DIR):
+            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
                         path_to_defect=defect_file_path,
-                        path_to_bulk=self.BULK_DATA_DIR,
-                        dielectric=self.dielectric,
+                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
                     sdp.kumagai_loader()
@@ -159,15 +160,15 @@ class DopedParsingTestCase(unittest.TestCase):
 
     def test_substitution_parsing_and_kumagai(self):
         """Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction"""
-        for i in os.listdir(self.EXAMPLE_DIR):
-            if "as_1_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+        for i in os.listdir(self.CDTE_EXAMPLE_DIR):
+            if "as_1_Te" in i:  # loop folders and parse those with "as_1_Te" in name
+                defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
                     path_to_defect=defect_file_path,
-                    path_to_bulk=self.BULK_DATA_DIR,
-                    dielectric=self.dielectric,
+                    path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                    dielectric=self.cdte_dielectric,
                     defect_charge=defect_charge,
                 )
                 sdp.kumagai_loader()
@@ -234,10 +235,10 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_extrinsic_substitution_defect_ID(self):
         """Test parsing of extrinsic U_on_Cd in CdTe"""
         bulk_sc_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR"
+            f"{self.CDTE_EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR"
         )
         initial_defect_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/U_on_Cd_POSCAR"
+            f"{self.CDTE_EXAMPLE_DIR}/U_on_Cd_POSCAR"
         )
         (
             def_type,
@@ -391,15 +392,15 @@ class DopedParsingTestCase(unittest.TestCase):
         re-parsed
         """
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.EXAMPLE_DIR):
+            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
+                    defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
                         path_to_defect=defect_file_path,
-                        path_to_bulk=self.BULK_DATA_DIR,
-                        dielectric=self.dielectric,
+                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
                     sdp.kumagai_loader()
