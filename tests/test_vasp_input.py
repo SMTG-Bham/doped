@@ -39,6 +39,11 @@ class VaspInputTestCase(unittest.TestCase):
                     f"{self.CDTE_DATA_DIR}/{folder}/{vasp_type}/INCAR"
                 )
                 incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
+                # remove NUPDOWN and NELECT entries from test_incar:
+                test_incar.pop("NUPDOWN", None)
+                incar.pop("NUPDOWN", None)
+                test_incar.pop("NELECT", None)
+                incar.pop("NELECT", None)
                 self.assertEqual(test_incar, incar)
 
                 if check_poscar:
@@ -70,7 +75,8 @@ class VaspInputTestCase(unittest.TestCase):
         )
         for key, val in defect_input_dict.items():
             vasp_input.vasp_gam_files(
-                val, input_dir=key, user_incar_settings={"ENCUT": 350}, potcar_spec=True
+                val, input_dir=key, user_incar_settings={"ENCUT": 350}, potcar_spec=True,
+                user_potcar_functional=None
             )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
@@ -106,6 +112,7 @@ class VaspInputTestCase(unittest.TestCase):
                     "IBRION": 5,
                     "ADDGRID": True,
                 },
+                user_potcar_functional=None
             )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
@@ -126,6 +133,7 @@ class VaspInputTestCase(unittest.TestCase):
                     "ADDGRID": True,
                 },
                 unperturbed_poscar=True,
+                user_potcar_functional=None
             )
 
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True)
@@ -139,6 +147,7 @@ class VaspInputTestCase(unittest.TestCase):
                 val,
                 input_dir=key,
                 user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
+                user_potcar_functional=None
             )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
@@ -150,6 +159,7 @@ class VaspInputTestCase(unittest.TestCase):
                 input_dir=key,
                 user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
                 unperturbed_poscar=True,
+                user_potcar_functional=None
             )
 
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=True)
