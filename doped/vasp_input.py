@@ -203,29 +203,30 @@ def _prepare_vasp_files(
             poscar.comment = poscar_comment
         poscar.write_file(vaspinputdir + "POSCAR")
 
-    potcars = _check_psp_dir()
-    if not potcars:
-        if vasp_type == "gam":
-            warnings.warn(
-                "POTCAR directory not set up with pymatgen (see the doped homepage: "
-                "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
-                "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
-                "and `NUPDOWN`), so only `POSCAR` files will be generated."
-            )
-        elif unperturbed_poscar:  # vasp_std, vasp_ncl
-            warnings.warn(
-                "POTCAR directory not set up with pymatgen, so only unperturbed POSCAR files will "
-                "be generated (POTCARs also needed to determine appropriate NELECT setting in "
-                "INCAR files)"
-            )
-        else:
-            raise ValueError(
-                "POTCAR directory not set up with pymatgen (see the doped homepage: "
-                "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
-                "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
-                "and `NUPDOWN`), so no input files will be generated here."
-            )
-        return None
+    if user_potcar_functional is not None:
+        potcars = _check_psp_dir()
+        if not potcars:
+            if vasp_type == "gam":
+                warnings.warn(
+                    "POTCAR directory not set up with pymatgen (see the doped homepage: "
+                    "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
+                    "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
+                    "and `NUPDOWN`), so only `POSCAR` files will be generated."
+                )
+            elif unperturbed_poscar:  # vasp_std, vasp_ncl
+                warnings.warn(
+                    "POTCAR directory not set up with pymatgen, so only unperturbed POSCAR files will "
+                    "be generated (POTCARs also needed to determine appropriate NELECT setting in "
+                    "INCAR files)"
+                )
+            else:
+                raise ValueError(
+                    "POTCAR directory not set up with pymatgen (see the doped homepage: "
+                    "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
+                    "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
+                    "and `NUPDOWN`), so no input files will be generated here."
+                )
+            return None
 
     relax_set = deepcopy(default_relax_set)
     potcar_dict = deepcopy(default_potcar_dict)
