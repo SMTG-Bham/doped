@@ -1,0 +1,10 @@
+INCAR:
+  ICORELEVEL: "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction scheme"
+  ISIF: 2  # Fixed supercell for defects
+  ISPIN: 2  # Spin polarisation likely for defects
+  ISYM: "0  # Symmetry breaking extremely likely for defects"
+  LVHAR: "True  # Needed if using the Freysoldt (FNV) charge correction scheme"
+  NSW: 300
+# Note that EDIFF is also scaled according to the number of atoms in the supercell,
+# and NUPDOWN is set to 0 or 1 depending on the number of electrons (even/odd).
+# and KPAR is set to 2 `vasp_std` calculations (multiple kpoints)
