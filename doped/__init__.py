@@ -45,6 +45,8 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 warnings.filterwarnings(
         "ignore", message="POTCAR data with symbol"
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+# Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
+warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
 # until updated from pymatgen==2022.7.25 :
 warnings.filterwarnings(
