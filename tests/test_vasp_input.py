@@ -24,7 +24,7 @@ class VaspInputTestCase(unittest.TestCase):
                 shutil.rmtree(folder)
 
     def check_generated_vasp_inputs(self, data_dir=None, generated_dir=".",
-                                    vasp_type="vasp_gam", check_poscar=True, check_potcar=False,
+                                    vasp_type="vasp_gam", check_poscar=True,
                                     check_potcar_spec=False):
         if data_dir is None:
             data_dir = self.CDTE_DATA_DIR
@@ -33,9 +33,8 @@ class VaspInputTestCase(unittest.TestCase):
             if os.path.isdir(folder):
                 self.assertTrue(os.path.exists(f"{generated_dir}/{folder}"))
                 self.assertTrue(os.path.exists(f"{generated_dir}/{folder}/{vasp_type}"))
-                # TODO: May need to do POTCAR spec test for GitHub if possible, otherwise remove
 
-                # load the Incar, Poscar, Potcar and Kpoints and check it matches the previous:
+                # load the Incar, Poscar and Kpoints and check it matches the previous:
                 test_incar = Incar.from_file(
                     f"{self.CDTE_DATA_DIR}/{folder}/{vasp_type}/INCAR"
                 )
@@ -49,13 +48,6 @@ class VaspInputTestCase(unittest.TestCase):
                     )
                     poscar = Poscar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POSCAR")
                     self.assertEqual(test_poscar.structure, poscar.structure)
-
-                if check_potcar:
-                    test_potcar = Potcar.from_file(
-                        f"{self.CDTE_DATA_DIR}/{folder}/{vasp_type}/POTCAR"
-                    )
-                    potcar = Potcar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POTCAR")
-                    self.assertDictEqual(test_potcar.as_dict(), potcar.as_dict())
 
                 if check_potcar_spec:
                     with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", "r") as f:
@@ -83,6 +75,22 @@ class VaspInputTestCase(unittest.TestCase):
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
         self.check_generated_vasp_inputs(check_potcar_spec=True)
+
+        # test custom POTCAR choice:
+        for key, val in defect_input_dict.items():
+            if "vac_2_Te" in key:
+                vasp_input.vasp_gam_files(
+                    val,
+                    input_dir=key,
+                    user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
+                    user_potcar_functional="PBE",
+                    potcar_spec=True,
+                )
+
+                with open(f"{key}/vasp_gam/POTCAR.spec", "r") as f:
+                    contents = f.readlines()
+                    self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
+                    self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 
     def test_vasp_std_files(self):
         defect_input_dict = vasp_input.prepare_vasp_defect_inputs(
