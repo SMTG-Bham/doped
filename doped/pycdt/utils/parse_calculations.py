@@ -796,20 +796,11 @@ class SingleDefectParser:
                 if mindist < 0.5 and species_match:
                     site_matching_indices.append([bulk_index, defect_index])
 
-        # user Wigner-Seitz radius for sampling radius
-        wz = defect_structure.lattice.get_wigner_seitz_cell()
-        dist = []
-        for facet in wz:
-            midpt = np.mean(np.array(facet), axis=0)
-            dist.append(np.linalg.norm(midpt))
-        sampling_radius = min(dist)
-
         self.defect_entry.parameters.update(
             {
                 "bulk_atomic_site_averages": bulk_atomic_site_averages,
                 "defect_atomic_site_averages": defect_atomic_site_averages,
                 "site_matching_indices": site_matching_indices,
-                "sampling_radius": sampling_radius,
                 "defect_frac_sc_coords": self.defect_entry.site.frac_coords,
             }
         )
