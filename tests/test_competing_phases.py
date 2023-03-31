@@ -409,8 +409,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         with open(f"{path1}/INCAR", "r") as f:
             contents = f.readlines()
-            self.assertEqual(contents[4], "GGA = Ps\n")
-            self.assertEqual(contents[6], "ISIF = 2\n")
+            self.assertTrue(any("GGA = Ps\n" == line for line in contents))
+            self.assertTrue(any("NSW = 0\n" == line for line in contents))
 
     def test_vasp_std_setup(self):
         self.cp.vasp_std_setup(potcar_spec=True)
