@@ -89,7 +89,7 @@ class VaspInputTestCase(unittest.TestCase):
                     val,
                     input_dir=key,
                     user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
-                    user_potcar_functional="PBE",
+                    user_potcar_functional=None,
                     potcar_spec=True,
                 )
 
