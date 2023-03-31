@@ -42,6 +42,9 @@ _check_pmg_compatibility()
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
 warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
 warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
+warnings.filterwarnings(
+        "ignore", message="POTCAR data with symbol"
+    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
 # until updated from pymatgen==2022.7.25 :
 warnings.filterwarnings(
