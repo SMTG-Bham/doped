@@ -434,7 +434,8 @@ def vasp_std_files(
     # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
     defect_relax_set.incar.write_file(defect_relax_set.input_dir + "INCAR")
     defect_relax_set.kpoints.write_file(defect_relax_set.input_dir + "KPOINTS")
-    defect_relax_set.potcar.write_file(defect_relax_set.input_dir + "POTCAR")
+    if user_potcar_functional is not None:  # for GH Actions testing
+        defect_relax_set.potcar.write_file(defect_relax_set.input_dir + "POTCAR")
 
     return defect_relax_set
 
@@ -521,7 +522,8 @@ def vasp_ncl_files(
     # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
     defect_relax_set.incar.write_file(defect_relax_set.input_dir + "INCAR")
     defect_relax_set.kpoints.write_file(defect_relax_set.input_dir + "KPOINTS")
-    defect_relax_set.potcar.write_file(defect_relax_set.input_dir + "POTCAR")
+    if user_potcar_functional is not None:  # for GH Actions testing
+        defect_relax_set.potcar.write_file(defect_relax_set.input_dir + "POTCAR")
 
     return defect_relax_set
 
