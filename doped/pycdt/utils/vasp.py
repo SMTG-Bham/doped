@@ -13,10 +13,7 @@ from monty.json import MontyEncoder
 from monty.os.path import zpath
 from monty.serialization import dumpfn, loadfn
 from pymatgen.io.vasp.inputs import Kpoints, Potcar, PotcarSingle
-from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
-
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
+from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet, DictSet
 
 
 def _check_psp_dir():  # Provided by Katarina Brlec, from github.com/SMTG-UCL/surfaxe
@@ -152,32 +149,33 @@ class PotcarMod(Potcar):
                 self.append(p)
 
 
-class DefectRelaxSet(MPRelaxSet):
+class DefectRelaxSet(DictSet):
     """
-    Extension to MPRelaxSet which modifies some parameters appropriate
-    for defect calculations
+    pymatgen DictSet for VASP Defect Relaxation Calculations
     Additional Args:
         charge: Charge of the defect structure
     """
 
     def __init__(self, structure, **kwargs):
         charge = kwargs.pop("charge", 0)
-        user_incar_settings = kwargs.get("user_incar_settings", {})
-        defect_settings = deepcopy(CONFIG["defect"])
-        defect_settings.update(user_incar_settings)
-        kwargs["user_incar_settings"] = defect_settings
+        config_dict = kwargs.pop("config_dict", {})
+        if config_dict:
+            super(self.__class__, self).__init__(structure, config_dict=config_dict, **kwargs)
+        else:
+            mp_set = MPRelaxSet(structure, **kwargs)
+            super(self.__class__, self).__init__(structure, config_dict=mp_set.CONFIG, **kwargs)
 
-        super(self.__class__, self).__init__(structure, **kwargs)
         self.charge = charge
 
     @property
     def incar(self):
         inc = super(self.__class__, self).incar
         try:
-            if self.charge:
-                inc["NELECT"] = self.nelect - self.charge
-        except:
-            print("NELECT flag is not set due to non-availability of POTCARs")
+            inc["NELECT"] = self.nelect - self.charge
+            if inc["NELECT"] % 2 != 0:  # odd number of electrons
+                inc["NUPDOWN"] = 1
+        except Exception:
+            print("NELECT and NUPDOWN flags are not set due to non-availability of POTCARs")
 
         return inc
 
@@ -221,11 +219,6 @@ class DefectStaticSet(MPStaticSet):
     """
 
     def __init__(self, structure, **kwargs):
-        user_incar_settings = kwargs.get("user_incar_settings", {})
-        bulk_settings = deepcopy(CONFIG["bulk"])
-        bulk_settings.update(user_incar_settings)
-        kwargs["user_incar_settings"] = bulk_settings
-
         super(self.__class__, self).__init__(structure, **kwargs)
 
     @property
@@ -261,11 +254,6 @@ class DielectricSet(MPStaticSet):
     """
 
     def __init__(self, structure, **kwargs):
-        user_incar_settings = kwargs.get("user_incar_settings", {})
-        dielectric_settings = CONFIG["dielectric"]
-        dielectric_settings.update(user_incar_settings)
-        kwargs["user_incar_settings"] = dielectric_settings
-
         super(self.__class__, self).__init__(structure, lepsilon=True, **kwargs)
 
     @property
@@ -517,8 +505,7 @@ def make_vasp_defect_files_dos(
                     sum_elec += comp.as_dict()[p.element] * p.nelectrons
                     elts.add(p.element)
 
-            if charge != 0:
-                incar["NELECT"] = sum_elec - charge
+            incar["NELECT"] = sum_elec - charge
 
             kpoint = mp_relax_set.kpoints.monkhorst_automatic()
             path = os.path.join(path_base, defect["name"], "charge_" + str(charge))
