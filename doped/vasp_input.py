@@ -94,10 +94,11 @@ def prepare_vasp_defect_inputs(defects: dict) -> dict:
 
             poscar = defect_relax_set.poscar
             struct = defect_relax_set.structure
-            poscar.comment = (
-                f"{defect['name']} "
-                f"{dict_transf['defect_supercell_site'].frac_coords} {charge}"
-            )
+            frac_coords = defect["unique_site"].frac_coords
+            approx_coords = f"~[{frac_coords[0]:.4f},{frac_coords[1]:.4f},{frac_coords[2]:.4f}]"
+            # Note this gets truncated to 40 characters in the CONTCAR: (this should be less than
+            # 40 chars in all cases):
+            poscar.comment = f"{defect['name']} {approx_coords} {charge}"
             folder_name = defect["name"] + f"_{charge}"
             print(folder_name)
 
@@ -342,7 +343,8 @@ def vasp_gam_files(
         unperturbed_poscar=True,  # write POSCAR for vasp_gam_files()
     )
     defect_relax_set.write_input(
-        defect_relax_set.input_dir, **kwargs  # kwargs to allow POTCAR testing on GH Actions
+        defect_relax_set.input_dir,
+        **kwargs,  # kwargs to allow POTCAR testing on GH Actions
     )  # writes POSCAR without comment
     poscar_comment = (
         single_defect_dict["POSCAR Comment"]
