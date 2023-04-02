@@ -33,8 +33,6 @@ warnings.filterwarnings(
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
 #  correspond to `pymatgen`'s `DictSet` format.
-# TODO: Add warning for when input `user_potcar_settings` don't match the expected format (i.e. if one
-#  of the dict entries is not an element symbol)
 # TODO: Should refactor all this to "Chemical Potentials" etc rather than 'competing phases' as
 #  this is a more common term in the field so likely more familiar to users. Will do when all
 #  chempot functionality has been transferred over and old `pycdt` chempot code deleted
