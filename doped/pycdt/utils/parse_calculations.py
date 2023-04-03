@@ -771,6 +771,19 @@ class SingleDefectParser:
 
         bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
         defect_atomic_site_averages = def_outcar.electrostatic_potential
+        if not bulk_atomic_site_averages:
+            raise ValueError(f"Unable to parse atomic core potentials from bulk `OUTCAR` at "
+                             f"{bulk_outcar_path}. This can happen if `ICORELEVEL` was not set "
+                             f"to 0 (= default) in the `INCAR`, or if the calculation was "
+                             f"finished prematurely with a `STOPCAR`. The Kumagai charge "
+                             f"correction cannot be computed without this data!")
+
+        elif not defect_atomic_site_averages:
+            raise ValueError(f"Unable to parse atomic core potentials from defect `OUTCAR` at "
+                             f"{def_outcar_path}. This can happen if `ICORELEVEL` was not set "
+                             f"to 0 (= default) in the `INCAR`, or if the calculation was "
+                             f"finished prematurely with a `STOPCAR`. The Kumagai charge "
+                             f"correction cannot be computed without this data!")
 
         bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
