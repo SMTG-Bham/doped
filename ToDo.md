@@ -11,14 +11,14 @@
 - Once happy all required functionality is in the new `competing_phases.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), amalgamate `chempot`/`competing_phase` example notebooks and remove the old modified-pycdt `chemical_potentials.py` code, and rename `competing_phases.py` to `chemical_potentials.py` as this is more recognisable to the average defect calculator.
 
 ## Defect calculations set up
+- Updated naming convention, to match that implemented in `ShakeNBreak`.
+  - Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Currently seems to be an issue when using non-diagonal supercells, extra unnecessary interstitials (and sometimes vacancies and antisites) are generated. Adair, Bonan and Savya have noticed this. Should be fixed by folding down to the primitive cell, doing the symmetry analysis and defect generation, and then expanding back up.
 - Check supercell generation algorithm, worth using ASE's optimal supercell generation tools? Also see recent `CubicSupercellTransformation` class in `pymatgen`
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
 - `NKRED` pre-relaxing on defect structures (see jspark Slack discussion)
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value; could add a `remove_incar_tags` arg and then `pop` them out of the incar dict?)
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
-- Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions (use `yaml` file with default settings instead etc))
-- Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
     - If we have this implemented, can then remove some of the fluff in `defectsmaker.py` (i.e. classes other than `ChargedDefectStructures()`?)
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
