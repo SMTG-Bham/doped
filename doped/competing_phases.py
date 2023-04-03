@@ -29,6 +29,7 @@ warnings.filterwarnings(
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
 )  # currently rely on this so shouldn't show warning
+warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
 # TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
 #  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
