@@ -11,7 +11,7 @@
 - Once happy all required functionality is in the new `competing_phases.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), amalgamate `chempot`/`competing_phase` example notebooks and remove the old modified-pycdt `chemical_potentials.py` code, and rename `competing_phases.py` to `chemical_potentials.py` as this is more recognisable to the average defect calculator.
 
 ## Defect calculations set up
-- Updated naming convention, to match that implemented in `ShakeNBreak`.
+- Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `dope_stuff` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
   - Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Currently seems to be an issue when using non-diagonal supercells, extra unnecessary interstitials (and sometimes vacancies and antisites) are generated. Adair, Bonan and Savya have noticed this. Should be fixed by folding down to the primitive cell, doing the symmetry analysis and defect generation, and then expanding back up.
 - Check supercell generation algorithm, worth using ASE's optimal supercell generation tools? Also see recent `CubicSupercellTransformation` class in `pymatgen`
@@ -31,6 +31,7 @@
   - Related point, using our `doped` site-matching functions, could write some quick functions to plot the exponential tailing off of strain / site displacements as we move away from the defect site. Could be useful as a validation / check of supercell size convergence, and for quantifying the strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
 
 ## Post-processing / analysis / plotting
+- Rename `dope_stuff` to `plotting` because more professional and that's basically what all the functions are for?
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
 - `aide` labelling of defect species in formation energy plots.
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
@@ -51,7 +52,7 @@
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
 - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, check how much the error is, and if small enough ignore and force the charge correction function to run (current method is to warn user this is the case, and to check it manually).
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
-- Something to watch out for; currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For things like interstitials, if the closest Voronoi site from the relaxed structure thus differs between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (at least similar colours for similar defect types, and an option to just show amalgamated lowest energy charge states for each _defect type_?). NaP is an example for this – should have a test built for however we want to handle cases like this.
+- Something to watch out for; currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For things like interstitials, if the closest Voronoi site from the relaxed structure thus differs between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (at least similar colours for similar defect types, and an option to just show amalgamated lowest energy charge states for each _defect type_?). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
 
 ## Housekeeping
 - Clean `README.md` with summary of main functionalities.
