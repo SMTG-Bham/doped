@@ -9,7 +9,6 @@ import glob
 import logging
 import os
 import warnings
-from copy import deepcopy
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -383,9 +382,16 @@ class SingleDefectParser:
     def __init__(
         self,
         defect_entry,
-        compatibility=DefectCompatibility(plnr_avg_var_tol=0.0002,
-                                          use_bandfilling=False,
-                                          use_bandedgeshift=False),
+        compatibility=DefectCompatibility(
+            plnr_avg_var_tol=0.01,
+            plnr_avg_minmax_tol=0.3,
+            atomic_site_var_tol=0.025,
+            atomic_site_minmax_tol=0.3,
+            tot_relax_tol=5.0,
+            defect_tot_relax_tol=5.0,
+            use_bandfilling=False,  # don't include bandfilling by default
+            use_bandedgeshift=False,  # don't include band edge shift by default
+        ),
         defect_vr=None,
         bulk_vr=None,
     ):
@@ -399,7 +405,7 @@ class SingleDefectParser:
             NOTE: to make use of methods within the class, bulk_path and and defect_path
             must exist within the defect_entry parameters class.
         :param compatibility (DefectCompatibility): Compatibility class instance for
-            performing compatibility analysis on defect entry.
+            performing charge correction compatibility analysis on defect entry.
         :param defect_vr (Vasprun):
         :param bulk_vr (Vasprun):
 
@@ -432,15 +438,16 @@ class SingleDefectParser:
         Identify defect object based on file paths. Minimal parsing performing for
         instantiating the SingleDefectParser class.
 
-        :param path_to_defect (str): path to defect folder of interest (with vasprun.xml(.gz))
-        :param path_to_bulk (str): path to bulk folder of interest (with vasprun.xml(.gz))
-        :param dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
-        :param defect_charge (int):
-        :param mpid (str):
-        :param initial_defect_structure (str):  Path to the unrelaxed defect structure,
+        Args:
+        path_to_defect (str): path to defect folder of interest (with vasprun.xml(.gz))
+        path_to_bulk (str): path to bulk folder of interest (with vasprun.xml(.gz))
+        dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
+        defect_charge (int):  charge of defect
+        mpid (str):  Materials Project ID of bulk structure
+        compatibility (DefectCompatibility): Compatibility class instance for
+            performing charge correction compatibility analysis on defect entry.
+        initial_defect_structure (str):  Path to the unrelaxed defect structure,
             if structure matching with the relaxed defect structure(s) fails.
-        :param compatibility (DefectCompatibility): Compatibility class instance for
-            performing compatibility analysis on defect entry.
 
         Return:
             Instance of the SingleDefectParser class.
@@ -684,7 +691,8 @@ class SingleDefectParser:
         )
 
     def freysoldt_loader(self, bulk_locpot=None):
-        """Load metadata required for performing Freysoldt correction
+        """
+        Load metadata required for performing Freysoldt correction
         requires "bulk_path" and "defect_path" to be loaded to DefectEntry parameters dict.
         Can read gunzipped "LOCPOT.gz" files as well.
 
@@ -736,7 +744,8 @@ class SingleDefectParser:
 
     # noinspection DuplicatedCode
     def kumagai_loader(self, bulk_outcar=None):
-        """Load metadata required for performing Kumagai correction
+        """
+        Load metadata required for performing Kumagai correction
         requires "bulk_path" and "defect_path" to be loaded to DefectEntry parameters dict.
 
         Args:
@@ -1013,6 +1022,7 @@ class SingleDefectParser:
             and "potalign" not in self.defect_entry.parameters
         ):
             self.defect_entry.parameters["potalign"] = 0
+
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
         if "delocalization_meta" in self.defect_entry.parameters:
             delocalization_meta = self.defect_entry.parameters["delocalization_meta"]
@@ -1023,19 +1033,21 @@ class SingleDefectParser:
                 "atomic_site" in delocalization_meta
                 and not delocalization_meta["atomic_site"]["is_compatible"]
             ):
-                delocalized_warning = f"""
+                specific_delocalized_warning = f"""
 Delocalization analysis has indicated that {self.defect_entry.name}
-with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction
-scheme, and may require a larger supercell for accurate calculation of the energy. Recommended to
-look at the correction plots (i.e. run `get_correction_freysoldt(DefectEntry,...,plot=True)` from
+with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction."""
+                general_delocalization_warning = f"""
+Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
+accurate total energies. Recommended to look at the correction plots (i.e. run 
+`get_correction_freysoldt(DefectEntry,...,plot=True)` from
 `doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if the charge 
-correction scheme is still appropriate, then `sdp.compatibility.perform_freysoldt(DefectEntry)`
-to apply it (replace 'freysoldt' with 'kumagai' if using anisotropic correction).
-You can also change the DefectCompatibility() tolerance settings via the `compatibility` parameter
-in `SingleDefectParser.from_paths()`."""
-                warnings.warn(message=delocalized_warning)
+correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic 
+correction). You can also change the DefectCompatibility() tolerance settings via the 
+`compatibility` parameter in `SingleDefectParser.from_paths()`."""
+                warnings.warn(message=specific_delocalized_warning)
+                warnings.warn(message=general_delocalization_warning)  # should only print once
 
-        elif "num_hole_vbm" in self.defect_entry.parameters:
+        if "num_hole_vbm" in self.defect_entry.parameters:
             if (
                 self.compatibility.free_chg_cutoff
                 < self.defect_entry.parameters["num_hole_vbm"]
@@ -1043,11 +1055,25 @@ in `SingleDefectParser.from_paths()`."""
                 self.compatibility.free_chg_cutoff
                 < self.defect_entry.parameters["num_elec_cbm"]
             ):
+                num_holes = self.defect_entry.parameters["num_hole_vbm"]
+                num_electrons = self.defect_entry.parameters["num_elec_cbm"]
                 warnings.warn(
-                    "Eigenvalue analysis has indicated that `num_hole_vbm` or "
-                    "`num_elec_cbm` is greater than `free_chg_cutoff` (default = 2.1), "
-                    "charge correction is not being applied."
+                    f"Eigenvalue analysis has determined that `num_hole_vbm` (= {num_holes}) or "
+                    f"`num_elec_cbm` (= {num_electrons}) is significant (>2.1) for "
+                    f"{self.defect_entry.name} with charge {self.defect_entry.charge}, indicating "
+                    f"that there are many free charges in this defect supercell calculation and "
+                    f"so the defect charge correction is unlikely to be accurate."
                 )
+                if "freysoldt_meta" in self.defect_entry.parameters:
+                    frey_meta = self.defect_entry.parameters["freysoldt_meta"]
+                    frey_corr = frey_meta["freysoldt_electrostatic"] + frey_meta[
+                        "freysoldt_potential_alignment_correction"]
+                    self.defect_entry.corrections.update({'charge_correction': frey_corr})
+                elif "kumagai_meta" in self.defect_entry.parameters:
+                    kumagai_meta = self.defect_entry.parameters["kumagai_meta"]
+                    kumagai_corr = kumagai_meta["kumagai_electrostatic"] + \
+                                   kumagai_meta["kumagai_potential_alignment_correction"]
+                    self.defect_entry.corrections.update({'charge_correction': kumagai_corr})
 
 
 class PostProcess:
