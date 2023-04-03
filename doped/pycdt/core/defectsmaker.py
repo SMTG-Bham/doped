@@ -953,19 +953,19 @@ class ChargedDefectsStructures(object):
             self.defects["interstitials"] = interstitials
 
         print("Defects generated:")
-        for j in self.defects.keys():
-            if j != "bulk":
+        for key, defect_list in self.defects.items():
+            if key != "bulk" and len(defect_list) > 0:
                 table = []
-                for lis in self.defects[j]:
+                for single_defect_dict in defect_list:
                     header = [
-                        j.capitalize(),
+                        key.capitalize(),
                         "Potential Charge States",
                         "Supercell Site " "Multiplicity",
                     ]
                     row = [
-                        lis["name"],
-                        lis["charges"],
-                        lis["site_multiplicity"],
+                        single_defect_dict["name"],
+                        single_defect_dict["charges"],
+                        single_defect_dict["site_multiplicity"],
                     ]
                     table.append(row)
                 print(
