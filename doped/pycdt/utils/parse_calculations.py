@@ -441,7 +441,8 @@ class SingleDefectParser:
         Args:
         path_to_defect (str): path to defect folder of interest (with vasprun.xml(.gz))
         path_to_bulk (str): path to bulk folder of interest (with vasprun.xml(.gz))
-        dielectric (float or 3x3 matrix): ionic + static contributions to dielectric constant
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
         defect_charge (int):  charge of defect
         mpid (str):  Materials Project ID of bulk structure
         compatibility (DefectCompatibility): Compatibility class instance for
@@ -452,6 +453,17 @@ class SingleDefectParser:
         Return:
             Instance of the SingleDefectParser class.
         """
+        # check if dielectric in required 3x3 matrix format
+        if not isinstance(dielectric, (float, int)):
+            dielectric = np.array(dielectric)
+            if dielectric.shape == (3,):
+                dielectric = np.diag(dielectric)
+            elif dielectric.shape != (3, 3):
+                raise ValueError(
+                    f"Dielectric constant must be a float/int or a 3x1 matrix or 3x3 matrix, "
+                    f"got type {type(dielectric)} and shape {dielectric.shape}"
+                )
+
         parameters = {
             "bulk_path": path_to_bulk,
             "defect_path": path_to_defect,
