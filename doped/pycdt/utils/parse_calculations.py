@@ -42,7 +42,9 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 warnings.filterwarnings(
     "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
 )
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings(
+    "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
+)
 warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
@@ -775,6 +777,8 @@ class SingleDefectParser:
                 self.defect_entry.parameters["bulk_path"], "OUTCAR"
             )
             bulk_outcar = get_outcar(bulk_outcar_path)
+        else:
+            bulk_outcar_path = "`bulk_outcar`"
 
         def_outcar_path = os.path.join(
             self.defect_entry.parameters["defect_path"], "OUTCAR"
@@ -784,18 +788,22 @@ class SingleDefectParser:
         bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
         defect_atomic_site_averages = def_outcar.electrostatic_potential
         if not bulk_atomic_site_averages:
-            raise ValueError(f"Unable to parse atomic core potentials from bulk `OUTCAR` at "
-                             f"{bulk_outcar_path}. This can happen if `ICORELEVEL` was not set "
-                             f"to 0 (= default) in the `INCAR`, or if the calculation was "
-                             f"finished prematurely with a `STOPCAR`. The Kumagai charge "
-                             f"correction cannot be computed without this data!")
+            raise ValueError(
+                f"Unable to parse atomic core potentials from bulk `OUTCAR` at "
+                f"{bulk_outcar_path}. This can happen if `ICORELEVEL` was not set "
+                f"to 0 (= default) in the `INCAR`, or if the calculation was "
+                f"finished prematurely with a `STOPCAR`. The Kumagai charge "
+                f"correction cannot be computed without this data!"
+            )
 
         elif not defect_atomic_site_averages:
-            raise ValueError(f"Unable to parse atomic core potentials from defect `OUTCAR` at "
-                             f"{def_outcar_path}. This can happen if `ICORELEVEL` was not set "
-                             f"to 0 (= default) in the `INCAR`, or if the calculation was "
-                             f"finished prematurely with a `STOPCAR`. The Kumagai charge "
-                             f"correction cannot be computed without this data!")
+            raise ValueError(
+                f"Unable to parse atomic core potentials from defect `OUTCAR` at "
+                f"{def_outcar_path}. This can happen if `ICORELEVEL` was not set "
+                f"to 0 (= default) in the `INCAR`, or if the calculation was "
+                f"finished prematurely with a `STOPCAR`. The Kumagai charge "
+                f"correction cannot be computed without this data!"
+            )
 
         bulk_structure = self.defect_entry.bulk_structure
         bulksites = [site.frac_coords for site in bulk_structure]
@@ -1049,6 +1057,7 @@ class SingleDefectParser:
             self.defect_entry.parameters["potalign"] = 0
 
         self.defect_entry = self.compatibility.process_entry(self.defect_entry)
+
         if "delocalization_meta" in self.defect_entry.parameters:
             delocalization_meta = self.defect_entry.parameters["delocalization_meta"]
             if (
@@ -1070,7 +1079,9 @@ correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if us
 correction). You can also change the DefectCompatibility() tolerance settings via the 
 `compatibility` parameter in `SingleDefectParser.from_paths()`."""
                 warnings.warn(message=specific_delocalized_warning)
-                warnings.warn(message=general_delocalization_warning)  # should only print once
+                warnings.warn(
+                    message=general_delocalization_warning
+                )  # should only print once
 
         if "num_hole_vbm" in self.defect_entry.parameters:
             if (
@@ -1091,14 +1102,34 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 )
                 if "freysoldt_meta" in self.defect_entry.parameters:
                     frey_meta = self.defect_entry.parameters["freysoldt_meta"]
-                    frey_corr = frey_meta["freysoldt_electrostatic"] + frey_meta[
-                        "freysoldt_potential_alignment_correction"]
-                    self.defect_entry.corrections.update({'charge_correction': frey_corr})
+                    frey_corr = (
+                        frey_meta["freysoldt_electrostatic"]
+                        + frey_meta["freysoldt_potential_alignment_correction"]
+                    )
+                    self.defect_entry.corrections.update(
+                        {"charge_correction": frey_corr}
+                    )
                 elif "kumagai_meta" in self.defect_entry.parameters:
                     kumagai_meta = self.defect_entry.parameters["kumagai_meta"]
-                    kumagai_corr = kumagai_meta["kumagai_electrostatic"] + \
-                                   kumagai_meta["kumagai_potential_alignment_correction"]
-                    self.defect_entry.corrections.update({'charge_correction': kumagai_corr})
+                    kumagai_corr = (
+                        kumagai_meta["kumagai_electrostatic"]
+                        + kumagai_meta["kumagai_potential_alignment_correction"]
+                    )
+                    self.defect_entry.corrections.update(
+                        {"charge_correction": kumagai_corr}
+                    )
+
+        if (
+            self.defect_entry.charge != 0
+            and self.defect_entry.corrections.get("charge_correction", None) is None
+        ):
+            warnings.warn(
+                f"No charge correction computed for {self.defect_entry.name} with "
+                f"charge {self.defect_entry.charge}, indicating problems with the "
+                f"required data for the charge correction (i.e. dielectric constant, "
+                f"LOCPOT files for Freysoldt correction, OUTCAR (with ICORELEVEL = 0) "
+                f"for Kumagai correction etc)."
+            )
 
 
 class PostProcess:
