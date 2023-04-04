@@ -15,8 +15,12 @@ class DopedParsingTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CDTE_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CDTE_BULK_DATA_DIR = os.path.join(self.CDTE_EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
-        self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+        self.CDTE_BULK_DATA_DIR = os.path.join(
+            self.CDTE_EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl"
+        )
+        self.cdte_dielectric = np.array(
+            [[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]]
+        )  # CdTe
 
         self.ytos_dielectric = [
             [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
@@ -24,6 +28,80 @@ class DopedParsingTestCase(unittest.TestCase):
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
         # from legacy Materials Project
+
+    def test_dielectric_initialisation(self):
+        """
+        Test that dielectric can be supplied as float or int or 3x1 array/list or 3x3 array/list
+        """
+        defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        # test float
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=9.13,
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(sdp.defect_entry.parameters["dielectric"], 9.13)
+        )  # # float/int stay the same
+
+        # test int
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=9,
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(
+                sdp.defect_entry.parameters["dielectric"],
+                9,  # float/int stay the same
+            )
+        )
+
+        # test 3x1 array
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=np.array([9.13, 9.13, 9.13]),
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
+        )
+
+        # test 3x1 list
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=[9.13, 9.13, 9.13],
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
+        )
+
+        # test 3x3 array
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=self.cdte_dielectric,
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
+        )
+
+        # test 3x3 list
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=self.cdte_dielectric.tolist(),
+            defect_charge=-2,
+        )
+        self.assertTrue(
+            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
+        )
 
     def test_vacancy_parsing_and_freysoldt(self):
         """Test parsing of Cd vacancy calculations and correct Freysoldt correction calculated"""
