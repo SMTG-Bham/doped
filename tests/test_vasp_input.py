@@ -2,8 +2,8 @@ import os
 import shutil
 import unittest
 
-from monty.serialization import dumpfn, loadfn
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
+from monty.serialization import loadfn
+from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
 
 from doped import vasp_input
 
@@ -66,8 +66,8 @@ class VaspInputTestCase(unittest.TestCase):
             if check_potcar_spec:
                 with open(
                     f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", "r"
-                ) as f:
-                    contents = f.readlines()
+                ) as file:
+                    contents = file.readlines()
                     self.assertIn(contents[0], ["Cd", "Cd\n"])
                     self.assertIn(contents[1], ["Te", "Te\n"])
                     if "Se" in folder:
@@ -129,8 +129,8 @@ class VaspInputTestCase(unittest.TestCase):
             potcar_spec=True,
         )
 
-        with open(f"vac_2_Te_0/vasp_gam/POTCAR.spec", "r") as f:
-            contents = f.readlines()
+        with open("vac_2_Te_0/vasp_gam/POTCAR.spec", "r") as file:
+            contents = file.readlines()
             self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
             self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 
@@ -162,8 +162,8 @@ class VaspInputTestCase(unittest.TestCase):
             potcar_spec=True,
         )
 
-        with open(f"vac_2_Te_0/vasp_gam/POTCAR.spec", "r") as f:
-            contents = f.readlines()
+        with open("vac_2_Te_0/vasp_gam/POTCAR.spec", "r") as file:
+            contents = file.readlines()
             self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
             self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 

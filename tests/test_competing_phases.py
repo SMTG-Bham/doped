@@ -2,9 +2,8 @@ import os
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from monty.serialization import dumpfn, loadfn
+from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 
 from doped import competing_phases
@@ -80,7 +79,6 @@ class ChemPotsTestCase(unittest.TestCase):
         self.assertEqual(list(df["La_limiting_phase"])[0], "La2Zr2O7")
         self.assertAlmostEqual(list(df["La"])[0], -9.46298748)
 
-
     def test_cpa_chem_limits(self):
         # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
         stable_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
@@ -91,9 +89,10 @@ class ChemPotsTestCase(unittest.TestCase):
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        self.assertDictEqual(self.ext_cpa.chem_limits["elemental_refs"], self.parsed_ext_chempots[
-            "elemental_refs"])
-
+        self.assertDictEqual(
+            self.ext_cpa.chem_limits["elemental_refs"],
+            self.parsed_ext_chempots["elemental_refs"],
+        )
 
     # test vaspruns
     def test_vaspruns(self):
@@ -202,8 +201,8 @@ class ChemPotsTestCase(unittest.TestCase):
 
         self.assertTrue(Path("input.dat").is_file())
 
-        with open("input.dat", "r") as f:
-            contents = f.readlines()
+        with open("input.dat", "r") as file:
+            contents = file.readlines()
 
         # assert these lines are in the file:
         for i in [
@@ -232,7 +231,7 @@ class BoxedMoleculesTestCase(unittest.TestCase):
         self.assertEqual(type(s), Structure)
 
         with self.assertRaises(UnboundLocalError):
-            s2, f2, m2 = competing_phases.make_molecule_in_a_box("R2")
+            competing_phases.make_molecule_in_a_box("R2")
 
 
 class FormationEnergyTestCase(unittest.TestCase):
@@ -340,7 +339,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(self.cp.entries[0].data["total_magnetization"], 2)
         self.assertEqual(self.cp.entries[0].data["e_above_hull"], 0)
         self.assertTrue(self.cp.entries[0].data["molecule"])
-        self.assertAlmostEqual(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        self.assertAlmostEqual(
+            self.cp.entries[0].data["energy_per_atom"], -4.94795546875
+        )
         self.assertAlmostEqual(self.cp.entries[0].data["energy"], -9.8959109375)
         self.assertEqual(self.cp.entries[1].name, "Zr")
         self.assertAlmostEqual(
@@ -370,7 +371,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "API key test is not a valid legacy Materials Project API key. These are "
                 "available at https://legacy.materialsproject.org/open"
             )
-            cp = competing_phases.CompetingPhases(
+            competing_phases.CompetingPhases(
                 "ZrO2",
                 api_key="test",
             )
@@ -378,10 +379,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         with self.assertRaises(ValueError) as e:
             new_api_key_error = ValueError(
-                "You are trying to use the new Materials Project (MP) API which is not supported by "
-                "doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
+                "You are trying to use the new Materials Project (MP) API which is not supported "
+                "by doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
             )
-            cp = competing_phases.CompetingPhases(
+            competing_phases.CompetingPhases(
                 "ZrO2",
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
@@ -399,16 +400,16 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
         self.assertTrue(Path(path1).is_dir())
-        with open(f"{path1}/KPOINTS", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/KPOINTS", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents[3], "2 1 1\n")
 
-        with open(f"{path1}/POTCAR.spec", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/POTCAR.spec", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents[0], "Zr_sv\n")
 
-        with open(f"{path1}/INCAR", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/INCAR", "r") as file:
+            contents = file.readlines()
             self.assertTrue(any("GGA = Ps\n" == line for line in contents))
             self.assertTrue(any("NSW = 0\n" == line for line in contents))
 
@@ -424,31 +425,31 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         self.assertTrue(Path(path1).is_dir())
-        with open(f"{path1}/KPOINTS", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/KPOINTS", "r") as file:
+            contents = file.readlines()
             self.assertEqual(
                 contents[0], "pymatgen with grid density = 911 / number of atoms\n"
             )
             self.assertEqual(contents[3], "4 4 4\n")
 
-        with open(f"{path1}/POTCAR.spec", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/POTCAR.spec", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents, ["Zr_sv\n", "O"])
 
-        with open(f"{path1}/INCAR", "r") as f:
-            contents = f.readlines()
+        with open(f"{path1}/INCAR", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents[0], "AEXX = 0.25\n")
             self.assertEqual(contents[8], "ISIF = 3\n")
             self.assertEqual(contents[5], "GGA = Pe\n")
 
         path2 = "competing_phases/O2_EaH_0/vasp_std"
         self.assertTrue(Path(path2).is_dir())
-        with open(f"{path2}/KPOINTS", "r") as f:
-            contents = f.readlines()
+        with open(f"{path2}/KPOINTS", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents[3], "1 1 1\n")
 
-        with open(f"{path2}/POSCAR", "r") as f:
-            contents = f.readlines()
+        with open(f"{path2}/POSCAR", "r") as file:
+            contents = file.readlines()
             self.assertEqual(contents[-1], "0.500000 0.500000 0.540667 O\n")
 
 
@@ -483,10 +484,8 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(self.ex_cp.intrinsic_entries[3].name, "ZrO2")
         self.assertTrue(
             all(
-                [
-                    entry.data["e_above_hull"] == 0
-                    for entry in self.ex_cp.intrinsic_entries
-                ]
+                entry.data["e_above_hull"] == 0
+                for entry in self.ex_cp.intrinsic_entries
             )
         )
 
@@ -500,9 +499,9 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(cp.entries[3].name, "LaZr9O20")  # definite ordering
         self.assertEqual(cp.entries[4].name, "LaZr9O20")  # definite ordering
         self.assertTrue(
-            all([entry.data["e_above_hull"] == 0 for entry in cp.entries[:2]])
+            all(entry.data["e_above_hull"] == 0 for entry in cp.entries[:2])
         )
         self.assertFalse(
-            any([entry.data["e_above_hull"] == 0 for entry in cp.entries[2:]])
+            any(entry.data["e_above_hull"] == 0 for entry in cp.entries[2:])
         )
         self.assertEqual(len(cp.intrinsic_entries), 28)

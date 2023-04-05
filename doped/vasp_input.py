@@ -50,7 +50,6 @@ warnings.filterwarnings(
 )
 
 
-# TODO: Need to pylint the files to check no glaring issues
 # TODO: Add note to example notebook that it should be easy to use with atomate
 #  etc because now returns the DefectRelaxSet objects
 # TODO: Updated naming convention, to match that implemented in `ShakeNBreak`.
@@ -154,9 +153,9 @@ def _prepare_vasp_files(
                 )
             elif unperturbed_poscar:  # vasp_std, vasp_ncl
                 warnings.warn(
-                    "POTCAR directory not set up with pymatgen, so only unperturbed POSCAR files will "
-                    "be generated (POTCARs also needed to determine appropriate NELECT setting in "
-                    "INCAR files)"
+                    "POTCAR directory not set up with pymatgen, so only unperturbed POSCAR files "
+                    "will be generated (POTCARs also needed to determine appropriate NELECT "
+                    "setting in INCAR files)"
                 )
             else:
                 raise ValueError(

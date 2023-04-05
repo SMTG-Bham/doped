@@ -11,14 +11,11 @@ with publication-quality outputs
 import copy
 import warnings
 from operator import itemgetter
-from typing import Any
 
-import matplotlib.cm as cm
+from matplotlib import cm, ticker, rc
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
-from matplotlib import rc
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 from pymatgen.util.string import latexify, unicodeify
 from tabulate import tabulate
@@ -155,6 +152,7 @@ def formation_energy_table(
     """
     if chempot_limits is None:
         chempot_limits = {}
+
     if "facets" in chempot_limits:
         list_of_dfs = []
         if not pd_facets:
@@ -176,15 +174,15 @@ def formation_energy_table(
 
         return list_of_dfs
 
-    else:  # {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
-        df = single_formation_energy_table(
-            defect_phase_diagram,
-            chempots=chempot_limits,
-            fermi_level=fermi_level,
-            hide_cols=hide_cols,
-            show_key=show_key,
-        )
-        return df
+    # else return {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
+    df = single_formation_energy_table(
+        defect_phase_diagram,
+        chempots=chempot_limits,
+        fermi_level=fermi_level,
+        hide_cols=hide_cols,
+        show_key=show_key,
+    )
+    return df
 
 
 def single_formation_energy_table(
@@ -397,28 +395,28 @@ def formation_energy_plot(
 
         return plot
 
-    else:  # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
-        return _aide_pmg_plot(
-            defect_phase_diagram,
-            mu_elts=chempot_limits,
-            elt_refs=elt_refs,
-            ax=ax,
-            fonts=fonts,
-            xlim=xlim,
-            ylim=ylim,
-            ax_fontsize=ax_fontsize,
-            lg_fontsize=lg_fontsize,
-            lg_position=lg_position,
-            fermi_level=fermi_level,
-            title=title,
-            saved=saved,
-            colormap=colormap,
-            frameon=frameon,
-            chempot_table=chempot_table,
-            auto_labels=auto_labels,
-            filename=filename,
-            emphasis=emphasis,
-        )
+    # Else if you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
+    return _aide_pmg_plot(
+        defect_phase_diagram,
+        mu_elts=chempot_limits,
+        elt_refs=elt_refs,
+        ax=ax,
+        fonts=fonts,
+        xlim=xlim,
+        ylim=ylim,
+        ax_fontsize=ax_fontsize,
+        lg_fontsize=lg_fontsize,
+        lg_position=lg_position,
+        fermi_level=fermi_level,
+        title=title,
+        saved=saved,
+        colormap=colormap,
+        frameon=frameon,
+        chempot_table=chempot_table,
+        auto_labels=auto_labels,
+        filename=filename,
+        emphasis=emphasis,
+    )
 
 
 def _aide_pmg_plot(
@@ -779,7 +777,7 @@ some defects will have the same line colour). Recommended to change/set colormap
 
 
 def _plot_chemical_potential_table(
-    plt,
+    plot,
     chemical_potentials,
     chempot_label="",
     fontsize=9,
@@ -788,7 +786,7 @@ def _plot_chemical_potential_table(
     wrt_elt_refs=False,
 ):
     if ax is None:
-        ax = plt.gca()
+        ax = plot.gca()
 
     labels = [""] + [
         rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(chemical_potentials.keys())
@@ -837,12 +835,9 @@ class _CustomScalarFormatter(ticker.ScalarFormatter):
         minus_symbol="\N{MINUS SIGN}",
     ):
         self.minus_symbol = minus_symbol
-        super(_CustomScalarFormatter, self).__init__(
+        super().__init__(
             useOffset=useOffset, useMathText=useMathText, useLocale=useLocale
         )
-
-    def fix_minus(self, s):
-        return s.replace("-", self.minus_symbol)
 
 
 def pretty_axis(ax=None, fonts=None):
@@ -1336,10 +1331,11 @@ some defects will have the same line colour). Recommended to change/set colormap
         ax.set_title(
             latexify(title), size=ax_fontsize * width, fontdict={"fontweight": "bold"}
         )
+
     if saved or filename:
         if filename:
             plt.savefig(filename, bbox_inches="tight", dpi=600)
         else:
             plt.savefig(str(title) + "_doped_plot.pdf", bbox_inches="tight", dpi=600)
-    else:
-        return ax
+
+    return ax
