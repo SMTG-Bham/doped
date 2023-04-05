@@ -31,9 +31,7 @@ warnings.filterwarnings(
 )  # currently rely on this so shouldn't show warning
 warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
-# TODO: Currently the format for user defined `incar` and `potcar` settings is somewhat
-#  inconsistent between `competing_phases` and `vasp_input`, and `pymatgen`. Ideally should all
-#  correspond to `pymatgen`'s `DictSet` format.
+
 # TODO: Should refactor all this to "Chemical Potentials" etc rather than 'competing phases' as
 #  this is a more common term in the field so likely more familiar to users. Will do when all
 #  chempot functionality has been transferred over and old `pycdt` chempot code deleted
@@ -218,7 +216,6 @@ class CompetingPhases:
     along with an uncertainty range specified by `e_above_hull`, to determine the relevant
     competing phases. Diatomic gaseous molecules are generated as molecules-in-a-box as appropriate.
 
-    TODO: Add full_phase_diagram option.
     TODO: Need to add functionality to deal with cases where the bulk composition is not listed
     on the MP – warn user (i.e. check your sh*t) and generate the competing phases according to
     composition position within phase diagram.
@@ -233,7 +230,9 @@ class CompetingPhases:
     (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
     """
 
-    def __init__(self, composition, e_above_hull=0.1, api_key=None):
+    def __init__(
+        self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False
+    ):
         """
         Args:
             composition (str, Composition): Composition of host material
@@ -243,7 +242,7 @@ class CompetingPhases:
                 considered as competing phases. This is an uncertainty range for the
                 MP-calculated formation energies, which may not be accurate due to functional
                 choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                Any phases that would border the host material on the phase diagram, if their
+                Any phases that (would) border the host material on the phase diagram, if their
                 relative energy was downshifted by `e_above_hull`, are included.
                 Default is 0.1 eV/atom.
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
@@ -252,6 +251,12 @@ class CompetingPhases:
                 homepage (https://github.com/SMTG-UCL/doped) for instructions on setting this up.
                 This should correspond to the legacy MP API; from
                 https://legacy.materialsproject.org/open.
+            full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
+                with energy above hull < e_above_hull) for the chemical system of the input
+                composition (not recommended). If False, only includes phases that (would) border
+                the host material on the phase diagram (and thus set the chemical potential
+                limits), if their relative energy was downshifted by `e_above_hull`.
+                (Default is False).
         """
         self.api_key = api_key
 
@@ -294,9 +299,8 @@ class CompetingPhases:
                 self.eah = "e_above_hull"
             else:
                 raise ValueError(
-                    f"API key {api_key} is not a valid legacy Materials Project API "
-                    f"key. These are available at "
-                    f"https://legacy.materialsproject.org/open"
+                    f"API key {api_key} is not a valid legacy Materials Project API key. These "
+                    f"are available at https://legacy.materialsproject.org/open"
                 )
 
         with MPRester(api_key=self.api_key) as mpr:
@@ -334,8 +338,6 @@ class CompetingPhases:
                 entry.data["molecule"] = False
                 pd_entries.append(entry)
 
-        # cull to only include any phases that would border the host material on the phase
-        # diagram, if their relative energy was downshifted by `e_above_hull`:
         pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
         phase_diagram = PhaseDiagram(pd_entries)
         bulk_entries = [
@@ -349,29 +351,39 @@ class CompetingPhases:
         ]  # lowest energy entry for bulk composition (after sorting)
         self.MP_bulk_ce = bulk_ce
 
-        MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
+        if not full_phase_diagram:  # default
+            # cull to only include any phases that would border the host material on the phase
+            # diagram, if their relative energy was downshifted by `e_above_hull`:
+            MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
 
-        MP_bordering_phases = {
-            phase for facet in MP_gga_chempots for phase in facet.split("-")
-        }
-        self.entries = [
-            entry
-            for entry in pd_entries
-            if entry.name in MP_bordering_phases or entry.is_element
-        ]
+            MP_bordering_phases = {
+                phase for facet in MP_gga_chempots for phase in facet.split("-")
+            }
+            self.entries = [
+                entry
+                for entry in pd_entries
+                if entry.name in MP_bordering_phases or entry.is_element
+            ]
 
-        # add any phases that would border the host material on the phase diagram, if their relative
-        # energy was downshifted by `e_above_hull`:
-        for entry in pd_entries:
-            if entry.name not in MP_bordering_phases and not entry.is_element:
-                # decrease entry energy per atom by `e_above_hull` eV/atom
-                renormalised_entry = _renormalise_entry(entry, e_above_hull)
-                new_phase_diagram = PhaseDiagram(phase_diagram.entries + [renormalised_entry])
-                new_MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, new_phase_diagram)
+            # add any phases that would border the host material on the phase diagram, if their
+            # relative energy was downshifted by `e_above_hull`:
+            for entry in pd_entries:
+                if entry.name not in MP_bordering_phases and not entry.is_element:
+                    # decrease entry energy per atom by `e_above_hull` eV/atom
+                    renormalised_entry = _renormalise_entry(entry, e_above_hull)
+                    new_phase_diagram = PhaseDiagram(
+                        phase_diagram.entries + [renormalised_entry]
+                    )
+                    new_MP_gga_chempots = get_chempots_from_phase_diagram(
+                        bulk_ce, new_phase_diagram
+                    )
 
-                if new_MP_gga_chempots != MP_gga_chempots:
-                    # new bordering phase, add to list
-                    self.entries.append(entry)
+                    if new_MP_gga_chempots != MP_gga_chempots:
+                        # new bordering phase, add to list
+                        self.entries.append(entry)
+
+        else:  # full_phase_diagram = True
+            self.entries = pd_entries
 
         # sort entries by e_above_hull, and then by num_species, then alphabetically:
         self.entries.sort(
@@ -732,6 +744,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             full_sub_approach
         ):  # can be time-consuming if several extrinsic_species supplied
             if codoping:
+                # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
+                #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
+                #  entries, including facets with multiple extrinsic entries but still not the
+                #  full phase diagram? – To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
                 #  this code block and just use:
                 #  super()__init__(composition = (
@@ -1236,7 +1252,8 @@ class CompetingPhasesAnalyzer:
             self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
         self._intrinsic_phase_diagram = PhaseDiagram(
-            intrinsic_phase_diagram_entries, map(Element, self.bulk_composition.elements)
+            intrinsic_phase_diagram_entries,
+            map(Element, self.bulk_composition.elements),
         )
 
         # check if it's stable and if not error out
