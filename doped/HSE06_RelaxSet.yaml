@@ -1,0 +1,24 @@
+INCAR:
+  AEXX: 0.25
+  ALGO: "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered"
+  EDIFF: 1e-06
+  EDIFFG: -0.01
+  ENCUT: 350
+  GGA: PE
+  HFSCREEN: 0.208
+  IBRION: 1
+  ISIF: 3
+  ISMEAR: 0
+  LASPH: true
+  LHFCALC: true
+  LORBIT: 14
+  NCORE: 16
+  NEDOS: 2000
+  NSW: 100
+  POTIM: 0.2
+  PREC: Accurate
+  PRECFOCK: Fast
+  SIGMA: 0.05
+
+KPOINTS:
+  reciprocal_density: 90

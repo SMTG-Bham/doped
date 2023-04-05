@@ -1,0 +1,16 @@
+INCAR:
+  ALGO: "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered"
+  EDIFF: 1e-06
+  EDIFFG: -0.01
+  ENCUT: 350
+  GGA: PS
+  ISMEAR: 0
+  LASPH: true
+  LCHARG: false
+  LWAVE: false
+  NCORE: 4
+  NSW: 0
+  PREC: Accurate
+  SIGMA: 0.05
+KPOINTS:
+  reciprocal_density: 45
