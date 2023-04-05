@@ -7,21 +7,13 @@ Jackson and Alex Ganose), alongside substantial modification, in the efforts of 
 efficient, user-friendly package for managing and analysing defect calculations,
 with publication-quality outputs
 """
-# TODO: Refactor this to `plotting` and move other functions to `analysis`?
 
-import copy
 import warnings
-from operator import itemgetter
 
 from matplotlib import cm, ticker, rc
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
-from pymatgen.util.string import latexify, unicodeify
-from tabulate import tabulate
-
-from doped import aide_murphy_correction
+from pymatgen.util.string import latexify
 
 default_fonts = [
     "Whitney Book Extended",
@@ -64,7 +56,7 @@ def formation_energy_plot(
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from dope_stuff.dpd_from_parsed_defect_dict)
+             DefectPhaseDiagram object (likely created from analysis.dpd_from_parsed_defect_dict)
         chempot_limits (dict):
             This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
             Energy} (giving a single formation energy table – recommended to use the elt_refs
@@ -651,7 +643,7 @@ def all_lines_formation_energy_plot(
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from dope_stuff.dpd_from_parsed_defect_dict)
+             DefectPhaseDiagram object (likely created from analysis.dpd_from_parsed_defect_dict)
         chempot_limits (dict):
             This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
             Energy} (giving a single formation energy table – recommended to use the elt_refs
