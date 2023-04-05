@@ -1,0 +1,42 @@
+name: pip install doped
+
+on:
+  workflow_run:
+    workflows: ["Release and publish"]
+    branches: [main]
+    types:
+      - completed  # only test when new release has been deployed to PyPI
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      max-parallel: 5
+
+      matrix:
+        python-version: ['3.8', '3.9', '3.10']
+
+    name: Python ${{ matrix.python-version }} pip install
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          sleep 10m  # wait 10 minutes for PyPI to update with the new release
+          python -m pip install --upgrade pip
+          pip install doped  # install only from PyPI
+          pip install doped[tests]
+
+      - name: Test
+        run:  |
+          for test in tests/test_*py
+            do if [[ "$test" != *"test_local"* ]]
+              then pytest $test
+            fi
+          done  # Ignore local tests file

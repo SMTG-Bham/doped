@@ -4,8 +4,8 @@ from __future__ import division
 
 __status__ = "Development"
 
-from copy import deepcopy
 import warnings
+from copy import deepcopy
 
 
 class LDAUCorrection(object):
@@ -22,6 +22,7 @@ class LDAUCorrection(object):
         ldau_gap: Computed gap with LDA+U (or GGA+U)
         lda_gap: Computed gap with LDA (or GGA)
     """
+
     def __init__(self, exp_gap, ldau_gap, lda_gap):
         self.exp_gap = exp_gap
         self.ldau_gap = ldau_gap
@@ -37,9 +38,8 @@ class LDAUCorrection(object):
         Returns:
             Correction to the input LDA+U transition level
         """
-        diff = (ldau_transition - lda_transition) / \
-               (self.ldau_gap - self.lda_gap)
-        return  diff*(self.exp_gap - self.ldau_gap)
+        diff = (ldau_transition - lda_transition) / (self.ldau_gap - self.lda_gap)
+        return diff * (self.exp_gap - self.ldau_gap)
 
     def get_energy_correction(self, occupancy, ldau_transition, lda_transition):
         """
@@ -50,13 +50,15 @@ class LDAUCorrection(object):
             ldau_transition: Transition level computed with LDA+U (or GGA+U)
             lda_transition: Transition computed with LDA (or GGA)
         """
-        trans_correction = self.get_transition_correction(ldau_transition,
-                                                          lda_transition)
-        return  trans_correction * occupancy
+        trans_correction = self.get_transition_correction(
+            ldau_transition, lda_transition
+        )
+        return trans_correction * occupancy
 
 
-def get_ldau_corrections(exp_gap, ldau_gap, lda_gap, ldau_trans, lda_trans,
-                         occupancies):
+def get_ldau_corrections(
+    exp_gap, ldau_gap, lda_gap, ldau_trans, lda_trans, occupancies
+):
     """
         NOTE from developers:
             As of 12/15/17 this code does not have unit test
@@ -79,21 +81,21 @@ def get_ldau_corrections(exp_gap, ldau_gap, lda_gap, ldau_trans, lda_trans,
         (transition_level_corrections, energy_corrections)
     """
     # TODO: Use better variable names
-    print ('occ inside ggau_corr func')
-    print (occupancies)
+    print("occ inside ggau_corr func")
+    print(occupancies)
     energy_corrections = {}
     transition_corrections = {}
     corrector = LDAUCorrection(exp_gap, ldau_gap, lda_gap)
     for defect_name in ldau_trans:
-        print ('def_name', defect_name)
+        print("def_name", defect_name)
         energy_corrections[defect_name] = {}
         transition_corrections[defect_name] = {}
         ggau_levels = ldau_trans[defect_name]
         gga_levels = lda_trans[defect_name]
         occ = occupancies[defect_name]
-        print (occ)
-        zero_occ_q = occ['0_occupancy']
-        print (defect_name, zero_occ_q)
+        print(occ)
+        zero_occ_q = occ["0_occupancy"]
+        print(defect_name, zero_occ_q)
         for trans_pair in ggau_levels:
             ggau_transit = ggau_levels[trans_pair]
             search_val = set(list(trans_pair))
@@ -105,18 +107,17 @@ def get_ldau_corrections(exp_gap, ldau_gap, lda_gap, ldau_trans, lda_trans,
             q = (set(list(deepcopy(trans_pair))) - set([zero_occ_q])).pop()
             q_occ = occ[q]
 
-            trans_corr = corrector.get_transition_correction(ggau_transit,
-                                                             gga_transit)
-            print ('trans_corr', defect_name, trans_pair, trans_corr)
+            trans_corr = corrector.get_transition_correction(ggau_transit, gga_transit)
+            print("trans_corr", defect_name, trans_pair, trans_corr)
 
             transition_corrections[defect_name][trans_pair] = trans_corr
             new_transit = ggau_transit + trans_corr
-            print ('new_level', defect_name, trans_pair, new_transit)
+            print("new_level", defect_name, trans_pair, new_transit)
 
             if zero_occ_q in trans_pair:
-                enrgy_corr = corrector.get_energy_correction(q_occ,
-                                                             ggau_transit,
-                                                             gga_transit)
+                enrgy_corr = corrector.get_energy_correction(
+                    q_occ, ggau_transit, gga_transit
+                )
                 energy_corrections[defect_name][q] = enrgy_corr
 
     return transition_corrections, energy_corrections
