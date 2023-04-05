@@ -50,7 +50,7 @@ jobs:
 
       - name: Get Release Tag
         run: |
-          VERSION=$(python setup.py --version)
+          VERSION=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"')
           echo "{version}={VERSION}" >> $GITHUB_ENV
 
       - name: Release
