@@ -85,7 +85,7 @@ class CustomEggInfoCommand(egg_info):
 setup(
     name="doped",
     packages=find_packages(),
-    version="1.0.0",
+    version="1.0.1",
     install_requires=[
         "numpy>=1.21.0",
         "pymatgen<2022.8.23",
@@ -117,7 +117,6 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
     license="MIT",
-    scripts=glob.glob(os.path.join(SETUP_PTH, "scripts", "*")),
     extras_require={
         "tests": ["pytest"],
     },
