@@ -225,7 +225,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
-            # find coords of new species in defect structure, taking into account periodic boundaries
+            # find coords of new species in defect structure, taking into account periodic
+            # boundaries
             distance_matrix = np.linalg.norm(
                 pbc_diff(bulk_new_species_coords[:, None], defect_new_species_coords),
                 axis=2,
@@ -628,8 +629,7 @@ class SingleDefectParser:
                         )
                         raise FileNotFoundError
 
-                    else:
-                        voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
+                    voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
 
                 except FileNotFoundError:  # first time parsing
                     topography = TopographyAnalyzer(
@@ -815,7 +815,7 @@ class SingleDefectParser:
                 f"correction cannot be computed without this data!"
             )
 
-        elif not defect_atomic_site_averages:
+        if not defect_atomic_site_averages:
             raise ValueError(
                 f"Unable to parse atomic core potentials from defect `OUTCAR` at "
                 f"{def_outcar_path}. This can happen if `ICORELEVEL` was not set "
@@ -980,9 +980,9 @@ class SingleDefectParser:
                 ]
             except Exception as exc:
                 raise ValueError(
-                    f"Error with querying MPRester for "
-                    f"{bulk_sc_structure.composition.reduced_formula}: {exc}"
-                )
+                    f"Error with querying MPRester for"
+                    f" {bulk_sc_structure.composition.reduced_formula}:"
+                ) from exc
 
             mpid_fit_list = []
             for trial_mpid in mplist:
@@ -1004,13 +1004,13 @@ class SingleDefectParser:
                 num_mpid_list.sort()
                 mpid = "mp-" + str(num_mpid_list[0])
                 print(
-                    "Multiple mp-ids found for bulk structure:{}\nWill use lowest number mpid "
-                    "for bulk band structure = {}.".format(str(mpid_fit_list), mpid)
+                    f"Multiple mp-ids found for bulk structure:{mpid_fit_list}\nWill use lowest "
+                    f"number mpid for bulk band structure = {mpid}."
                 )
             else:
                 print(
-                    "Could not find bulk structure in MP database after tying the "
-                    "following list:\n{}".format(mplist)
+                    "Could not find bulk structure in MP database after tying the following "
+                    f"list:\n{mplist}"
                 )
                 mpid = None
 
@@ -1037,18 +1037,14 @@ class SingleDefectParser:
         ):
             if mpid and bandgap is None:
                 print(
-                    "WARNING: Mpid {} was provided, but no bandstructure entry currently exists "
-                    "for it. \n"
-                    "Reverting to use of bulk supercell calculation for band edge extrema.".format(
-                        mpid
-                    )
+                    f"WARNING: Mpid {mpid} was provided, but no bandstructure entry currently "
+                    "exists for it. \nReverting to use of bulk supercell calculation for band "
+                    "edge extrema."
                 )
             if mpid and no_MP:
                 print(
-                    "Mpid {} was provided, but `no_MP` flag was set to True. \n"
-                    "Reverting to use of bulk supercell calculation for band edge extrema.".format(
-                        mpid
-                    )
+                    f"Mpid {mpid} was provided, but `no_MP` flag was set to True. \n"
+                    "Reverting to use of bulk supercell calculation for band edge extrema."
                 )
 
             gap_parameters.update(
@@ -1089,7 +1085,7 @@ class SingleDefectParser:
                 specific_delocalized_warning = f"""
 Delocalization analysis has indicated that {self.defect_entry.name}
 with charge {self.defect_entry.charge} may not be compatible with the chosen charge correction."""
-                general_delocalization_warning = f"""
+                general_delocalization_warning = """
 Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
 accurate total energies. Recommended to look at the correction plots (i.e. run 
 `get_correction_freysoldt(DefectEntry,...,plot=True)` from
@@ -1484,7 +1480,7 @@ class PostProcess:
 
 
 def get_site_mapping_indices(
-    structure_a: Structure, structure_b: Structure, threshold=1.0
+    structure_a: Structure, structure_b: Structure, threshold=2.0
 ):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
@@ -1513,13 +1509,14 @@ def get_site_mapping_indices(
             sitea = structure_a[index]
             siteb = structure_b[template_index]
             warnings.warn(
-                f"Large site displacement {current_dist:.4f} detected when matching atomic sites: {sitea}-> {siteb}."
+                f"Large site displacement {current_dist:.4f} detected when matching atomic sites:"
+                f" {sitea}-> {siteb}."
             )
     return min_dist_with_index
 
 
 def reorder_unrelaxed_structure(
-    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=1.0
+    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=2.0
 ):
     """
     Reset the position of a partially relaxed structure to its unrelaxed positions.
