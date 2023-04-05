@@ -37,6 +37,7 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 #  chempot functionality has been transferred over and old `pycdt` chempot code deleted
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
+# TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 
 
 def make_molecule_in_a_box(element):
