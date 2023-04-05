@@ -26,11 +26,15 @@ def pmg_analysis_defects_warning():
     """
     Print warning message if pymatgen-analysis-defects is installed.
     """
-    installed_packages = str(subprocess.check_output([sys.executable, "-m", "pip", "list"]))
+    installed_packages = str(
+        subprocess.check_output([sys.executable, "-m", "pip", "list"])
+    )
     if "pymatgen-analysis-defects" in installed_packages:
         print("Test!!")
-        warnings.warn("pymatgen-analysis-defects is installed, which will cause incompatibility issues with doped. "
-                      "Please uninstall pymatgen-analysis-defects with 'pip uninstall pymatgen-analysis-defects'.")
+        warnings.warn(
+            "pymatgen-analysis-defects is installed, which will cause incompatibility issues with doped. "
+            "Please uninstall pymatgen-analysis-defects with 'pip uninstall pymatgen-analysis-defects'."
+        )
 
 
 class PostInstallCommand(install):
@@ -77,6 +81,7 @@ class CustomEggInfoCommand(egg_info):
         egg_info.run(self)
         pmg_analysis_defects_warning()
 
+
 setup(
     name="doped",
     packages=find_packages(),
@@ -113,12 +118,12 @@ setup(
     ],
     license="MIT",
     scripts=glob.glob(os.path.join(SETUP_PTH, "scripts", "*")),
-    test_suite="nose.collector",
-    tests_require=["nose", "pytest"],
+    extras_require={
+        "tests": ["pytest"],
+    },
     cmdclass={
         "install": PostInstallCommand,
         "develop": PostDevelopCommand,
         "egg_info": CustomEggInfoCommand,
     },
 )
-
