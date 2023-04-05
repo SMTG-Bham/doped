@@ -3,7 +3,7 @@ name: pip install doped
 on:
   workflow_run:
     workflows: ["Release and publish"]
-    branches: [main]
+    branches: [master]
     types:
       - completed  # only test when new release has been deployed to PyPI
 
