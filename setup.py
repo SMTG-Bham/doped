@@ -1,12 +1,12 @@
 """This is a setup.py script to install doped"""
 
-import os
 import glob
+import os
 import subprocess
 import sys
 import warnings
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
 from setuptools.command.install import install
@@ -80,7 +80,7 @@ class CustomEggInfoCommand(egg_info):
 setup(
     name="doped",
     packages=find_packages(),
-    version="0.2.1",
+    version="23.4.5",
     install_requires=[
         "numpy>=1.21.0",
         "pymatgen<2022.8.23",
@@ -90,7 +90,7 @@ setup(
         "ase",
         "shakenbreak==22.11.1",  # pymatgen<2022.8.23
     ],
-    package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["default_POTCARs.yaml"]},
+    package_data={"doped.pycdt.utils": ["*.yaml"], "doped": ["*.yaml", "*.json"]},
     author="Seán Kavanagh",
     author_email="sean.kavanagh.19@ucl.ac.uk",
     maintainer="Seán Kavanagh",
