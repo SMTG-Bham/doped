@@ -523,9 +523,9 @@ def vasp_ncl_files(
     return defect_relax_set_dict
 
 
-# TODO: Remove these functions once confirming all functionality is in `competing_phases.py`;
+# TODO: Remove these functions once confirming all functionality is in `chemical_potentials.py`;
 # need `vasp_ncl_chempot` generation, `vaspup2.0` `input` folder with `CONFIG` generation as an
-# option, improve competing_phases docstrings (i.e. mention defaults, note in notebooks if changing
+# option, improve chemical_potentials docstrings (i.e. mention defaults, note in notebooks if changing
 # `INCAR`/`POTCAR` settings for competing phase production calcs, should also do with defect
 # supercell calcs (and note this in vasp_input as well)), ensure consistent INCAR tags in defect
 # supercell defaults and competing phase defaults, point too DefectSet in docstrings for defaults
