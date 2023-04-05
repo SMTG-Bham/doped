@@ -1133,9 +1133,8 @@ class CompetingPhasesAnalyzer:
         self.elemental_energies = {}
         for v in self.vaspruns:
             rcf = v["reduced_cell_formula"]
-            formulas_per_unit = (
-                list(v["unit_cell_formula"].values())[0] / list(rcf.values())[0]
-            )
+            comp = Composition(v["unit_cell_formula"])
+            formulas_per_unit = comp.get_reduced_composition_and_factor()[1]
             final_energy = v["output"]["final_energy"]
             kpoints = "x".join(str(x) for x in v["input"]["kpoints"]["kpoints"][0])
 
