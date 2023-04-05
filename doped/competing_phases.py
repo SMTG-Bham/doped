@@ -258,8 +258,8 @@ class CompetingPhases:
         # create list of entries
         self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
 
-        # TODO: Should hard code S (solid + S8), P and Se in here too. Common anions with a lot of
-        #  unnecessary polymorphs on MP
+        # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
+        #  lot of unnecessary polymorphs on MP
         # P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo
         # stable at RT), so only need to generate these
 
@@ -383,10 +383,12 @@ class CompetingPhases:
         )
 
     # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
+    # TODO: Currently doesn't exactly match vaspup2.0 naming convention which means it doesn't
+    #  account for the ordering switch from 1..9 to 10 etc
     def convergence_setup(
         self,
         kpoints_metals=(40, 120, 5),
-        kpoints_nonmetals=(5, 60, 5),
+        kpoints_nonmetals=(5, 80, 5),
         user_potcar_functional="PBE_54",
         user_potcar_settings=None,
         user_incar_settings=None,
@@ -464,7 +466,7 @@ class CompetingPhases:
                 fname = (
                     f"competing_phases/{e.name}_EaH"
                     f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )
+                )  # TODO: competing_phases folder name should be an optional parameter
                 dis.write_input(fname, **kwargs)
 
         for e in self.metals:
