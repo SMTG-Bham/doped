@@ -19,7 +19,7 @@ from pymatgen.entries.computed_entries import ComputedEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.util.testing import PymatgenTest
 
-from doped.pycdt.core.chemical_potentials import (
+from doped.pycdt.core._chemical_potentials import (
     ChemPotAnalyzer,
     MPChemPotAnalyzer,
     UserChemPotAnalyzer,
