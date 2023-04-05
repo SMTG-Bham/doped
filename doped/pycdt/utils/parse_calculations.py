@@ -381,6 +381,25 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
 
 class SingleDefectParser:
+    # TODO: Given this is our recommended workflow, should streamline this similar to in
+    #  `vasp_input.py`, where it tries to run the freysoldt/kumagai loader (chosen by an
+    #  optional imput parameter, if not set check if OUTCAR/LOCPOT present), throw warning if not
+    #  successful, then `get_stdrd_metadata()`, `get_bulk_gap_data()` and `run_compatibility()` (
+    #  again throwing warnings for any of these that don't work) – so replacing 4+ function calls
+    #  with just one.
+    # TODO: Should also add check the bulk and defect KPOINTS/INCAR/POTCAR/POSCAR (size) settings
+    #  are compatible, and throw warning if not.
+    # TODO: Add `check_defects_compatibility()` function that checks the bulk and defect
+    #  KPOINTS/INCAR/POTCAR/POSCAR (size) settings for all defects in the supplied defect_dict
+    #  are compatible, if not throw warnings and say what the differences are. Should recommend
+    #  using this in the example notebook if a user has parsed the defects individually (rather
+    #  than with the single looping function described below):
+    # TODO: Add a function that loops over all the defects in a directory (with `defect_dir = .`,
+    #  and `subfolder = vasp_ncl` options) and parses them all, returning a dictionary of defect
+    #  entries, with the defect name as the key. (i.e. doing the loop in the example notebook).
+    #  Show both this function and the individual function calls in the example notebook. Benefit
+    #  of this one is that we can then auto-run `check_defects_compatibility()` at the end of
+    #  parsing the full defects dict.
     def __init__(
         self,
         defect_entry,
