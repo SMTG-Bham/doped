@@ -8,7 +8,7 @@
 - Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
 - Publication ready chemical potential diagram plotting tool (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
-- Once happy all required functionality is in the new `competing_phases.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), amalgamate `chempot`/`competing_phase` example notebooks and remove the old modified-pycdt `chemical_potentials.py` code, and rename `competing_phases.py` to `chemical_potentials.py` as this is more recognisable to the average defect calculator.
+- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Defect calculations set up
 - Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `dope_stuff` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?

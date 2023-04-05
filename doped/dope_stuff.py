@@ -7,6 +7,7 @@ Jackson and Alex Ganose), alongside substantial modification, in the efforts of 
 efficient, user-friendly package for managing and analysing defect calculations,
 with publication-quality outputs
 """
+# TODO: Refactor this to `plotting` and move other functions to `analysis`?
 
 import copy
 import warnings
