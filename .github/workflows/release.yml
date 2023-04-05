@@ -38,11 +38,6 @@ jobs:
         run: |
           python setup.py sdist bdist_wheel
 
-      - name: Generate release tag
-        uses: amitsingh-007/next-release-tag@v1.0.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Publish
         uses: pypa/gh-action-pypi-publish@master
         with:
@@ -51,6 +46,12 @@ jobs:
       - name: Write release info
         run: |
           awk 'BEGIN {p = 0} {a = 0 }; /^v\d*.\d*.\d*./ { p += 1; a = 1}; p + a == 1 { print } ' CHANGELOG.rst | sed -e '1,1d' | sed  -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}' > release_info.txt
+
+      - name: Get Release Tag
+        run: |
+          VERSION=$(python setup.py --version)
+          echo "{version}={VERSION}" >> $GITHUB_ENV
+
       - name: Release
         uses: actions/create-release@v1
         id: create_release
@@ -58,8 +59,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.release_tag }}
-          release_name: ${{ env.release_tag }}
+          tag_name: ${{ env.version }}
+          release_name: ${{ env.version }}
           body_path: release_info.txt
           draft: false
           prerelease: false
