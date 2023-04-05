@@ -220,7 +220,7 @@ class CompetingPhases:
 
     TODO: Add full_phase_diagram option.
     TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    on the MP – warn user (i.e. check your shit) and generate the competing phases according to
+    on the MP – warn user (i.e. check your sh*t) and generate the competing phases according to
     composition position within phase diagram.
     E.g. from pycdt chemical_potentials:
     #                 "However, no stable entry with this composition exists "
