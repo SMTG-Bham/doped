@@ -181,18 +181,18 @@ def _renormalise_entry(entry, renormalisation_energy_per_atom):
     return renormalised_entry
 
 
-def get_chempots_from_pd(bulk_ce, pd):
+def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
     """
     Get the chemical potential limits for the bulk computed entry in the supplied phase diagram.
 
     Args:
         bulk_ce: Pymatgen ComputedStructureEntry object for bulk entry / supercell
-        pd: Pymatgen PhaseDiagram object for the system of interest
+        phase_diagram: Pymatgen PhaseDiagram object for the system of interest
     """
     bulk_composition = bulk_ce.composition
     redcomp = bulk_composition.reduced_composition
     # append bulk_ce to phase diagram, if not present
-    entries = pd.all_entries
+    entries = phase_diagram.all_entries
     if not any(
         (ent.composition == bulk_ce.composition and ent.energy == bulk_ce.energy)
         for ent in entries
@@ -204,9 +204,9 @@ def get_chempots_from_pd(bulk_ce, pd):
                 attribute="Bulk Material",
             )
         )
-        pd = PhaseDiagram(entries)
+        phase_diagram = PhaseDiagram(entries)
 
-    chem_lims = pd.get_all_chempots(redcomp)
+    chem_lims = phase_diagram.get_all_chempots(redcomp)
 
     return chem_lims
 
@@ -337,7 +337,7 @@ class CompetingPhases:
         # cull to only include any phases that would border the host material on the phase
         # diagram, if their relative energy was downshifted by `e_above_hull`:
         pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
-        pd = PhaseDiagram(pd_entries)
+        phase_diagram = PhaseDiagram(pd_entries)
         bulk_entries = [
             entry
             for entry in pd_entries
@@ -349,7 +349,7 @@ class CompetingPhases:
         ]  # lowest energy entry for bulk composition (after sorting)
         self.MP_bulk_ce = bulk_ce
 
-        MP_gga_chempots = get_chempots_from_pd(bulk_ce, pd)
+        MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
 
         MP_bordering_phases = {
             phase for facet in MP_gga_chempots for phase in facet.split("-")
@@ -366,8 +366,8 @@ class CompetingPhases:
             if entry.name not in MP_bordering_phases and not entry.is_element:
                 # decrease entry energy per atom by `e_above_hull` eV/atom
                 renormalised_entry = _renormalise_entry(entry, e_above_hull)
-                new_pd = PhaseDiagram(pd.entries + [renormalised_entry])
-                new_MP_gga_chempots = get_chempots_from_pd(bulk_ce, new_pd)
+                new_phase_diagram = PhaseDiagram(phase_diagram.entries + [renormalised_entry])
+                new_MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, new_phase_diagram)
 
                 if new_MP_gga_chempots != MP_gga_chempots:
                     # new bordering phase, add to list
@@ -911,9 +911,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         f"system: {self.intrinsic_species + [sub_elt,]}"
                     )
 
-                extrinsic_pd = PhaseDiagram(extrinsic_pd_entries)
-                MP_extrinsic_gga_chempots = get_chempots_from_pd(
-                    self.MP_bulk_ce, extrinsic_pd
+                extrinsic_phase_diagram = PhaseDiagram(extrinsic_pd_entries)
+                MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
+                    self.MP_bulk_ce, extrinsic_phase_diagram
                 )
                 MP_extrinsic_bordering_phases = []
 
@@ -947,11 +947,11 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     ):
                         # decrease entry energy per atom by `e_above_hull` eV/atom
                         renormalised_entry = _renormalise_entry(entry, e_above_hull)
-                        new_extrinsic_pd = PhaseDiagram(
-                            extrinsic_pd.entries + [renormalised_entry]
+                        new_extrinsic_phase_diagram = PhaseDiagram(
+                            extrinsic_phase_diagram.entries + [renormalised_entry]
                         )
-                        new_MP_extrinsic_gga_chempots = get_chempots_from_pd(
-                            self.MP_bulk_ce, new_extrinsic_pd
+                        new_MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
+                            self.MP_bulk_ce, new_extrinsic_phase_diagram
                         )
 
                         if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
@@ -1207,7 +1207,7 @@ class CompetingPhasesAnalyzer:
             Pandas DataFrame, optionally saved to csv
         """
 
-        pd_entries_intrinsic = []
+        intrinsic_phase_diagram_entries = []
         extrinsic_formation_energies = []
         bulk_pde_list = []
         for d in self.data:
@@ -1216,7 +1216,7 @@ class CompetingPhasesAnalyzer:
             if set(Composition(d["formula"]).elements).issubset(
                 self.bulk_composition.elements
             ):
-                pd_entries_intrinsic.append(e)
+                intrinsic_phase_diagram_entries.append(e)
                 if e.composition == self.bulk_composition:  # bulk phase
                     bulk_pde_list.append(e)
             else:
@@ -1229,14 +1229,14 @@ class CompetingPhasesAnalyzer:
                 f"Could not find bulk phase for "
                 f"{self.bulk_composition.reduced_formula} in the supplied data. "
                 f"Found phases: "
-                f"{ {e.composition.reduced_formula for e in pd_entries_intrinsic} }"
+                f"{ {e.composition.reduced_formula for e in intrinsic_phase_diagram_entries} }"
             )
         if len(bulk_pde_list) > 0:
             # lowest energy bulk phase
             self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
         self._intrinsic_phase_diagram = PhaseDiagram(
-            pd_entries_intrinsic, map(Element, self.bulk_composition.elements)
+            intrinsic_phase_diagram_entries, map(Element, self.bulk_composition.elements)
         )
 
         # check if it's stable and if not error out
