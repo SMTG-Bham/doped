@@ -37,10 +37,14 @@ def _monty_decode_nested_dicts(d):
     lists of dicts and decode them:
     """
     for key, value in d.items():
-        if isinstance(value, dict) and not any(k in value for k in ["@module", "@class"]):
+        if isinstance(value, dict) and not any(
+            k in value for k in ["@module", "@class"]
+        ):
             _monty_decode_nested_dicts(value)
         elif isinstance(value, list):
-            if all(isinstance(i, dict) for i in value) and all(k in i for k in ["@module", "@class"] for i in value):
+            if all(isinstance(i, dict) for i in value) and all(
+                k in i for k in ["@module", "@class"] for i in value
+            ):
                 try:
                     d[key] = [MontyDecoder().process_decoded(i) for i in value]
                 except Exception as exc:
@@ -110,7 +114,7 @@ def get_correction_freysoldt(
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
 
-if partflag not in ["All", "AllSplit", "pc", "potalign"]:
+    if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
             '"potalign".'.format(partflag)
@@ -207,7 +211,6 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
 
-
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
@@ -279,7 +282,7 @@ def get_correction_sxdefect(
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
 
-if partflag in ["All", "AllSplit"]:
+    if partflag in ["All", "AllSplit"]:
         nomtype = "full correction"
     elif partflag == "pc":
         nomtype = "point charge correction"
