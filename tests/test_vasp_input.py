@@ -23,14 +23,20 @@ class VaspInputTestCase(unittest.TestCase):
             if os.path.isdir(folder):
                 shutil.rmtree(folder)
 
-    def check_generated_vasp_inputs(self, data_dir=None, generated_dir=".",
-                                    vasp_type="vasp_gam", check_poscar=True,
-                                    check_potcar_spec=False):
+    def check_generated_vasp_inputs(
+        self,
+        data_dir=None,
+        generated_dir=".",
+        vasp_type="vasp_gam",
+        check_poscar=True,
+        check_potcar_spec=False,
+    ):
         if data_dir is None:
             data_dir = self.CDTE_DATA_DIR
 
         for folder in os.listdir(data_dir):
             if os.path.isdir(folder):
+                print(f"{generated_dir}/{folder}")
                 self.assertTrue(os.path.exists(f"{generated_dir}/{folder}"))
                 self.assertTrue(os.path.exists(f"{generated_dir}/{folder}/{vasp_type}"))
 
@@ -51,11 +57,15 @@ class VaspInputTestCase(unittest.TestCase):
                         f"{self.CDTE_DATA_DIR}/{folder}/vasp_gam/POSCAR"  # POSCAR always checked
                         # against vasp_gam unperturbed POSCAR
                     )
-                    poscar = Poscar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POSCAR")
+                    poscar = Poscar.from_file(
+                        f"{generated_dir}/{folder}/{vasp_type}/POSCAR"
+                    )
                     self.assertEqual(test_poscar.structure, poscar.structure)
 
                 if check_potcar_spec:
-                    with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", "r") as f:
+                    with open(
+                        f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", "r"
+                    ) as f:
                         contents = f.readlines()
                         self.assertIn(contents[0], ["Cd", "Cd\n"])
                         self.assertIn(contents[1], ["Te", "Te\n"])
@@ -65,103 +75,91 @@ class VaspInputTestCase(unittest.TestCase):
                 test_kpoints = Kpoints.from_file(
                     f"{self.CDTE_DATA_DIR}/{folder}/{vasp_type}/KPOINTS"
                 )
-                kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
+                kpoints = Kpoints.from_file(
+                    f"{generated_dir}/{folder}/{vasp_type}/KPOINTS"
+                )
                 self.assertDictEqual(test_kpoints.as_dict(), kpoints.as_dict())
 
-
     def test_vasp_gam_files(self):
-        defect_input_dict = vasp_input.prepare_vasp_defect_inputs(
-            self.cdte_generated_defect_dict
+        vasp_input.vasp_gam_files(
+            self.cdte_generated_defect_dict,
+            user_incar_settings={"ENCUT": 350},
+            potcar_spec=True,
+            user_potcar_functional=None,
         )
-        for key, val in defect_input_dict.items():
-            vasp_input.vasp_gam_files(
-                val, input_dir=key, user_incar_settings={"ENCUT": 350}, potcar_spec=True,
-                user_potcar_functional=None
-            )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
         self.check_generated_vasp_inputs(check_potcar_spec=True)
 
         # test custom POTCAR choice:
-        for key, val in defect_input_dict.items():
-            if "vac_2_Te" in key:
-                vasp_input.vasp_gam_files(
-                    val,
-                    input_dir=key,
-                    user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
-                    user_potcar_functional=None,
-                    potcar_spec=True,
-                )
+        vac_Te_dict = {
+            defect_type: [
+                defect for defect in defect_list if defect["name"] == "vac_2_Te"
+            ]
+            for defect_type, defect_list in self.cdte_generated_defect_dict.items()
+            if defect_type == "vacancies"
+        }
 
-                with open(f"{key}/vasp_gam/POTCAR.spec", "r") as f:
-                    contents = f.readlines()
-                    self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
-                    self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
+        vasp_input.vasp_gam_files(
+            vac_Te_dict,
+            user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
+            user_potcar_functional=None,
+            potcar_spec=True,
+        )
+
+        with open(f"vac_2_Te_0/vasp_gam/POTCAR.spec", "r") as f:
+            contents = f.readlines()
+            self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
+            self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 
     def test_vasp_std_files(self):
-        defect_input_dict = vasp_input.prepare_vasp_defect_inputs(
-            self.cdte_generated_defect_dict
+        vasp_input.vasp_std_files(
+            self.cdte_generated_defect_dict,
+            user_incar_settings={
+                "ENCUT": 350,
+                "LREAL": "Auto",
+                "IBRION": 5,
+                "ADDGRID": True,
+            },
+            user_potcar_functional=None,
         )
-        for key, val in defect_input_dict.items():
-            vasp_input.vasp_std_files(
-                val,
-                input_dir=key,
-                user_incar_settings={
-                    "ENCUT": 350,
-                    "LREAL": "Auto",
-                    "IBRION": 5,
-                    "ADDGRID": True,
-                },
-                user_potcar_functional=None
-            )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False)
 
-                # TODO: Need to pylint the files to check no glaring issues
-                # TODO: Add note to example notebook that it should be easy to use with atomate
-                #  etc because now returns the DefectRelaxSet objects
+        # TODO: Need to pylint the files to check no glaring issues
+        # TODO: Add note to example notebook that it should be easy to use with atomate
+        #  etc because now returns the DefectRelaxSet objects
 
-        for key, val in defect_input_dict.items():
-            vasp_input.vasp_std_files(
-                val,
-                input_dir=key,
-                user_incar_settings={
-                    "ENCUT": 350,
-                    "LREAL": "Auto",
-                    "IBRION": 5,
-                    "ADDGRID": True,
-                },
-                unperturbed_poscar=True,
-                user_potcar_functional=None
-            )
-
+        vasp_input.vasp_std_files(
+            self.cdte_generated_defect_dict,
+            user_incar_settings={
+                "ENCUT": 350,
+                "LREAL": "Auto",
+                "IBRION": 5,
+                "ADDGRID": True,
+            },
+            unperturbed_poscar=True,
+            user_potcar_functional=None,
+        )
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True)
 
     def test_vasp_ncl_files(self):
-        defect_input_dict = vasp_input.prepare_vasp_defect_inputs(
-            self.cdte_generated_defect_dict
+        vasp_input.vasp_ncl_files(
+            self.cdte_generated_defect_dict,
+            user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
+            user_potcar_functional=None,
         )
-        for key, val in defect_input_dict.items():
-            vasp_input.vasp_ncl_files(
-                val,
-                input_dir=key,
-                user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-                user_potcar_functional=None
-            )
 
         # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False)
 
-        for key, val in defect_input_dict.items():
-            vasp_input.vasp_ncl_files(
-                val,
-                input_dir=key,
-                user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-                unperturbed_poscar=True,
-                user_potcar_functional=None
-            )
-
+        vasp_input.vasp_ncl_files(
+            self.cdte_generated_defect_dict,
+            user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
+            unperturbed_poscar=True,
+            user_potcar_functional=None,
+        )
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=True)
 
 
