@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
 
       - uses: actions/setup-python@v1
         with:
@@ -39,9 +39,11 @@ jobs:
           python setup.py sdist bdist_wheel
 
       - name: Generate release tag
-        uses: amitsingh-007/next-release-tag@v1.0.0
+        uses: amitsingh-007/next-release-tag@v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag_prefix: 'v'
+          tag_template: 'yyyy.mm.dd'
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@master
@@ -58,8 +60,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.release_tag }}
-          release_name: ${{ env.release_tag }}
+          tag_name: ${{ steps.generate_release_tag.outputs.next_release_tag }}
+          release_name: Release ${{ steps.generate_release_tag.outputs.next_release_tag }}
           body_path: release_info.txt
           draft: false
           prerelease: false
