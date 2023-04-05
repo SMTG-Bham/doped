@@ -308,7 +308,9 @@ class CombineExtrinsicTestCase(unittest.TestCase):
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}
         with self.assertRaises(KeyError):
-            chemical_potentials.combine_extrinsic(d, self.second, self.extrinsic_species)
+            chemical_potentials.combine_extrinsic(
+                d, self.second, self.extrinsic_species
+            )
 
         with self.assertRaises(KeyError):
             chemical_potentials.combine_extrinsic(self.first, d, self.extrinsic_species)
@@ -398,7 +400,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_init_ytos(self):
         # 144 phases on Y-Ti-O-S MP phase diagram
-        cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1)
+        cp = chemical_potentials.CompetingPhases(
+            "Y2Ti2S2O5", e_above_hull=0.1, api_key=self.api_key
+        )
         self.assertEqual(len(cp.entries), 115)  # 115 phases with default algorithm
         # assert only one O2 phase present (molecular entry):
         o2_entries = [e for e in cp.entries if e.name == "O2"]
@@ -410,7 +414,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
 
         cp = chemical_potentials.CompetingPhases(
-            "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True
+            "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True, api_key=self.api_key
         )
         self.assertEqual(
             len(cp.entries), 140
