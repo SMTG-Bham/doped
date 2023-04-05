@@ -1,7 +1,7 @@
 Change Log
 ==========
 
-v23.4.5
+v1.0.6
 ----------
 - Start keeping a `CHANGELOG`
 - `README` updates to give step-by-step instructions on setting up MP API key, `POTCAR`s for `pymatgen` and virtual `conda` environments for `doped` and `ShakeNBreak`
