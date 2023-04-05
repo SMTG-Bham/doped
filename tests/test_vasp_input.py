@@ -134,6 +134,18 @@ class VaspInputTestCase(unittest.TestCase):
             self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
             self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_gam_files(
+            self.cdte_generated_defect_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        for folder in os.listdir(self.CDTE_DATA_DIR):
+            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+                self.assertFalse(os.path.exists(f"./{folder}"))
+
+
     def test_vasp_gam_files_single_defect_dict(self):
         single_defect_dict = self.cdte_generated_defect_dict["vacancies"][0]  # V_Cd
         vasp_input.vasp_gam_files(
@@ -167,6 +179,15 @@ class VaspInputTestCase(unittest.TestCase):
             self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
             self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
 
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_gam_files(
+            vac_Te_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        self.assertFalse(os.path.exists(f"vac_2_Te_0"))
+
     def test_vasp_std_files(self):
         vasp_input.vasp_std_files(
             self.cdte_generated_defect_dict,
@@ -194,6 +215,17 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True)
+
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_std_files(
+            self.cdte_generated_defect_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        for folder in os.listdir(self.CDTE_DATA_DIR):
+            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+                self.assertFalse(os.path.exists(f"./{folder}"))
 
     def test_vasp_std_files_single_defect_dict(self):
         # test interstitials this time:
@@ -243,6 +275,17 @@ class VaspInputTestCase(unittest.TestCase):
                 single_defect_dir=True,
             )
 
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_gam_files(
+            single_defect_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        self.assertFalse(os.path.exists(f"inter_1_Cd_0"))
+        self.assertFalse(os.path.exists(f"inter_1_Cd_1"))
+        self.assertFalse(os.path.exists(f"inter_1_Cd_2"))
+
     def test_vasp_ncl_files(self):
         vasp_input.vasp_ncl_files(
             self.cdte_generated_defect_dict,
@@ -260,6 +303,17 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=True)
+
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_ncl_files(
+            self.cdte_generated_defect_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        for folder in os.listdir(self.CDTE_DATA_DIR):
+            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+                self.assertFalse(os.path.exists(f"./{folder}"))
 
     def test_vasp_ncl_files_single_defect_dict(self):
         # test substitutions this time:
@@ -298,6 +352,16 @@ class VaspInputTestCase(unittest.TestCase):
                 check_poscar=True,
                 single_defect_dir=True,
             )
+
+        # test no files written with write_files=False
+        self.tearDown()
+        vasp_input.vasp_ncl_files(
+            single_defect_dict,
+            user_potcar_functional=None,
+            write_files=False
+        )
+        for charge in range(-1, 6):
+            self.assertFalse(os.path.exists(f"sub_2_Se_on_Te_{charge}"))
 
 
 if __name__ == "__main__":
