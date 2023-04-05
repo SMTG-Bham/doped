@@ -51,7 +51,7 @@ jobs:
       - name: Get Release Tag
         run: |
           VERSION=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"')
-          echo "{version}={VERSION}" >> $GITHUB_ENV
+          echo "version=${VERSION}" >> $GITHUB_ENV
 
       - name: Release
         uses: actions/create-release@v1
