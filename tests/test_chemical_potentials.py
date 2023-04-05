@@ -6,7 +6,7 @@ from pathlib import Path
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 
-from doped import competing_phases
+from doped import chemical_potentials
 
 
 class ChemPotsTestCase(unittest.TestCase):
@@ -33,9 +33,9 @@ class ChemPotsTestCase(unittest.TestCase):
         return super().tearDown()
 
     def test_cpa_csv(self):
-        stable_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        self.ext_cpa = competing_phases.CompetingPhasesAnalyzer(
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
@@ -54,7 +54,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
     # test chempots
     def test_cpa_chempots(self):
-        stable_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         df1 = stable_cpa.calculate_chempots()
         self.assertEqual(list(df1["O"])[0], 0)
@@ -64,14 +64,14 @@ class ChemPotsTestCase(unittest.TestCase):
             str,
         )
 
-        self.unstable_cpa = competing_phases.CompetingPhasesAnalyzer(
+        self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.unstable_system
         )
         self.unstable_cpa.from_csv(self.csv_path)
         with self.assertRaises(ValueError):
             self.unstable_cpa.calculate_chempots()
 
-        self.ext_cpa = competing_phases.CompetingPhasesAnalyzer(
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
@@ -81,11 +81,11 @@ class ChemPotsTestCase(unittest.TestCase):
 
     def test_cpa_chem_limits(self):
         # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
-        stable_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         self.assertDictEqual(stable_cpa.chem_limits, self.parsed_chempots)
 
-        self.ext_cpa = competing_phases.CompetingPhasesAnalyzer(
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
@@ -96,20 +96,20 @@ class ChemPotsTestCase(unittest.TestCase):
 
     # test vaspruns
     def test_vaspruns(self):
-        cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
         self.assertEqual(len(cpa.elemental), 2)
         self.assertEqual(cpa.data[0]["formula"], "O2")
 
-        cpa_no = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        cpa_no = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with self.assertRaises(FileNotFoundError):
             cpa_no.from_vaspruns(path="path")
 
         with self.assertRaises(ValueError):
             cpa_no.from_vaspruns(path=0)
 
-        ext_cpa = competing_phases.CompetingPhasesAnalyzer(
+        ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         path2 = self.path / "La_ZrO2"
@@ -180,7 +180,7 @@ class ChemPotsTestCase(unittest.TestCase):
                     all_paths.append(pp)
                 elif ppgz.is_file():
                     all_paths.append(ppgz)
-        lst_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        lst_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_cpa.from_vaspruns(path=all_paths)
         self.assertEqual(len(lst_cpa.elemental), 2)
         self.assertEqual(len(lst_cpa.vasprun_paths), 8)
@@ -190,12 +190,12 @@ class ChemPotsTestCase(unittest.TestCase):
             if not p.name.startswith("."):
                 pp = p / "relax"
                 all_fols.append(pp)
-        lst_fols_cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_fols_cpa.from_vaspruns(path=all_fols)
         self.assertEqual(len(lst_fols_cpa.elemental), 2)
 
     def test_cplap_input(self):
-        cpa = competing_phases.CompetingPhasesAnalyzer(self.stable_system)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_csv(self.csv_path)
         cpa.cplap_input(dependent_variable="O")
 
@@ -225,13 +225,13 @@ class ChemPotsTestCase(unittest.TestCase):
 
 class BoxedMoleculesTestCase(unittest.TestCase):
     def test_elements(self):
-        s, f, m = competing_phases.make_molecule_in_a_box("O2")
+        s, f, m = chemical_potentials.make_molecule_in_a_box("O2")
         self.assertEqual(f, "O2")
         self.assertEqual(m, 2)
         self.assertEqual(type(s), Structure)
 
         with self.assertRaises(UnboundLocalError):
-            competing_phases.make_molecule_in_a_box("R2")
+            chemical_potentials.make_molecule_in_a_box("R2")
 
 
 class FormationEnergyTestCase(unittest.TestCase):
@@ -276,7 +276,7 @@ class FormationEnergyTestCase(unittest.TestCase):
             },
         ]
 
-        df = competing_phases._calculate_formation_energies(data, elemental)
+        df = chemical_potentials._calculate_formation_energies(data, elemental)
         print(df)
         self.assertEqual(df["formula"][0], "O2")  # definite order
         self.assertEqual(df["formation_energy"][0], 0)
@@ -298,7 +298,7 @@ class CombineExtrinsicTestCase(unittest.TestCase):
         return super().setUp()
 
     def test_combine_extrinsic(self):
-        d = competing_phases.combine_extrinsic(
+        d = chemical_potentials.combine_extrinsic(
             self.first, self.second, self.extrinsic_species
         )
         self.assertEqual(len(d["elemental_refs"].keys()), 4)
@@ -308,20 +308,20 @@ class CombineExtrinsicTestCase(unittest.TestCase):
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}
         with self.assertRaises(KeyError):
-            competing_phases.combine_extrinsic(d, self.second, self.extrinsic_species)
+            chemical_potentials.combine_extrinsic(d, self.second, self.extrinsic_species)
 
         with self.assertRaises(KeyError):
-            competing_phases.combine_extrinsic(self.first, d, self.extrinsic_species)
+            chemical_potentials.combine_extrinsic(self.first, d, self.extrinsic_species)
 
         with self.assertRaises(ValueError):
-            competing_phases.combine_extrinsic(self.first, self.second, "R")
+            chemical_potentials.combine_extrinsic(self.first, self.second, "R")
 
 
 class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.path = Path(__file__).parents[0]
         self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
-        self.cp = competing_phases.CompetingPhases(
+        self.cp = chemical_potentials.CompetingPhases(
             "ZrO2", e_above_hull=0.03, api_key=self.api_key
         )
 
@@ -366,7 +366,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertNotIn("Zr4O", [e.name for e in self.cp.entries])
 
     def test_init_full_phase_diagram(self):
-        cp = competing_phases.CompetingPhases(
+        cp = chemical_potentials.CompetingPhases(
             "ZrO2", e_above_hull=0.03, api_key=self.api_key, full_phase_diagram=True
         )
         self.assertEqual(len(cp.entries), 14)  # Zr4O now present
@@ -398,7 +398,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_init_ytos(self):
         # 144 phases on Y-Ti-O-S MP phase diagram
-        cp = competing_phases.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1)
+        cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1)
         self.assertEqual(len(cp.entries), 115)  # 115 phases with default algorithm
         # assert only one O2 phase present (molecular entry):
         o2_entries = [e for e in cp.entries if e.name == "O2"]
@@ -409,7 +409,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertTrue(o2_entries[0].data["molecule"])
         self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
 
-        cp = competing_phases.CompetingPhases(
+        cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True
         )
         self.assertEqual(
@@ -432,7 +432,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "API key test is not a valid legacy Materials Project API key. These are "
                 "available at https://legacy.materialsproject.org/open"
             )
-            competing_phases.CompetingPhases(
+            chemical_potentials.CompetingPhases(
                 "ZrO2",
                 api_key="test",
             )
@@ -443,7 +443,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "You are trying to use the new Materials Project (MP) API which is not supported "
                 "by doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
             )
-            competing_phases.CompetingPhases(
+            chemical_potentials.CompetingPhases(
                 "ZrO2",
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
@@ -519,7 +519,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.path = Path(__file__).parents[0]
         self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
-        self.ex_cp = competing_phases.ExtrinsicCompetingPhases(
+        self.ex_cp = chemical_potentials.ExtrinsicCompetingPhases(
             "ZrO2", extrinsic_species="La", e_above_hull=0, api_key=self.api_key
         )
         return super().setUp()
@@ -551,7 +551,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
             )
         )
 
-        cp = competing_phases.ExtrinsicCompetingPhases(
+        cp = chemical_potentials.ExtrinsicCompetingPhases(
             "ZrO2", extrinsic_species="La", api_key=self.api_key
         )  # default e_above_hull=0.1
         self.assertEqual(len(cp.entries), 5)
