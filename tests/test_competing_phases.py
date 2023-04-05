@@ -158,18 +158,18 @@ class ChemPotsTestCase(unittest.TestCase):
         # -278.46392292, 'formation_energy': -10.951109995000003}, {'formula': 'La2Zr2O7',
         # 'kpoints': '3x3x3', 'energy_per_fu': -119.619571095, 'energy_per_atom':
         # -10.874506463181818, 'energy': -239.23914219, 'formation_energy': -40.87683184}]
-        self.assertEqual(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
-        self.assertEqual(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
-        self.assertEqual(ext_cpa.data[0]["energy"], -20.01834464)
-        self.assertEqual(ext_cpa.data[0]["formation_energy"], 0.0)
-        self.assertEqual(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
-        self.assertEqual(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
-        self.assertEqual(ext_cpa.data[-1]["energy"], -239.23914219)
-        self.assertEqual(ext_cpa.data[-1]["formation_energy"], -40.87683184)
-        self.assertEqual(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
-        self.assertEqual(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
-        self.assertEqual(ext_cpa.data[6]["energy"], -85.04840861)
-        self.assertEqual(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
+        self.assertAlmostEqual(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
+        self.assertAlmostEqual(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
+        self.assertAlmostEqual(ext_cpa.data[0]["energy"], -20.01834464)
+        self.assertAlmostEqual(ext_cpa.data[0]["formation_energy"], 0.0)
+        self.assertAlmostEqual(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
+        self.assertAlmostEqual(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
+        self.assertAlmostEqual(ext_cpa.data[-1]["energy"], -239.23914219)
+        self.assertAlmostEqual(ext_cpa.data[-1]["formation_energy"], -40.87683184)
+        self.assertAlmostEqual(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
+        self.assertAlmostEqual(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
+        self.assertAlmostEqual(ext_cpa.data[6]["energy"], -85.04840861)
+        self.assertAlmostEqual(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
 
         # check if it works from a list
         all_paths = []
@@ -340,8 +340,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(self.cp.entries[0].data["total_magnetization"], 2)
         self.assertEqual(self.cp.entries[0].data["e_above_hull"], 0)
         self.assertTrue(self.cp.entries[0].data["molecule"])
-        self.assertEqual(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
-        self.assertEqual(self.cp.entries[0].data["energy"], -9.8959109375)
+        self.assertAlmostEqual(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        self.assertAlmostEqual(self.cp.entries[0].data["energy"], -9.8959109375)
         self.assertEqual(self.cp.entries[1].name, "Zr")
         self.assertAlmostEqual(
             self.cp.entries[1].data["total_magnetization"], 0, places=3
@@ -392,7 +392,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.cp.convergence_setup(potcar_spec=True)
         self.assertEqual(len(self.cp.metals), 6)
         self.assertEqual(self.cp.metals[0].data["band_gap"], 0)
-        self.assertEqual(self.cp.nonmetals[0].data["molecule"], False)
+        self.assertFalse(self.cp.nonmetals[0].data["molecule"])
         # this shouldnt exist - dont need to convergence test for molecules
         self.assertFalse(Path("competing_phases/O2_EaH_0").is_dir())
 
@@ -419,8 +419,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.assertEqual(len(self.cp.molecules), 1)
         self.assertEqual(self.cp.molecules[0].name, "O2")
         self.assertEqual(self.cp.molecules[0].data["total_magnetization"], 2)
-        self.assertEqual(self.cp.molecules[0].data["molecule"], True)
-        self.assertEqual(self.cp.nonmetals[0].data["molecule"], False)
+        self.assertTrue(self.cp.molecules[0].data["molecule"])
+        self.assertFalse(self.cp.nonmetals[0].data["molecule"])
 
         path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         self.assertTrue(Path(path1).is_dir())
