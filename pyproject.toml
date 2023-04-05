@@ -1,0 +1,39 @@
+[project]
+name = "doped"
+version = "1.0.5"
+description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
+authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    ]
+requires-python = ">=3.7"
+dependencies = [
+    "ase",
+    "tabulate",
+    "matplotlib",
+    "numpy>=1.21.0",
+    "pymatgen<2022.8.23",
+    "shakenbreak==22.11.1",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/SMTG-UCL/doped"
+
+[tool.setuptools.packages.find]
+exclude = ["examples*"]
+
+[tool.setuptools.package-data]
+doped = ["*.yaml"]
+
+[project.optional-dependencies]
+tests = ["pytest"]
