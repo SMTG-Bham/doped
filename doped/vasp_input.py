@@ -50,8 +50,6 @@ warnings.filterwarnings(
 )
 
 
-# TODO: Add note to example notebook that it should be easy to use with atomate
-#  etc because now returns the DefectRelaxSet objects
 # TODO: Updated naming convention, to match that implemented in `ShakeNBreak`.
 def scaled_ediff(natoms):
     """
@@ -115,6 +113,7 @@ def _prepare_vasp_files(
     user_potcar_functional="PBE_54",
     user_potcar_settings=None,
     unperturbed_poscar: bool = False,
+    write_files: bool = True,
 ) -> DefectRelaxSet:
     """
     Prepare DefectRelaxSet object for VASP defect supercell input file generation
@@ -132,10 +131,10 @@ def _prepare_vasp_files(
     else:
         vaspinputdir = f"{output_dir}/{subfolder}"
 
-    if not os.path.exists(vaspinputdir):
+    if not os.path.exists(vaspinputdir) and write_files:
         os.makedirs(vaspinputdir)
 
-    if unperturbed_poscar:
+    if unperturbed_poscar and write_files:
         poscar = Poscar(supercell)
         if poscar_comment:
             poscar.comment = poscar_comment
@@ -231,6 +230,7 @@ def vasp_gam_files(
     user_incar_settings: dict = None,
     user_potcar_functional="PBE_54",
     user_potcar_settings=None,
+    write_files=True,
     **kwargs,  # to allow POTCAR testing on GH Actions
 ) -> [DefectRelaxSet,]:
     """
@@ -265,6 +265,7 @@ def vasp_gam_files(
         user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
         user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
             `doped/PotcarSet.yaml` for the default `POTCAR` set.
+        write_files (bool): Whether to write the VASP input files to disk. Default is True.
 
     Returns:
         Dictionary of {defect_species: `DefectRelaxSet`} for each defect species in the input
@@ -288,25 +289,28 @@ def vasp_gam_files(
             user_potcar_functional=user_potcar_functional,
             user_potcar_settings=user_potcar_settings,
             unperturbed_poscar=True,  # write POSCAR for vasp_gam_files()
+            write_files=write_files,
         )
 
-        defect_relax_set.write_input(
-            defect_relax_set.output_dir,
-            **kwargs,  # kwargs to allow POTCAR testing on GH Actions
-        )  # writes POSCAR without comment
-        poscar_comment = (
-            single_defect_dict["POSCAR Comment"]
-            if "POSCAR Comment" in single_defect_dict
-            else None
-        )
-        if poscar_comment is not None:
-            poscar = Poscar(single_defect_dict["Defect Structure"])
-            poscar.comment = poscar_comment
-            poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
+        if write_files:
+            defect_relax_set.write_input(
+                defect_relax_set.output_dir,
+                **kwargs,  # kwargs to allow POTCAR testing on GH Actions
+            )  # writes POSCAR without comment
+            poscar_comment = (
+                single_defect_dict["POSCAR Comment"]
+                if "POSCAR Comment" in single_defect_dict
+                else None
+            )
+            if poscar_comment is not None:
+                poscar = Poscar(single_defect_dict["Defect Structure"])
+                poscar.comment = poscar_comment
+                poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
+
+            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
+                   f"{defect_relax_set.output_dir}/transformation.json")
+
         defect_relax_set_dict[defect_species] = defect_relax_set
-
-        dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-               f"{defect_relax_set.output_dir}/transformation.json")
 
     return defect_relax_set_dict
 
@@ -320,6 +324,7 @@ def vasp_std_files(
     user_potcar_functional="PBE_54",
     user_potcar_settings=None,
     unperturbed_poscar: bool = False,
+    write_files: bool = True,
 ) -> [DefectRelaxSet,]:
     """
     Generates INCAR, POTCAR and KPOINTS for `vasp_std` defect supercell relaxations. By default
@@ -368,6 +373,7 @@ def vasp_std_files(
             https://shakenbreak.readthedocs.io), then continue the vasp_std relaxations from the
             'Groundstate' CONTCARs.
             (default: False)
+        write_files (bool): Whether to write the VASP input files to disk. Default is True.
 
     Returns:
         Dictionary of {defect_species: `DefectRelaxSet`} for each defect species in the input
@@ -398,18 +404,20 @@ def vasp_std_files(
             user_potcar_functional=user_potcar_functional,
             user_potcar_settings=user_potcar_settings,
             unperturbed_poscar=unperturbed_poscar,
+            write_files=write_files,
         )
 
-        # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-        defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
-        defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
-        if user_potcar_functional is not None:  # for GH Actions testing
-            defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+        if write_files:
+            # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
+            defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
+            defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
+            if user_potcar_functional is not None:  # for GH Actions testing
+                defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+
+            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
+                   f"{defect_relax_set.output_dir}/transformation.json")
 
         defect_relax_set_dict[defect_species] = defect_relax_set
-
-        dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-               f"{defect_relax_set.output_dir}/transformation.json")
 
     return defect_relax_set_dict
 
@@ -423,6 +431,7 @@ def vasp_ncl_files(
     user_potcar_functional="PBE_54",
     user_potcar_settings=None,
     unperturbed_poscar: bool = False,
+    write_files: bool = True,
 ) -> [DefectRelaxSet,]:
     """
     Generates INCAR, POTCAR and KPOINTS for `vasp_ncl` (i.e. spin-orbit coupling (SOC)) defect
@@ -473,6 +482,7 @@ def vasp_ncl_files(
             'Groundstate' CONTCARs, before doing final vasp_ncl singleshot calculations if SOC is
             important.
             (default: False)
+        write_files (bool): Whether to write the VASP input files to disk. Default is True.
 
     Returns:
         Dictionary of {defect_species: `DefectRelaxSet`} for each defect species in the input
@@ -507,18 +517,20 @@ def vasp_ncl_files(
             user_potcar_functional=user_potcar_functional,
             user_potcar_settings=user_potcar_settings,
             unperturbed_poscar=unperturbed_poscar,
+            write_files=write_files,
         )
 
-        # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-        defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
-        defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
-        if user_potcar_functional is not None:  # for GH Actions testing
-            defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+        if write_files:  # write INCAR, KPOINTS and POTCAR files
+            # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
+            defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
+            defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
+            if user_potcar_functional is not None:  # for GH Actions testing
+                defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+
+            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
+                   f"{defect_relax_set.output_dir}/transformation.json")
 
         defect_relax_set_dict[defect_species] = defect_relax_set
-
-        dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-               f"{defect_relax_set.output_dir}/transformation.json")
 
     return defect_relax_set_dict
 
