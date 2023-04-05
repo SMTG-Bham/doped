@@ -365,6 +365,67 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         self.assertNotIn("Zr4O", [e.name for e in self.cp.entries])
 
+    def test_init_full_phase_diagram(self):
+        cp = competing_phases.CompetingPhases(
+            "ZrO2", e_above_hull=0.03, api_key=self.api_key, full_phase_diagram=True
+        )
+        self.assertEqual(len(cp.entries), 14)  # Zr4O now present
+        self.assertEqual(cp.entries[0].name, "O2")
+        self.assertEqual(cp.entries[0].data["total_magnetization"], 2)
+        self.assertEqual(cp.entries[0].data["e_above_hull"], 0)
+        self.assertTrue(cp.entries[0].data["molecule"])
+        self.assertAlmostEqual(cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        self.assertAlmostEqual(cp.entries[0].data["energy"], -9.8959109375)
+        self.assertEqual(cp.entries[1].name, "Zr")
+        self.assertAlmostEqual(cp.entries[1].data["total_magnetization"], 0, places=3)
+        self.assertEqual(cp.entries[1].data["e_above_hull"], 0)
+        self.assertFalse(cp.entries[1].data["molecule"])
+        self.assertEqual(cp.entries[2].name, "Zr3O")
+        self.assertEqual(cp.entries[2].data["e_above_hull"], 0)
+        self.assertEqual(cp.entries[3].name, "Zr4O")  # new entry!
+        self.assertEqual(cp.entries[3].data["e_above_hull"], 0)
+        self.assertEqual(cp.entries[4].name, "ZrO2")
+        self.assertEqual(cp.entries[4].data["e_above_hull"], 0)
+        self.assertEqual(cp.entries[5].name, "Zr3O")
+        self.assertEqual(cp.entries[6].name, "Zr3O")
+        self.assertEqual(cp.entries[7].name, "Zr2O")
+        self.assertEqual(cp.entries[8].name, "ZrO2")
+        self.assertEqual(cp.entries[9].name, "ZrO2")
+        self.assertEqual(cp.entries[10].name, "Zr")
+        self.assertEqual(cp.entries[11].name, "ZrO2")
+        self.assertEqual(cp.entries[12].name, "ZrO2")
+        self.assertEqual(cp.entries[13].name, "ZrO2")
+
+    def test_init_ytos(self):
+        # 144 phases on Y-Ti-O-S MP phase diagram
+        cp = competing_phases.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1)
+        self.assertEqual(len(cp.entries), 115)  # 115 phases with default algorithm
+        # assert only one O2 phase present (molecular entry):
+        o2_entries = [e for e in cp.entries if e.name == "O2"]
+        self.assertEqual(len(o2_entries), 1)
+        self.assertEqual(o2_entries[0].name, "O2")
+        self.assertEqual(o2_entries[0].data["total_magnetization"], 2)
+        self.assertEqual(o2_entries[0].data["e_above_hull"], 0)
+        self.assertTrue(o2_entries[0].data["molecule"])
+        self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
+
+        cp = competing_phases.CompetingPhases(
+            "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True
+        )
+        self.assertEqual(
+            len(cp.entries), 140
+        )  # 144 phases on Y-Ti-O-S MP phase diagram,
+        # 4 extra O2 phases removed
+
+        # assert only one O2 phase present (molecular entry):
+        o2_entries = [e for e in cp.entries if e.name == "O2"]
+        self.assertEqual(len(o2_entries), 1)
+        self.assertEqual(o2_entries[0].name, "O2")
+        self.assertEqual(o2_entries[0].data["total_magnetization"], 2)
+        self.assertEqual(o2_entries[0].data["e_above_hull"], 0)
+        self.assertTrue(o2_entries[0].data["molecule"])
+        self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
+
     def test_api_keys_errors(self):
         with self.assertRaises(ValueError) as e:
             nonvalid_api_key_error = ValueError(
@@ -454,6 +515,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
+    # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
     def setUp(self) -> None:
         self.path = Path(__file__).parents[0]
         self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
