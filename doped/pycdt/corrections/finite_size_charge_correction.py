@@ -29,6 +29,28 @@ from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCo
 from doped.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
 
 
+def _convert_struct_dicts_to_objs(defect_entry):
+    """When reloading a doped defect dict saved to json, the structure entries in
+    defect_entry.parameters are converted to structure dicts by the json encoder.
+    This function converts them back to pymatgen structure objects, as required for the
+    correction functions.
+    """
+    for struct_key in [
+        "bulk_sc_structure",
+        "initial_defect_structure",
+        "unrelaxed_defect_structure",
+        "final_defect_structure",
+    ]:
+        if struct_key in defect_entry.parameters.keys() and isinstance(
+            defect_entry.parameters[struct_key], dict
+        ):
+            defect_entry.parameters[struct_key] = Structure.from_dict(
+                defect_entry.parameters[struct_key]
+            )
+
+    return defect_entry
+
+
 def get_correction_freysoldt(
     defect_entry, epsilon, plot: bool = False, filename=None, partflag="All", axis=None
 ):
@@ -81,6 +103,7 @@ def get_correction_freysoldt(
 
     Returns Correction
     """
+    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
@@ -175,6 +198,8 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
     """
+    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
+
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
@@ -243,7 +268,7 @@ def get_correction_sxdefect(
            'All' for both, or
            'AllSplit' for individual parts split up (form [PC,potterm,full])
     """
-    # TODO: test this function
+    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
 
     if partflag in ["All", "AllSplit"]:
         nomtype = "full correction"
