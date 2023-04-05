@@ -25,6 +25,7 @@ import copy
 
 import numpy as np
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
+from pymatgen.core.structure import Structure
 
 from doped.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
 
