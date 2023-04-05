@@ -50,9 +50,9 @@ warnings.filterwarnings(
 )
 
 
-# TODO: `vasp_X_files()` should be able to take a full defect dict, or single defect dict,
-#  and generate the appropriate input files (like `ShakeNBreak`).
-# TODO: Docstrings update and check
+# TODO: Need to pylint the files to check no glaring issues
+# TODO: Add note to example notebook that it should be easy to use with atomate
+#  etc because now returns the DefectRelaxSet objects
 # TODO: Updated naming convention, to match that implemented in `ShakeNBreak`.
 def scaled_ediff(natoms):
     """
@@ -236,10 +236,8 @@ def vasp_gam_files(
 ) -> [DefectRelaxSet,]:
     """
     Generates input files for VASP Gamma-point-only (`vasp_gam`) coarse defect supercell
-    relaxations. Note that any changes to the default `INCAR`/`POTCAR` settings should be
-    consistent with those used for competing phase (chemical potential) calculations.
-    See the `HSE06_RelaxSet.yaml` and `DefectSet.yaml` files in the `doped` folder for the
-    default `INCAR` settings, and `PotcarSet.yaml` for the default `POTCAR` settings.
+    relaxations. See the `HSE06_RelaxSet.yaml` and `DefectSet.yaml` files in the `doped` folder
+    for the default `INCAR` settings, and `PotcarSet.yaml` for the default `POTCAR` settings.
 
     Note that any changes to the default `INCAR`/`POTCAR` settings should be consistent with
     those used for competing phase (chemical potential) calculations.
@@ -256,7 +254,7 @@ def vasp_gam_files(
             current directory.
         subfolder (str):
             Output folder structure is `<defect_species>/<subfolder>` where `subfolder` =
-            'vasp_gam' by default. Setting `subfolder` to `None` will write the vasp_gam input
+            'vasp_gam' by default. Setting `subfolder` to `None` will write the `vasp_gam` input
             files directly to the `<defect_species>` folder, with no subfolders created.
         user_incar_settings (dict):
             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
@@ -275,6 +273,9 @@ def vasp_gam_files(
         with `incar`, `poscar`, `kpoints` and `potcar` attributes, containing information on the
         generated files.
     """
+    # check if input dict is a single defect subdict:
+    if "name" in defect_dict and "supercell" in defect_dict:  # single defect subdict
+        defect_dict = {"defects": [defect_dict]}
     defect_input_dict = _prepare_vasp_defect_inputs(defect_dict)
     defect_relax_set_dict = {}
     for defect_species, single_defect_dict in defect_input_dict.items():
@@ -381,6 +382,10 @@ def vasp_std_files(
     if user_incar_settings is not None:
         vaspstdincardict.update(user_incar_settings)
 
+    # check if input dict is a single defect subdict:
+    if "name" in defect_dict and "supercell" in defect_dict:  # single defect subdict
+        defect_dict = {"defects": [defect_dict]}
+
     defect_input_dict = _prepare_vasp_defect_inputs(defect_dict)
     defect_relax_set_dict = {}
     for defect_species, single_defect_dict in defect_input_dict.items():
@@ -486,6 +491,10 @@ def vasp_ncl_files(
     if user_incar_settings is not None:
         vaspnclincardict.update(user_incar_settings)
 
+    # check if input dict is a single defect subdict:
+    if "name" in defect_dict and "supercell" in defect_dict:  # single defect subdict
+        defect_dict = {"defects": [defect_dict]}
+
     defect_input_dict = _prepare_vasp_defect_inputs(defect_dict)
     defect_relax_set_dict = {}
     for defect_species, single_defect_dict in defect_input_dict.items():
@@ -522,7 +531,7 @@ def vasp_ncl_files(
 # supercell calcs (and note this in vasp_input as well)), ensure consistent INCAR tags in defect
 # supercell defaults and competing phase defaults, point too DefectSet in docstrings for defaults
 # (noting the other INCAR tags that are changed)
-def vasp_converge_files(
+def _vasp_converge_files(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
     incar_settings: dict = None,
@@ -638,7 +647,7 @@ def vasp_converge_files(
 # Input files for vasp_std
 
 
-def vasp_std_chempot(
+def _vasp_std_chempot(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
     incar_settings: dict = None,
@@ -764,7 +773,7 @@ def vasp_std_chempot(
 # Input files for vasp_ncl
 
 
-def vasp_ncl_chempot(
+def _vasp_ncl_chempot(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
     incar_settings: dict = None,
