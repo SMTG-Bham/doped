@@ -8,29 +8,33 @@
 - Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
 - Publication ready chemical potential diagram plotting tool (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
-- Once happy all required functionality is in the new `competing_phases.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), amalgamate `chempot`/`competing_phase` example notebooks and remove the old modified-pycdt `chemical_potentials.py` code.
+- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Defect calculations set up
-- Check supercell generation algorithm, worth using ASE's optimal supercell generation tools?
+- Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `plotting` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
+  - Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
+- Currently seems to be an issue when using non-diagonal supercells, extra unnecessary interstitials (and sometimes vacancies and antisites) are generated. Adair, Bonan and Savya have noticed this. Should be fixed by folding down to the primitive cell, doing the symmetry analysis and defect generation, and then expanding back up.
+- Check supercell generation algorithm, worth using ASE's optimal supercell generation tools? Also see recent `CubicSupercellTransformation` class in `pymatgen`
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
 - `NKRED` pre-relaxing on defect structures (see jspark Slack discussion)
 - Option _not to set_ certain `INCAR` tags (like HFSCREEN and LORBIT, cause their default "None" doesn't really correspond to a certain value; could add a `remove_incar_tags` arg and then `pop` them out of the incar dict?)
 - create a SMTG_defects_input_set for different functionals (PBE0, HSE0, PBE) and maybe just use `DictSet` base class rather than one of the pre-existing classes to make the vasp input files.
-- Streamline vasp_input functions (prepare_vasp_defect_inputs and prepare_vasp_defect_dict should all be done in one, remove hard-coded tags from the functions)
-- Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
+    - If we have this implemented, can then remove some of the fluff in `defectsmaker.py` (i.e. classes other than `ChargedDefectStructures()`?)
 - Multiprocessing ability for interstitial generation. Perhaps symmetry reduction methods, where you first reduce the initial structure via symmetry to the primitive cell, then do interstitial generation, then convert to interstitials in initial supercell structure.
 - Ideally figure out automation of polaron finding
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
+- Should test the `pymatgen-analysis-defects` `ChargeInterstitialGenerator` and see how it compares to Voronoi tesselation plus screening (current approach). Does this return multiple interstitial sites or just one? Would work in previous cases like split-interstitials or inequivalent interstitials where relative energies are charge-state-dependent? (Like Cd_i in CdTe etc)
+- Add defect expansion code functionality to regenerate defect structures from a smaller supercell in a larger one. Useful for supercell size convergence tests, and accelerating `ShakeNBreak` etc. If/when adding, make sure to link in `SnB` docs as well. 
+  - Related point, using our `doped` site-matching functions, could write some quick functions to plot the exponential tailing off of strain / site displacements as we move away from the defect site. Could be useful as a validation / check of supercell size convergence, and for quantifying the strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
 
 ## Post-processing / analysis / plotting
-
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
 - `aide` labelling of defect species in formation energy plots.
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
-- `transition_levels_table()`
+- `transition_levels_table()`. Also ensure we have functionality to print all single-electron TLs (useful to know when deciding what TLs to do carrier capture for. @SeánK has code for this in jupyter notebooks)
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
 - Fix `(ax=ax)` optional parameter behaviour in `formation_energy_plot` (where `f, ax = plt.subplots` run previously).
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
@@ -44,17 +48,17 @@
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
-- Used `monty` JSON encoding rather than `pickle` (like `pymatgen`) as less senstitive to environment and human-readable.
-- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, and warn user if not.
+- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
 - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, check how much the error is, and if small enough ignore and force the charge correction function to run (current method is to warn user this is the case, and to check it manually).
+- Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
+- Something to watch out for; currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For things like interstitials, if the closest Voronoi site from the relaxed structure thus differs between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (at least similar colours for similar defect types, and an option to just show amalgamated lowest energy charge states for each _defect type_?). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
 
 ## Housekeeping
-
 - Clean `README.md` with summary of main functionalities.
 - Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
 - Modularity - could have defect_creation (what is now vasp input+pycdt), defect_analysis, chempot and a separate plotting module?
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-- Add `dope_stuff` examples and documentation.
+- Add `plotting` & `analysis` examples, tests and documentation.
 - Add tests
 - Clean the example jupyter notebooks and docstrings
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
