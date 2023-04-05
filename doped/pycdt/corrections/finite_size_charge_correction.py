@@ -22,34 +22,37 @@ If you use the corrections implemented in this module, cite
 
 
 import copy
+import collections
 
 import numpy as np
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
-from pymatgen.core.structure import Structure
+from monty.json import MontyDecoder
 
 from doped.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
 
 
-def _convert_struct_dicts_to_objs(defect_entry):
-    """When reloading a doped defect dict saved to json, the structure entries in
-    defect_entry.parameters are converted to structure dicts by the json encoder.
-    This function converts them back to pymatgen structure objects, as required for the
-    correction functions.
+def _monty_decode_nested_dicts(d):
     """
-    for struct_key in [
-        "bulk_sc_structure",
-        "initial_defect_structure",
-        "unrelaxed_defect_structure",
-        "final_defect_structure",
-    ]:
-        if struct_key in defect_entry.parameters.keys() and isinstance(
-            defect_entry.parameters[struct_key], dict
-        ):
-            defect_entry.parameters[struct_key] = Structure.from_dict(
-                defect_entry.parameters[struct_key]
-            )
+    Recursively find any dictionaries in defect_entry.parameters, which may be nested in dicts or in
+    lists of dicts and decode them:
+    """
+    for key, value in d.items():
+        if isinstance(value, dict) and not any(k in value for k in ["@module", "@class"]):
+            _monty_decode_nested_dicts(value)
+        elif isinstance(value, list):
+            if all(isinstance(i, dict) for i in value) and all(k in i for k in ["@module", "@class"] for i in value):
+                try:
+                    d[key] = [MontyDecoder().process_decoded(i) for i in value]
+                except Exception as exc:
+                    print(f"Failed to decode {key} with error {exc}")
+                    pass
 
-    return defect_entry
+        if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
+            try:
+                d[key] = MontyDecoder().process_decoded(value)
+            except Exception as exc:
+                print(f"Failed to decode {key} with error {exc}")
+                pass
 
 
 def get_correction_freysoldt(
@@ -104,8 +107,10 @@ def get_correction_freysoldt(
 
     Returns Correction
     """
-    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
-    if partflag not in ["All", "AllSplit", "pc", "potalign"]:
+    # ensure parameters are decoded in case defect_dict was reloaded from json
+    _monty_decode_nested_dicts(defect_entry.parameters)
+
+if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
             '"potalign".'.format(partflag)
@@ -199,7 +204,9 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
     """
-    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
+    # ensure parameters are decoded in case defect_dict was reloaded from json
+    _monty_decode_nested_dicts(defect_entry.parameters)
+
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
@@ -269,9 +276,10 @@ def get_correction_sxdefect(
            'All' for both, or
            'AllSplit' for individual parts split up (form [PC,potterm,full])
     """
-    defect_entry = _convert_struct_dicts_to_objs(defect_entry)
+    # ensure parameters are decoded in case defect_dict was reloaded from json
+    _monty_decode_nested_dicts(defect_entry.parameters)
 
-    if partflag in ["All", "AllSplit"]:
+if partflag in ["All", "AllSplit"]:
         nomtype = "full correction"
     elif partflag == "pc":
         nomtype = "point charge correction"
