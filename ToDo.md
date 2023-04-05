@@ -11,7 +11,7 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Defect calculations set up
-- Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `dope_stuff` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
+- Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `plotting` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
   - Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Currently seems to be an issue when using non-diagonal supercells, extra unnecessary interstitials (and sometimes vacancies and antisites) are generated. Adair, Bonan and Savya have noticed this. Should be fixed by folding down to the primitive cell, doing the symmetry analysis and defect generation, and then expanding back up.
 - Check supercell generation algorithm, worth using ASE's optimal supercell generation tools? Also see recent `CubicSupercellTransformation` class in `pymatgen`
@@ -31,7 +31,6 @@
   - Related point, using our `doped` site-matching functions, could write some quick functions to plot the exponential tailing off of strain / site displacements as we move away from the defect site. Could be useful as a validation / check of supercell size convergence, and for quantifying the strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
 
 ## Post-processing / analysis / plotting
-- Rename `dope_stuff` to `plotting` because more professional and that's basically what all the functions are for?
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
 - `aide` labelling of defect species in formation energy plots.
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
@@ -59,7 +58,7 @@
 - Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
 - Modularity - could have defect_creation (what is now vasp input+pycdt), defect_analysis, chempot and a separate plotting module?
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-- Add `dope_stuff` examples and documentation.
+- Add `plotting` & `analysis` examples, tests and documentation.
 - Add tests
 - Clean the example jupyter notebooks and docstrings
 - Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
