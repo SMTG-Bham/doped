@@ -29,7 +29,7 @@ from pymatgen.io.vasp.inputs import Potcar, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Poscar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
-from doped.pycdt.core import chemical_potentials
+from doped.pycdt.core import _chemical_potentials
 
 angstrom = "\u212B"  # unicode symbol for angstrom to print in strings
 
