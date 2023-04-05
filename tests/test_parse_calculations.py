@@ -118,7 +118,7 @@ class DopedParsingTestCase(unittest.TestCase):
                     dielectric=self.cdte_dielectric,
                     defect_charge=defect_charge,
                 )
-                bo = sdp.freysoldt_loader()
+                sdp.freysoldt_loader()
                 sdp.get_stdrd_metadata()
                 sdp.get_bulk_gap_data()
                 sdp.run_compatibility()
@@ -155,12 +155,13 @@ class DopedParsingTestCase(unittest.TestCase):
             ),
         ]:
             self.assertAlmostEqual(parsed_vac_Cd_dict[name].energy, energy, places=3)
-            for k in correction_dict:
+            for correction_name, correction_energy in correction_dict.items():
                 self.assertAlmostEqual(
-                    parsed_vac_Cd_dict[name].corrections[k],
-                    correction_dict[k],
+                    parsed_vac_Cd_dict[name].corrections[correction_name],
+                    correction_energy,
                     places=3,
                 )
+
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
             if name == "vac_1_Cd_0":
@@ -204,10 +205,11 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        for k in correction_dict:
+        for correction_name, correction_energy in correction_dict.items():
             self.assertAlmostEqual(
-                te_i_2_ent.corrections[k], correction_dict[k], places=3
+                te_i_2_ent.corrections[correction_name], correction_energy, places=3
             )
+
         # assert auto-determined interstitial site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
@@ -262,9 +264,9 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        for k in correction_dict:
+        for correction_name, correction_energy in correction_dict.items():
             self.assertAlmostEqual(
-                te_cd_1_ent.corrections[k], correction_dict[k], places=3
+                te_cd_1_ent.corrections[correction_name], correction_energy, places=3
             )
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
@@ -370,10 +372,13 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        for k in correction_dict:
+        for correction_name, correction_energy in correction_dict.items():
             self.assertAlmostEqual(
-                int_F_minus1_ent.corrections[k], correction_dict[k], places=3
+                int_F_minus1_ent.corrections[correction_name],
+                correction_energy,
+                places=3,
             )
+
         # assert auto-determined interstitial site is correct
         self.assertAlmostEqual(
             int_F_minus1_ent.site.distance_and_image_from_frac_coords([0, 0, 0.4847])[
@@ -416,9 +421,9 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        for k in correction_dict:
+        for correction_name, correction_energy in correction_dict.items():
             self.assertAlmostEqual(
-                F_O_1_ent.corrections[k], correction_dict[k], places=3
+                F_O_1_ent.corrections[correction_name], correction_energy, places=3
             )
         # assert auto-determined interstitial site is correct
         self.assertAlmostEqual(
@@ -452,9 +457,9 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
-        for k in correction_dict:
+        for correction_name, correction_energy in correction_dict.items():
             self.assertAlmostEqual(
-                F_O_1_ent.corrections[k], correction_dict[k], places=3
+                F_O_1_ent.corrections[correction_name], correction_energy, places=3
             )
         # assert auto-determined interstitial site is correct
         self.assertAlmostEqual(
@@ -481,11 +486,6 @@ class DopedParsingTestCase(unittest.TestCase):
                         dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
-                    sdp.kumagai_loader()
-                    sdp.get_stdrd_metadata()
-                    sdp.get_bulk_gap_data()
-                    sdp.run_compatibility()
-                    te_i_2_ent = sdp.defect_entry
 
         mock_print.assert_called_once_with(
             "Saving parsed Voronoi sites (for interstitial site-matching) "
@@ -504,11 +504,6 @@ class DopedParsingTestCase(unittest.TestCase):
                         dielectric=self.ytos_dielectric,
                         defect_charge=defect_charge,
                     )
-                    sdp.kumagai_loader()
-                    sdp.get_stdrd_metadata()
-                    sdp.get_bulk_gap_data()
-                    sdp.run_compatibility()
-                    int_F_minus1_ent = sdp.defect_entry
 
         warning_message = (
             "Previous bulk_voronoi_nodes.json detected, but does not "
