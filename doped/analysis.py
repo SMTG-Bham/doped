@@ -23,7 +23,7 @@ def bold_print(string: str) -> None:
     print("\033[1m" + string + "\033[0m")
 
 
-def dpd_from_parsed_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
+def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations (
     format: {"defect_name": defect_entry}), likely created using SingleDefectParser from
     doped.pycdt.utils.parse_calculations), which can then be used to analyse and plot the defect
@@ -74,7 +74,7 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
             DefectPhaseDiagram object (likely created from
-            analysis.dpd_from_parsed_defect_dict)
+            analysis.dpd_from_defect_dict)
 
     Returns:
         None
@@ -112,7 +112,7 @@ def formation_energy_table(
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
              DefectPhaseDiagram object (likely created from
-             analysis.dpd_from_parsed_defect_dict)
+             analysis.dpd_from_defect_dict)
         chempot_limits (dict):
             This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
             Energy} (giving a single formation energy table) or a dictionary including the
@@ -184,7 +184,7 @@ def single_formation_energy_table(
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
              DefectPhaseDiagram object (likely created from
-             analysis.dpd_from_parsed_defect_dict)
+             analysis.dpd_from_defect_dict)
         chempots (dict):
             Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
             specified, chemical potentials are not included in the formation energy calculation
