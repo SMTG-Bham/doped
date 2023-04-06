@@ -1094,6 +1094,7 @@ correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if us
 correction). You can also change the DefectCompatibility() tolerance settings via the 
 `compatibility` parameter in `SingleDefectParser.from_paths()`."""
                 warnings.warn(message=specific_delocalized_warning)
+                warnings.filterwarnings("once", message=general_delocalization_warning)
                 warnings.warn(
                     message=general_delocalization_warning
                 )  # should only print once

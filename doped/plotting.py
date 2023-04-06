@@ -56,7 +56,7 @@ def formation_energy_plot(
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from analysis.dpd_from_parsed_defect_dict)
+             DefectPhaseDiagram object (likely created from analysis.dpd_from_defect_dict)
         chempot_limits (dict):
             This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
             Energy} (giving a single formation energy table – recommended to use the elt_refs
@@ -643,7 +643,7 @@ def all_lines_formation_energy_plot(
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from analysis.dpd_from_parsed_defect_dict)
+             DefectPhaseDiagram object (likely created from analysis.dpd_from_defect_dict)
         chempot_limits (dict):
             This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
             Energy} (giving a single formation energy table – recommended to use the elt_refs
