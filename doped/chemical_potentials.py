@@ -35,6 +35,7 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
+# TODO: Add chemical potential diagram plotting functionality that we had before with `plot_cplap_ternary`.
 
 
 def make_molecule_in_a_box(element):
@@ -393,6 +394,8 @@ class CompetingPhases:
         )
 
     # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
+    # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
+    #  write_files option, for ready integration with high-throughput workflows
     # TODO: Currently doesn't exactly match vaspup2.0 naming convention which means it doesn't
     #  account for the ordering switch from 1..9 to 10 etc
     def convergence_setup(
