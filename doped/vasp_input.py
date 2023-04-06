@@ -540,8 +540,8 @@ def vasp_ncl_files(
 # option, improve chemical_potentials docstrings (i.e. mention defaults, note in notebooks if changing
 # `INCAR`/`POTCAR` settings for competing phase production calcs, should also do with defect
 # supercell calcs (and note this in vasp_input as well)), ensure consistent INCAR tags in defect
-# supercell defaults and competing phase defaults, point too DefectSet in docstrings for defaults
-# (noting the other INCAR tags that are changed)
+# supercell defaults and competing phase defaults, point to DefectSet in docstrings for defaults
+# (noting the other INCAR tags that are changed).
 def _vasp_converge_files(
     structure: "pymatgen.core.Structure",
     input_dir: str = None,
