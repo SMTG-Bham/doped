@@ -32,4 +32,3 @@ these to predict defect charge states (so people can see if something off etc.)
 - Brouwer diagrams
 - See Ben Morgan's `py-sc-fermi`
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
--
