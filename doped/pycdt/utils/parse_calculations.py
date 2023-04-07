@@ -52,6 +52,7 @@ def custom_formatwarning(msg, *args, **kwargs):
     """Reformat warnings to just print the warning message"""
     return f"{msg}\n"
 
+
 warnings.formatwarning = custom_formatwarning
 
 
@@ -1106,7 +1107,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                     warnings.warn(
                         message=general_delocalization_warning
                     )  # should only print once
-                    SingleDefectParser._delocalization_warning_printed = True  # don't print again
+                    SingleDefectParser._delocalization_warning_printed = (
+                        True  # don't print again
+                    )
 
         if "num_hole_vbm" in self.defect_entry.parameters:
             if (
