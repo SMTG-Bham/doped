@@ -31,7 +31,7 @@ from pymatgen.util.coord import pbc_diff
 
 from doped.pycdt.core import _chemical_potentials
 
-angstrom = "\u212B"  # unicode symbol for angstrom to print in strings
+_ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 
 # globally ignore these POTCAR warnings
 warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
@@ -51,7 +51,6 @@ warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 def custom_formatwarning(msg, *args, **kwargs):
     """Reformat warnings to just print the warning message"""
     return f"{msg}\n"
-
 
 warnings.formatwarning = custom_formatwarning
 
@@ -401,6 +400,15 @@ class SingleDefectParser:
     #  Show both this function and the individual function calls in the example notebook. Benefit
     #  of this one is that we can then auto-run `check_defects_compatibility()` at the end of
     #  parsing the full defects dict.
+
+    _delocalization_warning_printed = False  # class variable
+    # ensures the verbose delocalization analysis warning is only printed once. Needs to be done
+    # this way because the current workflow is to create a `SingleDefectParser` object for each
+    # defect, and then warning originates from the `run_compatibility()` method of different
+    # `SingleDefectParser` instances, so warnings detects each instance as a different source and
+    # prints the warning multiple times. When we move to a single function call for all defects
+    # (as described above), this can be removed.
+
     def __init__(
         self,
         defect_entry,
@@ -589,7 +597,7 @@ class SingleDefectParser:
                     offsite_warning = (
                         f"Site-matching has determined {site_matched_defect.species} at "
                         f"{site_matched_defect.coords} as the defect site, located "
-                        f"{site_matched_defect.nn_distance:.2f} {angstrom} from its initial "
+                        f"{site_matched_defect.nn_distance:.2f} {_ANGSTROM} from its initial "
                         f"position. This may incur small errors in the charge correction."
                     )
                     warnings.warn(message=offsite_warning)
@@ -1094,10 +1102,11 @@ correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if us
 correction). You can also change the DefectCompatibility() tolerance settings via the 
 `compatibility` parameter in `SingleDefectParser.from_paths()`."""
                 warnings.warn(message=specific_delocalized_warning)
-                warnings.filterwarnings("once", message=general_delocalization_warning)
-                warnings.warn(
-                    message=general_delocalization_warning
-                )  # should only print once
+                if not self._delocalization_warning_printed:
+                    warnings.warn(
+                        message=general_delocalization_warning
+                    )  # should only print once
+                    SingleDefectParser._delocalization_warning_printed = True  # don't print again
 
         if "num_hole_vbm" in self.defect_entry.parameters:
             if (
@@ -1406,7 +1415,7 @@ class PostProcess:
         logger = logging.getLogger(__name__)
 
         if self._mpid:
-            cpa = chemical_potentials.MPChemPotAnalyzer(
+            cpa = _chemical_potentials.MPChemPotAnalyzer(
                 mpid=self._mpid,
                 sub_species=self._substitution_species,
                 mapi_key=self._mapi_key,
@@ -1420,7 +1429,7 @@ class PostProcess:
                 msg = "Could not fetch computed entry for atomic chempots!"
                 logger.warning(msg)
                 raise ValueError(msg)
-            cpa = chemical_potentials.MPChemPotAnalyzer(
+            cpa = _chemical_potentials.MPChemPotAnalyzer(
                 bulk_ce=bulkvr.get_computed_entry(),
                 sub_species=self._substitution_species,
                 mapi_key=self._mapi_key,
