@@ -1054,11 +1054,11 @@ class CompetingPhasesAnalyzer:
         Reads in vaspruns, collates energies to csv.
 
         Args:
-            path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz)
-            files, or a path to the base folder in which you have your
-            formula_EaH_/vasp_std/vasprun.xml
-            folder (str): The folder in which vasprun is, only use if you set base path
-            (i.e. change to vasp_ncl or if vaspruns are in the formula_EaH folder).
+            path (list, str, pathlib Path): Either a path to the base folder in which you have your
+                formula_EaH_/vasp_std/vasprun.xml(.gz) files, or a list of strings or Paths to
+                vasprun.xml(.gz) files.
+            folder (str): The folder in which vasprun is, only use if you set base path (i.e.
+                change to vasp_ncl or if vaspruns are in the formula_EaH folder).
             csv_fname (str): If set will save to csv with this name
         Returns:
             None, sets self.data and self.elemental_energies
