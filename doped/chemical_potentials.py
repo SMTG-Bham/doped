@@ -1243,11 +1243,16 @@ class CompetingPhasesAnalyzer:
                 )
 
         if len(bulk_pde_list) == 0:
+            if len(intrinsic_phase_diagram_entries) == 0:
+                intrinsic_phase_diagram_compositions = None
+            else:
+                intrinsic_phase_diagram_compositions = {
+                    e.composition.reduced_formula for e in intrinsic_phase_diagram_entries
+                }
             raise ValueError(
                 f"Could not find bulk phase for "
                 f"{self.bulk_composition.reduced_formula} in the supplied data. "
-                f"Found phases: "
-                f"{ {e.composition.reduced_formula for e in intrinsic_phase_diagram_entries} }"
+                f"Found phases: {intrinsic_phase_diagram_entries}"
             )
         if len(bulk_pde_list) > 0:
             # lowest energy bulk phase
