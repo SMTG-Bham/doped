@@ -35,7 +35,8 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
-# TODO: Add chemical potential diagram plotting functionality that we had before with `plot_cplap_ternary`.
+# TODO: Add chemical potential diagram plotting functionality that we had before
+#  with `plot_cplap_ternary`.
 
 
 def make_molecule_in_a_box(element):
@@ -625,6 +626,7 @@ class CompetingPhases:
                 uis = {}
 
             uis["ISIF"] = 2  # can't change the volume
+            uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
