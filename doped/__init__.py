@@ -1,6 +1,7 @@
 import warnings
 from datetime import date
 from importlib.metadata import PackageNotFoundError, version
+from packaging.version import parse
 
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 
@@ -28,7 +29,7 @@ def _check_pmg_compatibility():
             "uninstall pymatgen-analysis-defects`) and restart the kernel."
         )
 
-    if v_pmg > "2022.7.25":
+    if parse(v_pmg) > parse("2022.7.25"):
         raise TypeError(
             f"You have the version {v_pmg} of `pymatgen` installed, which is currently "
             f"incompatible with `doped`. Please revert this package (with `pip install "
