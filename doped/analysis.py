@@ -41,6 +41,11 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """
     # TODO: Can we make the dpd generation more efficient? What's the bottleneck in it's
     #  initialisation? `pymatgen` site-matching that can be avoided?
+    # TODO: Write our own DefectPhaseDiagram class, to (1) refactor the site-matching (to just
+    #  use the already-parsed site positions? Or based on names? Maybe names by default,
+    #  with options to redo site-matching or just amalgamate and show the lowest energy states?),
+    #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
+    #  default range of (VBM - 1eV, CBM + 1eV))...
     vbm_vals = []
     bandgap_vals = []
     for defect in parsed_defect_dict.values():
