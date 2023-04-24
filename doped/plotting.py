@@ -29,6 +29,7 @@ default_fonts = [
 # TODO: Lean out the options for this function (inherited from AIDE)(particularly those that can
 #  just be edited by the user with the returned Matplotlib object – show example of this in
 #  notebooks maybe?)
+# TOOD: Add option to only plot defect states that are stable at some point in the bandgap
 def formation_energy_plot(
     defect_phase_diagram,
     chempot_limits: dict = None,
