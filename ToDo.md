@@ -59,10 +59,10 @@
 - Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
 - Modularity - move pycdt.core.defectsmaker code out? Reformat to remove all pycdt bits as most of the functionality from this that we want (i.e. not high-throughput GGA via Materials Project data) is now in `doped` homemade modules, and anything that isn't is heavily-heavily-modified.
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
+- Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
 - Add `plotting` & `analysis` examples, tests and documentation.
-- Add tests
-- Clean the example jupyter notebooks and docstrings
-- Ready to be used in conjunction with `atomate`, `AiiDA`, `CarrierCapture`.
+- More test coverage.
+- Readily-usable in conjunction with `atomate`, `AiiDA`, `CarrierCapture`, and give some examples.
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `finite_size_charge_correction.get_correction_kumagai()` for this?
 - At present, we can't update to be compatible with the most recent `pymatgen` because the defect corrections code has all been removed and is not yet in `pymatgen-analysis-defects`. Once it is however, we should refactor to be compatible with this. For doing this, worth looking at how this was done for `ShakeNBreak`, and should use the new naming system built in `ShakeNBreak`. When doing so, update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
 - Generate docs
