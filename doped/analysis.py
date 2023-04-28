@@ -41,9 +41,17 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """
     # TODO: Can we make the dpd generation more efficient? What's the bottleneck in it's
     #  initialisation? `pymatgen` site-matching that can be avoided?
-    # TODO: Write our own DefectPhaseDiagram class, to (1) refactor the site-matching (to just
-    #  use the already-parsed site positions? Or based on names? Maybe names by default,
-    #  with options to redo site-matching or just amalgamate and show the lowest energy states?),
+    # TODO: Write our own DefectPhaseDiagram class, to (1) refactor the site-matching to just
+    #  use the already-parsed site positions, and then merge interstitials according to this
+    #  algorithm:
+    # 1. For each interstitial defect type, count the number of parsed calculations per charge
+    # state, and take the charge state with the most calculations present as our starting point (
+    # if multiple charge states have the same number of calculations, take the closest to neutral).
+    # 2. For each interstitial in a different charge state, determine which of the starting
+    # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
+    # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
+    # structure will be easiest), and merge with this.
+    # Also add option to just amalgamate and show only the lowest energy states.
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
     vbm_vals = []
