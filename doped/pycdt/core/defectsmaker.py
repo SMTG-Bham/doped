@@ -838,52 +838,53 @@ class ChargedDefectsStructures(object):
                 print("Setting up interstitials from intersites")
                 # manual specification of interstitials
                 for i, intersite in enumerate(intersites):
-                    elt = intersite.specie
-                    name = f"inter_{i+1}_{elt}"
+                    for elt in inter_elems:
+                        name = f"inter_{i+1}_{elt}"
 
-                    if intersite.lattice != self.struct.lattice:
-                        err_msg = "Lattice matching error occurs between provided interstitial and the bulk structure."
-                        if standardized:
-                            err_msg += (
-                                "\nLikely because the standardized flag was used. Turn this flag off or reset "
-                                "your interstitial PeriodicSite to match the standardized form of the bulk structure."
-                            )
-                        raise ValueError(err_msg)
-                    else:
-                        intersite_object = Interstitial(self.struct, intersite)
+                        if intersite.lattice != self.struct.lattice:
+                            err_msg = "Lattice matching error occurs between provided " \
+                                      "interstitial and the bulk structure."
+                            if standardized:
+                                err_msg += "\nLikely because the standardized flag was used. " \
+                                           "Turn this flag off or reset " \
+                                           "your interstitial PeriodicSite to match the " \
+                                           "standardized form of the bulk structure."
+                            raise ValueError(err_msg)
+                        else:
+                            intersite_object = Interstitial(self.struct, intersite)
 
-                    # create a trivial defect structure to find where supercell transformation
-                    # moves the defect site
-                    struct_for_defect_site = Structure(
-                        intersite_object.bulk_structure.copy().lattice,
-                        [intersite_object.site.specie],
-                        [intersite_object.site.frac_coords],
-                        to_unit_cell=True,
-                        coords_are_cartesian=False,
-                    )
-                    struct_for_defect_site.make_supercell(sc_scale)
-                    site_sc = struct_for_defect_site[0]
-
-                    sc_with_inter = intersite_object.generate_defect_structure(sc_scale)
-                    charges_inter = self.defect_charger.get_charges("interstitial", elt)
-
-                    for c in SimpleChargeGenerator(intersite_object):
-                        interstitials.append(
-                            {
-                                "name": name,
-                                "unique_site": intersite_object.site,
-                                "bulk_supercell_site": site_sc,
-                                "defect_type": "interstitial",
-                                "site_specie": intersite_object.site.specie.symbol,
-                                "site_multiplicity": intersite_object.multiplicity,
-                                "supercell": {
-                                    "size": sc_scale,
-                                    "structure": sc_with_inter,
-                                },
-                                "charges": charges_inter,
-                                "Possible_KV_Charge": c.charge,
-                            }
+                        # create a trivial defect structure to find where supercell transformation
+                        # moves the defect site
+                        struct_for_defect_site = Structure(
+                            intersite_object.bulk_structure.copy().lattice,
+                            [intersite_object.site.specie],
+                            [intersite_object.site.frac_coords],
+                            to_unit_cell=True,
+                            coords_are_cartesian=False,
                         )
+                        struct_for_defect_site.make_supercell(sc_scale)
+                        site_sc = struct_for_defect_site[0]
+
+                        sc_with_inter = intersite_object.generate_defect_structure(sc_scale)
+                        charges_inter = self.defect_charger.get_charges("interstitial", elt)
+
+                        for c in SimpleChargeGenerator(intersite_object):
+                            interstitials.append(
+                                {
+                                    "name": name,
+                                    "unique_site": intersite_object.site,
+                                    "bulk_supercell_site": site_sc,
+                                    "defect_type": "interstitial",
+                                    "site_specie": intersite_object.site.specie.symbol,
+                                    "site_multiplicity": intersite_object.multiplicity,
+                                    "supercell": {
+                                        "size": sc_scale,
+                                        "structure": sc_with_inter,
+                                    },
+                                    "charges": charges_inter,
+                                    "Possible_KV_Charge": c.charge,
+                                }
+                            )
 
             else:
                 print(
