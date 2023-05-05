@@ -29,13 +29,14 @@ As such, it is recommended to install `doped` in a virtual python environment as
 conda create -n doped  # create conda environment named doped
 conda activate doped  # activate doped conda environment
 pip install doped  # install doped package and dependencies
+pip install numpy --upgrade # upgrade numpy to avoid binary incompatibility
 ```
 And then use this environment whenever using `doped`.
 Instead of `conda` you can also use `venv` to setup virtual environments, 
 see [here](https://www.freecodecamp.org/news/how-to-setup-virtual-environments-in-python/) for more.
 
 If you want to use the [example files](examples), 
-you should clone the repository and install with `pip install -e .` from the `doped` directory.
+you should clone the repository and install with `pip install -e .` from the `doped` directory, but still make sure to `pip install numpy --upgrade`.
 
 2. (If not set) Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml` 
 (`pymatgen` config file) as follows:
@@ -60,6 +61,8 @@ rm -r temp_potcars  # remove the temporary POTCAR directory
 ```
 If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show 
 `PAW_PBE Na_pv {date}` (you can ignore any `pymatgen` warnings about recognising the `POTCAR`). 
+
+If it does not work check that the `PMG_DEFAULT_FUNCTIONAL` is set to whatever your functionals are (e.g. `PBE` or `PBE_54`)
 
 This is necessary to generate `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for charged 
 defects.
