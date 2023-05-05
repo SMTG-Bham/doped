@@ -48,15 +48,15 @@ warnings.filterwarnings(
 warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
-def custom_formatwarning(msg, *args, **kwargs):
+def _custom_formatwarning(msg, *args, **kwargs):
     """Reformat warnings to just print the warning message"""
     return f"{msg}\n"
 
 
-warnings.formatwarning = custom_formatwarning
+warnings.formatwarning = _custom_formatwarning
 
 
-def convert_cd_to_de(cd, b_cse):
+def _convert_cd_to_de(cd, b_cse):
     """
     As of pymatgen v2.0, ComputedDefect objects were deprecated in favor
     of DefectEntry objects in pymatgen.analysis.defects.core
@@ -121,6 +121,19 @@ def convert_cd_to_de(cd, b_cse):
 
     return de
 
+
+def _convert_dielectric_to_tensor(dielectric):
+    # check if dielectric in required 3x3 matrix format
+    if not isinstance(dielectric, (float, int)):
+        dielectric = np.array(dielectric)
+        if dielectric.shape == (3,):
+            dielectric = np.diag(dielectric)
+        elif dielectric.shape != (3, 3):
+            raise ValueError(
+                f"Dielectric constant must be a float/int or a 3x1 matrix or 3x3 matrix, "
+                f"got type {type(dielectric)} and shape {dielectric.shape}"
+            )
+    return dielectric
 
 def get_vasprun(vasprun_path, **kwargs):
     """Read the vasprun.xml(.gz) file as a pymatgen Vasprun object"""
@@ -484,16 +497,7 @@ class SingleDefectParser:
         Return:
             Instance of the SingleDefectParser class.
         """
-        # check if dielectric in required 3x3 matrix format
-        if not isinstance(dielectric, (float, int)):
-            dielectric = np.array(dielectric)
-            if dielectric.shape == (3,):
-                dielectric = np.diag(dielectric)
-            elif dielectric.shape != (3, 3):
-                raise ValueError(
-                    f"Dielectric constant must be a float/int or a 3x1 matrix or 3x3 matrix, "
-                    f"got type {type(dielectric)} and shape {dielectric.shape}"
-                )
+        dielectric = _convert_dielectric_to_tensor(dielectric)
 
         parameters = {
             "bulk_path": path_to_bulk,
