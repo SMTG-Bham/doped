@@ -34,6 +34,32 @@ class DopedParsingTestCase(unittest.TestCase):
         Test that dielectric can be supplied as float or int or 3x1 array/list or 3x3 array/list
         """
         defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        # get correct Freysoldt correction energy:
+        sdp = parse_calculations.SingleDefectParser.from_paths(
+            path_to_defect=defect_file_path,
+            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            dielectric=self.cdte_dielectric,
+            defect_charge=-2,
+        )
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        parsed_v_cd_m2 = sdp.defect_entry
+
+        # Check that the correct Freysoldt correction is applied
+        correct_correction_dict = {
+                        "charge_correction": 0.7376460317828045,
+                        "bandfilling_correction": -0.0,
+                        "bandedgeshifting_correction": 0.0,
+                    }
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
+
         # test float
         sdp = parse_calculations.SingleDefectParser.from_paths(
             path_to_defect=defect_file_path,
@@ -41,9 +67,17 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=9.13,
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(sdp.defect_entry.parameters["dielectric"], 9.13)
-        )  # # float/int stay the same
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
 
         # test int
         sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -52,12 +86,18 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=9,
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(
-                sdp.defect_entry.parameters["dielectric"],
-                9,  # float/int stay the same
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=1,  # change places to 1, because using int now so slightly off (0.006
+                # difference)
             )
-        )
 
         # test 3x1 array
         sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -66,9 +106,17 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=np.array([9.13, 9.13, 9.13]),
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
-        )
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
 
         # test 3x1 list
         sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -77,9 +125,17 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=[9.13, 9.13, 9.13],
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
-        )
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
 
         # test 3x3 array
         sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -88,9 +144,17 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=self.cdte_dielectric,
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
-        )
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
 
         # test 3x3 list
         sdp = parse_calculations.SingleDefectParser.from_paths(
@@ -99,9 +163,17 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=self.cdte_dielectric.tolist(),
             defect_charge=-2,
         )
-        self.assertTrue(
-            np.allclose(sdp.defect_entry.parameters["dielectric"], self.cdte_dielectric)
-        )
+        sdp.freysoldt_loader()
+        sdp.get_stdrd_metadata()
+        sdp.get_bulk_gap_data()
+        sdp.run_compatibility()
+        new_parsed_v_cd_m2 = sdp.defect_entry
+        for correction_name, correction_energy in correct_correction_dict.items():
+            self.assertAlmostEqual(
+                new_parsed_v_cd_m2.corrections[correction_name],
+                correction_energy,
+                places=3,
+            )
 
     def test_vacancy_parsing_and_freysoldt(self):
         """Test parsing of Cd vacancy calculations and correct Freysoldt correction calculated"""
