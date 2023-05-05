@@ -160,10 +160,14 @@ class DefectRelaxSet(DictSet):
         charge = kwargs.pop("charge", 0)
         config_dict = kwargs.pop("config_dict", {})
         if config_dict:
-            super(self.__class__, self).__init__(structure, config_dict=config_dict, **kwargs)
+            super(self.__class__, self).__init__(
+                structure, config_dict=config_dict, **kwargs
+            )
         else:
             mp_set = MPRelaxSet(structure, **kwargs)
-            super(self.__class__, self).__init__(structure, config_dict=mp_set.CONFIG, **kwargs)
+            super(self.__class__, self).__init__(
+                structure, config_dict=mp_set.CONFIG, **kwargs
+            )
 
         self.charge = charge
 
@@ -174,8 +178,15 @@ class DefectRelaxSet(DictSet):
             inc["NELECT"] = self.nelect - self.charge
             if inc["NELECT"] % 2 != 0:  # odd number of electrons
                 inc["NUPDOWN"] = 1
+            else:
+                inc[
+                    "NUPDOWN"
+                ] = 0  # But could be 2 for triplet states (e.g. bipolarons)
+
         except Exception:
-            print("NELECT and NUPDOWN flags are not set due to non-availability of POTCARs")
+            print(
+                "NELECT and NUPDOWN flags are not set due to non-availability of POTCARs"
+            )
 
         return inc
 
