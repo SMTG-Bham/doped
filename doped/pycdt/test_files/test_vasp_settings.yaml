@@ -1,0 +1,10 @@
+INCAR:
+    ENCUT: 620
+    GGA: PS
+    defects:
+        EDIFFG: -1e-2
+        EDIFF: 1e-7
+    bulk:
+        EDIFF: 1e-4
+    dielectric:
+        EDIFF: 5e-7
