@@ -110,24 +110,24 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
     def test_get_correction_freysoldt(self):
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, title=None, partflag="All", axis=None
+            self.defect_entry, self.epsilon, partflag="All", axis=None
         )
         self.assertEqual(freyout, 5.445950368792991)
 
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, title=None, partflag="AllSplit", axis=None
+            self.defect_entry, self.epsilon, partflag="AllSplit", axis=None
         )
-        self.assertEqual(freyout[0], 0.975893)
-        self.assertEqual(freyout[1], 4.4700573687929905)
-        self.assertEqual(freyout[2], 5.445950368792991)
+        self.assertAlmostEqual(freyout[0], 0.975893)
+        self.assertAlmostEqual(freyout[1], 4.4700573687929905)
+        self.assertAlmostEqual(freyout[2], 5.445950368792991)
 
     def test_get_correction_kumagai(self):
         kumagaiout = get_correction_kumagai(
             self.defect_entry, self.epsilon, title=None, partflag="AllSplit"
         )
-        self.assertEqual(kumagaiout[0], 0.9763991294314076)
-        self.assertEqual(kumagaiout[1], 0.2579750033409367)
-        self.assertEqual(kumagaiout[2], 1.2343741327723443)
+        self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
+        self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
+        self.assertAlmostEqual(kumagaiout[2], 1.2343741327723443)
 
 
 if __name__ == "__main__":
