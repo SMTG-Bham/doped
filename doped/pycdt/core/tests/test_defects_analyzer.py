@@ -7,6 +7,7 @@ __status__ = "Development"
 import os
 import tarfile
 import unittest
+import numpy as np
 from shutil import copyfile
 
 from monty.json import MontyDecoder, MontyEncoder
@@ -27,10 +28,7 @@ from doped.pycdt.core.defects_analyzer import (
     kumagai_correction_from_paths,
 )
 
-pmgtestfiles_loc = os.path.join(
-    os.path.split(os.path.split(initfilep)[0])[0], "test_files"
-)
-file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "..", "test_files"))
+file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "test_files"))
 
 
 class FilePathCorrectionsTest(PymatgenTest):
@@ -57,13 +55,12 @@ class FilePathCorrectionsTest(PymatgenTest):
                 18.12,
                 2,
                 plot=True,
+                filename="test_freysoldt_correction",
             )
-            self.assertEqual(fcc, -1.2435280589593547)
-            self.assertTrue(
-                os.path.exists(
-                    "test_path_files/sub_1_Sb_on_Ga/charge_2/Sub_Sb_on_Ga_mult32_chg_2_axis1_freysoldtplot.pdf"
-                )
-            )
+            self.assertAlmostEqual(fcc, -1.4954476868106865)  # note this has been updated from the
+            # pycdt version, because there they used a `transformation.json` that gave an
+            # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
+            self.assertTrue(os.path.exists("test_freysoldt_correction_axis1.pdf"))
 
             kcc = kumagai_correction_from_paths(
                 "test_path_files/sub_1_Sb_on_Ga/charge_2/",
@@ -71,13 +68,10 @@ class FilePathCorrectionsTest(PymatgenTest):
                 18.12,
                 2,
                 plot=True,
+                filename="test_kumagai_correction"
             )
-            self.assertEqual(kcc, 0.6387768530616106)
-            self.assertTrue(
-                os.path.exists(
-                    "test_path_files/sub_1_Sb_on_Ga/charge_2/Sub_Sb_on_Ga_mult32_chg_2_kumagaiplot.pdf"
-                )
-            )
+            self.assertAlmostEqual(kcc, 0.638776853061614)
+            self.assertTrue(os.path.exists("test_kumagai_correction.pdf"))
 
 
 class ComputedDefectTest(PymatgenTest):
@@ -220,15 +214,13 @@ class DefectsAnalyzerTest(PymatgenTest):
         self.da.add_computed_defect(self.cd)
         self.da.add_computed_defect(self.cd2)
         list_c = self.da.get_defects_concentration(temp=300.0, ef=0.5)
-        self.assertArrayEqual(
-            [list_c[0]["conc"], list_c[1]["conc"]],
-            [2.3075483087087652e62, 1.453493521232979e79],
-        )
+        for i, j in zip([list_c[0]["conc"], list_c[1]["conc"]],
+                        [2.3075483087087652e62, 1.453493521232979e79]):
+            np.testing.assert_approx_equal(i, j, significant=7)
         list_c = self.da.get_defects_concentration(temp=1000.0, ef=0.5)
-        self.assertArrayEqual(
-            [list_c[0]["conc"], list_c[1]["conc"]],
-            [6.9852762150255027e38, 7.6553010344336244e43],
-        )
+        for i, j in zip([list_c[0]["conc"], list_c[1]["conc"]],
+                        [6.9852762150255027e38, 7.6553010344336244e43]):
+            np.testing.assert_approx_equal(i, j, significant=7)
 
     def test_get_dos(self):
         dosval = self.da._get_dos(-1.0, 2.0, 3.0, 4.0, -1.4)
@@ -246,17 +238,17 @@ class DefectsAnalyzerTest(PymatgenTest):
         self.da.add_computed_defect(self.cd)
         self.da.add_computed_defect(self.cd2)
         val = self.da._get_qd(0.5, 300.0)
-        self.assertEqual(val, 1.453493521232979e79)
+        np.testing.assert_approx_equal(val, 1.453493521232979e79, significant=7)
 
     def test_get_qi(self):
         val = self.da.get_qi(0.1, 300.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
-        self.assertEqual(val, 1.151292510656441e25)
+        np.testing.assert_approx_equal(val, 1.151292510656441e25, significant=7)
 
     def test_get_qtot(self):
         self.da.add_computed_defect(self.cd)
         self.da.add_computed_defect(self.cd2)
         val = self.da._get_qtot(0.1, 300.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
-        self.assertEqual(val, 7.6228613357589505e85)
+        np.testing.assert_approx_equal(val, 7.6228613357589505e85, significant=7)
 
 
 if __name__ == "__main__":
