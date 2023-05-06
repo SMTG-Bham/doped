@@ -459,7 +459,6 @@ class SingleDefectParser:
         bulk_path,
         dielectric,
         defect_charge,
-        mpid=None,
         compatibility=DefectCompatibility(
             plnr_avg_var_tol=0.01,
             plnr_avg_minmax_tol=0.3,
@@ -482,7 +481,6 @@ class SingleDefectParser:
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
         defect_charge (int):  charge of defect
-        mpid (str):  Materials Project ID of bulk structure
         compatibility (DefectCompatibility): Compatibility class instance for
             performing charge correction compatibility analysis on defect entry.
         initial_defect_structure (str):  Path to the unrelaxed defect structure,
@@ -954,15 +952,25 @@ class SingleDefectParser:
             {"eigenvalues": eigenvalues, "kpoint_weights": kpoint_weights}
         )
 
-    def get_bulk_gap_data(self, no_MP=True, actual_bulk_path=None):
-        """Get bulk gap data from Materials Project or from local OUTCAR file.
+    def get_bulk_gap_data(self, actual_bulk_path=None, use_MP=False, mpid=None, api_key=None):
+        """Get bulk gap data from bulk OUTCAR file, or OUTCAR located at `actual_bulk_path`.
+
+        Alternatively, one can specify query the Materials Project (MP) database for the bulk gap
+        data, using `use_MP = True`, in which case the MP entry with the lowest number ID and
+        composition matching the bulk will be used, or  the MP ID (mpid) of the bulk material to
+        use can be specified. This is not recommended as it will correspond to a
+        severely-underestimated GGA DFT bandgap!
 
         Args:
-            no_MP (bool): If True, will not query MP for bulk gap data. (Default: True)
             actual_bulk_path (str): Path to bulk OUTCAR file for determining the band gap. If
                 the VBM/CBM occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure calculation
                 instead. If None, will use self.defect_entry.parameters["bulk_path"].
+            use_MP (bool): If True, will query the Materials Project database for the bulk gap
+                data.
+            mpid (str): If provided, will query the Materials Project database for the bulk gap
+                data, using this Materials Project ID.
+            api_key (str): Materials API key to access database.
         """
         if not self.bulk_vr:
             path_to_bulk = self.defect_entry.parameters["bulk_path"]
@@ -971,11 +979,13 @@ class SingleDefectParser:
             )
 
         bulk_sc_structure = self.bulk_vr.initial_structure
-        mpid = self.defect_entry.parameters["mpid"]
 
-        if not mpid and not no_MP:
+        vbm, cbm, bandgap = None, None, None
+        gap_parameters = {}
+
+        if use_MP and mpid is None:
             try:
-                with MPRester() as mp:
+                with MPRester(api_key=api_key) as mp:
                     tmp_mplist = mp.get_entries_in_chemsys(
                         list(bulk_sc_structure.symbol_set)
                     )
@@ -993,7 +1003,7 @@ class SingleDefectParser:
 
             mpid_fit_list = []
             for trial_mpid in mplist:
-                with MPRester() as mp:
+                with MPRester(api_key=api_key) as mp:
                     mpstruct = mp.get_structure_by_material_id(trial_mpid)
                 if StructureMatcher(
                     primitive_cell=True,
@@ -1021,11 +1031,9 @@ class SingleDefectParser:
                 )
                 mpid = None
 
-        vbm, cbm, bandgap = None, None, None
-        gap_parameters = {}
-        if mpid is not None and not no_MP:
+        if mpid is not None:
             print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-            with MPRester() as mp:
+            with MPRester(api_key=api_key) as mp:
                 bs = mp.get_bandstructure_by_material_id(mpid)
             if bs:
                 cbm = bs.get_cbm()["energy"]
@@ -1039,7 +1047,6 @@ class SingleDefectParser:
             vbm is None
             or bandgap is None
             or cbm is None
-            or no_MP
             or not actual_bulk_path
         ):
             if mpid and bandgap is None:
