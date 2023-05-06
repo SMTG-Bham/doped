@@ -1,5 +1,4 @@
 import itertools
-import logging
 from math import erfc, exp
 
 import numpy as np
@@ -100,9 +99,8 @@ def get_image_charge_correction(
         lany = 0.65 * makov
         correction[q] = makov
 
-    # TODO: Use tabulate
     if verbose:
-        logging.info(
+        print(
             """
     Results                      v_M^scr    dE(q=1) /eV
     -----------------------------------------------------
@@ -126,7 +124,7 @@ def get_image_charge_correction(
             )
         )
 
-        logging.info(
+        print(
             """
     Here are your final corrections:
     +--------+------------------+-----------------+
@@ -137,10 +135,8 @@ def get_image_charge_correction(
             makov = 0.5 * madelung * q**2 * conversion
             lany = 0.65 * makov
             correction[q] = makov
-            logging.info(
-                "|   {}    |     {:10f}   |    {:10f}   |".format(q, makov, lany)
-            )
-        logging.info("+--------+------------------+-----------------+")
+            print("|   {}    |     {:10f}   |    {:10f}   |".format(q, makov, lany))
+        print("+--------+------------------+-----------------+")
     return correction
 
 
