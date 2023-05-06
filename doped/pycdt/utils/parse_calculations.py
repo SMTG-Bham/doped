@@ -395,8 +395,8 @@ class SingleDefectParser:
 
     @staticmethod
     def from_paths(
-        path_to_defect,
-        path_to_bulk,
+        defect_path,
+        bulk_path,
         dielectric,
         defect_charge,
         mpid=None,
@@ -417,8 +417,8 @@ class SingleDefectParser:
         instantiating the SingleDefectParser class.
 
         Args:
-        path_to_defect (str): path to defect folder of interest (with vasprun.xml(.gz))
-        path_to_bulk (str): path to bulk folder of interest (with vasprun.xml(.gz))
+        defect_path (str): path to defect folder of interest (with vasprun.xml(.gz))
+        bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
         defect_charge (int):  charge of defect
@@ -434,20 +434,20 @@ class SingleDefectParser:
         dielectric = _convert_dielectric_to_tensor(dielectric)
 
         parameters = {
-            "bulk_path": path_to_bulk,
-            "defect_path": path_to_defect,
+            "bulk_path": bulk_path,
+            "defect_path": defect_path,
             "dielectric": dielectric,
             "mpid": mpid,
         }
 
         # add bulk simple properties
-        bulk_vr, bulk_vr_path = get_vasprun(os.path.join(path_to_bulk, "vasprun.xml"))
+        bulk_vr, bulk_vr_path = get_vasprun(os.path.join(bulk_path, "vasprun.xml"))
         bulk_energy = bulk_vr.final_energy
         bulk_sc_structure = bulk_vr.initial_structure.copy()
 
         # add defect simple properties
         defect_vr, defect_vr_path = get_vasprun(
-            os.path.join(path_to_defect, "vasprun.xml")
+            os.path.join(defect_path, "vasprun.xml")
         )
         defect_energy = defect_vr.final_energy
         # Can specify initial defect structure (to help PyCDT find the defect site if
@@ -490,11 +490,11 @@ class SingleDefectParser:
             # if auto site-matching failed, try use transformation.json
             # The goal is to find the `defect_site_idx` or `defect_site_idx` based on the
             # tranformation.
-            transformation_path = os.path.join(path_to_defect, "transformation.json")
+            transformation_path = os.path.join(defect_path, "transformation.json")
             if not os.path.exists(transformation_path):  # try next folder up
                 orig_transformation_path = transformation_path
                 transformation_path = os.path.join(
-                    os.path.dirname(os.path.normpath(path_to_defect)),
+                    os.path.dirname(os.path.normpath(defect_path)),
                     "transformation.json",
                 )
                 if os.path.exists(transformation_path):

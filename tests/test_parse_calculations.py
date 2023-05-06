@@ -36,8 +36,8 @@ class DopedParsingTestCase(unittest.TestCase):
         defect_file_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
         # get correct Freysoldt correction energy:
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric,
             defect_charge=-2,
         )
@@ -62,8 +62,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test float
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=9.13,
             defect_charge=-2,
         )
@@ -81,8 +81,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test int
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=9,
             defect_charge=-2,
         )
@@ -101,8 +101,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test 3x1 array
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=np.array([9.13, 9.13, 9.13]),
             defect_charge=-2,
         )
@@ -120,8 +120,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test 3x1 list
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=[9.13, 9.13, 9.13],
             defect_charge=-2,
         )
@@ -139,8 +139,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test 3x3 array
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric,
             defect_charge=-2,
         )
@@ -158,8 +158,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # test 3x3 list
         sdp = parse_calculations.SingleDefectParser.from_paths(
-            path_to_defect=defect_file_path,
-            path_to_bulk=self.CDTE_BULK_DATA_DIR,
+            defect_path=defect_file_path,
+            bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric.tolist(),
             defect_charge=-2,
         )
@@ -185,8 +185,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                    defect_path=defect_file_path,
+                    bulk_path=self.CDTE_BULK_DATA_DIR,
                     dielectric=self.cdte_dielectric,
                     defect_charge=defect_charge,
                 )
@@ -254,8 +254,8 @@ class DopedParsingTestCase(unittest.TestCase):
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
-                        path_to_defect=defect_file_path,
-                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        defect_path=defect_file_path,
+                        bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
@@ -296,8 +296,8 @@ class DopedParsingTestCase(unittest.TestCase):
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
-                        path_to_defect=defect_file_path,
-                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        defect_path=defect_file_path,
+                        bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
@@ -318,8 +318,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                    defect_path=defect_file_path,
+                    bulk_path=self.CDTE_BULK_DATA_DIR,
                     dielectric=self.cdte_dielectric,
                     defect_charge=defect_charge,
                 )
@@ -426,8 +426,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_charge = -1
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                    defect_path=defect_file_path,
+                    bulk_path=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
                     dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
@@ -475,8 +475,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_charge = +1
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                    defect_path=defect_file_path,
+                    bulk_path=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
                     dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
@@ -511,8 +511,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_charge = +1
                 # parse with no transformation.json:
                 sdp = parse_calculations.SingleDefectParser.from_paths(
-                    path_to_defect=defect_file_path,
-                    path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                    defect_path=defect_file_path,
+                    bulk_path=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
                     dielectric=self.ytos_dielectric,
                     defect_charge=defect_charge,
                 )
@@ -553,8 +553,8 @@ class DopedParsingTestCase(unittest.TestCase):
                     defect_charge = int(i[-2:].replace("_", ""))
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
-                        path_to_defect=defect_file_path,
-                        path_to_bulk=self.CDTE_BULK_DATA_DIR,
+                        defect_path=defect_file_path,
+                        bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
                         defect_charge=defect_charge,
                     )
@@ -571,8 +571,8 @@ class DopedParsingTestCase(unittest.TestCase):
                     defect_charge = -1
                     # parse with no transformation.json:
                     sdp = parse_calculations.SingleDefectParser.from_paths(
-                        path_to_defect=defect_file_path,
-                        path_to_bulk=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
+                        defect_path=defect_file_path,
+                        bulk_path=f"{self.EXAMPLE_DIR}/{i}/Bulk/",
                         dielectric=self.ytos_dielectric,
                         defect_charge=defect_charge,
                     )
