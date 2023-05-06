@@ -4,14 +4,12 @@ from __future__ import print_function
 
 __status__ = "Development"
 
-import functools
 import os
-from copy import deepcopy
 
 import numpy as np
-from monty.json import MontyEncoder
+
 from monty.os.path import zpath
-from monty.serialization import dumpfn, loadfn
+from monty.serialization import loadfn
 from pymatgen.io.vasp.inputs import Kpoints, Potcar, PotcarSingle
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet, DictSet
 
@@ -164,9 +162,21 @@ class DefectRelaxSet(DictSet):
                 structure, config_dict=config_dict, **kwargs
             )
         else:
-            mp_set = MPRelaxSet(structure, **kwargs)
+            MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+            default_potcar_dict = loadfn(
+                os.path.join(MODULE_DIR, "../../PotcarSet.yaml")
+            )
+            relax_set = loadfn(os.path.join(MODULE_DIR, "../../HSE06_RelaxSet.yaml"))
+            defect_set = loadfn(os.path.join(MODULE_DIR, "../../DefectSet.yaml"))
+            relax_set["INCAR"].update(defect_set["INCAR"])
+            relax_set.update(default_potcar_dict)
+
+            from doped.vasp_input import scaled_ediff
+
+            relax_set["INCAR"]["EDIFF"] = scaled_ediff(len(structure))
+
             super(self.__class__, self).__init__(
-                structure, config_dict=mp_set.CONFIG, **kwargs
+                structure, config_dict=relax_set, **kwargs
             )
 
         self.charge = charge
@@ -183,10 +193,10 @@ class DefectRelaxSet(DictSet):
                     "NUPDOWN"
                 ] = 0  # But could be 2 for triplet states (e.g. bipolarons)
 
-        except Exception:
-            print(
+        except Exception as e:
+            raise ValueError(
                 "NELECT and NUPDOWN flags are not set due to non-availability of POTCARs"
-            )
+            ) from e
 
         return inc
 
