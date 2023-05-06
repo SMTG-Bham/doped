@@ -120,7 +120,7 @@ class PostProcessTest(PymatgenTest):
             # make a fake file structure to parse vaspruns
             os.mkdir("bulk")
             copyfile(os.path.join(file_loc, "vasprun.xml_GaAs"), "bulk/vasprun.xml")
-            pp = PostProcess(".")
+            pp = PostProcess(".", mapi_key="c2LiJRMiBeaN5iXsH")  # SK MP Imperial email A/C API key
             gaas_cp = pp.get_chempot_limits()
             self.assertEqual({"As-GaAs", "Ga-GaAs"}, set(gaas_cp.keys()))
             np.testing.assert_almost_equal(

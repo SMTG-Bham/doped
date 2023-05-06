@@ -1230,7 +1230,7 @@ class CompetingPhasesAnalyzer:
         bulk_pde_list = []
         for d in self.data:
             e = PDEntry(d["formula"], d["energy_per_fu"])
-            # presumably checks if the phase is intrinsic
+            # checks if the phase is intrinsic
             if set(Composition(d["formula"]).elements).issubset(
                 self.bulk_composition.elements
             ):
@@ -1247,7 +1247,8 @@ class CompetingPhasesAnalyzer:
                 intrinsic_phase_diagram_compositions = None
             else:
                 intrinsic_phase_diagram_compositions = {
-                    e.composition.reduced_formula for e in intrinsic_phase_diagram_entries
+                    e.composition.reduced_formula
+                    for e in intrinsic_phase_diagram_entries
                 }
             raise ValueError(
                 f"Could not find bulk phase for "
@@ -1327,6 +1328,7 @@ class CompetingPhasesAnalyzer:
             mins = []
             mins_formulas = []
             df3 = pd.DataFrame(extrinsic_formation_energies)
+            print(f"df3: {df3}")
             for i, c in enumerate(cpd):
                 name = f"mu_{self.extrinsic_species}_{i}"
                 df3[name] = df3["formation_energy"]
@@ -1362,6 +1364,7 @@ class CompetingPhasesAnalyzer:
                 "facets_wrt_el_refs": {},
                 "facets": {},
             }
+            print(f"df4: {df4}")
 
             for i, d in enumerate(df4):
                 key = (
