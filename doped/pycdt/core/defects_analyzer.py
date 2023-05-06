@@ -21,25 +21,33 @@ from doped.pycdt.utils.parse_calculations import SingleDefectParser
 from doped.pycdt.utils.units import conv, hbar, kb
 
 warnings.simplefilter("default")
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings(
+    "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
+)
 warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
 def freysoldt_correction_from_paths(
-    defect_file_path, bulk_file_path, dielectric, defect_charge, plot=False
+    defect_file_path,
+    bulk_file_path,
+    dielectric,
+    defect_charge,
+    plot=False,
+    filename=None,
 ):
     """
     A function for performing the Freysoldt correction with a set of file paths.
     If this correction is used, please reference Freysoldt's original paper.
     doi: 10.1103/PhysRevLett.102.016402
 
-    Does not require transformation.json file to exist in file path.
-
     :param defect_file_path (str): file path to defect folder of interest
     :param bulk_file_path (str): file path to bulk folder of interest
-    :param dielectric (float or 3x3 matrix): Dielectric constant (or tensor) for the structure
+    :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
     :param defect_charge (int): charge of defect structure of interest
-    :param plot (bool): allow for plotting electrostatic potential
+    :param plot (bool): decides whether to plot electrostatic potential plots or not.
+    :param filename (str): if None, plots are not saved, if a string,
+            then the plot will be saved as '{filename}_{axis}.pdf'
     :return:
         Dictionary of Freysoldt Correction for defect
     """
@@ -49,13 +57,20 @@ def freysoldt_correction_from_paths(
     _ = sdp.freysoldt_loader()
     if plot:
         print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
-    correction = get_correction_freysoldt(sdp.defect_entry, dielectric, plot=plot)
+    correction = get_correction_freysoldt(
+        sdp.defect_entry, dielectric, plot=plot, filename=filename
+    )
 
     return correction
 
 
 def kumagai_correction_from_paths(
-    defect_file_path, bulk_file_path, dielectric, defect_charge, plot=False
+    defect_file_path,
+    bulk_file_path,
+    dielectric,
+    defect_charge,
+    plot=False,
+    filename=None,
 ):
     """
     A function for performing the Kumagai correction with a set of file paths.
@@ -63,13 +78,14 @@ def kumagai_correction_from_paths(
     (doi: 10.1103/PhysRevB.89.195205) as well as Freysoldt's original
     paper (doi: 10.1103/PhysRevLett.102.016402
 
-    Does not require transformation.json file to exist in file path.
-
     :param defect_file_path (str): file path to defect folder of interest
     :param bulk_file_path (str): file path to bulk folder of interest
-    :param dielectric (float or 3x3 matrix): Dielectric constant (or tensor) for the structure
+    :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
     :param defect_charge (int): charge of defect structure of interest
-    :param plot (bool): allow for plotting electrostatic potential
+    :param plot (bool): decides whether to plot electrostatic potential plots or not.
+    :param filename (str): if None, plots are not saved, if a string, then the plot will be saved as
+        '{filename}.pdf'
     :return:
         Dictionary of Kumagai Correction for defect
     """
@@ -77,14 +93,11 @@ def kumagai_correction_from_paths(
         defect_file_path, bulk_file_path, dielectric, defect_charge
     )
     _ = sdp.kumagai_loader()
-    plt_title = (
-        os.path.join(
-            defect_file_path, "{}_chg_{}".format(sdp.defect_entry.name, defect_charge)
-        )
-        if plot
-        else None
+    if plot:
+        print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
+    correction = get_correction_kumagai(
+        sdp.defect_entry, dielectric, plot=plot, filename=filename
     )
-    correction = get_correction_kumagai(sdp.defect_entry, dielectric, title=plt_title)
 
     return correction
 
