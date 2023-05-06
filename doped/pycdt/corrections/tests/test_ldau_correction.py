@@ -10,7 +10,7 @@ import unittest
 from doped.pycdt.corrections.ldau_correction import *
 
 test_file_loc = os.path.abspath(
-    os.path.join(__file__, "..", "..", "..", "..", "test_files")
+    os.path.join(__file__, "..", "..", "..", "test_files")
 )
 
 
