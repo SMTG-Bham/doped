@@ -123,7 +123,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
     def test_get_correction_kumagai(self):
         kumagaiout = get_correction_kumagai(
-            self.defect_entry, self.epsilon, title=None, partflag="AllSplit"
+            self.defect_entry, self.epsilon, partflag="AllSplit"
         )
         self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
         self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
