@@ -1096,7 +1096,7 @@ with charge {self.defect_entry.charge} may not be compatible with the chosen cha
 Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
 accurate total energies. Recommended to look at the correction plots (i.e. run 
 `get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.pycdt.corrections.finite_size_charge_correction`) to visually determine if the charge 
+`doped.corrections`) to visually determine if the charge 
 correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic 
 correction). You can also change the DefectCompatibility() tolerance settings via the 
 `compatibility` parameter in `SingleDefectParser.from_paths()`."""
