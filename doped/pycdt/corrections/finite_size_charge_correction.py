@@ -1,34 +1,29 @@
 """
-This module contains calls to finite size supercell charge corrections as
-implemented in pymatgen.analysis.defects.core
+This module contains calls to finite size supercell charge corrections as implemented in
+pymatgen.analysis.defects.core
 
-The methods implemented are
+The methods implemented are:
 1) Freysoldt correction for isotropic systems. Includes:
        a) PC energy
        b) potential alignment by planar averaging.
 2) Extended Freysoldt or Kumagai correction for anistropic systems. Includes:
        a) anisotropic PC energy
        b) potential alignment by atomic site averaging outside Wigner Seitz radius
-3) Sxdefectalign wrapper - python interface to using robust C++ code written by
-   Freysoldt et. al (in principle the results are identical to the output of our own
-   Freysoldt python code)
 
 If you use the corrections implemented in this module, cite
    Freysoldt, Neugebauer, and Van de Walle,
     Phys. Status Solidi B. 248, 1067-1076 (2011) for isotropic correction
    Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for anisotropic correction
-   in addition to the PyCDT paper
 """
 
 
 import copy
-import collections
 
 import numpy as np
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 from monty.json import MontyDecoder
 
-from doped.pycdt.corrections.sxdefect_correction import SxdefectalignWrapper as SXD
+from doped.pycdt.utils.parse_calculations import _convert_dielectric_to_tensor
 
 
 def _monty_decode_nested_dicts(d):
@@ -60,10 +55,15 @@ def _monty_decode_nested_dicts(d):
 
 
 def get_correction_freysoldt(
-    defect_entry, epsilon, plot: bool = False, filename=None, partflag="All", axis=None
+    defect_entry,
+    epsilon,
+    plot: bool = False,
+    filename: str = None,
+    partflag="All",
+    axis=None,
 ):
     """
-    Function to compute the isotropic freysoldt correction for each defect.
+    Function to compute the isotropic Freysoldt correction for each defect.
     If this correction is used, please reference Freysoldt's original paper.
     doi: 10.1103/PhysRevLett.102.016402
     Args:
@@ -97,22 +97,26 @@ def get_correction_freysoldt(
                     'madetol' : madelung tolerance for Freysoldt correction
                     'q_model' : Charge Model for Freysoldt correction
                     'q_model' : Charge Model for Freysoldt correction
-        epsilon (float or 3x3 matrix): Dielectric constant for the structure
-        plot (bool): decides whether to plot electrostatic potential plots or not...
+        epsilon (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
+        plot (bool): decides whether to plot electrostatic potential plots or not.
         filename (str): if None, plots are not saved, if a string,
-            then the plot will be saved as 'filename_{axis}.pdf'
+            then the plot will be saved as '{filename}_{axis}.pdf'
         partflag: four options for correction output:
                'pc' for just point charge correction, or
                'potalign' for just potalign correction, or
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
         axis (int or None): if integer, then freysoldt correction is performed on the single axis.
-            If it is None, then averaging of the corrections for the three axes is used for the correction.
+            If it is None, then averaging of the corrections for the three axes is used for the
+            correction.
 
     Returns Correction
     """
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
+
+    epsilon = _convert_dielectric_to_tensor(epsilon)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
@@ -168,40 +172,45 @@ def get_correction_freysoldt(
     return freyval
 
 
-def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
+def get_correction_kumagai(
+    defect_entry, epsilon, plot: bool = False, filename: str = None, partflag="All"
+):
     """
-    Function to compute the Kumagai correction for each defect (modified freysoldt for anisotropic dielectric).
+    Function to compute the Kumagai correction for each defect (modified freysoldt for
+    anisotropic dielectric).
     NOTE that bulk_init class must be pre-instantiated to use this function
     Args:
         defect_entry: DefectEntry object with the following
             keys stored in defect.parameters:
                 required:
-                    bulk_atomic_site_averages (list):  list of bulk structure"s atomic site averaged ESPs * charge,
-                        in same order as indices of bulk structure
-                        note this is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1)
+                    bulk_atomic_site_averages (list):  list of bulk structure"s atomic site
+                    averaged ESPs * charge, in same order as indices of bulk structure note this
+                    is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1)
 
-                    defect_atomic_site_averages (list):  list of defect structure"s atomic site averaged ESPs * charge,
-                        in same order as indices of defect structure
-                        note this is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1)
+                    defect_atomic_site_averages (list):  list of defect structure"s atomic site
+                    averaged ESPs * charge, in same order as indices of defect structure note
+                    this is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1)
 
                     site_matching_indices (list):  list of corresponding site index values for
-                        bulk and defect site structures EXCLUDING the defect site itself
-                        (ex. [[bulk structure site index, defect structure"s corresponding site index], ... ]
+                    bulk and defect site structures EXCLUDING the defect site itself (ex. [[bulk
+                    structure site index, defect structure"s corresponding site index], ... ]
 
-                    initial_defect_structure (Structure): Pymatgen Structure object representing un-relaxed defect structure
+                    initial_defect_structure (Structure): Pymatgen Structure object representing
+                    un-relaxed defect structure
 
-                    defect_frac_sc_coords (array): Defect Position in fractional coordinates of the supercell
-                        given in bulk_structure
+                    defect_frac_sc_coords (array): Defect Position in fractional coordinates of
+                    the supercell given in bulk_structure
                 optional:
-                    gamma (float): Ewald parameter, Default is to determine it based on convergence of
-                        brute summation tolerance
-                    sampling_radius (float):r adius (in Angstrom) which sites must be outside of to be included
-                        in the correction. Publication by Kumagai advises to use Wigner-Seitz radius of
-                        defect supercell, so this is default value.
-        epsilon (float or 3x3 matrix): Dielectric constant for the structure
-        title: decides whether to plot electrostatic potential plots or not...
-            if None, no plot is printed, if a string,
-            then the plot will be saved using the string
+                    gamma (float): Ewald parameter, Default is to determine it based on
+                        convergence of brute summation tolerance
+                    sampling_radius (float): radius (in Angstrom) which sites must be outside of
+                        to be included in the correction. Publication by Kumagai advises to use
+                        Wigner-Seitz radius of defect supercell, so this is default value.
+        epsilon (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
+        plot (bool): decides whether to plot electrostatic potential plots or not.
+        filename (str): if None, plots are not saved, if a string, then the plot will be saved as
+            '{filename}.pdf'
         partflag: four options for correction output:
                'pc' for just point charge correction, or
                'potalign' for just potalign correction, or
@@ -210,6 +219,8 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
     """
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
+
+    epsilon = _convert_dielectric_to_tensor(epsilon)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
@@ -231,9 +242,10 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
     )
     k_corr_summ = corr_class.get_correction(template_defect)
 
-    if title:
+    if plot:
         p = corr_class.plot(title="Kumagai", saved=False)
-        p.savefig(title + "_kumagaiplot.pdf", bbox_inches="tight")
+        if filename:
+            p.savefig(f"{filename}.pdf", bbox_inches="tight")
 
     if partflag in ["AllSplit", "All"]:
         kumagai_val = np.sum(list(k_corr_summ.values()))
@@ -251,58 +263,3 @@ def get_correction_kumagai(defect_entry, epsilon, title=None, partflag="All"):
             kumagai_val,
         ]
     return kumagai_val
-
-
-def get_correction_sxdefect(
-    path_def,
-    path_blk,
-    epsilon,
-    pos,
-    charge,
-    title=None,
-    lengths=None,
-    partflag="All",
-    encut=520,
-):
-    """
-        NOTE FROM DEVELOPERS:
-        This is not unit tested and will not be maintained past 12/15/17.
-        Code remaining here to allow for existing users to keep using it.
-
-    Args:
-        lengths: for length conversion (makes calculation faster)
-        pos: specify position for sxdefectalign code
-        axiscalcs: Specifies axes to average over (zero-defined)
-        partflag: four options
-            'pc' for just point charge correction, or
-           'potalign' for just potalign correction, or
-           'All' for both, or
-           'AllSplit' for individual parts split up (form [PC,potterm,full])
-    """
-    # ensure parameters are decoded in case defect_dict was reloaded from json
-    _monty_decode_nested_dicts(defect_entry.parameters)
-
-    if partflag in ["All", "AllSplit"]:
-        nomtype = "full correction"
-    elif partflag == "pc":
-        nomtype = "point charge correction"
-    elif partflag == "potalign":
-        nomtype = "potential alignment correction"
-    else:
-        print(
-            partflag,
-            ' is incorrect potalign type. Must be "All","AllSplit", "pc", or "potalign".',
-        )
-        return
-
-    s = SXD(path_blk, path_def, charge, epsilon, pos, encut, lengths=lengths)
-
-    if title:
-        print_flag = "plotfull"
-    else:
-        print_flag = "none"
-    sxvals = s.run_correction(print_pot_flag=print_flag, partflag=partflag)
-
-    print("\n Final Sxdefectalign ", nomtype, " correction value is ", sxvals)
-
-    return sxvals
