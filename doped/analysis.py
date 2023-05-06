@@ -15,7 +15,7 @@ from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 from pymatgen.util.string import unicodeify
 from tabulate import tabulate
 
-from doped import aide_murphy_correction
+from doped import corrections
 
 
 def bold_print(string: str) -> None:
@@ -304,7 +304,7 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = aide_murphy_correction.get_image_charge_correction(
+    lz_image_charge_corrections = corrections.get_murphy_image_charge_correction(
         lattice, dielectric
     )
     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
@@ -354,7 +354,7 @@ def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = aide_murphy_correction.get_image_charge_correction(
+    lz_image_charge_corrections = corrections.get_murphy_image_charge_correction(
         lattice, dielectric
     )
     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
