@@ -128,6 +128,9 @@ class UserChemPotAnalyzerTest(PymatgenTest):
                 os.path.join(TEST_DIR, "vasprun.xml_GaAs"),
                 os.path.join("PhaseDiagram", "GaAs", "vasprun.xml"),
             )
+            cp = self.UCPA_sub.read_phase_diagram_and_chempots(
+                full_sub_approach=False, include_mp_entries=True)
+            self.assertEqual({'As-GaAs-In', 'Ga-GaAs-In'}, set(cp["facets"].keys()))
 
 
 if __name__ == "__main__":
