@@ -30,7 +30,9 @@
   - Related point, using our `doped` site-matching functions, could write some quick functions to plot the exponential tailing off of strain / site displacements as we move away from the defect site. Could be useful as a validation / check of supercell size convergence, and for quantifying the strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
 
 ## Post-processing / analysis / plotting
+- Auto-parse charge from defect calculation outputs when parsing, so this doesn't need to be specified by user with `SingleDefectParser`?
 - Change `get_stdrd_metadata` to a semi-hidden method and call in `SingleDefectParser.from_paths()` to avoid extra/redundant function calls by user.
+  - Actually, just amalgamate all the defect parsing functions into `SingleDefectParser`, with optional parameters to not run the charge corrections. Auto-determine from bulk symmetry if isotropic, try relevant charge correction (plus also based on what files are present).
 - Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
 - `aide` labelling of defect species in formation energy plots.
 - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
