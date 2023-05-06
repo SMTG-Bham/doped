@@ -29,13 +29,12 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Poscar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped.pycdt.core import _chemical_potentials
+from doped.pycdt.utils.vasp import DefectRelaxSet
+from doped import _ignore_pmg_potcar_warnings
 
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 
-# globally ignore these POTCAR warnings
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
+_ignore_pmg_potcar_warnings()
 
 # until updated from pymatgen==2022.7.25 :
 warnings.filterwarnings(
@@ -458,7 +457,7 @@ class SingleDefectParser:
         defect_path,
         bulk_path,
         dielectric,
-        defect_charge,
+        defect_charge=None,
         compatibility=DefectCompatibility(
             plnr_avg_var_tol=0.01,
             plnr_avg_minmax_tol=0.3,
@@ -472,15 +471,15 @@ class SingleDefectParser:
         initial_defect_structure=None,
     ):
         """
-        Identify defect object based on file paths. Minimal parsing performing for
-        instantiating the SingleDefectParser class.
+        Parse the defect calculation outputs in `defect_path`.
 
         Args:
         defect_path (str): path to defect folder of interest (with vasprun.xml(.gz))
         bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
-        defect_charge (int):  charge of defect
+        defect_charge (int): charge of defect. If not provided, will be automatically determined
+            from the defect calculation outputs (requires POTCARs to be set up with `pymatgen`).
         compatibility (DefectCompatibility): Compatibility class instance for
             performing charge correction compatibility analysis on defect entry.
         initial_defect_structure (str):  Path to the unrelaxed defect structure,
@@ -495,7 +494,6 @@ class SingleDefectParser:
             "bulk_path": bulk_path,
             "defect_path": defect_path,
             "dielectric": dielectric,
-            "mpid": mpid,
         }
 
         # add bulk simple properties
@@ -508,6 +506,44 @@ class SingleDefectParser:
             os.path.join(defect_path, "vasprun.xml")
         )
         defect_energy = defect_vr.final_energy
+
+        # get defect charge
+        if defect_charge is None:
+            defect_nelect = defect_vr.incar.get("NELECT", None)
+            if defect_nelect is None:
+                defect_charge = 0  # neutral defect if NELECT not specified
+            else:
+                potcar_symbols = [
+                    titel.split()[1] for titel in defect_vr.potcar_symbols
+                ]
+                potcar_settings = {
+                    symbol.split("_")[0]: symbol for symbol in potcar_symbols
+                }
+                neutral_defect_relax_set = DefectRelaxSet(
+                    defect_vr.structures[-1],
+                    charge=0,
+                    user_potcar_settings=potcar_settings,
+                )
+                try:
+                    defect_charge = -1 * (
+                        defect_nelect - neutral_defect_relax_set.nelect
+                    )
+
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Defect charge cannot be automatically determined as POTCARs have not "
+                        f"been setup with pymatgen (see Step 2 at "
+                        f"https://github.com/SMTG-UCL/doped#installation). Please specify defect "
+                        f"charge manually using the `defect_charge` argument, or set up POTCARs "
+                        f"with pymatgen. Got error: {e}"
+                    )
+
+                if abs(defect_charge) >= 10:  # crazy charge state predicted
+                    raise RuntimeError(
+                        f"Auto-determined defect charge q={defect_charge} is "
+                        f"unreasonably large"
+                    )
+
         # Can specify initial defect structure (to help PyCDT find the defect site if
         # multiple relaxations were required, else use from defect relaxation OUTCAR:
         if initial_defect_structure:
@@ -952,7 +988,9 @@ class SingleDefectParser:
             {"eigenvalues": eigenvalues, "kpoint_weights": kpoint_weights}
         )
 
-    def get_bulk_gap_data(self, actual_bulk_path=None, use_MP=False, mpid=None, api_key=None):
+    def get_bulk_gap_data(
+        self, actual_bulk_path=None, use_MP=False, mpid=None, api_key=None
+    ):
         """Get bulk gap data from bulk OUTCAR file, or OUTCAR located at `actual_bulk_path`.
 
         Alternatively, one can specify query the Materials Project (MP) database for the bulk gap
@@ -1043,22 +1081,12 @@ class SingleDefectParser:
                     {"MP_gga_BScalc_data": bs.get_band_gap().copy()}
                 )  # contains gap kpt transition
 
-        if (
-            vbm is None
-            or bandgap is None
-            or cbm is None
-            or not actual_bulk_path
-        ):
+        if vbm is None or bandgap is None or cbm is None or not actual_bulk_path:
             if mpid and bandgap is None:
                 print(
                     f"WARNING: Mpid {mpid} was provided, but no bandstructure entry currently "
                     "exists for it. \nReverting to use of bulk supercell calculation for band "
                     "edge extrema."
-                )
-            if mpid and no_MP:
-                print(
-                    f"Mpid {mpid} was provided, but `no_MP` flag was set to True. \n"
-                    "Reverting to use of bulk supercell calculation for band edge extrema."
                 )
 
             gap_parameters.update(
