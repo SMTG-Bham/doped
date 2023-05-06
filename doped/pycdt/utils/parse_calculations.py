@@ -6,7 +6,6 @@ Parses the computed data from VASP defect calculations.
 from __future__ import division
 
 import glob
-import logging
 import os
 import warnings
 
@@ -68,6 +67,7 @@ def _convert_dielectric_to_tensor(dielectric):
                 f"got type {type(dielectric)} and shape {dielectric.shape}"
             )
     return dielectric
+
 
 def get_vasprun(vasprun_path, **kwargs):
     """Read the vasprun.xml(.gz) file as a pymatgen Vasprun object"""
@@ -328,6 +328,65 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     )
 
 
+def get_site_mapping_indices(
+    structure_a: Structure, structure_b: Structure, threshold=2.0
+):
+    """
+    Reset the position of a partially relaxed structure to its unrelaxed positions.
+    The template structure may have a different species ordering to the `input_structure`.
+    """
+
+    ## Generate a site matching table between the input and the template
+    input_fcoords = [site.frac_coords for site in structure_a]
+    template_fcoords = [site.frac_coords for site in structure_b]
+
+    dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
+    min_dist_with_index = []
+    for index in range(len(input_fcoords)):
+        dists = dmat[index]
+        template_index = dists.argmin()
+        current_dist = dists.min()
+        min_dist_with_index.append(
+            [
+                current_dist,
+                index,
+                template_index,
+            ]
+        )
+
+        if current_dist > threshold:
+            sitea = structure_a[index]
+            siteb = structure_b[template_index]
+            warnings.warn(
+                f"Large site displacement {current_dist:.4f} detected when matching atomic sites:"
+                f" {sitea}-> {siteb}."
+            )
+    return min_dist_with_index
+
+
+def reorder_unrelaxed_structure(
+    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=2.0
+):
+    """
+    Reset the position of a partially relaxed structure to its unrelaxed positions.
+    The template structure may have a different species ordering to the `input_structure`.
+    """
+
+    # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
+    mapping = get_site_mapping_indices(
+        initial_relax_structure, unrelaxed_structure, threshold=threshold
+    )
+
+    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (
+    # from the actual calculation)
+    reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
+    new_structure = Structure.from_sites(reordered_sites)
+
+    assert len(new_structure) == len(unrelaxed_structure)
+
+    return new_structure
+
+
 class SingleDefectParser:
     # TODO: Given this is our recommended workflow, should streamline this similar to in
     #  `vasp_input.py`, where it tries to run the freysoldt/kumagai loader (chosen by an
@@ -347,7 +406,8 @@ class SingleDefectParser:
     #  entries, with the defect name as the key. (i.e. doing the loop in the example notebook).
     #  Show both this function and the individual function calls in the example notebook. Benefit
     #  of this one is that we can then auto-run `check_defects_compatibility()` at the end of
-    #  parsing the full defects dict.
+    #  parsing the full defects dict. – When doing this, look at `PostProcess` code, and then
+    #  delete it once all functionality is moved here.
 
     _delocalization_warning_printed = False  # class variable
     # ensures the verbose delocalization analysis warning is only printed once. Needs to be done
@@ -1123,7 +1183,6 @@ class PostProcess:
         from a PyCDT root_fldr file structure.
         Charge correction is missing in the first run.
         """
-        logger = logging.getLogger(__name__)
         parsed_defects = []
         subfolders = glob.glob(os.path.join(self._root_fldr, "vac_*"))
         subfolders += glob.glob(os.path.join(self._root_fldr, "as_*"))
@@ -1133,26 +1192,26 @@ class PostProcess:
         def get_vr_and_check_locpot(fldr):
             vr_file = os.path.join(fldr, "vasprun.xml")
             if not (os.path.exists(vr_file) or os.path.exists(vr_file + ".gz")):
-                logger.warning("{} doesn't exit".format(vr_file))
+                warnings.warn("{} doesn't exit".format(vr_file))
                 error_msg = ": Failure, vasprun.xml doesn't exist."
                 return (None, error_msg)  # Further processing is not useful
 
             try:
                 vr, vr_path = get_vasprun(vr_file, parse_potcar_file=False)
             except:
-                logger.warning("Couldn't parse {}".format(vr_file))
+                warnings.warn("Couldn't parse {}".format(vr_file))
                 error_msg = ": Failure, couldn't parse vasprun.xml file."
                 return (None, error_msg)
 
             if not vr.converged:
-                logger.warning("Vasp calculation at {} not converged".format(fldr))
+                warnings.warn("Vasp calculation at {} not converged".format(fldr))
                 error_msg = ": Failure, Vasp calculation not converged."
                 return (None, error_msg)  # Further processing is not useful
 
             # Check if locpot exists
             locpot_file = os.path.join(fldr, "LOCPOT")
             if not (os.path.exists(locpot_file) or os.path.exists(locpot_file + ".gz")):
-                logger.warning("{} doesn't exit".format(locpot_file))
+                warnings.warn("{} doesn't exit".format(locpot_file))
                 error_msg = ": Failure, LOCPOT doesn't exist"
                 return (None, error_msg)  # Further processing is not useful
 
@@ -1161,14 +1220,14 @@ class PostProcess:
         def get_encut_from_potcar(fldr):
             potcar_file = os.path.join(fldr, "POTCAR")
             if not os.path.exists(potcar_file):
-                logger.warning("Not POTCAR in {} to parse ENCUT".format(fldr))
+                warnings.warn("Not POTCAR in {} to parse ENCUT".format(fldr))
                 error_msg = ": Failure, No POTCAR file."
                 return (None, error_msg)  # Further processing is not useful
 
             try:
                 potcar = Potcar.from_file(potcar_file)
             except:
-                logger.warning("Couldn't parse {}".format(potcar_file))
+                warnings.warn("Couldn't parse {}".format(potcar_file))
                 error_msg = ": Failure, couldn't read POTCAR file."
                 return (None, error_msg)
 
@@ -1179,8 +1238,7 @@ class PostProcess:
         fldr = os.path.join(self._root_fldr, "bulk")
         vr, error_msg = get_vr_and_check_locpot(fldr)
         if error_msg:
-            logger.error("Abandoning parsing of the calculations")
-            return {}
+            raise ValueError(f"Abandoning parsing of the calculations: {error_msg}")
         bulk_energy = vr.final_energy
         bulk_sc_struct = vr.final_structure
         try:
@@ -1188,8 +1246,7 @@ class PostProcess:
         except:  # ENCUT not specified in INCAR. Read from POTCAR
             encut, error_msg = get_encut_from_potcar(fldr)
             if error_msg:
-                logger.error("Abandoning parsing of the calculations")
-                return {}
+                raise ValueError(f"Abandoning parsing of the calculations: {error_msg}")
 
         trans_dict = loadfn(os.path.join(fldr, "transformation.json"), cls=MontyDecoder)
         supercell_size = trans_dict["supercell"]
@@ -1216,7 +1273,7 @@ class PostProcess:
                 chrg = trans_dict["charge"]
                 vr, error_msg = get_vr_and_check_locpot(chrg_fldr)
                 if error_msg:
-                    logger.warning("Parsing the rest of the calculations")
+                    warnings.warn("Parsing the rest of the calculations")
                     continue
                 if (
                     "substitution_specie" in trans_dict
@@ -1245,10 +1302,10 @@ class PostProcess:
                 except:  # ENCUT not specified in INCAR. Read from POTCAR
                     encut, error_msg = get_encut_from_potcar(chrg_fldr)
                     if error_msg:
-                        logger.warning(
+                        warnings.warn(
                             "Not able to determine ENCUT " "in {}".format(fldr_name)
                         )
-                        logger.warning("Parsing the rest of the " "calculations")
+                        warnings.warn("Parsing the rest of the " "calculations")
                         continue
 
                 comp_data = {
@@ -1309,7 +1366,6 @@ class PostProcess:
             mpid (str): MP-ID for which the valence band maximum is to
                 be fetched from the Materials Project database
         """
-        logger = logging.getLogger(__name__)
         vbm, bandgap = None, None
 
         if self._mpid is not None:
@@ -1321,16 +1377,16 @@ class PostProcess:
 
         if vbm is None or bandgap is None:
             if self._mpid:
-                logger.warning(
+                warnings.warn(
                     "Mpid {} was provided, but no bandstructure entry currently exists for it. "
                     "Reverting to use of bulk calculation.".format(self._mpid)
                 )
             else:
-                logger.warning(
+                warnings.warn(
                     "No mp-id provided, will fetch CBM/VBM details from the "
                     "bulk calculation."
                 )
-            logger.warning(
+            warnings.warn(
                 "This may not be appropriate if the VBM/CBM occur at reciprocal points "
                 "not included in the bulk calculation."
             )
@@ -1353,7 +1409,6 @@ class PostProcess:
             option exists in the pycdt.core.chemical_potentials to setup,
             run and parse personal phase diagrams for purposes of chemical potentials
         """
-        logger = logging.getLogger(__name__)
 
         if self._mpid:
             cpa = _chemical_potentials.MPChemPotAnalyzer(
@@ -1368,7 +1423,7 @@ class PostProcess:
             )
             if not bulkvr:
                 msg = "Could not fetch computed entry for atomic chempots!"
-                logger.warning(msg)
+                warnings.warn(msg)
                 raise ValueError(msg)
             cpa = _chemical_potentials.MPChemPotAnalyzer(
                 bulk_ce=bulkvr.get_computed_entry(),
@@ -1400,7 +1455,7 @@ class PostProcess:
                 parse_potcar_file=False,
             )
         except:
-            logging.getLogger(__name__).warning("Parsing Dielectric calculation failed")
+            warnings.warn("Parsing Dielectric calculation failed")
             return None
 
         eps_ion = vr.epsilon_ionic
@@ -1428,62 +1483,3 @@ class PostProcess:
         output["gap"] = gap
 
         return output
-
-
-def get_site_mapping_indices(
-    structure_a: Structure, structure_b: Structure, threshold=2.0
-):
-    """
-    Reset the position of a partially relaxed structure to its unrelaxed positions.
-    The template structure may have a different species ordering to the `input_structure`.
-    """
-
-    ## Generate a site matching table between the input and the template
-    input_fcoords = [site.frac_coords for site in structure_a]
-    template_fcoords = [site.frac_coords for site in structure_b]
-
-    dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
-    min_dist_with_index = []
-    for index in range(len(input_fcoords)):
-        dists = dmat[index]
-        template_index = dists.argmin()
-        current_dist = dists.min()
-        min_dist_with_index.append(
-            [
-                current_dist,
-                index,
-                template_index,
-            ]
-        )
-
-        if current_dist > threshold:
-            sitea = structure_a[index]
-            siteb = structure_b[template_index]
-            warnings.warn(
-                f"Large site displacement {current_dist:.4f} detected when matching atomic sites:"
-                f" {sitea}-> {siteb}."
-            )
-    return min_dist_with_index
-
-
-def reorder_unrelaxed_structure(
-    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=2.0
-):
-    """
-    Reset the position of a partially relaxed structure to its unrelaxed positions.
-    The template structure may have a different species ordering to the `input_structure`.
-    """
-
-    # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
-    mapping = get_site_mapping_indices(
-        initial_relax_structure, unrelaxed_structure, threshold=threshold
-    )
-
-    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (
-    # from the actual calculation)
-    reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
-    new_structure = Structure.from_sites(reordered_sites)
-
-    assert len(new_structure) == len(unrelaxed_structure)
-
-    return new_structure
