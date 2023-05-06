@@ -18,6 +18,7 @@ from doped.corrections import (
 
 test_files_dir = os.path.join(os.path.dirname(__file__), "../doped/pycdt/test_files")
 
+
 class FilePathCorrectionsTest(PymatgenTest):
     def test_freysoldt_and_kumagai(self):
         # create scratch directory with files....
