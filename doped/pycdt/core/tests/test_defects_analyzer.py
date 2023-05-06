@@ -13,7 +13,6 @@ from shutil import copyfile
 from monty.json import MontyDecoder, MontyEncoder
 from monty.serialization import dumpfn, loadfn
 from monty.tempfile import ScratchDir
-from pymatgen import __file__ as initfilep
 from pymatgen.core import Element
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.sites import PeriodicSite
@@ -57,7 +56,9 @@ class FilePathCorrectionsTest(PymatgenTest):
                 plot=True,
                 filename="test_freysoldt_correction",
             )
-            self.assertAlmostEqual(fcc, -1.4954476868106865)  # note this has been updated from the
+            self.assertAlmostEqual(
+                fcc, -1.4954476868106865
+            )  # note this has been updated from the
             # pycdt version, because there they used a `transformation.json` that gave an
             # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
             self.assertTrue(os.path.exists("test_freysoldt_correction_axis1.pdf"))
@@ -68,7 +69,7 @@ class FilePathCorrectionsTest(PymatgenTest):
                 18.12,
                 2,
                 plot=True,
-                filename="test_kumagai_correction"
+                filename="test_kumagai_correction",
             )
             self.assertAlmostEqual(kcc, 0.638776853061614)
             self.assertTrue(os.path.exists("test_kumagai_correction.pdf"))
@@ -214,12 +215,16 @@ class DefectsAnalyzerTest(PymatgenTest):
         self.da.add_computed_defect(self.cd)
         self.da.add_computed_defect(self.cd2)
         list_c = self.da.get_defects_concentration(temp=300.0, ef=0.5)
-        for i, j in zip([list_c[0]["conc"], list_c[1]["conc"]],
-                        [2.3075483087087652e62, 1.453493521232979e79]):
+        for i, j in zip(
+            [list_c[0]["conc"], list_c[1]["conc"]],
+            [2.3075483087087652e62, 1.453493521232979e79],
+        ):
             np.testing.assert_approx_equal(i, j, significant=7)
         list_c = self.da.get_defects_concentration(temp=1000.0, ef=0.5)
-        for i, j in zip([list_c[0]["conc"], list_c[1]["conc"]],
-                        [6.9852762150255027e38, 7.6553010344336244e43]):
+        for i, j in zip(
+            [list_c[0]["conc"], list_c[1]["conc"]],
+            [6.9852762150255027e38, 7.6553010344336244e43],
+        ):
             np.testing.assert_approx_equal(i, j, significant=7)
 
     def test_get_dos(self):
