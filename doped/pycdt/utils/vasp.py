@@ -5,6 +5,7 @@ from __future__ import print_function
 __status__ = "Development"
 
 import os
+import warnings
 
 import numpy as np
 
@@ -68,11 +69,6 @@ def _import_psp():
 class PotcarSingleMod(PotcarSingle):
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
-
-    # @staticmethod
-    # def from_file(filename):
-    #    with smart_open.smart_open(filename, "rt") as f:
-    #        return PotcarSingle(f.read())
 
     @staticmethod
     def from_symbol_and_functional(symbol, functional=None):
@@ -194,9 +190,10 @@ class DefectRelaxSet(DictSet):
                 ] = 0  # But could be 2 for triplet states (e.g. bipolarons)
 
         except Exception as e:
-            raise ValueError(
-                "NELECT and NUPDOWN flags are not set due to non-availability of POTCARs"
-            ) from e
+            warnings.warn(
+                f"NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; "
+                f"got error {e}"
+            )
 
         return inc
 
