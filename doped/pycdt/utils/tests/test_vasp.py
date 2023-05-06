@@ -2,17 +2,13 @@
 
 from __future__ import division
 
-import glob
-import os
 import unittest
+import os
 
-from monty.json import MontyDecoder
-from monty.serialization import loadfn
-from monty.tempfile import ScratchDir
 from pymatgen.core.structure import Structure
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
+from monty.serialization import loadfn
 
-from doped.pycdt.utils.vasp import *
+from doped.pycdt.utils.vasp import PotcarMod, PotcarSingleMod, DefectRelaxSet
 
 __status__ = "Development"
 
@@ -57,11 +53,13 @@ class DefectRelaxTest(unittest.TestCase):
         self.user_settings = loadfn(os.path.join(file_loc, "test_vasp_settings.yaml"))
         self.path = "Cr2O3"
         self.neutral_def_incar_min = {
-            "LVHAR": True,
-            "ISYM": 0,
-            "ISMEAR": 0,
-            "ISIF": 2,
-            "ISPIN": 2,
+              "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
+                            "correction scheme".lower(),
+              "ISIF": 2,  # Fixed supercell for defects
+              "ISPIN": 2,  # Spin polarisation likely for defects
+              "ISYM": "0  # Symmetry breaking extremely likely for defects".lower(),
+              "LVHAR": True,
+              "ISMEAR": 0,
         }
         self.def_keys = ["EDIFF", "EDIFFG", "IBRION"]
 
