@@ -331,7 +331,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 class SingleDefectParser:
     # TODO: Given this is our recommended workflow, should streamline this similar to in
     #  `vasp_input.py`, where it tries to run the freysoldt/kumagai loader (chosen by an
-    #  optional imput parameter, if not set check if OUTCAR/LOCPOT present), throw warning if not
+    #  optional input parameter, if not set check if OUTCAR/LOCPOT present), throw warning if not
     #  successful, then `get_stdrd_metadata()`, `get_bulk_gap_data()` and `run_compatibility()` (
     #  again throwing warnings for any of these that don't work) – so replacing 4+ function calls
     #  with just one.
