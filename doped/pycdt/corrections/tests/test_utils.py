@@ -13,10 +13,10 @@ from pymatgen.core.structure import Structure
 from doped.pycdt.corrections.utils import *
 
 bs_path = os.path.abspath(
-    os.path.join(__file__, "..", "..", "..", "..", "test_files", "POSCAR_Ga4As4")
+    os.path.join(__file__, "..", "..", "..", "test_files", "POSCAR_Ga4As4")
 )
 ds_path = os.path.abspath(
-    os.path.join(__file__, "..", "..", "..", "..", "test_files", "POSCAR_Ga3As4")
+    os.path.join(__file__, "..", "..", "..", "test_files", "POSCAR_Ga3As4")
 )
 
 
