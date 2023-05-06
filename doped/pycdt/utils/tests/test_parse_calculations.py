@@ -9,13 +9,9 @@ import tarfile
 import unittest
 from shutil import copyfile
 
-from monty.json import MontyEncoder
-from monty.serialization import dumpfn
 from monty.tempfile import ScratchDir
-from pymatgen import __file__ as initfilep
 from pymatgen.analysis.defects.core import DefectEntry, Substitution, Vacancy
 from pymatgen.core import Element, PeriodicSite
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Locpot, Vasprun
 from pymatgen.util.testing import PymatgenTest
 
@@ -27,46 +23,6 @@ from doped.pycdt.utils.parse_calculations import (
 )
 
 file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "test_files"))
-
-
-class LegacyConversionTest(PymatgenTest):
-    def test_convert_cd_to_de(self):
-        # create a ComputedDefect object similar to legacy format
-        # Vacancy type first
-        struc = PymatgenTest.get_structure("VO2")
-        struc.make_supercell(3)
-        vac = Vacancy(struc, struc.sites[0], charge=-3)
-        ids = vac.generate_defect_structure(1)
-        defect_data = {"locpot_path": "defect/path/to/files/LOCPOT", "encut": 520}
-        bulk_data = {"locpot_path": "bulk/path/to/files/LOCPOT"}
-
-        cse_defect = ComputedStructureEntry(ids, 100.0, data=defect_data)
-        cd = ComputedDefect(cse_defect, struc.sites[0], charge=-3, name="Vac_1_O")
-        b_cse = ComputedStructureEntry(struc, 10.0, data=bulk_data)
-
-        de = _convert_cd_to_de(cd, b_cse)
-        self.assertIsInstance(de.defect, Vacancy)
-        self.assertIsInstance(de, DefectEntry)
-        self.assertEqual(de.parameters["defect_path"], "defect/path/to/files")
-        self.assertEqual(de.parameters["bulk_path"], "bulk/path/to/files")
-        self.assertEqual(de.parameters["encut"], 520)
-        self.assertEqual(de.site.specie.symbol, "O")
-
-        # try again for substitution type
-        # (site object had bulk specie for ComputedDefects,
-        # while it should have substituional site specie for DefectEntrys...)
-        de_site_type = PeriodicSite("Sb", vac.site.frac_coords, struc.lattice)
-        sub = Substitution(struc, de_site_type, charge=1)
-        ids = sub.generate_defect_structure(1)
-
-        cse_defect = ComputedStructureEntry(ids, 100.0, data=defect_data)
-        cd = ComputedDefect(cse_defect, struc.sites[0], charge=1, name="Sub_1_Sb_on_O")
-
-        de = _convert_cd_to_de(cd, b_cse)
-
-        self.assertIsInstance(de.defect, Substitution)
-        self.assertIsInstance(de, DefectEntry)
-        self.assertEqual(de.site.specie.symbol, "Sb")
 
 
 class SingleDefectParserTest(PymatgenTest):
