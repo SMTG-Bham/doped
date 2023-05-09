@@ -49,8 +49,8 @@ def get_vasprun(vasprun_path, **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )
-    if os.path.exists(vasprun_path, **kwargs) and os.path.isfile(vasprun_path):
-        vasprun = Vasprun(vasprun_path)
+    if os.path.exists(vasprun_path) and os.path.isfile(vasprun_path):
+        vasprun = Vasprun(vasprun_path, **kwargs)
     else:
         raise FileNotFoundError(
             f"vasprun.xml file not found at {vasprun_path}. Needed for parsing calculation output."
@@ -425,6 +425,55 @@ class SingleDefectParser:
         self.compatibility = compatibility
         self.defect_vr = defect_vr
         self.bulk_vr = bulk_vr
+
+    @classmethod
+    def from_paths(
+        self,
+        defect_path,
+        bulk_path,
+        dielectric,
+        charge=None,
+        initial_defect_structure=None,
+        skip_corrections=False,
+        bulk_bandgap_path=None,
+        **kwargs,
+    ):
+        """
+        Parse the defect calculation outputs in `defect_path` and return the parsed `DefectEntry`
+        object.
+
+        Args:
+        defect_path (str): path to defect folder of interest (with vasprun.xml(.gz))
+        bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            ionic + static contributions to dielectric constant
+        charge (int): charge of defect. If not provided, will be automatically determined
+            from the defect calculation outputs (requires POTCARs to be set up with `pymatgen`).
+        initial_defect_structure (str):  Path to the unrelaxed defect structure,
+            if structure matching with the relaxed defect structure(s) fails.
+        skip_corrections (bool): Whether to skip the calculation and application of finite-size
+            charge corrections to the defect energy.
+        bulk_bandgap_path (str): Path to bulk OUTCAR file for determining the band gap. If the
+            VBM/CBM occur at reciprocal space points not included in the bulk supercell calculation,
+            you should use this tag to point to a bulk bandstructure calculation instead. If None,
+            will use self.defect_entry.parameters["bulk_path"].
+
+        Return:
+            Parsed `DefectEntry` object.
+        """
+        from doped.analysis import defect_entry_from_paths
+
+        kwargs.update({"return SingleDefectParser": True})
+        return defect_entry_from_paths(
+            defect_path,
+            bulk_path,
+            dielectric,
+            charge=charge,
+            initial_defect_structure=initial_defect_structure,
+            skip_corrections=skip_corrections,
+            bulk_bandgap_path=bulk_bandgap_path,
+            **kwargs,
+        )
 
     def freysoldt_loader(self, bulk_locpot=None):
         """
