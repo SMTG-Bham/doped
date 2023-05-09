@@ -24,7 +24,7 @@ However, as discussed briefly below and in the example notebooks, the
 defects in solids, and this package has been updated to be compatible with the latest version of `pymatgen`.
 As such, it is recommended to install `doped` in a virtual python environment as follows:
 
-1. 
+1. Create virtual environment and install: 
 ```bash
 conda create -n doped python=3.10  # create conda environment named doped
 conda activate doped  # activate doped conda environment
@@ -32,8 +32,11 @@ pip install doped  # install doped and dependencies, can also
 pip install numpy --upgrade # upgrade numpy to avoid binary incompatibility
 ```
 And then use this environment whenever using `doped`.
-Instead of `conda` you can also use `venv` to setup virtual environments, 
-see [here](https://www.freecodecamp.org/news/how-to-setup-virtual-environments-in-python/) for more.
+Alternatively if desired, `doped` can also be installed from `conda` with:
+
+```bash
+  conda install -c conda-forge doped
+```
 
 If you want to use the [example files](examples), 
 you should clone the repository and install with `pip install -e .` from the `doped` directory, but still make sure to `pip install numpy --upgrade`.
