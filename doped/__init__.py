@@ -1,8 +1,10 @@
 import warnings
 from datetime import date
 from importlib.metadata import PackageNotFoundError, version
+from packaging.version import parse
 
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
+from pymatgen.io.vasp.sets import BadInputSetWarning
 
 if date.today().weekday() in [5, 6]:
     print("""Working on the weekend, like usual...\n""")
@@ -28,7 +30,7 @@ def _check_pmg_compatibility():
             "uninstall pymatgen-analysis-defects`) and restart the kernel."
         )
 
-    if v_pmg > "2022.7.25":
+    if parse(v_pmg) > parse("2022.7.25"):
         raise TypeError(
             f"You have the version {v_pmg} of `pymatgen` installed, which is currently "
             f"incompatible with `doped`. Please revert this package (with `pip install "
@@ -38,19 +40,28 @@ def _check_pmg_compatibility():
 
 _check_pmg_compatibility()
 
-# globally ignore these POTCAR warnings
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
-warnings.filterwarnings(
+
+def _ignore_pmg_warnings():
+    # globally ignore these POTCAR warnings
+    warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
+    warnings.filterwarnings("ignore", category=BadInputSetWarning)
+    warnings.filterwarnings(
+        "ignore", message="No POTCAR file with matching TITEL fields"
+    )
+    warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
+    warnings.filterwarnings(
         "ignore", message="POTCAR data with symbol"
     )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
-# Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
-warnings.filterwarnings("ignore", message="Hybrid functionals only support")
+    # Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
+    warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
-# until updated from pymatgen==2022.7.25 :
-warnings.filterwarnings(
-    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
-)
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+    # until updated from pymatgen==2022.7.25 :
+    warnings.filterwarnings(
+        "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
+    )
+    warnings.filterwarnings(
+        "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
+    )
+    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+
+_ignore_pmg_warnings()
