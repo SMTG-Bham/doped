@@ -15,7 +15,6 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.io.vasp.inputs import (
     BadIncarWarning,
     incar_params,
-    UnknownPotcarWarning,
     Incar,
     Kpoints,
     Poscar,
@@ -23,6 +22,7 @@ from pymatgen.io.vasp.inputs import (
 from pymatgen.io.vasp.sets import DictSet
 
 from doped.pycdt.utils.vasp import DefectRelaxSet, _check_psp_dir
+from doped import _ignore_pmg_warnings
 
 if TYPE_CHECKING:
     import pymatgen.core.periodic_table
@@ -34,15 +34,7 @@ default_relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
 default_defect_set = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
 default_relax_set["INCAR"].update(default_defect_set["INCAR"])
 
-# globally ignore these POTCAR warnings
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
-warnings.filterwarnings(
-    "ignore", message="POTCAR data with symbol"
-)  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
-# Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
-warnings.filterwarnings("ignore", message="Hybrid functionals only support")
+_ignore_pmg_warnings()
 
 # until updated from pymatgen==2022.7.25 :
 warnings.filterwarnings(
@@ -88,7 +80,9 @@ def _prepare_vasp_defect_inputs(defects: dict) -> dict:
                 dict_transf["substitution_specie"] = defect["substitution_specie"]
 
             frac_coords = defect["unique_site"].frac_coords
-            approx_coords = f"~[{frac_coords[0]:.4f},{frac_coords[1]:.4f},{frac_coords[2]:.4f}]"
+            approx_coords = (
+                f"~[{frac_coords[0]:.4f},{frac_coords[1]:.4f},{frac_coords[2]:.4f}]"
+            )
             # Note this gets truncated to 40 characters in the CONTCAR: (this should be less than
             # 40 chars in all cases):
             poscar_comment = f"{defect['name']} {approx_coords} {charge}"
@@ -127,7 +121,9 @@ def _prepare_vasp_files(
     transf_dict = single_defect_dict["Transformation Dict"]
 
     if subfolder is None:
-        vaspinputdir = output_dir  # output_dir here = {orig output_dir}/{defect_species}
+        vaspinputdir = (
+            output_dir  # output_dir here = {orig output_dir}/{defect_species}
+        )
     else:
         vaspinputdir = f"{output_dir}/{subfolder}"
 
@@ -218,7 +214,9 @@ def _prepare_vasp_files(
         user_kpoints_settings=user_kpoints_settings,  # accepts Kpoints obj, so we can set comment
         charge=transf_dict["charge"],
     )
-    defect_relax_set.output_dir = vaspinputdir  # assign attribute to later use in write_input()
+    defect_relax_set.output_dir = (
+        vaspinputdir  # assign attribute to later use in write_input()
+    )
 
     return defect_relax_set
 
@@ -307,8 +305,12 @@ def vasp_gam_files(
                 poscar.comment = poscar_comment
                 poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
 
-            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-                   f"{defect_relax_set.output_dir}/transformation.json")
+            dumpfn(
+                single_defect_dict[
+                    "Transformation Dict"
+                ],  # write transformation.json file
+                f"{defect_relax_set.output_dir}/transformation.json",
+            )
 
         defect_relax_set_dict[defect_species] = defect_relax_set
 
@@ -410,12 +412,20 @@ def vasp_std_files(
         if write_files:
             # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
             defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
-            defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
+            defect_relax_set.kpoints.write_file(
+                defect_relax_set.output_dir + "/KPOINTS"
+            )
             if user_potcar_functional is not None:  # for GH Actions testing
-                defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+                defect_relax_set.potcar.write_file(
+                    defect_relax_set.output_dir + "/POTCAR"
+                )
 
-            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-                   f"{defect_relax_set.output_dir}/transformation.json")
+            dumpfn(
+                single_defect_dict[
+                    "Transformation Dict"
+                ],  # write transformation.json file
+                f"{defect_relax_set.output_dir}/transformation.json",
+            )
 
         defect_relax_set_dict[defect_species] = defect_relax_set
 
@@ -523,12 +533,20 @@ def vasp_ncl_files(
         if write_files:  # write INCAR, KPOINTS and POTCAR files
             # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
             defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
-            defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
+            defect_relax_set.kpoints.write_file(
+                defect_relax_set.output_dir + "/KPOINTS"
+            )
             if user_potcar_functional is not None:  # for GH Actions testing
-                defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
+                defect_relax_set.potcar.write_file(
+                    defect_relax_set.output_dir + "/POTCAR"
+                )
 
-            dumpfn(single_defect_dict["Transformation Dict"],  # write transformation.json file
-                   f"{defect_relax_set.output_dir}/transformation.json")
+            dumpfn(
+                single_defect_dict[
+                    "Transformation Dict"
+                ],  # write transformation.json file
+                f"{defect_relax_set.output_dir}/transformation.json",
+            )
 
         defect_relax_set_dict[defect_species] = defect_relax_set
 
