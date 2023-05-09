@@ -68,7 +68,7 @@ def _monty_decode_nested_dicts(d):
 
 def get_correction_freysoldt(
     defect_entry,
-    epsilon,
+    dielectric,
     plot: bool = False,
     filename: str = None,
     partflag="All",
@@ -109,7 +109,7 @@ def get_correction_freysoldt(
                     'madetol' : madelung tolerance for Freysoldt correction
                     'q_model' : Charge Model for Freysoldt correction
                     'q_model' : Charge Model for Freysoldt correction
-        epsilon (float or int or 3x1 matrix or 3x3 matrix):
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
         plot (bool): decides whether to plot electrostatic potential plots or not.
         filename (str): if None, plots are not saved, if a string,
@@ -128,7 +128,7 @@ def get_correction_freysoldt(
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
 
-    epsilon = _convert_dielectric_to_tensor(epsilon)
+    dielectric = _convert_dielectric_to_tensor(dielectric)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
@@ -147,7 +147,7 @@ def get_correction_freysoldt(
 
     template_defect = copy.deepcopy(defect_entry)
     corr_class = FreysoldtCorrection(
-        epsilon, q_model=q_model, energy_cutoff=encut, madetol=madetol, axis=axis
+        dielectric, q_model=q_model, energy_cutoff=encut, madetol=madetol, axis=axis
     )
     f_corr_summ = corr_class.get_correction(template_defect)
 
@@ -185,7 +185,7 @@ def get_correction_freysoldt(
 
 
 def get_correction_kumagai(
-    defect_entry, epsilon, plot: bool = False, filename: str = None, partflag="All"
+    defect_entry, dielectric, plot: bool = False, filename: str = None, partflag="All"
 ):
     """
     Function to compute the Kumagai correction for each defect (modified freysoldt for
@@ -218,7 +218,7 @@ def get_correction_kumagai(
                     sampling_radius (float): radius (in Angstrom) which sites must be outside of
                         to be included in the correction. Publication by Kumagai advises to use
                         Wigner-Seitz radius of defect supercell, so this is default value.
-        epsilon (float or int or 3x1 matrix or 3x3 matrix):
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
         plot (bool): decides whether to plot electrostatic potential plots or not.
         filename (str): if None, plots are not saved, if a string, then the plot will be saved as
@@ -232,7 +232,7 @@ def get_correction_kumagai(
     # ensure parameters are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.parameters)
 
-    epsilon = _convert_dielectric_to_tensor(epsilon)
+    dielectric = _convert_dielectric_to_tensor(dielectric)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
         print(
@@ -250,7 +250,7 @@ def get_correction_kumagai(
 
     template_defect = copy.deepcopy(defect_entry)
     corr_class = KumagaiCorrection(
-        epsilon, sampling_radius=sampling_radius, gamma=gamma
+        dielectric, sampling_radius=sampling_radius, gamma=gamma
     )
     k_corr_summ = corr_class.get_correction(template_defect)
 
