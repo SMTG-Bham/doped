@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.7"
+requires-python = ">=3.7, <3.11"  # current pymatgen version <2022.8.23 incompatible with python 3.11
 dependencies = [
     "ase",
     "tabulate",
