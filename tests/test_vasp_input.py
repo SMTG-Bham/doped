@@ -139,12 +139,11 @@ class VaspInputTestCase(unittest.TestCase):
         vasp_input.vasp_gam_files(
             self.cdte_generated_defect_dict,
             user_potcar_functional=None,
-            write_files=False
+            write_files=False,
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
                 self.assertFalse(os.path.exists(f"./{folder}"))
-
 
     def test_vasp_gam_files_single_defect_dict(self):
         single_defect_dict = self.cdte_generated_defect_dict["vacancies"][0]  # V_Cd
@@ -182,9 +181,7 @@ class VaspInputTestCase(unittest.TestCase):
         # test no files written with write_files=False
         self.tearDown()
         vasp_input.vasp_gam_files(
-            vac_Te_dict,
-            user_potcar_functional=None,
-            write_files=False
+            vac_Te_dict, user_potcar_functional=None, write_files=False
         )
         self.assertFalse(os.path.exists(f"vac_2_Te_0"))
 
@@ -221,7 +218,7 @@ class VaspInputTestCase(unittest.TestCase):
         vasp_input.vasp_std_files(
             self.cdte_generated_defect_dict,
             user_potcar_functional=None,
-            write_files=False
+            write_files=False,
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
@@ -278,9 +275,7 @@ class VaspInputTestCase(unittest.TestCase):
         # test no files written with write_files=False
         self.tearDown()
         vasp_input.vasp_gam_files(
-            single_defect_dict,
-            user_potcar_functional=None,
-            write_files=False
+            single_defect_dict, user_potcar_functional=None, write_files=False
         )
         self.assertFalse(os.path.exists(f"inter_1_Cd_0"))
         self.assertFalse(os.path.exists(f"inter_1_Cd_1"))
@@ -309,7 +304,7 @@ class VaspInputTestCase(unittest.TestCase):
         vasp_input.vasp_ncl_files(
             self.cdte_generated_defect_dict,
             user_potcar_functional=None,
-            write_files=False
+            write_files=False,
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
@@ -356,9 +351,7 @@ class VaspInputTestCase(unittest.TestCase):
         # test no files written with write_files=False
         self.tearDown()
         vasp_input.vasp_ncl_files(
-            single_defect_dict,
-            user_potcar_functional=None,
-            write_files=False
+            single_defect_dict, user_potcar_functional=None, write_files=False
         )
         for charge in range(-1, 6):
             self.assertFalse(os.path.exists(f"sub_2_Se_on_Te_{charge}"))

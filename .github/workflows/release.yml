@@ -28,11 +28,7 @@ jobs:
 
       - name: Test
         run:  |
-          for test in tests/test_*py
-            do if [[ "$test" != *"test_local"* ]]
-              then pytest $test
-            fi
-          done  # Ignore local tests file
+          pytest --ignore local_doped_testing  # test everything
 
       - name: Build packages
         run: |
