@@ -400,12 +400,15 @@ def defect_entry_from_paths(
         defect, defect_energy - bulk_energy, corrections={}, parameters=parameters
     )
 
+    return_sdp = kwargs.pop("return SingleDefectParser", False)  # internal use for tests/debugging
     sdp = parse_calculations.SingleDefectParser(
         defect_entry,
         defect_vr=defect_vr,
         bulk_vr=bulk_vr,
         **kwargs,  # in case user wants to specify `DefectCompatibility()`
     )
+    if return_sdp:
+        return sdp
 
     sdp.get_stdrd_metadata()  # Load standard defect metadata
     sdp.get_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
