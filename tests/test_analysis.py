@@ -87,85 +87,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
-    def test_auto_charge_determination(self):
-        """
-        Test that the defect charge is correctly auto-determined
-        """
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
-
-        parsed_v_cd_m2 = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=self.CDTE_BULK_DATA_DIR,
-            dielectric=self.cdte_dielectric,
-        )
-
-        parsed_v_cd_m2_explicit_charge = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=self.CDTE_BULK_DATA_DIR,
-            dielectric=self.cdte_dielectric,
-            charge=-2,
-        )
-        self.assertEqual(parsed_v_cd_m2.energy, parsed_v_cd_m2_explicit_charge.energy)
-        self.assertEqual(parsed_v_cd_m2.charge, -2)
-        self.assertEqual(parsed_v_cd_m2_explicit_charge.charge, -2)
-
-        # Check that the correct Freysoldt correction is applied
-        correct_correction_dict = {
-            "charge_correction": 0.7376460317828045,
-            "bandfilling_correction": -0.0,
-            "bandedgeshifting_correction": 0.0,
-        }
-        for correction_name, correction_energy in correct_correction_dict.items():
-            for defect_entry in [parsed_v_cd_m2, parsed_v_cd_m2_explicit_charge]:
-                self.assertAlmostEqual(
-                    defect_entry.corrections[correction_name],
-                    correction_energy,
-                    places=3,
-                )
-
-        # test warning when specifying the wrong charge:
-        with warnings.catch_warnings(record=True) as w:
-            parsed_v_cd_m1 = defect_entry_from_paths(
-                defect_path=defect_path,
-                bulk_path=self.CDTE_BULK_DATA_DIR,
-                dielectric=self.cdte_dielectric,
-                charge=-1,
-            )
-            self.assertEqual(len(w), 1)
-            self.assertTrue(issubclass(w[-1].category, UserWarning))
-            self.assertIn(
-                f"Auto-determined defect charge q=-2 does not match specified charge q=-1. Will "
-                f"continue with specified charge, but beware!",
-                str(w[-1].message),
-            )
-            self.assertAlmostEqual(
-                parsed_v_cd_m1.corrections["charge_correction"], 0.26066457692529815
-            )
-
-        # test YTOS, has trickier POTCAR symbols with  Y_sv, Ti, S, O
-        ytos_F_O_1 = defect_entry_from_paths(
-            f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
-            f"{self.YTOS_EXAMPLE_DIR}/Bulk",
-            self.ytos_dielectric,
-        )
-        self.assertEqual(ytos_F_O_1.charge, 1)
-        self.assertAlmostEqual(ytos_F_O_1.energy, -0.0031, places=3)
-        self.assertAlmostEqual(ytos_F_O_1.uncorrected_energy, -0.0852, places=3)
-        correction_dict = {
-            "charge_correction": 0.08214,
-            "bandfilling_correction": -0.0,
-            "bandedgeshifting_correction": 0.0,
-        }
-        for correction_name, correction_energy in correction_dict.items():
-            self.assertAlmostEqual(
-                ytos_F_O_1.corrections[correction_name], correction_energy, places=3
-            )
-        # assert auto-determined interstitial site is correct
-        self.assertAlmostEqual(
-            ytos_F_O_1.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
-            0.0,
-            places=2,
-        )
+    # test_auto_charge_determination -> done locally (and indirectly with example notebook) due
+    # to non-availability of `POTCAR`s on GH Actions
 
     def test_auto_charge_correction_behaviour(self):
         """Test skipping of charge corrections and warnings"""
@@ -177,6 +100,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
+                charge=-2,
             )
             self.assertEqual(len(w), 1)
             self.assertTrue(issubclass(w[-1].category, UserWarning))
@@ -207,6 +131,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 skip_corrections=True,
+                charge=-2,
             )
             self.assertEqual(len(w), 0)
 
@@ -222,6 +147,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
+                charge=2,
             )
             self.assertEqual(
                 len(w), 3
@@ -253,6 +179,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=2,
             )
         self.assertEqual(
             len(w), 1
@@ -272,6 +199,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
+                charge=2,
             )
             self.assertEqual(len(w), 1)
             self.assertTrue(
@@ -309,6 +237,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
+                charge=2,
             )
             self.assertEqual(
                 len(w), 2
@@ -360,6 +289,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=-2,
             )
             self.assertEqual(len(w), 1)
             self.assertTrue(
@@ -388,6 +318,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=0,
             )
             self.assertEqual(len(w), 0)
 
@@ -405,6 +336,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
+                charge=2,
             )
             self.assertEqual(
                 3, len(w)
@@ -442,6 +374,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=-2,
             )
             self.assertEqual(len(w), 2)  # multiple LOCPOTs (both defect and bulk)
             self.assertTrue(
@@ -476,6 +409,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=-2,
             )
             self.assertEqual(
                 len(w), 2
@@ -506,6 +440,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
+                charge=-2,
             )
         )
 
@@ -527,6 +462,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=9.13,
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -540,6 +476,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=9,
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -554,6 +491,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=np.array([9.13, 9.13, 9.13]),
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -567,6 +505,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=[9.13, 9.13, 9.13],
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -580,6 +519,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric,
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -593,6 +533,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric.tolist(),
+            charge=-2,
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             self.assertAlmostEqual(
@@ -608,11 +549,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         for i in os.listdir(self.CDTE_EXAMPLE_DIR):
             if "vac_1_Cd" in i:  # loop folders and parse those with "vac_1_Cd" in name
                 defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                # parse with no transformation.json, or explicitly-set charge
+                defect_charge = int(i[-2:].replace("_", ""))
+                # parse with no transformation.json
                 parsed_vac_Cd_dict[i] = defect_entry_from_paths(
                     defect_path=defect_path,
                     bulk_path=self.CDTE_BULK_DATA_DIR,
                     dielectric=self.cdte_dielectric,
+                    charge=defect_charge,
                 )  # Keep dictionary of parsed defect entries
 
         self.assertTrue(len(parsed_vac_Cd_dict) == 3)
@@ -668,11 +611,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
                     defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    # parse with no transformation.json or explicitly-set charge:
+                    defect_charge = int(i[-2:].replace("_", ""))
+                    # parse with no transformation.json:
                     te_i_2_ent = defect_entry_from_paths(
                         defect_path=defect_path,
                         bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
+                        charge=defect_charge,
                     )  # Keep dictionary of parsed defect entries
 
         mock_print.assert_called_once_with(
@@ -703,11 +648,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
                     defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    # parse with no transformation.json or explicitly-set charge:
+                    defect_charge = int(i[-2:].replace("_", ""))
+                    # parse with no transformation.json:
                     te_i_2_ent = defect_entry_from_paths(
                         defect_path=defect_path,
                         bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
+                        charge=defect_charge,
                     )
 
         mock_print.assert_not_called()
@@ -718,11 +665,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         for i in os.listdir(self.CDTE_EXAMPLE_DIR):
             if "as_1_Te" in i:  # loop folders and parse those with "as_1_Te" in name
                 defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                # parse with no transformation.json or explicitly-set charge:
+                defect_charge = int(i[-2:].replace("_", ""))
+                # parse with no transformation.json:
                 te_cd_1_ent = defect_entry_from_paths(
                     defect_path=defect_path,
                     bulk_path=self.CDTE_BULK_DATA_DIR,
                     dielectric=self.cdte_dielectric,
+                    charge=defect_charge,
                 )
 
         self.assertAlmostEqual(te_cd_1_ent.energy, -2.665996, places=3)
@@ -817,6 +766,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
+            charge=-1,
         )
 
         self.assertAlmostEqual(int_F_minus1_ent.energy, 0.767, places=3)
@@ -859,6 +809,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
+            charge=1,
         )
         # move OUTCAR file back to original:
         shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
@@ -890,6 +841,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
+            charge=1,
         )
 
         self.assertAlmostEqual(F_O_1_ent.energy, -0.0031, places=3)
@@ -925,6 +877,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                         defect_path=defect_path,
                         bulk_path=self.CDTE_BULK_DATA_DIR,
                         dielectric=self.cdte_dielectric,
+                        charge=2,
                     )
 
         mock_print.assert_called_once_with(
@@ -939,6 +892,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
+                charge=-1,
             )
 
         warning_message = (
