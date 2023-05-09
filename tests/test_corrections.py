@@ -1,20 +1,67 @@
-# coding: utf-8
-
-from __future__ import division
-
-__status__ = "Development"
-
-import unittest
-
+import os
+import tarfile
+from shutil import copyfile
 import numpy as np
+
+from monty.tempfile import ScratchDir
+from pymatgen.io.vasp import Locpot
+from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 from pymatgen.core.sites import PeriodicSite
-from pymatgen.util.testing import PymatgenTest
 
-from doped.pycdt.corrections.finite_size_charge_correction import (
+from doped.corrections import (
+    freysoldt_correction_from_paths,
+    kumagai_correction_from_paths,
     get_correction_freysoldt,
     get_correction_kumagai,
 )
+
+test_files_dir = os.path.join(os.path.dirname(__file__), "../doped/pycdt/test_files")
+
+
+class FilePathCorrectionsTest(PymatgenTest):
+    def test_freysoldt_and_kumagai(self):
+        # create scratch directory with files....
+        # having to do it all at once to minimize amount of time copying over to Scratch Directory
+        with ScratchDir("."):
+            # setup with fake Locpot object copied over
+            copyfile(
+                os.path.join(test_files_dir, "test_path_files.tar.gz"),
+                "./test_path_files.tar.gz",
+            )
+            tar = tarfile.open("test_path_files.tar.gz")
+            tar.extractall()
+            tar.close()
+            blocpot = Locpot.from_file(os.path.join(test_files_dir, "bLOCPOT.gz"))
+            blocpot.write_file("test_path_files/bulk/LOCPOT")
+            dlocpot = Locpot.from_file(os.path.join(test_files_dir, "dLOCPOT.gz"))
+            dlocpot.write_file("test_path_files/sub_1_Sb_on_Ga/charge_2/LOCPOT")
+
+            fcc = freysoldt_correction_from_paths(
+                "test_path_files/sub_1_Sb_on_Ga/charge_2/",
+                "test_path_files/bulk/",
+                18.12,
+                2,
+                plot=True,
+                filename="test_freysoldt_correction",
+            )
+            self.assertAlmostEqual(
+                fcc, -1.4954476868106865
+            )  # note this has been updated from the
+            # pycdt version, because there they used a `transformation.json` that gave an
+            # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
+            self.assertTrue(os.path.exists("test_freysoldt_correction_axis1.pdf"))
+
+            kcc = kumagai_correction_from_paths(
+                "test_path_files/sub_1_Sb_on_Ga/charge_2/",
+                "test_path_files/bulk/",
+                18.12,
+                2,
+                plot=True,
+                filename="test_kumagai_correction",
+            )
+            self.assertAlmostEqual(kcc, 0.638776853061614)
+            self.assertTrue(os.path.exists("test_kumagai_correction.pdf"))
 
 
 class FiniteSizeChargeCorrectionTest(PymatgenTest):
@@ -23,7 +70,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
     """
 
     def setUp(self):
-        self.epsilon = 15.0
+        self.dielectric = 15.0
 
         struc = PymatgenTest.get_structure("VO2")
         struc.make_supercell(3)
@@ -110,25 +157,21 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
     def test_get_correction_freysoldt(self):
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, title=None, partflag="All", axis=None
+            self.defect_entry, self.dielectric, partflag="All", axis=None
         )
         self.assertEqual(freyout, 5.445950368792991)
 
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, title=None, partflag="AllSplit", axis=None
+            self.defect_entry, self.dielectric, partflag="AllSplit", axis=None
         )
-        self.assertEqual(freyout[0], 0.975893)
-        self.assertEqual(freyout[1], 4.4700573687929905)
-        self.assertEqual(freyout[2], 5.445950368792991)
+        self.assertAlmostEqual(freyout[0], 0.975893)
+        self.assertAlmostEqual(freyout[1], 4.4700573687929905)
+        self.assertAlmostEqual(freyout[2], 5.445950368792991)
 
     def test_get_correction_kumagai(self):
         kumagaiout = get_correction_kumagai(
-            self.defect_entry, self.epsilon, title=None, partflag="AllSplit"
+            self.defect_entry, self.dielectric, partflag="AllSplit"
         )
-        self.assertEqual(kumagaiout[0], 0.9763991294314076)
-        self.assertEqual(kumagaiout[1], 0.2579750033409367)
-        self.assertEqual(kumagaiout[2], 1.2343741327723443)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
+        self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
+        self.assertAlmostEqual(kumagaiout[2], 1.2343741327723443)

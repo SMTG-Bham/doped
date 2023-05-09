@@ -14,7 +14,7 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 
-from doped.pycdt.utils.parse_calculations import get_vasprun
+from doped.pycdt.utils.parse_calculations import _get_output_files_and_check_if_multiple
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
@@ -35,7 +35,8 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
 #  sufficiently informative, add try except catch to give more informative error message for this.
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
-# TODO: Add chemical potential diagram plotting functionality that we had before with `plot_cplap_ternary`.
+# TODO: Add chemical potential diagram plotting functionality that we had before
+#  with `plot_cplap_ternary`.
 
 
 def make_molecule_in_a_box(element):
@@ -625,6 +626,7 @@ class CompetingPhases:
                 uis = {}
 
             uis["ISIF"] = 2  # can't change the volume
+            uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
                 if "ISPIN" not in uis:
@@ -1054,11 +1056,13 @@ class CompetingPhasesAnalyzer:
         Reads in vaspruns, collates energies to csv.
 
         Args:
-            path (list, str, pathlib Path): Either a list of strings or Paths to vasprun.xml(.gz)
-            files, or a path to the base folder in which you have your
-            formula_EaH_/vasp_std/vasprun.xml
-            folder (str): The folder in which vasprun is, only use if you set base path
-            (i.e. change to vasp_ncl or if vaspruns are in the formula_EaH folder).
+            path (list, str, pathlib Path): Either a path to the base folder in which you have your
+                competing phase calculation outputs (e.g. formula_EaH_X/vasp_std/vasprun.xml(
+                .gz), or formula_EaH_X/vasprun.xml(.gz)), or a list of strings or Paths to
+                vasprun.xml(.gz) files.
+            folder (str): The subfolder in which your vasprun.xml output files are located (e.g.
+                a file-structure like: formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
+                search for `vasp_std` subfolders, or directly in the `formula_EaH_X` folder.
             csv_fname (str): If set will save to csv with this name
         Returns:
             None, sets self.data and self.elemental_energies
@@ -1089,20 +1093,35 @@ class CompetingPhasesAnalyzer:
             path = Path(path)
             for p in path.iterdir():
                 if p.glob("EaH"):
-                    vp = p / folder / "vasprun.xml"
-                    try:
-                        vr, vr_path = get_vasprun(vp)
+                    # add bulk simple properties
+                    vr_path, multiple = _get_output_files_and_check_if_multiple(
+                        "vasprun.xml", p / folder
+                    )
+                    if multiple:
+                        warnings.warn(
+                            f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                            f"{vr_path} to parse the calculation energy and metadata."
+                        )
+
+                    if os.path.exists(vr_path):
                         self.vasprun_paths.append(vr_path)
 
-                    except FileNotFoundError:
-                        try:
-                            vp = p / "vasprun.xml"
-                            vr, vr_path = get_vasprun(vp)
+                    else:
+                        vr_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", p
+                        )
+                        if multiple:
+                            warnings.warn(
+                                f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                                f"{vr_path} to parse the calculation energy and metadata."
+                            )
+
+                        if os.path.exists(vr_path):
                             self.vasprun_paths.append(vr_path)
 
-                        except FileNotFoundError:
-                            print(
-                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
+                        else:
+                            warnings.warn(
+                                f"Can't find a vasprun.xml file in {p} or {p/folder}, "
                                 f"proceed with caution"
                             )
                             continue
@@ -1110,7 +1129,8 @@ class CompetingPhasesAnalyzer:
                 else:
                     raise FileNotFoundError(
                         "Folders are not in the correct structure, provide them as a list of "
-                        "paths (or strings)"
+                        "paths (or strings). Competing phase folders should have `EaH` in the "
+                        "folder name."
                     )
 
         else:
@@ -1228,7 +1248,7 @@ class CompetingPhasesAnalyzer:
         bulk_pde_list = []
         for d in self.data:
             e = PDEntry(d["formula"], d["energy_per_fu"])
-            # presumably checks if the phase is intrinsic
+            # checks if the phase is intrinsic
             if set(Composition(d["formula"]).elements).issubset(
                 self.bulk_composition.elements
             ):
@@ -1241,11 +1261,17 @@ class CompetingPhasesAnalyzer:
                 )
 
         if len(bulk_pde_list) == 0:
+            if len(intrinsic_phase_diagram_entries) == 0:
+                intrinsic_phase_diagram_compositions = None
+            else:
+                intrinsic_phase_diagram_compositions = {
+                    e.composition.reduced_formula
+                    for e in intrinsic_phase_diagram_entries
+                }
             raise ValueError(
                 f"Could not find bulk phase for "
                 f"{self.bulk_composition.reduced_formula} in the supplied data. "
-                f"Found phases: "
-                f"{ {e.composition.reduced_formula for e in intrinsic_phase_diagram_entries} }"
+                f"Found phases: {intrinsic_phase_diagram_entries}"
             )
         if len(bulk_pde_list) > 0:
             # lowest energy bulk phase
@@ -1320,6 +1346,7 @@ class CompetingPhasesAnalyzer:
             mins = []
             mins_formulas = []
             df3 = pd.DataFrame(extrinsic_formation_energies)
+            print(f"df3: {df3}")
             for i, c in enumerate(cpd):
                 name = f"mu_{self.extrinsic_species}_{i}"
                 df3[name] = df3["formation_energy"]
@@ -1355,6 +1382,7 @@ class CompetingPhasesAnalyzer:
                 "facets_wrt_el_refs": {},
                 "facets": {},
             }
+            print(f"df4: {df4}")
 
             for i, d in enumerate(df4):
                 key = (
@@ -1362,11 +1390,14 @@ class CompetingPhasesAnalyzer:
                     + "-"
                     + d[col_name]
                 )
+                print(f"key: {key}")  # TODO: Remove any unnecessary print statements when this
+                # has been fixed
                 new_vals = list(
                     self._intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
+            print(f"cl2: {cl2}")
 
             # relate the facets to the elemental
             # energies but in reverse this time

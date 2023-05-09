@@ -10,7 +10,7 @@ with publication-quality outputs
 
 import warnings
 
-from matplotlib import cm, ticker, rc
+from matplotlib import cm, ticker, rc, colormaps
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.util.string import latexify
@@ -29,11 +29,11 @@ default_fonts = [
 # TODO: Lean out the options for this function (inherited from AIDE)(particularly those that can
 #  just be edited by the user with the returned Matplotlib object – show example of this in
 #  notebooks maybe?)
+# TOOD: Add option to only plot defect states that are stable at some point in the bandgap
 def formation_energy_plot(
     defect_phase_diagram,
     chempot_limits: dict = None,
     elt_refs: dict = None,
-    ax=None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -118,7 +118,6 @@ def formation_energy_plot(
                 defect_phase_diagram,
                 mu_elts=mu_elts,
                 elt_refs=elt_refs,
-                ax=ax,
                 fonts=fonts,
                 xlim=xlim,
                 ylim=ylim,
@@ -143,7 +142,6 @@ def formation_energy_plot(
         defect_phase_diagram,
         mu_elts=chempot_limits,
         elt_refs=elt_refs,
-        ax=ax,
         fonts=fonts,
         xlim=xlim,
         ylim=ylim,
@@ -166,7 +164,6 @@ def _aide_pmg_plot(
     defect_phase_diagram,
     mu_elts=None,
     elt_refs=None,
-    ax=None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -299,7 +296,7 @@ def _aide_pmg_plot(
                     )
                 )
 
-    cmap = cm.get_cmap(colormap)
+    cmap = colormaps[colormap]
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
         warnings.warn(
@@ -312,7 +309,7 @@ some defects will have the same line colour). Recommended to change/set colormap
     # inches, the standard single column width for publication (which is what we're about)
     plt.clf()
     width = 9
-    ax = pretty_axis(ax=ax, fonts=fonts)
+    ax = pretty_axis(fonts=fonts)
     # plot formation energy lines
     for_legend = []
     for cnt, defnom in enumerate(xy.keys()):
@@ -620,7 +617,6 @@ def all_lines_formation_energy_plot(
     defect_phase_diagram,
     chempot_limits=None,
     elt_refs: dict = None,
-    ax=None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -705,7 +701,6 @@ def all_lines_formation_energy_plot(
                 defect_phase_diagram,
                 mu_elts=mu_elts,
                 elt_refs=elt_refs,
-                ax=ax,
                 fonts=fonts,
                 xlim=xlim,
                 ylim=ylim,
@@ -726,7 +721,6 @@ def all_lines_formation_energy_plot(
             defect_phase_diagram,
             mu_elts=chempot_limits,
             elt_refs=elt_refs,
-            ax=ax,
             fonts=fonts,
             xlim=xlim,
             ylim=ylim,
@@ -748,7 +742,6 @@ def _all_lines_aide_pmg_plot(
     defect_phase_diagram,
     mu_elts=None,
     elt_refs=None,
-    ax=None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -848,7 +841,7 @@ def _all_lines_aide_pmg_plot(
                 )
             )
 
-    cmap = cm.get_cmap(colormap)
+    cmap = colormaps[colormap]
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
         warnings.warn(
@@ -861,7 +854,7 @@ some defects will have the same line colour). Recommended to change/set colormap
     # inches, the standard single column width for publication (which is what we're about)
     plt.clf()
     width = 9
-    ax = pretty_axis(ax=ax, fonts=fonts)
+    ax = pretty_axis(fonts=fonts)
     # plot formation energy lines
 
     for cnt, def_name in enumerate(xy.keys()):
