@@ -14,7 +14,7 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 
-from doped.pycdt.utils.parse_calculations import get_vasprun
+from doped.pycdt.utils.parse_calculations import _get_output_files_and_check_if_multiple
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
@@ -1057,7 +1057,7 @@ class CompetingPhasesAnalyzer:
 
         Args:
             path (list, str, pathlib Path): Either a path to the base folder in which you have your
-                formula_EaH_/vasp_std/vasprun.xml(.gz) files, or a list of strings or Paths to
+                formula_EaH_X/vasp_std/vasprun.xml(.gz) files, or a list of strings or Paths to
                 vasprun.xml(.gz) files.
             folder (str): The folder in which vasprun is, only use if you set base path (i.e.
                 change to vasp_ncl or if vaspruns are in the formula_EaH folder).
@@ -1091,20 +1091,35 @@ class CompetingPhasesAnalyzer:
             path = Path(path)
             for p in path.iterdir():
                 if p.glob("EaH"):
-                    vp = p / folder / "vasprun.xml"
-                    try:
-                        vr, vr_path = get_vasprun(vp)
+                    # add bulk simple properties
+                    vr_path, multiple = _get_output_files_and_check_if_multiple(
+                        "vasprun.xml", p / folder
+                    )
+                    if multiple:
+                        warnings.warn(
+                            f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                            f"{vr_path} to parse the calculation energy and metadata."
+                        )
+
+                    if os.path.exists(vr_path):
                         self.vasprun_paths.append(vr_path)
 
-                    except FileNotFoundError:
-                        try:
-                            vp = p / "vasprun.xml"
-                            vr, vr_path = get_vasprun(vp)
+                    else:
+                        vr_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", p
+                        )
+                        if multiple:
+                            warnings.warn(
+                                f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                                f"{vr_path} to parse the calculation energy and metadata."
+                            )
+
+                        if os.path.exists(vr_path):
                             self.vasprun_paths.append(vr_path)
 
-                        except FileNotFoundError:
-                            print(
-                                f"Can't find a vasprun.xml(.gz) file in {p} or {p/folder}, "
+                        else:
+                            warnings.warn(
+                                f"Can't find a vasprun.xml file in {p} or {p/folder}, "
                                 f"proceed with caution"
                             )
                             continue
@@ -1112,7 +1127,8 @@ class CompetingPhasesAnalyzer:
                 else:
                     raise FileNotFoundError(
                         "Folders are not in the correct structure, provide them as a list of "
-                        "paths (or strings)"
+                        "paths (or strings). Competing phase folders should have `EaH` in the "
+                        "folder name."
                     )
 
         else:
