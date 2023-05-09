@@ -28,10 +28,8 @@ import numpy as np
 from monty.json import MontyDecoder
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
-from doped.pycdt.utils.parse_calculations import (
-    _convert_dielectric_to_tensor,
-    SingleDefectParser,
-)
+from doped.pycdt.utils.parse_calculations import SingleDefectParser
+from doped.analysis import _convert_dielectric_to_tensor
 
 warnings.simplefilter("default")
 warnings.filterwarnings(
@@ -296,7 +294,7 @@ def freysoldt_correction_from_paths(
     :param bulk_file_path (str): file path to bulk folder of interest
     :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
-    :param defect_charge (int): charge of defect structure of interest
+    :param charge (int): charge of defect structure of interest
     :param plot (bool): decides whether to plot electrostatic potential plots or not.
     :param filename (str): if None, plots are not saved, if a string,
             then the plot will be saved as '{filename}_{axis}.pdf'
@@ -334,7 +332,7 @@ def kumagai_correction_from_paths(
     :param bulk_file_path (str): file path to bulk folder of interest
     :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
             ionic + static contributions to dielectric constant
-    :param defect_charge (int): charge of defect structure of interest
+    :param charge (int): charge of defect structure of interest
     :param plot (bool): decides whether to plot electrostatic potential plots or not.
     :param filename (str): if None, plots are not saved, if a string, then the plot will be saved as
         '{filename}.pdf'
