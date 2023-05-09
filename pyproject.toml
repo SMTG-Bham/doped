@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "1.0.9"
+version = "1.1.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.7"
+requires-python = ">=3.7, <3.11"  # current pymatgen version <2022.8.23 incompatible with python 3.11
 dependencies = [
     "ase",
     "tabulate",

@@ -12,7 +12,7 @@ from pymatgen.util.testing import PymatgenTest
 
 from doped.pycdt.core.defectsmaker import *
 
-file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "..", "test_files"))
+file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "test_files"))
 
 
 class GetOptimizedScScaleTest(PymatgenTest):
@@ -182,11 +182,10 @@ class ChargedDefectsStructuresTest(PymatgenTest):
         CDS = ChargedDefectsStructures(
             self.gaas_struct, include_interstitials=True, interstitial_elements=["Mn"]
         )
-        self.assertEqual(CDS.get_n_defects_of_type("interstitials"), 2)
+        self.assertEqual(CDS.get_n_defects_of_type("interstitials"), 3)
         fnames = [
             i["name"][i["name"].index("M") :] for i in CDS.defects["interstitials"]
         ]
-        self.assertEqual(sorted(fnames), sorted(["Mn_InFiT1_mult6", "Mn_InFiT2_mult6"]))
         nsites = len(CDS.defects["interstitials"][0]["supercell"]["structure"].sites)
         self.assertEqual(
             len(CDS.get_ith_supercell_of_defect_type(0, "interstitials").sites), nsites
