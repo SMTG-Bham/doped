@@ -454,7 +454,7 @@ def defect_entry_from_paths(
                                 f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
                                 f"correction) in the defect (at {defect_path}) & bulk (at "
                                 f"{bulk_path}) folders were unable to be parsed, giving the "
-                                f"following error message: {kumagai_exc}. "
+                                f"following error message:\n{kumagai_exc}.\n"
                                 f"`LOCPOT` files were found in both defect & bulk folders, "
                                 f"and so the Freysoldt (FNV) charge correction developed for "
                                 f"_isotropic_ materials will be applied here, which corresponds "
@@ -465,16 +465,26 @@ def defect_entry_from_paths(
                     except Exception as freysoldt_exc:
                         warnings.warn(
                             f"Got this error message when attempting to parse defect & bulk "
-                            f"`OUTCAR` files to compute the Kumagai (eFNV) charge correction: "
-                            f"{kumagai_exc}. Then got this error message when attempting to "
+                            f"`OUTCAR` files to compute the Kumagai (eFNV) charge correction:"
+                            f"\n{kumagai_exc}.\nThen got this error message when attempting to "
                             f"parse defect & bulk `LOCPOT` files to compute the Freysoldt (FNV) "
-                            f"charge correction: {freysoldt_exc}. Charge corrections will not be "
-                            f"applied for this defect!"
+                            f"charge correction:\n{freysoldt_exc}.\n-> Charge corrections will not "
+                            f"be applied for this defect."
                         )
                         if not isotropic_dielectric:
                             # reset dielectric to original anisotropic value if FNV failed as well:
                             sdp.defect_entry.parameters["dielectric"] = dielectric
                         skip_corrections = True
+
+                else:
+                    warnings.warn(
+                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` "
+                        f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
+                        f"correction) in the defect (at {defect_path}) & bulk (at "
+                        f"{bulk_path}) folders were unable to be parsed, giving the "
+                        f"following error message:\n{kumagai_exc}\n-> Charge corrections will not "
+                        f"be applied for this defect.")
+                    skip_corrections = True
 
         elif _check_folder_for_file_match(
             defect_path, "LOCPOT"
@@ -495,7 +505,7 @@ def defect_entry_from_paths(
                         f"An anisotropic dielectric constant was supplied, but `OUTCAR` "
                         f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
                         f"correction) were not found in the defect (at {defect_path}) & bulk "
-                        f"(at {bulk_path}) folders. "
+                        f"(at {bulk_path}) folders.\n"
                         f"`LOCPOT` files were found in both defect & bulk folders, "
                         f"and so the Freysoldt (FNV) charge correction developed for "
                         f"_isotropic_ materials will be applied here, which corresponds "
@@ -507,7 +517,8 @@ def defect_entry_from_paths(
                 warnings.warn(
                     f"Got this error message when attempting to parse defect & bulk "
                     f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
-                    f" {freysoldt_exc}. Charge corrections will not be applied for this defect!"
+                    f"\n{freysoldt_exc}.\n-> Charge corrections will not be applied for this "
+                    f"defect."
                 )
                 if not isotropic_dielectric:
                     # reset dielectric to original anisotropic value if FNV failed as well:
