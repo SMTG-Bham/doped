@@ -26,9 +26,9 @@ As such, it is recommended to install `doped` in a virtual python environment as
 
 1. 
 ```bash
-conda create -n doped  # create conda environment named doped
+conda create -n doped python=3.10  # create conda environment named doped
 conda activate doped  # activate doped conda environment
-pip install doped  # install doped package and dependencies
+pip install doped  # install doped and dependencies, can also  
 pip install numpy --upgrade # upgrade numpy to avoid binary incompatibility
 ```
 And then use this environment whenever using `doped`.
