@@ -41,7 +41,7 @@ def _check_pmg_compatibility():
 _check_pmg_compatibility()
 
 
-def _ignore_pmg_potcar_warnings():
+def _ignore_pmg_warnings():
     # globally ignore these POTCAR warnings
     warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
     warnings.filterwarnings("ignore", category=BadInputSetWarning)
@@ -55,14 +55,13 @@ def _ignore_pmg_potcar_warnings():
     # Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
     warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
+    # until updated from pymatgen==2022.7.25 :
+    warnings.filterwarnings(
+        "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
+    )
+    warnings.filterwarnings(
+        "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
+    )
+    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
-_ignore_pmg_potcar_warnings()
-
-# until updated from pymatgen==2022.7.25 :
-warnings.filterwarnings(
-    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
-)
-warnings.filterwarnings(
-    "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
-)
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+_ignore_pmg_warnings()
