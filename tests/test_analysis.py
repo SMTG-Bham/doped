@@ -72,12 +72,18 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/another_LOCPOT.gz")
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_LOCPOT.gz")
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_OUTCAR.gz")
-        if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/another_vasprun.xml.gz")
+        if_present_rm(
+            f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/another_vasprun.xml.gz"
+        )
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_vasprun.xml.gz")
 
-        if os.path.exists(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz"):
-            shutil.move(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz",
-                        f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz")
+        if os.path.exists(
+            f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz"
+        ):
+            shutil.move(
+                f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz",
+                f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz",
+            )
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -190,7 +196,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         self.assertAlmostEqual(
             parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, places=3
         )
-        self.assertAlmostEqual(parsed_v_cd_m2_fake_aniso.energy, 10.379714081555262, places=3)
+        self.assertAlmostEqual(
+            parsed_v_cd_m2_fake_aniso.energy, 10.379714081555262, places=3
+        )
 
         # test no warnings when skip_corrections is True
         with warnings.catch_warnings(record=True) as w:
@@ -291,8 +299,10 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # test warning when no core level info in OUTCAR (ICORELEVEL != 0), but LOCPOT
         # files present, but anisotropic dielectric:
-        shutil.copyfile(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz",
-                        f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
+        shutil.copyfile(
+            f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz",
+            f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz",
+        )
 
         with warnings.catch_warnings(record=True) as w:
             parsed_int_Te_2_fake_aniso = defect_entry_from_paths(
@@ -300,14 +310,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
             )
-            self.assertEqual(len(w), 2)  # now also with a delocalization analysis warning (using
+            self.assertEqual(
+                len(w), 2
+            )  # now also with a delocalization analysis warning (using
             # incorrect LOCPOT)
             self.assertTrue(
                 all(issubclass(warning.category, UserWarning) for warning in w)
             )
             self.assertIn(
                 f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
-                f"compute the _anisotropic_ Kumagai eFNV charge correction) in the defect (at"
+                f"compute the _anisotropic_ Kumagai eFNV charge correction) in the defect (at "
                 f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at "
                 f"{self.CDTE_BULK_DATA_DIR}) folders were unable to be parsed, giving the "
                 f"following error message:\n"
@@ -340,7 +352,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         # test warning when no OUTCAR or LOCPOT file found:
         defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
         shutil.move(
-            f"{defect_path}/LOCPOT.gz", f"{defect_path}/hidden_lcpt.gz",
+            f"{defect_path}/LOCPOT.gz",
+            f"{defect_path}/hidden_lcpt.gz",
         )
         with warnings.catch_warnings(record=True) as w:
             parsed_v_cd_m2 = defect_entry_from_paths(
@@ -356,17 +369,30 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at "
                 f"{defect_path}) and bulk (at {self.CDTE_BULK_DATA_DIR}) folders. These are "
                 f"needed to perform the finite-size charge corrections. Charge corrections will "
-                f"not be applied for this defect.", str(w[0].message)
+                f"not be applied for this defect.",
+                str(w[0].message),
             )
 
-        self.assertAlmostEqual(
-            parsed_v_cd_m2.uncorrected_energy, 7.661, places=3
-        )
+        self.assertAlmostEqual(parsed_v_cd_m2.uncorrected_energy, 7.661, places=3)
         self.assertAlmostEqual(parsed_v_cd_m2.energy, 7.661, places=3)
         self.assertEqual(parsed_v_cd_m2.corrections, {})
 
         # move LOCPOT back to original:
         shutil.move(f"{defect_path}/hidden_lcpt.gz", f"{defect_path}/LOCPOT.gz")
+
+        # test no warning when no OUTCAR or LOCPOT file found, but charge is zero:
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_0/vasp_ncl"  # no LOCPOT/OUTCAR
+
+        with warnings.catch_warnings(record=True) as w:
+            parsed_v_cd_0 = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=self.cdte_dielectric,
+            )
+            self.assertEqual(len(w), 0)
+
+        self.assertAlmostEqual(parsed_v_cd_0.uncorrected_energy, 4.166, places=3)
+        self.assertAlmostEqual(parsed_v_cd_0.energy, 4.166, places=3)
 
     def test_multiple_outcars(self):
         shutil.copyfile(
@@ -437,9 +463,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
     def test_multiple_vaspruns(self):
         defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
 
-        shutil.copyfile(f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz")
-        shutil.copyfile(f"{self.CDTE_BULK_DATA_DIR}/vasprun.xml.gz",
-                        f"{self.CDTE_BULK_DATA_DIR}/another_vasprun.xml.gz")
+        shutil.copyfile(
+            f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz"
+        )
+        shutil.copyfile(
+            f"{self.CDTE_BULK_DATA_DIR}/vasprun.xml.gz",
+            f"{self.CDTE_BULK_DATA_DIR}/another_vasprun.xml.gz",
+        )
 
         with warnings.catch_warnings(record=True) as w:
             parsed_v_cd_m2 = defect_entry_from_paths(
@@ -447,7 +477,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
             )
-            self.assertEqual(len(w), 2)  # multiple `vasprun.xml`s (both defect and bulk)
+            self.assertEqual(
+                len(w), 2
+            )  # multiple `vasprun.xml`s (both defect and bulk)
             self.assertTrue(
                 all(issubclass(warning.category, UserWarning) for warning in w)
             )
@@ -832,7 +864,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
 
         self.assertAlmostEqual(F_O_1_ent.energy, 0.03146836204627482, places=3)
-        self.assertAlmostEqual(F_O_1_ent.uncorrected_energy, -0.08523418000004312, places=3)
+        self.assertAlmostEqual(
+            F_O_1_ent.uncorrected_energy, -0.08523418000004312, places=3
+        )
         correction_dict = {
             "charge_correction": 0.11670254204631794,
             "bandfilling_correction": -0.0,
