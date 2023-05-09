@@ -2,8 +2,6 @@
 """
 Parses the computed data from VASP defect calculations.
 """
-# from __future__ import unicode_literals
-from __future__ import division
 
 import glob
 import os
@@ -19,7 +17,6 @@ from pymatgen.analysis.defects.core import (
     Vacancy,
 )
 from pymatgen.analysis.defects.defect_compatibility import DefectCompatibility
-from pymatgen.analysis.defects.utils import TopographyAnalyzer
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -29,21 +26,9 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Poscar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped.pycdt.core import _chemical_potentials
-from doped.pycdt.utils.vasp import DefectRelaxSet
-from doped import _ignore_pmg_potcar_warnings
+from doped import _ignore_pmg_warnings
 
-_ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
-
-_ignore_pmg_potcar_warnings()
-
-# until updated from pymatgen==2022.7.25 :
-warnings.filterwarnings(
-    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
-)
-warnings.filterwarnings(
-    "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
-)
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+_ignore_pmg_warnings()
 
 
 def _custom_formatwarning(msg, *args, **kwargs):
@@ -52,20 +37,6 @@ def _custom_formatwarning(msg, *args, **kwargs):
 
 
 warnings.formatwarning = _custom_formatwarning
-
-
-def _convert_dielectric_to_tensor(dielectric):
-    # check if dielectric in required 3x3 matrix format
-    if not isinstance(dielectric, (float, int)):
-        dielectric = np.array(dielectric)
-        if dielectric.shape == (3,):
-            dielectric = np.diag(dielectric)
-        elif dielectric.shape != (3, 3):
-            raise ValueError(
-                f"Dielectric constant must be a float/int or a 3x1 matrix or 3x3 matrix, "
-                f"got type {type(dielectric)} and shape {dielectric.shape}"
-            )
-    return dielectric
 
 
 def get_vasprun(vasprun_path, **kwargs):
@@ -78,31 +49,24 @@ def get_vasprun(vasprun_path, **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )
-    if os.path.exists(vasprun_path):
+    if os.path.exists(vasprun_path, **kwargs) and os.path.isfile(vasprun_path):
         vasprun = Vasprun(vasprun_path)
-        read_vasprun_path = vasprun_path
-    elif os.path.exists(vasprun_path + ".gz", **kwargs):
-        vasprun = Vasprun(vasprun_path + ".gz", **kwargs)
-        read_vasprun_path = vasprun_path + ".gz"
     else:
         raise FileNotFoundError(
-            f"""vasprun.xml(.gz) not found at {vasprun_path}(.gz). Needed for parsing defect 
-            calculations."""
+            f"vasprun.xml file not found at {vasprun_path}. Needed for parsing calculation output."
         )
-    return vasprun, read_vasprun_path
+    return vasprun
 
 
 def get_locpot(locpot_path):
     """Read the LOCPOT(.gz) file as a pymatgen Locpot object"""
     locpot_path = str(locpot_path)  # convert to string if Path object
-    if os.path.exists(locpot_path):
+    if os.path.exists(locpot_path) and os.path.isfile(locpot_path):
         locpot = Locpot.from_file(locpot_path)
-    elif os.path.exists(locpot_path + ".gz"):
-        locpot = Locpot.from_file(locpot_path + ".gz")
     else:
         raise FileNotFoundError(
-            f"""LOCPOT(.gz) not found at {locpot_path}(.gz). Needed for calculating the 
-            Freysoldt (FNV) image charge corrections."""
+            f"LOCPOT file not found at {locpot_path}. Needed for calculating the Freysoldt (FNV) "
+            f"image charge correction."
         )
     return locpot
 
@@ -110,16 +74,47 @@ def get_locpot(locpot_path):
 def get_outcar(outcar_path):
     """Read the OUTCAR(.gz) file as a pymatgen Outcar object"""
     outcar_path = str(outcar_path)  # convert to string if Path object
-    if os.path.exists(outcar_path):
+    if os.path.exists(outcar_path) and os.path.isfile(outcar_path):
         outcar = Outcar(outcar_path)
-    elif os.path.exists(outcar_path + ".gz"):
-        outcar = Outcar(outcar_path + ".gz")
     else:
         raise FileNotFoundError(
-            f"""OUTCAR(.gz) not found at {outcar_path}(.gz). Needed for calculating the Kumagai (
-            eFNV) image charge corrections."""
+            f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
+            f"image charge correction."
         )
     return outcar
+
+
+def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
+    """
+    Search for all files with filenames matching `output_file`, case-insensitive.
+
+    Returns (output file path, Multiple?) where Multiple is True if multiple matching files are
+    found.
+    """
+    files = os.listdir(path)
+    output_files = [
+        filename for filename in files if output_file.lower() in filename.lower()
+    ]
+    # sort by, direct match to output_file, direct match to output_file with .gz extension,
+    # then alphabetically:
+    output_files = sorted(
+        output_files,
+        key=lambda x: (
+            x == output_file,
+            x == output_file + ".gz",
+            x,
+        ),
+        reverse=True,
+    )
+    if output_files:
+        output_path = os.path.join(path, output_files[0])
+        if len(output_files) > 1:
+            return output_path, True
+        else:
+            return output_path, False
+    else:
+        return path, False  # so when `get_X()` is called, it will raise an
+        # informative FileNotFoundError
 
 
 def get_defect_type_and_composition_diff(bulk, defect):
