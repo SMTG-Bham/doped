@@ -1,7 +1,7 @@
 Change Log
 ==========
 
-v1.1.0
+v1.1.1
 ----------
 - `doped` now installable from `conda-forge`! 🎉
 - Major overhaul of primary parsing workflow (in `defect_entry_from_paths()`):
