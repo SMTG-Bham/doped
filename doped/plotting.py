@@ -10,7 +10,7 @@ with publication-quality outputs
 
 import warnings
 
-from matplotlib import cm, ticker, rc
+from matplotlib import cm, ticker, rc, colormaps
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.util.string import latexify
@@ -296,7 +296,7 @@ def _aide_pmg_plot(
                     )
                 )
 
-    cmap = cm.get_cmap(colormap)
+    cmap = colormaps[colormap]
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
         warnings.warn(
@@ -841,7 +841,7 @@ def _all_lines_aide_pmg_plot(
                 )
             )
 
-    cmap = cm.get_cmap(colormap)
+    cmap = colormaps[colormap]
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
         warnings.warn(
