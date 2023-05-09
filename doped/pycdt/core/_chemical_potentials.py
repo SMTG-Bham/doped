@@ -550,55 +550,67 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                 Project database
 
         """
-        pdfile = os.path.join(self.path_base, "PhaseDiagram")
-        if not os.path.exists(pdfile):
-            print("Phase diagram file does not exist at ", pdfile)
-            return
+        from doped.pycdt.utils.parse_calculations import (
+            get_vasprun,
+            _get_output_files_and_check_if_multiple,
+        )
+
+        pd_folder = os.path.join(self.path_base, "PhaseDiagram")
+        if not os.path.exists(pd_folder):
+            raise FileNotFoundError(f"Phase diagram folder does not exist at {pd_folder}!")
 
         # this is where we read computed entries into a list for parsing...
         # NOTE TO USER: If not running with VASP need to use another
         # pymatgen functionality for importing computed entries below...
         personal_entry_list = []
-        for structfile in os.listdir(pdfile):
-            if os.path.exists(
-                os.path.join(pdfile, structfile, "vasprun.xml")
-            ) or os.path.exists(os.path.join(pdfile, structfile, "vasprun.xml.gz")):
-                try:
-                    print("loading ", structfile)
-                    from doped.pycdt.utils.parse_calculations import get_vasprun
-
-                    vr, vr_path = get_vasprun(
-                        os.path.join(pdfile, structfile, "vasprun.xml")
+        for structfile in os.listdir(pd_folder):
+            try:
+                print("loading ", structfile)
+                vr_path, multiple = _get_output_files_and_check_if_multiple(
+                    "vasprun.xml", os.path.join(pd_folder, structfile),
+                )
+                if multiple:
+                    warnings.warn(
+                        f"Multiple `vasprun.xml` files found in directory: "
+                        f"{os.path.join(pd_folder, structfile)}. Using {vr_path} to parse the "
+                        f"calculation energy and metadata."
                     )
-                    vr_entry = vr.get_computed_entry()
-                    pdentry = PDEntry(
-                        vr_entry.composition, vr_entry.energy, attribute=structfile
-                    )
-                    personal_entry_list.append(pdentry)
-                except:
-                    print("Could not load ", structfile)
-
-            else:
-                print("No vasprun.xml(.gz) found in ", structfile)
+                vr = get_vasprun(vr_path)
+                vr_entry = vr.get_computed_entry()
+                pdentry = PDEntry(
+                    vr_entry.composition, vr_entry.energy, attribute=structfile
+                )
+                personal_entry_list.append(pdentry)
+            except:
+                print("Could not load a vasprun.xml file for", structfile)
 
         # add bulk computed entry to phase diagram, and see if it is stable
         if not self.bulk_ce:
-            vr_path = os.path.join(self.path_base, "bulk", "vasprun.xml")
-            if os.path.exists(vr_path):
+            try:
+                bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
+                    "vasprun.xml", os.path.join(self.path_base, "bulk")
+                )
+                if multiple:
+                    warnings.warn(
+                        f"Multiple `vasprun.xml` files found in directory: "
+                        f"{os.path.join(self.path_base, 'bulk')}. Using {bulk_vr_path} to parse "
+                        f"the "
+                        f"calculation energy and metadata."
+                    )
+                bulk_vr = get_vasprun(bulk_vr_path)
                 print("loading bulk computed entry")
-                from doped.pycdt.utils.parse_calculations import get_vasprun
-
-                bulkvr, bulkvr_path = get_vasprun(vr_path)
-                bulkvr_entry = bulkvr.get_computed_entry()
+                bulk_vr_entry = bulk_vr.get_computed_entry()
                 self.bulk_ce = PDEntry(
-                    bulkvr_entry.composition, bulkvr_entry.energy, attribute=bulkvr_path
+                    bulk_vr_entry.composition,
+                    bulk_vr_entry.energy,
+                    attribute=bulk_vr_path,
                 )
-            else:
-                print(
-                    "No bulk entry given locally. Phase diagram "
-                    + "calculations cannot be set up without this"
-                )
-                return
+            except Exception as e:
+                raise FileNotFoundError(
+                    "No bulk entry (`bulk_ce`) provided, and no vasprun.xml file found in {"
+                    "os.path.join(self.path_base, 'bulk')}. Required for parsing competing phase "
+                    "calculations!"
+                ) from e
 
         self.bulk_composition = self.bulk_ce.composition
         self.redcomp = self.bulk_composition.reduced_composition
@@ -613,8 +625,8 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
             )
             mpcpa.get_mp_entries(full_sub_approach=full_sub_approach)  # Use MP entries
 
-            full_entries = mpcpa.entries['bulk_derived']
-            for entry_set in mpcpa.entries['subs_set'].values():
+            full_entries = mpcpa.entries["bulk_derived"]
+            for entry_set in mpcpa.entries["subs_set"].values():
                 full_entries.extend(entry_set)
             curr_pd = PhaseDiagram(full_entries)
 
@@ -736,7 +748,9 @@ class UserChemPotAnalyzer(ChemPotAnalyzer):
                     )
                     # if one less than number of bulk species then can be
                     # grouped with rest of structures
-                    bulk_species_symbol = [s.symbol for s in self.bulk_composition.elements]
+                    bulk_species_symbol = [
+                        s.symbol for s in self.bulk_composition.elements
+                    ]
                     if len(blk) == len(bulk_species_symbol):
                         if blknom not in finchem_lims.keys():
                             finchem_lims[blknom] = chem_lims[key]
