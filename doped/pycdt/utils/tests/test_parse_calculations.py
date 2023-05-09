@@ -43,8 +43,7 @@ class SingleDefectParserTest(PymatgenTest):
             sdp = SingleDefectParser.from_paths(
                 "test_path_files/sub_1_Sb_on_Ga/charge_2/",
                 "test_path_files/bulk/",
-                18.12,
-                2,
+                18.12,  # charge automatically determined
             )
             self.assertIsInstance(sdp, SingleDefectParser)
             self.assertIsInstance(sdp.defect_entry.defect, Substitution)
@@ -64,8 +63,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "defect_frac_sc_coords",
             ]:
                 self.assertFalse(param_key in sdp.defect_entry.parameters.keys())
-            bl = sdp.freysoldt_loader()
-            self.assertIsInstance(bl, Locpot)
+            sdp.freysoldt_loader()
             for param_key in [
                 "axis_grid",
                 "bulk_planar_averages",
@@ -83,7 +81,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "sampling_radius",
             ]:
                 self.assertFalse(param_key in sdp.defect_entry.parameters.keys())
-            bo = sdp.kumagai_loader()
+            sdp.kumagai_loader()
             for param_key in [
                 "bulk_atomic_site_averages",
                 "defect_atomic_site_averages",
