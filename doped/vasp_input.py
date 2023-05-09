@@ -22,7 +22,7 @@ from pymatgen.io.vasp.inputs import (
 from pymatgen.io.vasp.sets import DictSet
 
 from doped.pycdt.utils.vasp import DefectRelaxSet, _check_psp_dir
-from doped import _ignore_pmg_potcar_warnings
+from doped import _ignore_pmg_warnings
 
 if TYPE_CHECKING:
     import pymatgen.core.periodic_table
@@ -34,7 +34,7 @@ default_relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
 default_defect_set = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
 default_relax_set["INCAR"].update(default_defect_set["INCAR"])
 
-_ignore_pmg_potcar_warnings()
+_ignore_pmg_warnings()
 
 # until updated from pymatgen==2022.7.25 :
 warnings.filterwarnings(
