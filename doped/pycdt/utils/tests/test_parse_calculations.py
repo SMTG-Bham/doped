@@ -43,7 +43,8 @@ class SingleDefectParserTest(PymatgenTest):
             sdp = SingleDefectParser.from_paths(
                 "test_path_files/sub_1_Sb_on_Ga/charge_2/",
                 "test_path_files/bulk/",
-                18.12,  # charge automatically determined
+                18.12,
+                charge=2,
             )
             self.assertIsInstance(sdp, SingleDefectParser)
             self.assertIsInstance(sdp.defect_entry.defect, Substitution)
