@@ -1057,10 +1057,12 @@ class CompetingPhasesAnalyzer:
 
         Args:
             path (list, str, pathlib Path): Either a path to the base folder in which you have your
-                formula_EaH_X/vasp_std/vasprun.xml(.gz) files, or a list of strings or Paths to
+                competing phase calculation outputs (e.g. formula_EaH_X/vasp_std/vasprun.xml(
+                .gz), or formula_EaH_X/vasprun.xml(.gz)), or a list of strings or Paths to
                 vasprun.xml(.gz) files.
-            folder (str): The folder in which vasprun is, only use if you set base path (i.e.
-                change to vasp_ncl or if vaspruns are in the formula_EaH folder).
+            folder (str): The subfolder in which your vasprun.xml output files are located (e.g.
+                a file-structure like: formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
+                search for `vasp_std` subfolders, or directly in the `formula_EaH_X` folder.
             csv_fname (str): If set will save to csv with this name
         Returns:
             None, sets self.data and self.elemental_energies
@@ -1388,11 +1390,14 @@ class CompetingPhasesAnalyzer:
                     + "-"
                     + d[col_name]
                 )
+                print(f"key: {key}")  # TODO: Remove any unnecessary print statements when this
+                # has been fixed
                 new_vals = list(
                     self._intrinsic_chem_limits["facets_wrt_el_refs"].values()
                 )[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
+            print(f"cl2: {cl2}")
 
             # relate the facets to the elemental
             # energies but in reverse this time
