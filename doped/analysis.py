@@ -419,8 +419,12 @@ def defect_entry_from_paths(
                 for folder_filename in os.listdir(folder)
             )
 
-        def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(aniso_dielectric):
-            return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
+        def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+            aniso_dielectric,
+        ):
+            return 3 / sum(
+                1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric)
+            )
 
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(
@@ -454,7 +458,7 @@ def defect_entry_from_paths(
                                 f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
                                 f"correction) in the defect (at {defect_path}) & bulk (at "
                                 f"{bulk_path}) folders were unable to be parsed, giving the "
-                                f"following error message:\n{kumagai_exc}.\n"
+                                f"following error message:\n{kumagai_exc}\n"
                                 f"`LOCPOT` files were found in both defect & bulk folders, "
                                 f"and so the Freysoldt (FNV) charge correction developed for "
                                 f"_isotropic_ materials will be applied here, which corresponds "
@@ -466,9 +470,9 @@ def defect_entry_from_paths(
                         warnings.warn(
                             f"Got this error message when attempting to parse defect & bulk "
                             f"`OUTCAR` files to compute the Kumagai (eFNV) charge correction:"
-                            f"\n{kumagai_exc}.\nThen got this error message when attempting to "
+                            f"\n{kumagai_exc}\nThen got this error message when attempting to "
                             f"parse defect & bulk `LOCPOT` files to compute the Freysoldt (FNV) "
-                            f"charge correction:\n{freysoldt_exc}.\n-> Charge corrections will not "
+                            f"charge correction:\n{freysoldt_exc}\n-> Charge corrections will not "
                             f"be applied for this defect."
                         )
                         if not isotropic_dielectric:
@@ -483,7 +487,8 @@ def defect_entry_from_paths(
                         f"correction) in the defect (at {defect_path}) & bulk (at "
                         f"{bulk_path}) folders were unable to be parsed, giving the "
                         f"following error message:\n{kumagai_exc}\n-> Charge corrections will not "
-                        f"be applied for this defect.")
+                        f"be applied for this defect."
+                    )
                     skip_corrections = True
 
         elif _check_folder_for_file_match(
@@ -517,7 +522,7 @@ def defect_entry_from_paths(
                 warnings.warn(
                     f"Got this error message when attempting to parse defect & bulk "
                     f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
-                    f"\n{freysoldt_exc}.\n-> Charge corrections will not be applied for this "
+                    f"\n{freysoldt_exc}\n-> Charge corrections will not be applied for this "
                     f"defect."
                 )
                 if not isotropic_dielectric:
@@ -526,13 +531,14 @@ def defect_entry_from_paths(
                 skip_corrections = True
 
         else:
-            warnings.warn(
-                f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at"
-                f" {defect_path}) and bulk (at {bulk_path}) folders. These are needed to perform "
-                f"the finite-size charge corrections. Charge corrections will not be applied for "
-                f"this defect."
-            )
-            skip_corrections = True
+            if int(sdp.defect_entry.charge) != 0:
+                warnings.warn(
+                    f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at "
+                    f"{defect_path}) and bulk (at {bulk_path}) folders. These are needed to "
+                    f"perform the finite-size charge corrections. Charge corrections will not be "
+                    f"applied for this defect."
+                )
+                skip_corrections = True
 
         if not skip_corrections:
             # Check compatibility of defect corrections with loaded metadata, and apply
