@@ -70,7 +70,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
     """
 
     def setUp(self):
-        self.epsilon = 15.0
+        self.dielectric = 15.0
 
         struc = PymatgenTest.get_structure("VO2")
         struc.make_supercell(3)
@@ -157,12 +157,12 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
     def test_get_correction_freysoldt(self):
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, partflag="All", axis=None
+            self.defect_entry, self.dielectric, partflag="All", axis=None
         )
         self.assertEqual(freyout, 5.445950368792991)
 
         freyout = get_correction_freysoldt(
-            self.defect_entry, self.epsilon, partflag="AllSplit", axis=None
+            self.defect_entry, self.dielectric, partflag="AllSplit", axis=None
         )
         self.assertAlmostEqual(freyout[0], 0.975893)
         self.assertAlmostEqual(freyout[1], 4.4700573687929905)
@@ -170,7 +170,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
     def test_get_correction_kumagai(self):
         kumagaiout = get_correction_kumagai(
-            self.defect_entry, self.epsilon, partflag="AllSplit"
+            self.defect_entry, self.dielectric, partflag="AllSplit"
         )
         self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
         self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
