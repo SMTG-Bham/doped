@@ -5,6 +5,10 @@ INCAR:
   ISYM: "0  # Symmetry breaking extremely likely for defects"
   LVHAR: "True  # Needed if using the Freysoldt (FNV) charge correction scheme"
   NSW: 300
-# Note that EDIFF is also scaled according to the number of atoms in the supercell,
-# and NUPDOWN is set to 0 or 1 depending on the number of electrons (even/odd).
-# and KPAR is set to 2 `vasp_std` calculations (multiple kpoints)
+# Notes:
+# EDIFF is scaled according to the number of atoms in the supercell (1e-5 per 50 atoms, with a max EDIFF of 1e-4).
+# KPAR is set to 2 for `vasp_std` calculations (multiple kpoints)
+# NUPDOWN is set to 0 (singlet) or 1 (doublet) depending on the number of electrons (even or odd, respectively).
+# Note that even-electron defects with multiple spin-polarised states (e.g. bipolarons;
+# Fig. 2c in doi.org/10.1021/acsenergylett.1c00380) could also have triplet spin states (NUPDOWN=2), but the energy
+# difference is likely to be small.
