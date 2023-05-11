@@ -1,5 +1,10 @@
 Change Log
 ==========
+v.1.1.2
+----------
+- Cap `numpy` to `1.23` to avoid `pymatgen` dependency issues.
+- Update example workbook to use recommended `CubicSupercellTransformation`
+- Add/remove some `TODO`s
 
 v1.1.1
 ----------
