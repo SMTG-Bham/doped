@@ -18,12 +18,14 @@ classifiers = [
     ]
 requires-python = ">=3.7, <3.11"  # current pymatgen version <2022.8.23 incompatible with python 3.11
 dependencies = [
-    "ase",
     "tabulate",
     "matplotlib",
     "numpy>=1.21.0,<1.24.0",
     "pymatgen<2022.8.23",
+    "monty",
     "shakenbreak==22.11.1",
+    "packaging",
+    "pandas",
 ]
 
 [project.urls]
