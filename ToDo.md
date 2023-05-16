@@ -25,7 +25,6 @@
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
-- Should test the `pymatgen-analysis-defects` `ChargeInterstitialGenerator` and see how it compares to Voronoi tesselation plus screening (current approach). Does this return multiple interstitial sites or just one? Would work in previous cases like split-interstitials or inequivalent interstitials where relative energies are charge-state-dependent? (Like Cd_i in CdTe etc)
 - Add defect expansion code functionality to regenerate defect structures from a smaller supercell in a larger one. Useful for supercell size convergence tests, and accelerating `ShakeNBreak` etc. If/when adding, make sure to link in `SnB` docs as well.
   - Related point, using our `doped` site-matching functions, could write some quick functions to plot the exponential tailing off of strain / site displacements as we move away from the defect site. Could be useful as a validation / check of supercell size convergence, and for quantifying the strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
 
@@ -59,6 +58,7 @@
   - When updating to new `pymatgen`, can expand our python dependencies to 3.11+ (as this is currently what's limiting us to python<3.11)
 - Modularity - move pycdt.core.defectsmaker code out? Reformat to remove all pycdt bits as most of the functionality from this that we want (i.e. not high-throughput GGA via Materials Project data) is now in `doped` homemade modules, and anything that isn't is heavily-heavily-modified.
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
+- Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
 - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
 - Add `plotting` & `analysis` examples, tests and documentation.
 - More test coverage.
