@@ -218,7 +218,8 @@ class CompetingPhases:
 
     TODO: Need to add functionality to deal with cases where the bulk composition is not listed
     on the MP – warn user (i.e. check your sh*t) and generate the competing phases according to
-    composition position within phase diagram.
+    composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
+    and generate from there)
     E.g. from pycdt chemical_potentials:
     #                 "However, no stable entry with this composition exists "
     #                 "in the MP database!\nPlease consider submitting the "
@@ -266,7 +267,8 @@ class CompetingPhases:
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
         #  lot of unnecessary polymorphs on MP
         # P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo
-        # stable at RT), so only need to generate these
+        # stable at RT), so only need to generate these. Same for Li, Na and K (ask the battery
+        # boyos), TiO2, SnO2
 
         # all data collected from materials project
         self.data = [

@@ -41,9 +41,9 @@
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
 - Improved methods for estimating/determining the final site degeneracy/multiplicity from relaxed structures. See `pydefect` for tools for this. Also add consideration of odd/even number of electrons to account for spin degeneracy.
-- Brouwer diagrams
+- Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
-- Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
+- Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`. Seán K has functions and notebooks for transferring to `py-sc-fermi` and generating nice plots with the outputs, so will add this.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
