@@ -30,6 +30,9 @@ default_fonts = [
 #  just be edited by the user with the returned Matplotlib object – show example of this in
 #  notebooks maybe?)
 # TOOD: Add option to only plot defect states that are stable at some point in the bandgap
+# TODO: Add option to plot formation energies at the centroid of the chemical stability region? And make this the
+#  default if no chempot_limits are specified? Or better default to plot both the most (most-electronegative-)anion-rich
+#  and the (most-electropositive-)cation-rich chempot limits?
 def formation_energy_plot(
     defect_phase_diagram,
     chempot_limits: dict = None,
