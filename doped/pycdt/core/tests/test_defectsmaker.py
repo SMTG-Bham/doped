@@ -1,15 +1,5 @@
-# coding: utf-8
-
-from __future__ import division
-
-__status__ = "Development"
-
 import os
-
-from pymatgen.core import PeriodicSite
-from pymatgen.core.structure import Structure
 from pymatgen.util.testing import PymatgenTest
-
 from doped.pycdt.core.defectsmaker import *
 
 file_loc = os.path.abspath(os.path.join(__file__, "..", "..", "..", "test_files"))

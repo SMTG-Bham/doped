@@ -1,11 +1,6 @@
-# coding: utf-8
-from __future__ import division
-
 """
 Code to generate charged defects structure files.
 """
-
-
 import abc
 from tabulate import tabulate
 
