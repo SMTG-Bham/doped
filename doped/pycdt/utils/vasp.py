@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-
-from __future__ import print_function
-
-__status__ = "Development"
-
 import os
 import warnings
 
