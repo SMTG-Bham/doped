@@ -295,6 +295,7 @@ class DefectsGenerator:
             header = [
                 defect_class.capitalize(),
                 "Charge States",
+                "Unit Cell Coords",
                 "Site Multiplicity (Unit Cell)",
             ]
             defect_type = defect_list[0].defect_type
@@ -328,7 +329,8 @@ class DefectsGenerator:
                     if name.startswith(defect_name + "_")
                 ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
                 neutral_defect_entry = self.defect_entries[defect_name + "_0"]
-                row = [defect_name, charges, neutral_defect_entry.defect.multiplicity]
+                frac_coords_string = ",".join(f"{x:.2f}" for x in neutral_defect_entry.defect.site.frac_coords)
+                row = [defect_name, charges, f"[{frac_coords_string}]", neutral_defect_entry.defect.multiplicity]
                 table.append(row)
             print(
                 tabulate(
