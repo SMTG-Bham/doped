@@ -40,7 +40,7 @@
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone functions.
 - Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In addition to num_hole and num_electron)
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
-- Improved methods for estimating/determining the final site degeneracy/multiplicity from relaxed structures. See `pydefect` for tools for this. Also add consideration of odd/even number of electrons to account for spin degeneracy.
+- Improved methods for estimating/determining the final site degeneracy/multiplicity from relaxed structures. See `pydefect` for tools for this. Should be doable with current point symmetry tools, especially when both the defect and bulk structures are available. Also add consideration of odd/even number of electrons to account for spin degeneracy.
 - Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`. Seán K has functions and notebooks for transferring to `py-sc-fermi` and generating nice plots with the outputs, so will add this.
