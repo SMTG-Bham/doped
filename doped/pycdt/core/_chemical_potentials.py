@@ -1,10 +1,7 @@
-# coding: utf-8
 """
 A class for performing analysis of chemical potentials with the grand
 canonical linear programming approach
 """
-from __future__ import division
-
 import copy
 import os
 import warnings

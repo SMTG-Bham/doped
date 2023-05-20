@@ -1,9 +1,3 @@
-# coding: utf-8
-
-from __future__ import division
-
-__status__ = "Development"
-
 import copy
 import inspect
 import os
