@@ -69,6 +69,9 @@ def _convert_dielectric_to_tensor(dielectric):
 #  calls in the example notebook. Benefit of this one is that we can then auto-run
 #  `check_defects_compatibility()` at the end of parsing the full defects dict. – When doing
 #  this, look at `PostProcess` code, and then delete it once all functionality is moved here.
+# TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
+#  (for later integration with `py-sc-fermi`).
+# TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
 def defect_entry_from_paths(
     defect_path,
     bulk_path,
@@ -581,6 +584,7 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     # Also add option to just amalgamate and show only the lowest energy states.
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
+    # When doing this, add DOS object attribute, to then use with Alex's doped – py-sc-fermi code.
     vbm_vals = []
     bandgap_vals = []
     for defect in parsed_defect_dict.values():
