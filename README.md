@@ -4,14 +4,14 @@
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://shakenbreak.readthedocs.io/en/latest/)
 
 # **D**efect **O**riented **P**ython **E**nvironment **D**istribution (`doped`)
-This is a (mid-development) Python package for managing solid-state defect calculations,
-geared toward VASP. Much of it is a modified version of the excellent [PyCDT](https://bitbucket.org/mbkumar/pycdt).  
-See [this link](https://www.sciencedirect.com/science/article/pii/S0010465518300079) for the original PyCDT paper.
+`doped` is a python package for managing solid-state defect calculations, with functionality to 
+generate defect structures and relevant competing phases (for chemical potentials), interface with 
+[`ShakeNBreak`](https://shakenbreak.readthedocs.io) for 
+[defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for defect 
+supercell calculations, and automatically parse and analyse the results.
 
-Defect formation energy plots are templated from [AIDE](https://github.com/SMTG-UCL/aide) and follow the aesthetics
-philosopy of [sumo](https://smtg-ucl.github.io/sumo/), both developed by the dynamic duo Adam Jackson and Alex Ganose.
-
-Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and usage.
+Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and 
+usage.
 
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
@@ -96,14 +96,30 @@ Summary GIF:
 ```bash
   git clone https://github.com/SMTG-UCL/doped
 ```
-2.  Navigate to root directory:
+2. Navigate to root directory:
 ```bash
   cd doped
 ```
-3.  Install the code, using the command:
+3. Install the code, using the command:
 ```bash
   pip install -e .
 ```
 
 ## Acknowledgments
-`doped` has benefitted from feedback from many users, in particular members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Bonan Zhu, Katarina Brlec, Adair Nicolson, Sabrine Hachmioune and Savya Aggarwal. Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
+`doped` (née `DefectsWithTheBoys` #gonebutnotforgotten) has benefitted from feedback from many users, in particular 
+members of the Walsh and Scanlon research groups who have used / are using it in their work. Direct contributors are 
+listed in the `Contributors` sidebar above; including Seán Kavanagh, Bonan Zhu, Katarina Brlec, Adair Nicolson, 
+Sabrine Hachmioune and Savya Aggarwal. 
+
+Code to efficiently identify defect species from input supercell structures was contributed by Dr Alex Ganose.
+
+`doped` was originally based on the excellent 
+[PyCDT](https://www.sciencedirect.com/science/article/pii/S0010465518300079) (no longer maintained), but transformed 
+and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was
+entirely refactored and rewritten, to work with the new 
+[`pymatgen-analysis-defects`](https://github.com/materialsproject/pymatgen-analysis-defects) package.
+
+The colour scheme for defect formation energy plots was originally templated from 
+[AIDE](https://github.com/SMTG-UCL/aide) (#neverforget), developed by the dynamic duo 
+[Adam Jackson](https://github.com/ajjackson) and [Alex Ganose](https://github.com/utf).
+
