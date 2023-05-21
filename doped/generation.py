@@ -383,3 +383,10 @@ class DefectsGenerator:
         defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
 
         return defects_generator
+
+    def __getattr__(self, attr):
+        """
+        Redirects an unknown attribute/method call to the defect_entries dictionary attribute,
+        if the attribute doesn't exist in DefectsGenerator.
+        """
+        return getattr(self.defect_entries, attr)
