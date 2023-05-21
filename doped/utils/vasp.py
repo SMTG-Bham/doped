@@ -191,9 +191,9 @@ class DefectRelaxSet(DictSet):
             if inc["NELECT"] % 2 != 0:  # odd number of electrons
                 inc["NUPDOWN"] = 1
             else:
-                inc[
-                    "NUPDOWN"
-                ] = 0  # But could be 2 for triplet states (e.g. bipolarons)
+                # when writing VASP just resets this to 0 anyway:
+                inc["NUPDOWN"] = "0  # If defect has multiple spin-polarised states (e.g. bipolarons) could " \
+                                 "also have triplet (NUPDOWN=2), but ΔE typically small."
 
         except Exception as e:
             warnings.warn(
