@@ -19,7 +19,7 @@ from pymatgen.io.vasp.sets import DictSet
 from pymatgen.analysis.defects.thermo import DefectEntry
 from shakenbreak.input import _get_defect_site, _get_bulk_defect_site
 
-from doped.pycdt.utils.vasp import DefectRelaxSet, _check_psp_dir
+from doped.utils.vasp import DefectRelaxSet, _check_psp_dir
 from doped import _ignore_pmg_warnings
 from doped.generation import (
     DefectsGenerator,

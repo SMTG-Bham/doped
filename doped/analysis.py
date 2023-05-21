@@ -24,7 +24,7 @@ from monty.serialization import loadfn, dumpfn
 from monty.json import MontyDecoder
 from tabulate import tabulate
 
-from doped.pycdt.utils.vasp import DefectRelaxSet
+from doped.utils.vasp import DefectRelaxSet
 from doped.pycdt.utils import parse_calculations
 from doped import _ignore_pmg_warnings
 
@@ -829,7 +829,7 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    from doped.corrections import (
+    from doped.utils.corrections import (
         get_murphy_image_charge_correction,
     )  # avoid circular import
 
@@ -883,7 +883,7 @@ def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    from doped.corrections import (
+    from doped.utils.corrections import (
         get_murphy_image_charge_correction,
     )  # avoid circular import
 
