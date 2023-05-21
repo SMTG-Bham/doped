@@ -88,7 +88,7 @@ class DefectsGenerator:
     def __init__(
         self,
         structure: Structure,
-        extrinsic: Union[List, Dict] = {},
+        extrinsic: Union[str, List, Dict] = {},
         interstitial_coords: List = [],
         **kwargs,
     ):
@@ -116,19 +116,24 @@ class DefectsGenerator:
 
         # TODO: Mention how charge states are generated, and how to modify, as shown in the example notebook.
         # Also show how to remove certain defects from the dictionary? Mightn't be worth the space for this though
+        # TODO: Add option to not reduce the structure to the primitive cell, and just use the input structure as
+        # the bulk supercell, in case the user doesn't want to generate the supercell with `pymatgen`. In this case,
+        # warn the user that this might take a while, especially for interstitials in low-symmetry systems. Add note
+        # to docs that if for some reason this is the case, the user could use a modified version of the pymatgen
+        # interstitial finding tools directly along with multi-processing
 
         Args:
             structure (Structure):
                 Structure of the host material (as a pymatgen Structure object).
                 If this is not the primitive unit cell, it will be reduced to the
                 primitive cell for defect generation, before supercell generation.
-            extrinsic (Union[List, Dict]):
-                List or dict of elements to be used for extrinsic defect generation
-                (i.e. dopants/impurities). If a list is provided, all possible
-                substitutional defects for each extrinsic element will be generated.
-                If a dict is provided, the keys should be the host elements to be
-                substituted, and the values the extrinsic element(s) to substitute in;
-                as a string or list.
+            extrinsic (Union[str, List, Dict]):
+                List or dict of elements (or string for single element) to be used
+                for extrinsic defect generation (i.e. dopants/impurities). If a
+                list is provided, all possible substitutional defects for each
+                extrinsic element will be generated. If a dict is provided, the keys
+                should be the host elements to be substituted, and the values the
+                extrinsic element(s) to substitute in; as a string or list.
                 In both cases, all possible extrinsic interstitials are generated.
             interstitial_coords (List):
                 List of fractional coordinates (in the primitive cell) to use as
@@ -168,16 +173,21 @@ class DefectsGenerator:
 
         # Substitutions:
         substitution_generator_obj = SubstitutionGenerator()
-        if isinstance(extrinsic, list):  # substitute all host elements
+        if isinstance(extrinsic, str):  # substitute all host elements
             substitutions = {
-                str(el): extrinsic
+                el.symbol: [extrinsic]
+                for el in self.primitive_structure.composition.elements
+            }
+        elif isinstance(extrinsic, list):  # substitute all host elements
+            substitutions = {
+                el.symbol: extrinsic
                 for el in self.primitive_structure.composition.elements
             }
         elif isinstance(extrinsic, dict):  # substitute only specified host elements
             substitutions = extrinsic
         else:
             warnings.warn(
-                f"Invalid `extrinsic` defect input. Got type {type(extrinsic)}, but list or dict required."
+                f"Invalid `extrinsic` defect input. Got type {type(extrinsic)}, but string or list or dict required. "
                 f"No extrinsic defects will be generated."
             )
             substitutions = {}
@@ -197,7 +207,9 @@ class DefectsGenerator:
         pbar.set_description(f"Generating interstitials")
         # previous generators add oxidation states, but messes with interstitial generators, so remove oxi states:
         self.primitive_structure.remove_oxidation_states()
-        if isinstance(extrinsic, list):
+        if isinstance(extrinsic, str):
+            extrinsic_elements = [extrinsic]
+        elif isinstance(extrinsic, list):
             extrinsic_elements = extrinsic
         elif isinstance(
             extrinsic, dict
@@ -215,10 +227,10 @@ class DefectsGenerator:
         if interstitial_coords:
             # For the moment, this assumes interstitial_sites
             insertions = {
-                str(el): interstitial_coords
+                el.symbol: interstitial_coords
                 for el in self.primitive_structure.composition.elements
-                + extrinsic_elements
             }
+            insertions.update({el: interstitial_coords for el in extrinsic_elements})
             interstitial_generator_obj = InterstitialGenerator()
             interstitial_generator = interstitial_generator_obj.generate(
                 self.primitive_structure, insertions=insertions
@@ -234,10 +246,10 @@ class DefectsGenerator:
                 voronoi_interstitial_generator_obj.generate(
                     self.primitive_structure,
                     insert_species=[
-                        str(el)
+                        el.symbol
                         for el in self.primitive_structure.composition.elements
-                        + extrinsic_elements
-                    ],
+                    ]
+                    + extrinsic_elements,
                 )
             )
             self.defects["interstitials"] = [
