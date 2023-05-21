@@ -12,7 +12,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from pymatgen.analysis.defects.core import Defect
+from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.defects.generators import (
@@ -82,6 +82,20 @@ def _round_floats(obj):
     elif isinstance(obj, (list, tuple)):
         return [_round_floats(x) for x in obj]
     return obj
+
+
+def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
+    """
+    Returns the corresponding defect dictionary key for a pymatgen Defect object.
+    """
+    if defect_type == DefectType.Vacancy:
+        return "vacancies"
+    elif defect_type == DefectType.Substitution:
+        return "substitutions"
+    elif defect_type == DefectType.Interstitial:
+        return "interstitials"
+    elif defect_type == DefectType.Other:
+        return "others"
 
 
 class DefectsGenerator:
@@ -165,10 +179,10 @@ class DefectsGenerator:
         pbar.update(10)  # 15% of progress bar
 
         # Antisites:
-        pbar.set_description(f"Generating antisites")
+        pbar.set_description(f"Generating substitutions")
         antisite_generator_obj = AntiSiteGenerator()
         as_generator = antisite_generator_obj.generate(self.primitive_structure)
-        self.defects["antisites"] = [antisite for antisite in as_generator]
+        self.defects["substitutions"] = [antisite for antisite in as_generator]
         pbar.update(10)  # 25% of progress bar
 
         # Substitutions:
@@ -193,13 +207,17 @@ class DefectsGenerator:
             substitutions = {}
 
         if substitutions:
-            pbar.set_description(f"Generating substitutions")
             sub_generator = substitution_generator_obj.generate(
                 self.primitive_structure, substitution=substitutions
             )
-            self.defects["substitutions"] = [
-                substitution for substitution in sub_generator
-            ]
+            if "substitutions" in self.defects:
+                self.defects["substitutions"].extend(
+                    [substitution for substitution in sub_generator]
+                )
+            else:
+                self.defects["substitutions"] = [
+                    substitution for substitution in sub_generator
+                ]
         pbar.update(10)  # 35% of progress bar
 
         # Interstitials:
@@ -289,9 +307,13 @@ class DefectsGenerator:
                 )
                 # set defect charge states: currently from +/-1 to defect oxi state
                 if defect.oxi_state > 0:
-                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
+                    charge_states = [
+                        *range(-1, int(defect.oxi_state) + 1)
+                    ]  # from -1 to oxi_state
                 elif defect.oxi_state < 0:
-                    charge_states = [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
+                    charge_states = [
+                        *range(int(defect.oxi_state), 2)
+                    ]  # from oxi_state to +1
                 else:  # oxi_state is 0
                     charge_states = [-1, 0, 1]
 
@@ -342,7 +364,53 @@ class DefectsGenerator:
                 )  # 100% of progress bar
         pbar.close()
 
-        print("Defect Entries generated:")
+        print(self._defect_generator_info())
+
+    def as_dict(self):
+        """
+        JSON-serializable dict representation of DefectsGenerator
+        """
+        json_dict = {
+            "@module": type(self).__module__,
+            "@class": type(self).__name__,
+            "defects": self.defects,
+            "defect_entries": self.defect_entries,
+            "primitive_structure": self.primitive_structure,
+            "supercell_matrix": self.supercell_matrix,
+        }
+
+        return json_dict
+
+    @classmethod
+    def from_dict(cls, d):
+        """
+        Reconstructs DefectsGenerator object from a dict representation
+        created using DefectsGenerator.as_dict().
+
+        Args:
+            d (dict): dict representation of DefectsGenerator.
+
+        Returns:
+            DefectsGenerator object
+        """
+        d_decoded = MontyDecoder().process_decoded(d)  # decode dict
+        defects_generator = cls.__new__(
+            cls
+        )  # Create new DefectsGenerator object without invoking __init__
+
+        # Manually set object attributes
+        defects_generator.defects = d_decoded["defects"]
+        defects_generator.defect_entries = d_decoded["defect_entries"]
+        defects_generator.primitive_structure = d_decoded["primitive_structure"]
+        defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
+
+        return defects_generator
+
+    def _defect_generator_info(self):
+        """
+        Returns a string with information about the defects that have been generated by the DefectsGenerator.
+        """
+        info_string = ""
         for defect_class, defect_list in self.defects.items():
             table = []
             header = [
@@ -395,59 +463,118 @@ class DefectsGenerator:
                     neutral_defect_entry.defect.multiplicity,
                 ]
                 table.append(row)
-            print(
-                tabulate(
+            info_string += (tabulate(
                     table,
                     headers=header,
                     stralign="left",
                     numalign="left",
-                ),
-                "\n",
-            )
+                ) + "\n\n")
 
-    def as_dict(self):
-        """
-        JSON-serializable dict representation of DefectsGenerator
-        """
-        json_dict = {
-            "@module": type(self).__module__,
-            "@class": type(self).__name__,
-            "defects": self.defects,
-            "defect_entries": self.defect_entries,
-            "primitive_structure": self.primitive_structure,
-            "supercell_matrix": self.supercell_matrix,
-        }
-
-        return json_dict
-
-    @classmethod
-    def from_dict(cls, d):
-        """
-        Reconstructs DefectsGenerator object from a dict representation
-        created using DefectsGenerator.as_dict().
-
-        Args:
-            d (dict): dict representation of DefectsGenerator.
-
-        Returns:
-            DefectsGenerator object
-        """
-        d_decoded = MontyDecoder().process_decoded(d)  # decode dict
-        defects_generator = cls.__new__(
-            cls
-        )  # Create new DefectsGenerator object without invoking __init__
-
-        # Manually set object attributes
-        defects_generator.defects = d_decoded["defects"]
-        defects_generator.defect_entries = d_decoded["defect_entries"]
-        defects_generator.primitive_structure = d_decoded["primitive_structure"]
-        defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
-
-        return defects_generator
+        return info_string
 
     def __getattr__(self, attr):
         """
         Redirects an unknown attribute/method call to the defect_entries dictionary attribute,
         if the attribute doesn't exist in DefectsGenerator.
         """
-        return getattr(self.defect_entries, attr)
+        try:
+            getattr(self.defect_entries, attr)
+        except AttributeError:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{attr}'"
+            )
+
+    def __getitem__(self, key):
+        """
+        Makes DefectsGenerator object subscriptable, so that it can be indexed like a dictionary,
+        using the defect_entries dictionary attribute.
+        """
+        return self.defect_entries[key]
+
+    def __setitem__(self, key, value):
+        """
+        Set the value of a specific key (defect name) in the defect_entries dictionary.
+        Also adds the corresponding defect to the self.defects dictionary, if it doesn't already exist.
+        """
+        # check the input, must be a DefectEntry object, with same supercell and primitive structure
+        if not isinstance(value, DefectEntry):
+            raise TypeError(
+                f"Value must be a DefectEntry object, not {type(value).__name__}"
+            )
+
+        if value.defect.structure != self.primitive_structure:
+            raise ValueError(
+                f"Value must have the same primitive structure as the DefectsGenerator object, instead has:"
+                f"{value.defect.structure}"
+                f"while DefectsGenerator has:"
+                f"{self.primitive_structure}"
+            )
+
+        # check supercell
+        defect_supercell = value.defect.get_supercell_structure(
+            sc_mat=self.supercell_matrix,
+            dummy_species="X",  # keep track of the defect frac coords in the supercell
+        )
+        defect_entry = get_defect_entry_from_defect(
+            value.defect,
+            defect_supercell,
+            charge_state=0,  # just checking supercell structure here
+            dummy_species=DummySpecies("X"),
+        )
+        if defect_entry.sc_entry != value.sc_entry:
+            raise ValueError(
+                f"Value must have the same supercell as the DefectsGenerator object, instead has:"
+                f"{defect_entry.sc_entry}"
+                f"while DefectsGenerator has:"
+                f"{value.sc_entry}"
+            )
+
+        self.defect_entries[key] = value
+
+        # add to self.defects if not already there
+        defects_key = _defect_dict_key_from_pmg_type(value.defect.defect_type)
+        if defects_key not in self.defects:
+            self.defects[defects_key] = []
+        if value.defect not in self.defects[defects_key]:
+            self.defects[defects_key].append(value.defect)
+
+    def __delitem__(self, key):
+        """
+        Deletes the specified defect entry from the defect_entries dictionary.
+        Doesn't remove the defect from the defects dictionary attribute, as there
+        may be other charge states of the same defect still present.
+        """
+        del self.defect_entries[key]
+
+    def __contains__(self, key):
+        """
+        Returns True if the defect_entries dictionary contains the specified defect name.
+        """
+        return key in self.defect_entries
+
+    def __len__(self):
+        """
+        Returns the number of entries in the defect_entries dictionary.
+        """
+        return len(self.defect_entries)
+
+    def __iter__(self):
+        """
+        Returns an iterator over the defect_entries dictionary.
+        """
+        return iter(self.defect_entries)
+
+    def __str__(self):
+        """
+        Returns a string representation of the DefectsGenerator object.
+        """
+        return (
+            f"DefectsGenerator for input {repr(self.primitive_structure.composition)}, space group "
+            f"{self.primitive_structure.get_space_group_info()[0]} with {len(self)} defect entries created."
+        )
+
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectsGenerator object, and prints the DefectsGenerator info.
+        """
+        return self.__str__() + "\n" + self._defect_generator_info()
