@@ -1,11 +1,13 @@
 import os
 import warnings
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 
 from monty.os.path import zpath
 from monty.serialization import loadfn
-from pymatgen.io.vasp.inputs import Kpoints, Potcar, PotcarSingle
+from pymatgen.core import Structure
+from pymatgen.io.vasp.inputs import Kpoints, Potcar, PotcarSingle, Poscar
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet, DictSet
 
 
@@ -138,16 +140,26 @@ class PotcarMod(Potcar):
 
 
 class DefectRelaxSet(DictSet):
-    """
-    pymatgen DictSet for VASP Defect Relaxation Calculations
-    Additional Args:
-        charge: Charge of the defect structure
-    """
+    def __init__(self,
+                 structure: Structure,
+                 config_dict: Optional[Dict] = None,
+                 charge: int = 0,
+                 poscar_comment: Optional[str] = None,
+                 **kwargs):
+        """
+        Extension to pymatgen DictSet object for VASP Defect Relaxation Calculations
 
-    def __init__(self, structure, **kwargs):
-        charge = kwargs.pop("charge", 0)
-        config_dict = kwargs.pop("config_dict", {})
-        if config_dict:
+        Args:
+            structure (Structure): pymatgen Structure object of the defect supercell
+            config_dict (dict): The config dictionary to use.
+            charge (int): Charge of the defect structure
+            poscar_comment (str): POSCAR file comment
+        """
+        self.charge = charge
+        self.poscar_comment = poscar_comment
+
+        if config_dict is not None:
+            self.CONFIG = config_dict  # Bug in pymatgen 2023.5.10 # TODO: PR pymatgen to fix this Yb issue with `DictSet`
             super(self.__class__, self).__init__(
                 structure, config_dict=config_dict, **kwargs
             )
@@ -165,11 +177,10 @@ class DefectRelaxSet(DictSet):
 
             relax_set["INCAR"]["EDIFF"] = scaled_ediff(len(structure))
 
+            self.CONFIG = relax_set
             super(self.__class__, self).__init__(
                 structure, config_dict=relax_set, **kwargs
             )
-
-        self.charge = charge
 
     @property
     def incar(self):
@@ -197,6 +208,13 @@ class DefectRelaxSet(DictSet):
         Potcar object.
         """
         return PotcarMod(symbols=self.potcar_symbols, functional=self.potcar_functional)
+
+    @property
+    def poscar(self) -> Poscar:
+        """
+        Return Poscar object with comment
+        """
+        return Poscar(self.structure, comment=self.poscar_comment)
 
     @property
     def all_input(self):
