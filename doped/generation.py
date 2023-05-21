@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Union
 from itertools import chain
 from tqdm import tqdm
 
-from monty.serialization import dumpfn, loadfn
+from monty.json import MontyDecoder
 from pymatgen.core.structure import Structure
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -346,5 +346,40 @@ class DefectsGenerator:
                 "\n",
             )
 
-    def to(self, outfile):
-        dumpfn(self.defects, outfile)
+    def as_dict(self):
+        """
+        JSON-serializable dict representation of DefectsGenerator
+        """
+        json_dict = {
+            "@module": type(self).__module__,
+            "@class": type(self).__name__,
+            "defects": self.defects,
+            "defect_entries": self.defect_entries,
+            "primitive_structure": self.primitive_structure,
+            "supercell_matrix": self.supercell_matrix,
+        }
+
+        return json_dict
+
+    @classmethod
+    def from_dict(cls, d):
+        """
+        Reconstructs DefectsGenerator object from a dict representation
+        created using DefectsGenerator.as_dict().
+
+        Args:
+            d (dict): dict representation of DefectsGenerator.
+
+        Returns:
+            DefectsGenerator object
+        """
+        d_decoded = MontyDecoder().process_decoded(d)  # decode dict
+        defects_generator = cls.__new__(cls)  # Create new DefectsGenerator object without invoking __init__
+
+        # Manually set object attributes
+        defects_generator.defects = d_decoded["defects"]
+        defects_generator.defect_entries = d_decoded["defect_entries"]
+        defects_generator.primitive_structure = d_decoded["primitive_structure"]
+        defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
+
+        return defects_generator
