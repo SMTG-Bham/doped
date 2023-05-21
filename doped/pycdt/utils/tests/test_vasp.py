@@ -4,7 +4,7 @@ import os
 from pymatgen.core.structure import Structure
 from monty.serialization import loadfn
 
-from doped.pycdt.utils.vasp import PotcarMod, PotcarSingleMod, DefectRelaxSet
+from doped.utils.vasp import DefectRelaxSet
 
 __status__ = "Development"
 

@@ -9,7 +9,7 @@ from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 from pymatgen.core.sites import PeriodicSite
 
-from doped.corrections import (
+from doped.utils.corrections import (
     freysoldt_correction_from_paths,
     kumagai_correction_from_paths,
     get_correction_freysoldt,
