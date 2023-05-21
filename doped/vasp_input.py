@@ -43,7 +43,7 @@ warnings.filterwarnings(
 
 
 # TODO: Updated naming convention, to match that implemented in `ShakeNBreak`.
-def scaled_ediff(natoms):
+def scaled_ediff(natoms: int) -> float:
     """
     Returns a scaled EDIFF value for VASP calculations, based on the number of atoms in the
     structure. EDIFF is set to 1e-5 per 50 atoms in the supercell, with a maximum EDIFF of 1e-4.
@@ -102,10 +102,10 @@ def _prepare_vasp_files(
     output_dir: str = ".",
     subfolder: str = "vasp_gam",
     vasp_type: str = "gam",
-    user_incar_settings: dict = None,
+    user_incar_settings: Optional[dict] = None,
     user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-    user_potcar_functional="PBE_54",
-    user_potcar_settings=None,
+    user_potcar_functional: str = "PBE_54",
+    user_potcar_settings: Optional[dict] = None,
     unperturbed_poscar: bool = False,
     write_files: bool = True,
 ) -> DefectRelaxSet:
@@ -225,10 +225,11 @@ def vasp_gam_files(
     defect_dict: dict,
     output_dir: str = ".",
     subfolder: str = "vasp_gam",
-    user_incar_settings: dict = None,
-    user_potcar_functional="PBE_54",
-    user_potcar_settings=None,
-    write_files=True,
+    user_incar_settings: Optional[dict] = None,
+    user_potcar_functional: str = "PBE_54",
+    user_potcar_settings: Optional[dict] = None,
+    write_files: bool = True,
+    write_transformation_info: bool = False,
     **kwargs,  # to allow POTCAR testing on GH Actions
 ) -> [DefectRelaxSet,]:
     """
@@ -321,10 +322,10 @@ def vasp_std_files(
     defect_dict: dict,
     output_dir: str = ".",
     subfolder: str = "vasp_std",
-    user_incar_settings: dict = None,
+    user_incar_settings: Optional[dict] = None,
     user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-    user_potcar_functional="PBE_54",
-    user_potcar_settings=None,
+    user_potcar_functional:str = "PBE_54",
+    user_potcar_settings: Optional[dict] = None,
     unperturbed_poscar: bool = False,
     write_files: bool = True,
 ) -> [DefectRelaxSet,]:
@@ -436,10 +437,10 @@ def vasp_ncl_files(
     defect_dict: dict,
     output_dir: str = ".",
     subfolder: str = "vasp_ncl",
-    user_incar_settings: dict = None,
+    user_incar_settings: Optional[dict] = None,
     user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-    user_potcar_functional="PBE_54",
-    user_potcar_settings=None,
+    user_potcar_functional: str = "PBE_54",
+    user_potcar_settings: Optional[dict] = None,
     unperturbed_poscar: bool = False,
     write_files: bool = True,
 ) -> [DefectRelaxSet,]:
@@ -562,10 +563,10 @@ def vasp_ncl_files(
 # (noting the other INCAR tags that are changed).
 def _vasp_converge_files(
     structure: "pymatgen.core.Structure",
-    input_dir: str = None,
-    incar_settings: dict = None,
-    potcar_settings: dict = None,
-    config: str = None,
+    input_dir: Optional[str] = None,
+    incar_settings: Optional[dict] = None,
+    potcar_settings: Optional[dict] = None,
+    config: Optional[str] = None,
 ) -> None:
     """
     Generates input files for single-shot GGA convergence test calculations.
@@ -678,10 +679,10 @@ def _vasp_converge_files(
 
 def _vasp_std_chempot(
     structure: "pymatgen.core.Structure",
-    input_dir: str = None,
-    incar_settings: dict = None,
-    kpoints_settings: dict = None,
-    potcar_settings: dict = None,
+    input_dir: Optional[str] = None,
+    incar_settings: Optional[dict] = None,
+    kpoints_settings: Optional[dict] = None,
+    potcar_settings: Optional[dict] = None,
 ) -> None:
     """
     Generates POSCAR, INCAR, POTCAR and KPOINTS for vasp_std chemical potentials relaxation.:
@@ -804,10 +805,10 @@ def _vasp_std_chempot(
 
 def _vasp_ncl_chempot(
     structure: "pymatgen.core.Structure",
-    input_dir: str = None,
-    incar_settings: dict = None,
-    kpoints_settings: dict = None,
-    potcar_settings: dict = None,
+    input_dir: Optional[str] = None,
+    incar_settings: Optional[dict] = None,
+    kpoints_settings: Optional[dict] = None,
+    potcar_settings: Optional[dict] = None,
 ) -> None:
     """
     Generates INCAR, POTCAR and KPOINTS for vasp_ncl chemical potentials relaxation.
