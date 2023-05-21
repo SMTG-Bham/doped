@@ -154,6 +154,7 @@ class DefectRelaxSet(DictSet):
             config_dict (dict): The config dictionary to use.
             charge (int): Charge of the defect structure
             poscar_comment (str): POSCAR file comment
+            **kwargs: Additional kwargs to pass to DictSet
         """
         self.charge = charge
         self.poscar_comment = poscar_comment
@@ -166,10 +167,10 @@ class DefectRelaxSet(DictSet):
         else:
             MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
             default_potcar_dict = loadfn(
-                os.path.join(MODULE_DIR, "../../PotcarSet.yaml")
+                os.path.join(MODULE_DIR, "../PotcarSet.yaml")
             )
-            relax_set = loadfn(os.path.join(MODULE_DIR, "../../HSE06_RelaxSet.yaml"))
-            defect_set = loadfn(os.path.join(MODULE_DIR, "../../DefectSet.yaml"))
+            relax_set = loadfn(os.path.join(MODULE_DIR, "../HSE06_RelaxSet.yaml"))
+            defect_set = loadfn(os.path.join(MODULE_DIR, "../DefectSet.yaml"))
             relax_set["INCAR"].update(defect_set["INCAR"])
             relax_set.update(default_potcar_dict)
 
