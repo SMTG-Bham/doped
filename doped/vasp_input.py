@@ -291,17 +291,17 @@ def _format_defect_entries_input(
         defect_entries, list
     ):  # also catches case where defect_entries is a single DefectEntry, from above
         # convert to dict with doped names as keys:
+        defect_naming_dict = {}
         defect_entry_dict = {}
         for defect_entry in defect_entries:
             if not hasattr(defect_entry, "name"):
                 defect_name_wout_charge = _get_defect_name_from_obj(defect_entry.defect)
                 defect_name_wout_charge = _update_defect_dict(
-                    defect_entry, defect_name_wout_charge, defect_entry_dict
+                    defect_entry, defect_name_wout_charge, defect_naming_dict
                 )
                 defect_name = (
                     defect_name_wout_charge
-                    + f"_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
+                    + f"_{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                 )
                 defect_entry.name = defect_name  # set name attribute
 
