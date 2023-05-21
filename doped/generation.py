@@ -285,7 +285,7 @@ class DefectsGenerator:
                         defect_name_wout_charge = _update_defect_dict(
                             defect_entry, defect_name_wout_charge, defect_naming_dict
                         )
-                    defect_name = defect_name_wout_charge + f"_{charge}"
+                    defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
                     defect_entry.name = defect_name  # set name attribute
                     self.defect_entries[defect_name] = defect_entry
                 pbar.update(
@@ -332,7 +332,7 @@ class DefectsGenerator:
                     for name in self.defect_entries
                     if name.startswith(defect_name + "_")
                 ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
-                neutral_defect_entry = self.defect_entries[defect_name + "_0"]
+                neutral_defect_entry = self.defect_entries[defect_name + "_0"]  # neutral has no +/- sign
                 frac_coords_string = ",".join(f"{x:.2f}" for x in neutral_defect_entry.defect.site.frac_coords)
                 row = [defect_name, charges, f"[{frac_coords_string}]", neutral_defect_entry.defect.multiplicity]
                 table.append(row)
