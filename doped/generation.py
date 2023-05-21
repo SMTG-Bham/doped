@@ -71,6 +71,19 @@ def get_defect_entry_from_defect(
     )
 
 
+def _round_floats(obj):
+    """
+    Recursively round floats in a dictionary to 5 decimal places.
+    """
+    if isinstance(obj, float):
+        return round(obj, 5) + 0.0
+    elif isinstance(obj, dict):
+        return {k: _round_floats(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_round_floats(x) for x in obj]
+    return obj
+
+
 class DefectsGenerator:
     def __init__(
         self,
@@ -130,15 +143,12 @@ class DefectsGenerator:
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description(f"Getting primitive structure")
 
-        # Check if input structure is primitive. If not, reduce and warn
+        # Reduce structure to primitive cell for efficient defect generation
+        # same symprec as defect generators in pymatgen-analysis-defects:
         sga = SpacegroupAnalyzer(structure, symprec=1e-2)
         prim_struct = sga.get_primitive_standard_structure()
-        if len(prim_struct) != len(structure):
-            print(
-                f"Input structure (N(atoms) = {len(structure)}) is not the primitive unit cell. "
-                f"Reducing to primitive cell (N(atoms) = {len(prim_struct)}) for defect generation."
-            )
-        self.primitive_structure = prim_struct
+        clean_prim_struct_dict = _round_floats(prim_struct.as_dict())
+        self.primitive_structure = Structure.from_dict(clean_prim_struct_dict)
         pbar.update(5)  # 5% of progress bar
 
         # Generate defects
