@@ -252,8 +252,7 @@ class DefectsGenerator:
         )
         pbar.update(20)  # 85% of progress bar
 
-        # Generate DefectEntry objects -> and name them at this point, use SnB functions for this, determine charge
-        # states
+        # Generate DefectEntry objects:
         pbar.set_description(f"Generating DefectEntry objects")
         num_defects = sum([len(defect_list) for defect_list in self.defects.values()])
         for defect_type, defect_list in self.defects.items():
@@ -266,7 +265,12 @@ class DefectsGenerator:
                     sc_mat=self.supercell_matrix,
                     dummy_species="X",  # keep track of the defect frac coords in the supercell
                 )
-                for charge in defect.get_charge_states():
+                # set defect charge states: currently from +/-1 to defect oxi state; TODO: Update!!
+                if defect.oxi_state >= 0:
+                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]
+                else:
+                    charge_states = [*range(int(defect.oxi_state), 1 + 1)]
+                for charge in charge_states:
                     # TODO: Will be updated to our chosen charge generation algorithm!
                     defect_entry = get_defect_entry_from_defect(
                         defect,
