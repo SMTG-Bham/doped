@@ -287,11 +287,14 @@ class DefectsGenerator:
                     sc_mat=self.supercell_matrix,
                     dummy_species="X",  # keep track of the defect frac coords in the supercell
                 )
-                # set defect charge states: currently from +/-1 to defect oxi state; TODO: Update!!
-                if defect.oxi_state >= 0:
-                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]
-                else:
-                    charge_states = [*range(int(defect.oxi_state), 1 + 1)]
+                # set defect charge states: currently from +/-1 to defect oxi state
+                if defect.oxi_state > 0:
+                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
+                elif defect.oxi_state < 0:
+                    charge_states = [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
+                else:  # oxi_state is 0
+                    charge_states = [-1, 0, 1]
+
                 for charge in charge_states:
                     # TODO: Will be updated to our chosen charge generation algorithm!
                     defect_entry = get_defect_entry_from_defect(
@@ -307,7 +310,31 @@ class DefectsGenerator:
                         defect_name_wout_charge = _update_defect_dict(
                             defect_entry, defect_name_wout_charge, defect_naming_dict
                         )
-                    defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
+                        if defect_name_wout_charge.endswith("b"):
+                            # defect has been renamed, also need to rename the "a" entry for this same defect type
+                            for (
+                                defect_entry_name,
+                                defect_entry_a,
+                            ) in self.defect_entries.copy().items():
+                                if defect_entry_name.startswith(
+                                    f"{defect_name_wout_charge[:-1]}_"
+                                ):
+                                    charge = int(defect_entry_name.rsplit("_", 1)[-1])
+                                    defect_entry_a.name = (
+                                        defect_name_wout_charge[:-1]
+                                        + f"a_{'+' if charge > 0 else ''}{charge}"
+                                    )
+                                    self.defect_entries[
+                                        defect_entry_a.name
+                                    ] = defect_entry_a
+                                    del self.defect_entries[
+                                        defect_entry_name
+                                    ]  # remove previous entry
+
+                    defect_name = (
+                        defect_name_wout_charge
+                        + f"_{'+' if charge > 0 else ''}{charge}"
+                    )
                     defect_entry.name = defect_name  # set name attribute
                     self.defect_entries[defect_name] = defect_entry
                 pbar.update(
@@ -344,7 +371,8 @@ class DefectsGenerator:
                 key=lambda s: [
                     s.find(sub) if s.find(sub) != -1 else float("inf")
                     for sub in [
-                        el.symbol for el in self.primitive_structure.composition.elements
+                        el.symbol
+                        for el in self.primitive_structure.composition.elements
                     ]
                 ],
             )
@@ -354,9 +382,18 @@ class DefectsGenerator:
                     for name in self.defect_entries
                     if name.startswith(defect_name + "_")
                 ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
-                neutral_defect_entry = self.defect_entries[defect_name + "_0"]  # neutral has no +/- sign
-                frac_coords_string = ",".join(f"{x:.2f}" for x in neutral_defect_entry.defect.site.frac_coords)
-                row = [defect_name, charges, f"[{frac_coords_string}]", neutral_defect_entry.defect.multiplicity]
+                neutral_defect_entry = self.defect_entries[
+                    defect_name + "_0"
+                ]  # neutral has no +/- sign
+                frac_coords_string = ",".join(
+                    f"{x:.2f}" for x in neutral_defect_entry.defect.site.frac_coords
+                )
+                row = [
+                    defect_name,
+                    charges,
+                    f"[{frac_coords_string}]",
+                    neutral_defect_entry.defect.multiplicity,
+                ]
                 table.append(row)
             print(
                 tabulate(
@@ -396,7 +433,9 @@ class DefectsGenerator:
             DefectsGenerator object
         """
         d_decoded = MontyDecoder().process_decoded(d)  # decode dict
-        defects_generator = cls.__new__(cls)  # Create new DefectsGenerator object without invoking __init__
+        defects_generator = cls.__new__(
+            cls
+        )  # Create new DefectsGenerator object without invoking __init__
 
         # Manually set object attributes
         defects_generator.defects = d_decoded["defects"]
