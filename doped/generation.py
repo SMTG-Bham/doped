@@ -400,7 +400,7 @@ class DefectsGenerator:
 
         # Manually set object attributes
         defects_generator.defects = d_decoded["defects"]
-        defects_generator.defect_entries = d_decoded["defect_entries"]
+        defects_generator.defect_entries = d_decoded["defect_entries"]  # TODO: Saving and reloading removes the name attribute from defect entries, need to fix this!
         defects_generator.primitive_structure = d_decoded["primitive_structure"]
         defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
 
@@ -477,9 +477,9 @@ class DefectsGenerator:
         Redirects an unknown attribute/method call to the defect_entries dictionary attribute,
         if the attribute doesn't exist in DefectsGenerator.
         """
-        try:
-            getattr(self.defect_entries, attr)
-        except AttributeError:
+        if hasattr(self.defect_entries, attr):
+            return getattr(self.defect_entries, attr)
+        else:
             raise AttributeError(
                 f"'{type(self).__name__}' object has no attribute '{attr}'"
             )
