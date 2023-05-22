@@ -1235,13 +1235,15 @@ class CompetingPhasesAnalyzer:
 
     def calculate_chempots(self, csv_fname=None, verbose=True, sort_by=None):
         """
-        Calculates chemcial potential limits. For dopant species, it calculates the limiting
+        Calculates chemical potential limits. For dopant species, it calculates the limiting
         potential based on the intrinsic chemical potentials (i.e. same as
         `full_sub_approach=False` in pycdt)
         Args:
             csv_fname (str): If set, will save chemical potential limits to csv
             verbose (bool): If True, will print out chemical potential limits.
-            sort_by (str): If set, will order the chemical potential limits by this element. Default is random ordering.
+            sort_by (str): If set, will sort the chemical potential limits in the output
+                dataframe according to the chemical potential of the specified element (from
+                element-rich to element-poor conditions).
         Retruns:
             Pandas DataFrame, optionally saved to csv
         """
@@ -1305,7 +1307,8 @@ class CompetingPhasesAnalyzer:
             no_element_chem_lims[k] = temp_dict
 
         if sort_by is not None:
-            no_element_chem_lims = dict(sorted(no_element_chem_lims.items(), key=lambda x: x[1][sort_by]))
+            no_element_chem_lims = dict(sorted(no_element_chem_lims.items(),
+                                               key=lambda x: x[1][sort_by], reverse=True))
 
         self._intrinsic_chem_limits = {
             "facets": no_element_chem_lims,
