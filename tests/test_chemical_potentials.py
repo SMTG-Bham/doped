@@ -94,6 +94,15 @@ class ChemPotsTestCase(unittest.TestCase):
             self.parsed_ext_chempots["elemental_refs"],
         )
 
+    def test_sort_by(self): 
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa.from_csv(self.csv_path)
+        df1 = stable_cpa.calculate_chempots(sort_by='Zr')
+        self.assertEqual(list(df1["Zr"])[0], -10.975428439999998)
+
+        with self.assertRaises(KeyError):
+            stable_cpa.calculate_chempots(sort_by='M')
+
     # test vaspruns
     def test_vaspruns(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
