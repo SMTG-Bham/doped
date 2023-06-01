@@ -19,24 +19,15 @@ Chemical potential/stability region plots and defect formation energy (a.k.a. tr
 <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_chempot_plotting.png" width="420">   &nbsp;&nbsp;  <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_TLD_plot.png" width="390">
 
 ## Requirements
-`doped` requires `pymatgen<2022.8.23` and its dependencies.
+`doped` requires `pymatgen>=2022.8.23` and its dependencies.
 
 ## Installation
-- Because of breaking changes made to the `pymatgen` defects code in version `2022.8.23`, `doped` requires 
-`pymatgen<2022.8.23`, which is installed automatically when installing `doped`. 
-However, as discussed briefly below and in the example notebooks, the 
-[`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach is highly recommended when calculating 
-defects in solids, and this package has been updated to be compatible with the latest version of `pymatgen`.
-As such, it is recommended to install `doped` in a virtual python environment as follows:
-
 1. Create virtual environment and install: 
 ```bash
-conda create -n doped python=3.10  # create conda environment named doped
-conda activate doped  # activate doped conda environment
 pip install doped  # install doped and dependencies, can also  
 pip install --force --no-cache-dir numpy==1.23 # install numpy after doped to avoid binary incompatibility
 ```
-And then use this environment whenever using `doped`.
+
 Alternatively if desired, `doped` can also be installed from `conda` with:
 
 ```bash
