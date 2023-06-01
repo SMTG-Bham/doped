@@ -39,11 +39,6 @@ default_relax_set["INCAR"].update(default_defect_set["INCAR"])
 
 _ignore_pmg_warnings()
 
-# until updated from pymatgen==2022.7.25 :
-warnings.filterwarnings(
-    "ignore", message="Using `tqdm.autonotebook.tqdm` in notebook mode"
-)
-
 
 def scaled_ediff(natoms: int) -> float:
     """
