@@ -3,29 +3,33 @@ Code to generate VASP defect calculation input files.
 """
 import os
 import warnings
+import numpy as np
 from copy import deepcopy  # See https://stackoverflow.com/a/22341377/14020960
 from typing import TYPE_CHECKING, Optional, Union, List, Dict
 
 from monty.io import zopen
 from monty.serialization import dumpfn, loadfn
+from pymatgen.core import SETTINGS
 from pymatgen.io.vasp.inputs import (
     BadIncarWarning,
     incar_params,
     Incar,
     Kpoints,
     Poscar,
+    Potcar,
 )
+from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.sets import DictSet
 from pymatgen.analysis.defects.thermo import DefectEntry
-from shakenbreak.input import _get_defect_site, _get_bulk_defect_site
-
-from doped.utils.vasp import DefectRelaxSet, _check_psp_dir
-from doped import _ignore_pmg_warnings
-from doped.generation import (
-    DefectsGenerator,
+from shakenbreak.input import (
+    _get_defect_site,
+    _get_bulk_defect_site,
     _get_defect_name_from_obj,
     _update_defect_dict,
 )
+
+from doped import _ignore_pmg_warnings
+from doped.generation import DefectsGenerator
 
 if TYPE_CHECKING:
     import pymatgen.core.periodic_table
@@ -38,6 +42,112 @@ default_defect_set = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
 default_relax_set["INCAR"].update(default_defect_set["INCAR"])
 
 _ignore_pmg_warnings()
+
+
+class DefectRelaxSet(DictSet):
+    def __init__(
+        self,
+        structure: Structure,
+        config_dict: Optional[Dict] = None,
+        charge: int = 0,
+        poscar_comment: Optional[str] = None,
+        **kwargs,
+    ):
+        """
+        Extension to pymatgen DictSet object for VASP Defect Relaxation Calculations
+
+        Args:
+            structure (Structure): pymatgen Structure object of the defect supercell
+            config_dict (dict): The config dictionary to use.
+            charge (int): Charge of the defect structure
+            poscar_comment (str): POSCAR file comment
+            **kwargs: Additional kwargs to pass to DictSet
+        """
+        self.charge = charge
+        self.poscar_comment = poscar_comment
+
+        if config_dict is not None:
+            self.CONFIG = config_dict  # Bug in pymatgen 2023.5.10 # TODO: PR pymatgen to fix this Yb issue with `DictSet`
+            super(self.__class__, self).__init__(
+                structure, config_dict=config_dict, **kwargs
+            )
+        else:
+            MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+            default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
+            relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
+            defect_set = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
+            relax_set["INCAR"].update(defect_set["INCAR"])
+            relax_set.update(default_potcar_dict)
+
+            from doped.vasp import scaled_ediff
+
+            relax_set["INCAR"]["EDIFF"] = scaled_ediff(len(structure))
+
+            self.CONFIG = relax_set
+            super(self.__class__, self).__init__(
+                structure, config_dict=relax_set, **kwargs
+            )
+
+    @property
+    def incar(self):
+        inc = super(self.__class__, self).incar
+        try:
+            inc["NELECT"] = self.nelect - self.charge
+            if inc["NELECT"] % 2 != 0:  # odd number of electrons
+                inc["NUPDOWN"] = 1
+            else:
+                # when writing VASP just resets this to 0 anyway:
+                inc["NUPDOWN"] = (
+                    "0  # If defect has multiple spin-polarised states (e.g. bipolarons) could "
+                    "also have triplet (NUPDOWN=2), but ΔE typically small."
+                )
+
+        except Exception as e:
+            warnings.warn(
+                f"NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; "
+                f"got error {e}"
+            )
+
+        return inc
+
+    @property
+    def potcar(self):
+        """
+        Potcar object.
+        """
+        return Potcar(symbols=self.potcar_symbols, functional=self.potcar_functional)
+
+    @property
+    def poscar(self) -> Poscar:
+        """
+        Return Poscar object with comment
+        """
+        return Poscar(self.structure, comment=self.poscar_comment)
+
+    @property
+    def all_input(self):
+        """
+        Returns all input files as a dict of {filename: vasp object}
+
+        Returns:
+            dict of {filename: object}, e.g., {'INCAR': Incar object, ...}
+        """
+        try:
+            return super(DefectRelaxSet, self).all_input
+        except:  # Expecting the error to be POTCAR related, its ignored
+            kpoints = self.kpoints
+            incar = self.incar
+            if np.product(kpoints.kpts) < 4 and incar.get("ISMEAR", 0) == -5:
+                incar["ISMEAR"] = 0
+
+            return {"INCAR": incar, "KPOINTS": kpoints, "POSCAR": self.poscar}
+
+    @property
+    def structure(self):
+        """
+        :return: Structure
+        """
+        return self._structure
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -159,7 +269,7 @@ def _prepare_vasp_files(
         vaspinputdir = f"{defect_dir}/{subfolder}"
 
     if user_potcar_functional is not None:
-        potcars = _check_psp_dir()
+        potcars = any(["VASP_PSP_DIR" in i for i in SETTINGS])
         if not potcars:
             if vasp_type == "gam":
                 warnings.warn(
