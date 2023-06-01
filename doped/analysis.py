@@ -24,7 +24,7 @@ from monty.serialization import loadfn, dumpfn
 from monty.json import MontyDecoder
 from tabulate import tabulate
 
-from doped.utils.vasp import DefectRelaxSet
+from doped.vasp import DefectRelaxSet
 from doped.pycdt.utils import parse_calculations
 from doped import _ignore_pmg_warnings
 
