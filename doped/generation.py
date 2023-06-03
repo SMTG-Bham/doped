@@ -1,6 +1,7 @@
 """
 Code to generate Defect objects and supercell structures for ab-initio calculations.
 """
+import copy
 import warnings
 from tabulate import tabulate
 from typing import Optional, List, Dict, Union
@@ -22,7 +23,8 @@ from pymatgen.analysis.defects.generators import (
     InterstitialGenerator,
     VoronoiInterstitialGenerator,
 )
-from shakenbreak.input import _get_defect_name_from_obj, _update_defect_dict
+
+# TODO: Use new doped naming functions in SnB
 
 
 # TODO: Should have option to provide the bulk supercell to use, and generate from this, in case ppl want to directly
@@ -32,8 +34,6 @@ from shakenbreak.input import _get_defect_name_from_obj, _update_defect_dict
 #  for defect parsing as well). Defectivator has functions that do some of this. This will be tricky (SSX trickay you
 #  might say) for relaxed interstitials -> get symmetry-equivalent positions of relaxed interstitial position in
 #  unrelaxed bulk (easy pal, tf you mean 'tricky'??)
-
-# Only include interstitials flag if interstitial generation is still slow, but doubt it?
 
 
 def get_defect_entry_from_defect(
@@ -98,6 +98,235 @@ def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
         return "others"
 
 
+def closest_site_info(defect_entry, n=1):
+    """
+    Return the element and distance (rounded to 2 decimal places) of the closest site to defect_entry.sc_defect_frac_coords in defect_entry.sc_entry.structure, with distance > 0.01 (i.e. so not the site itself), and if there are multiple elements with the same distance, sort alphabetically and return the first one.
+    If n is set, then it returns the nth closest site, where the nth site must be at least 0.02 Å further away than the n-1th site.
+    """
+
+    site_distances = [
+        (
+            site.distance_and_image_from_frac_coords(
+                defect_entry.sc_defect_frac_coords
+            )[0],
+            site,
+        )
+        for site in defect_entry.sc_entry.structure.sites
+        if site.distance_and_image_from_frac_coords(defect_entry.sc_defect_frac_coords)[
+            0
+        ]
+        > 0.01
+    ]
+
+    min_distance, closest_site = min(
+        site_distances, key=lambda x: (round(x[0], 2), x[1].specie.symbol)
+    )
+
+    if n > 1:
+        for i in range(n - 1):
+            site_distances = [
+                (
+                    site.distance_and_image_from_frac_coords(
+                        defect_entry.sc_defect_frac_coords
+                    )[0],
+                    site,
+                )
+                for site in defect_entry.sc_entry.structure.sites
+                if site.distance_and_image_from_frac_coords(
+                    defect_entry.sc_defect_frac_coords
+                )[0]
+                > min_distance + 0.02
+            ]
+            min_distance, closest_site = min(
+                site_distances, key=lambda x: (round(x[0], 2), x[1].specie.symbol)
+            )
+
+    return closest_site.specie.symbol + f"{min_distance:.2f}"
+
+
+def get_defect_name_from_entry(defect_entry):
+    """Get the doped/SnB defect name from DefectEntry object"""
+    sga = SpacegroupAnalyzer(defect_entry.sc_entry.structure)
+    defect_name = (
+        f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
+        f"_{closest_site_info(defect_entry)}"
+    )
+
+    return defect_name
+
+
+def name_defect_entries(defect_entries):
+    """
+    Create a dictionary of {Name: DefectEntry} from a list of DefectEntry objects, where the
+    names are set according to the default doped algorithm; which is to use the pymatgen defect
+    name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless there are multiple
+    inequivalent sites for the defect, in which case the point group of the defect site is appended
+    (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique, then element identity and distance
+    to the nearest neighbour of the defect site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83
+    etc.).
+    For interstitials, the same naming scheme is used, but the point group is always appended
+    to the pymatgen defect name.
+    """
+    defect_naming_dict = {}
+    for defect_entry in defect_entries:
+        full_defect_name = get_defect_name_from_entry(defect_entry)
+        if defect_entry.defect.defect_type == DefectType.Interstitial:
+            shortest_defect_name = full_defect_name.rsplit("_", 1)[
+                0
+            ]  # pmg name + point group
+            matching_previous_defect_name = [
+                name for name in defect_naming_dict if shortest_defect_name in name
+            ]
+            if not matching_previous_defect_name:
+                defect_naming_dict[shortest_defect_name] = defect_entry
+
+            else:
+                if len(matching_previous_defect_name) > 1:
+                    raise ValueError(
+                        f"Multiple previous defect names match "
+                        f"{shortest_defect_name}."
+                    )
+                else:
+                    prev_defect_entry = defect_naming_dict.pop(
+                        matching_previous_defect_name[0]
+                    )
+                    prev_defect_entry_full_name = get_defect_name_from_entry(
+                        prev_defect_entry
+                    )
+                    if prev_defect_entry_full_name != full_defect_name:
+                        defect_naming_dict[
+                            prev_defect_entry_full_name
+                        ] = prev_defect_entry
+                        defect_naming_dict[full_defect_name] = defect_entry
+                    else:
+                        matching_names = True
+                        n = 2
+                        while matching_names:
+                            # append 2nd,3rd,4th etc closest site info to name until unique:
+                            prev_defect_entry_full_name += closest_site_info(
+                                prev_defect_entry, n=n
+                            )
+                            full_defect_name += closest_site_info(defect_entry, n=n)
+                            if prev_defect_entry_full_name != full_defect_name:
+                                defect_naming_dict[
+                                    prev_defect_entry_full_name
+                                ] = prev_defect_entry
+                                defect_naming_dict[full_defect_name] = defect_entry
+                                matching_names = False
+
+                            n += 1
+
+        else:  # vacancies and substitutions
+            shortest_defect_name = full_defect_name.rsplit("_", 2)[0]  # pmg name
+            matching_previous_defect_name = [
+                name for name in defect_naming_dict if shortest_defect_name in name
+            ]
+            if not matching_previous_defect_name:
+                defect_naming_dict[shortest_defect_name] = defect_entry
+
+            else:
+                if len(matching_previous_defect_name) > 1:
+                    raise ValueError(
+                        f"Multiple previous defect names match {shortest_defect_name}."
+                    )
+                else:
+                    prev_defect_entry = defect_naming_dict.pop(
+                        matching_previous_defect_name[0]
+                    )
+                    prev_defect_entry_full_name = get_defect_name_from_entry(
+                        prev_defect_entry
+                    )
+                    prev_defect_entry_shorter_name = prev_defect_entry_full_name.rsplit(
+                        "_", 1
+                    )[
+                        0
+                    ]  # pmg name + point group
+                    shorter_defect_name = full_defect_name.rsplit("_", 1)[
+                        0
+                    ]  # pmg name + point group
+                    if prev_defect_entry_shorter_name != shorter_defect_name:
+                        defect_naming_dict[
+                            prev_defect_entry_shorter_name
+                        ] = prev_defect_entry
+                        defect_naming_dict[shorter_defect_name] = defect_entry
+
+                    else:
+                        if prev_defect_entry_full_name != full_defect_name:  # w/closest site info
+                            defect_naming_dict[
+                                prev_defect_entry_full_name
+                            ] = prev_defect_entry
+                            defect_naming_dict[full_defect_name] = defect_entry
+
+                        else:
+                            matching_names = True
+                            n = 2
+                            while matching_names:
+                                # append 2nd,3rd,4th etc closest site info to name until unique:
+                                prev_defect_entry_full_name += closest_site_info(
+                                    prev_defect_entry, n=n
+                                )
+                                full_defect_name += closest_site_info(defect_entry, n=n)
+                                if prev_defect_entry_full_name != full_defect_name:
+                                    defect_naming_dict[
+                                        prev_defect_entry_full_name
+                                    ] = prev_defect_entry
+                                    defect_naming_dict[full_defect_name] = defect_entry
+                                    matching_names = False
+
+                                n += 1
+
+    return defect_naming_dict
+
+
+# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
+_PTG_IDS = [
+    ("C1", "1", 1),
+    ("Ci", "-1", 2),
+    ("C2", "2", 3),
+    ("Cs", "m", 6),
+    ("C2h", "2/m", 10),
+    ("D2", "222", 16),
+    ("C2v", "mm2", 25),
+    ("D2h", "mmm", 47),
+    ("C4", "4", 75),
+    ("S4", "-4", 81),
+    ("C4h", "4/m", 83),
+    ("D4", "422", 89),
+    ("C4v", "4mm", 99),
+    ("D2d", "-42m", 111),
+    ("D4h", "4/mmm", 123),
+    ("C3", "3", 143),
+    ("C3i", "-3", 147),
+    ("D3", "32", 149),
+    ("C3v", "3m", 156),
+    ("D3d", "-3m", 162),
+    ("C6", "6", 168),
+    ("C3h", "-6", 174),
+    ("C6h", "6/m", 175),
+    ("D6", "622", 177),
+    ("C6v", "6mm", 183),
+    ("D3h", "-6m2", 189),
+    ("D6h", "6/mmm", 191),
+    ("T", "23", 195),
+    ("Th", "m-3", 200),
+    ("O", "432", 207),
+    ("Td", "-43m", 215),
+    ("Oh", "m-3m", 221),
+]
+
+_SCH2HERM = {t[0]: t[1] for t in _PTG_IDS}
+_HERM2SCH = {t[1]: t[0] for t in _PTG_IDS}
+_SPGID2SCH = {t[2]: t[0] for t in _PTG_IDS}
+_SCH2SPGID = {t[0]: t[2] for t in _PTG_IDS}
+
+sch_symbols = list(_SCH2HERM.keys())
+
+
+def herm2sch(herm_symbol):
+    """Convert from Hermann-Mauguin to Schoenflies."""
+    return _HERM2SCH.get(herm_symbol, None)
+
+
 class DefectsGenerator:
     def __init__(
         self,
@@ -121,11 +350,6 @@ class DefectsGenerator:
         is desired, this can be controlled by specifying keyword arguments in DefectsGenerator(),
         which are passed to the `get_supercell_structure()` method.
 
-        Generated defect entries are named (by setting the `DefectEntry.name` attribute) as
-        "{DefectEntry.defect.name}_m{DefectEntry.defect.multiplicity}_{charge}" for interstitials
-        and "{DefectEntry.defect.name}_s{DefectEntry.defect.defect_site_index}_{charge}" for
-        vacancies and antisites/substitutions. The labels "a", "b", "c"... will be appended for
-        defects with multiple inequivalent sites.
         # TODO: This 👆 is the current ShakeNBreak default, but will be updated!
 
         # TODO: Mention how charge states are generated, and how to modify, as shown in the example notebook.
@@ -295,70 +519,48 @@ class DefectsGenerator:
         # Generate DefectEntry objects:
         pbar.set_description(f"Generating DefectEntry objects")
         num_defects = sum([len(defect_list) for defect_list in self.defects.values()])
+
+        defect_entry_list = []
         for defect_type, defect_list in self.defects.items():
-            defect_naming_dict = {}
             for defect in defect_list:
-                defect_name_wout_charge = (
-                    None  # determine for the first charge state only
-                )
                 defect_supercell = defect.get_supercell_structure(
                     sc_mat=self.supercell_matrix,
                     dummy_species="X",  # keep track of the defect frac coords in the supercell
                 )
-                # set defect charge states: currently from +/-1 to defect oxi state
-                if defect.oxi_state > 0:
-                    charge_states = [
-                        *range(-1, int(defect.oxi_state) + 1)
-                    ]  # from -1 to oxi_state
-                elif defect.oxi_state < 0:
-                    charge_states = [
-                        *range(int(defect.oxi_state), 2)
-                    ]  # from oxi_state to +1
-                else:  # oxi_state is 0
-                    charge_states = [-1, 0, 1]
+                neutral_defect_entry = get_defect_entry_from_defect(
+                    defect,
+                    defect_supercell,
+                    0,
+                    dummy_species=DummySpecies("X"),
+                )
+                defect_entry_list.append(neutral_defect_entry)
 
-                for charge in charge_states:
-                    # TODO: Will be updated to our chosen charge generation algorithm!
-                    defect_entry = get_defect_entry_from_defect(
-                        defect,
-                        defect_supercell,
-                        charge,
-                        dummy_species=DummySpecies("X"),
-                    )
-                    if (
-                        defect_name_wout_charge is None
-                    ):  # determine for the first charge state only
-                        defect_name_wout_charge = _get_defect_name_from_obj(defect)
-                        defect_name_wout_charge = _update_defect_dict(
-                            defect_entry, defect_name_wout_charge, defect_naming_dict
-                        )
-                        if defect_name_wout_charge.endswith("b"):
-                            # defect has been renamed, also need to rename the "a" entry for this same defect type
-                            for (
-                                defect_entry_name,
-                                defect_entry_a,
-                            ) in self.defect_entries.copy().items():
-                                if defect_entry_name.startswith(
-                                    f"{defect_name_wout_charge[:-1]}_"
-                                ):
-                                    charge = int(defect_entry_name.rsplit("_", 1)[-1])
-                                    defect_entry_a.name = (
-                                        defect_name_wout_charge[:-1]
-                                        + f"a_{'+' if charge > 0 else ''}{charge}"
-                                    )
-                                    self.defect_entries[
-                                        defect_entry_a.name
-                                    ] = defect_entry_a
-                                    del self.defect_entries[
-                                        defect_entry_name
-                                    ]  # remove previous entry
+        named_defect_dict = name_defect_entries(defect_entry_list)
+        pbar.update(5)  # 90% of progress bar
 
-                    defect_name = (
-                        defect_name_wout_charge
-                        + f"_{'+' if charge > 0 else ''}{charge}"
-                    )
-                    defect_entry.name = defect_name  # set name attribute
-                    self.defect_entries[defect_name] = defect_entry
+        for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
+            defect = neutral_defect_entry.defect
+            # set defect charge states: currently from +/-1 to defect oxi state
+            if defect.oxi_state > 0:
+                charge_states = [
+                    *range(-1, int(defect.oxi_state) + 1)
+                ]  # from -1 to oxi_state
+            elif defect.oxi_state < 0:
+                charge_states = [
+                    *range(int(defect.oxi_state), 2)
+                ]  # from oxi_state to +1
+            else:  # oxi_state is 0
+                charge_states = [-1, 0, 1]
+
+            for charge in charge_states:
+                # TODO: Will be updated to our chosen charge generation algorithm!
+                defect_entry = copy.deepcopy(neutral_defect_entry)
+                defect_entry.charge_state = charge
+                defect_name = (
+                    defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
+                )
+                defect_entry.name = defect_name  # set name attribute
+                self.defect_entries[defect_name] = defect_entry
                 pbar.update(
                     (1 / num_defects) * (pbar.total - pbar.n)
                 )  # 100% of progress bar
@@ -400,7 +602,9 @@ class DefectsGenerator:
 
         # Manually set object attributes
         defects_generator.defects = d_decoded["defects"]
-        defects_generator.defect_entries = d_decoded["defect_entries"]  # TODO: Saving and reloading removes the name attribute from defect entries, need to fix this!
+        defects_generator.defect_entries = d_decoded[
+            "defect_entries"
+        ]  # TODO: Saving and reloading removes the name attribute from defect entries, need to fix this!
         defects_generator.primitive_structure = d_decoded["primitive_structure"]
         defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
 
@@ -417,7 +621,7 @@ class DefectsGenerator:
                 defect_class.capitalize(),
                 "Charge States",
                 "Unit Cell Coords",
-                "Site Multiplicity (Unit Cell)",
+                "\x1B[3mg\x1B[0m_site",
             ]
             defect_type = defect_list[0].defect_type
             matching_defect_types = {
@@ -446,10 +650,12 @@ class DefectsGenerator:
             )
             for defect_name in sorted_defect_names:
                 charges = [
-                    int(name.rsplit("_", 1)[1])
+                    name.rsplit("_", 1)[1]
                     for name in self.defect_entries
                     if name.startswith(defect_name + "_")
                 ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
+                # convert list of strings to one string with comma-separated charges
+                charges = "[" + ",".join(charges) + "]"
                 neutral_defect_entry = self.defect_entries[
                     defect_name + "_0"
                 ]  # neutral has no +/- sign
@@ -463,12 +669,18 @@ class DefectsGenerator:
                     neutral_defect_entry.defect.multiplicity,
                 ]
                 table.append(row)
-            info_string += (tabulate(
+            info_string += (
+                tabulate(
                     table,
                     headers=header,
                     stralign="left",
                     numalign="left",
-                ) + "\n\n")
+                )
+                + "\n\n"
+            )
+        info_string += (
+            "\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)"
+        )
 
         return info_string
 
