@@ -67,7 +67,9 @@ class DefectRelaxSet(DictSet):
         self.poscar_comment = poscar_comment
 
         if config_dict is not None:
-            self.CONFIG = config_dict  # Bug in pymatgen 2023.5.10 # TODO: PR pymatgen to fix this Yb issue with `DictSet`
+            # avoid bug in pymatgen 2023.5.10, PR'd and fixed in later versions:
+            self.CONFIG = config_dict
+
             super(self.__class__, self).__init__(
                 structure, config_dict=config_dict, **kwargs
             )
