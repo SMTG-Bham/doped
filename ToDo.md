@@ -12,8 +12,7 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Defect calculations set up
-- Updated naming convention, to match that implemented in `ShakeNBreak`. This should then be used in `plotting` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
-  - Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
+- Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
 - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
     - If we have this implemented, can then remove some of the fluff in `defectsmaker.py` (i.e. classes other than `ChargedDefectStructures()`?)
@@ -28,6 +27,7 @@
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
   - Don't show transition levels outside of the bandgap (or within a certain range of the band edge, possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
+  - Use the update defect name info in `plotting` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
 - Add LDOS plotting to doped, big selling point for defects and disorder!
 - Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
 - `aide` labelling of defect species in formation energy plots?
@@ -48,9 +48,8 @@
 ## Housekeeping
 - Logo!
 - Clean `README` with bullet-point summary of key features.
-- Update to be compatible with new `pymatgen` – will need to think about an appropriate naming scheme for inequivalent defect sites as this isn't currently in `pymatgen-analysis-defects` (include site symmetry and multiplicity in name, and if this is still a duplicate then append with "_a", "_b" etc?)(i.e. use this rather than old PyCDT number counting, as this can be easily confused with charge states)
-  - At present, we can't update to be compatible with the most recent `pymatgen` because the defect corrections code has all been removed and is not yet in `pymatgen-analysis-defects`. Once it is however, we should refactor to be compatible with this. For doing this, worth looking at how this was done for `ShakeNBreak`, and should use the new naming system built in `ShakeNBreak`. When doing so, update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
-  - When updating to new `pymatgen`, can expand our python dependencies to 3.11+ (as this is currently what's limiting us to python<3.11)
+- Update to be compatible with new `pymatgen`
+  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Test coverage.
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
