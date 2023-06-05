@@ -47,7 +47,7 @@
 
 ## Housekeeping
 - Logo!
-- Clean `README` with bullet-point summary of key features.
+- Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - Update to be compatible with new `pymatgen`
   - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
