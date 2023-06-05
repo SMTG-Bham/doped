@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Union
 from itertools import chain
 from tqdm import tqdm
 
+import numpy as np
 from monty.json import MontyDecoder
 from pymatgen.core.structure import Structure
 from pymatgen.core.periodic_table import DummySpecies
@@ -23,6 +24,7 @@ from pymatgen.analysis.defects.generators import (
     InterstitialGenerator,
     VoronoiInterstitialGenerator,
 )
+from ase.spacegroup.wyckoff import Wyckoff  # TODO: PR this to ASE if not already merged
 
 # TODO: Use new doped naming functions in SnB
 
@@ -251,7 +253,9 @@ def name_defect_entries(defect_entries):
                         defect_naming_dict[shorter_defect_name] = defect_entry
 
                     else:
-                        if prev_defect_entry_full_name != full_defect_name:  # w/closest site info
+                        if (
+                            prev_defect_entry_full_name != full_defect_name
+                        ):  # w/closest site info
                             defect_naming_dict[
                                 prev_defect_entry_full_name
                             ] = prev_defect_entry
@@ -327,6 +331,130 @@ def herm2sch(herm_symbol):
     return _HERM2SCH.get(herm_symbol, None)
 
 
+def get_wyckoff_dict_from_sgn(sgn):
+    """Get dictionary of {Wyckoff label: coordinates} for a given space group number."""
+    wyckoff = Wyckoff(sgn).wyckoff
+    wyckoff_label_coords_dict = {}
+
+    def _coord_string_to_array(coord_string):
+        # Split string into substrings, evaluate each as a Python expression,
+        # then convert to numpy array
+        return np.array(
+            [
+                float(eval(x)) if not any(i in x for i in ["x", "y", "z"]) else x
+                for x in coord_string.split(",")
+            ]
+        )
+
+    for element in wyckoff["letters"]:
+        label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
+        wyckoff_coords = [
+            _coord_string_to_array(coords) for coords in wyckoff[element]["coordinates"]
+        ]
+        wyckoff_label_coords_dict[label] = wyckoff_coords
+
+        equivalent_sites = [
+            _coord_string_to_array(coords) for coords in wyckoff["equivalent_sites"]
+        ]
+
+        new_coords = []  # new list for equivalent coordinates
+
+        for coord_array in wyckoff_coords:
+            if not all(isinstance(i, str) for i in coord_array):
+                for equivalent_site in equivalent_sites:
+                    # add coord_array and equivalent_site element-wise,
+                    # for each element when neither is a string:
+                    equiv_coord_array = coord_array.copy()
+                    for idx in range(len(equiv_coord_array)):
+                        if not isinstance(
+                            equiv_coord_array[idx], str
+                        ) and not isinstance(equivalent_site[idx], str):
+                            equiv_coord_array[idx] += equivalent_site[idx]
+                            equiv_coord_array[idx] = np.mod(
+                                equiv_coord_array[idx], 1
+                            )  # wrap to 0-1 (i.e. to unit cell)
+                    new_coords.append(equiv_coord_array)
+
+        # add new_coords to wyckoff_label_coords:
+        wyckoff_label_coords_dict[label].extend(new_coords)
+    return wyckoff_label_coords_dict
+
+
+def get_wyckoff_label(defect_entry, wyckoff_dict=None):
+    """
+    Return the Wyckoff label for a defect entry's site, given a dictionary of Wyckoff labels and
+    coordinates (`wyckoff_dict`). If `wyckoff_dict` is not provided, the spacegroup of the bulk
+    structure is determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
+    """
+    if wyckoff_dict is None:
+        sga = SpacegroupAnalyzer(defect_entry.defect.structure)
+        wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+
+    # compare array to coord_string_to_array("x,x,x") element-wise. If an element is x, y or z, and z/y/z not set, set x/y/z to the corresponding element in the array:
+    def _compare_arrays(array1, array2):
+        variable_dict = {}  # dict for x,y,z
+        for i, j in zip(array1, array2):
+            if j in ["x", "y", "z", "-x", "-y", "-z"]:
+                if j in [
+                    "x",
+                    "-x",
+                ]:  # get x from variable dict if present, otherwise set to i:
+                    x = variable_dict.get("x", i)
+                    if j == "-x":
+                        x = -x
+                    if not np.isclose(x, i, rtol=1e-2):
+                        return False
+                    else:
+                        variable_dict["x"] = i
+                elif j in ["y", "-y"]:
+                    y = variable_dict.get("y", i)
+                    if j == "-y":
+                        y = -y
+                    if not np.isclose(y, i, rtol=1e-2):
+                        return False
+                    else:
+                        variable_dict["y"] = i
+                elif j in ["z", "-z"]:
+                    z = variable_dict.get("z", i)
+                    if j == "-z":
+                        z = -z
+                    if not np.isclose(z, i, rtol=1e-2):
+                        return False
+                    else:
+                        variable_dict["z"] = i
+
+            else:
+                if np.isclose(i, float(j), rtol=1e-2):
+                    continue
+                else:
+                    return False
+        return True
+
+    # get closest match of any value (coords) in wyckoff_label_coords to defect site coords:
+    def find_closest_match(defect_site, wyckoff_label_coords_dict):
+        # try with non-variable coordinates
+        for label, coord_list in wyckoff_label_coords_dict.items():
+            for coords in coord_list:
+                if not any(
+                    i in coords.tolist() for i in ["x", "y", "z", "-x", "-y", "-z"]
+                ):
+                    if np.allclose(defect_site.frac_coords, coords, rtol=1e-2):
+                        return label
+
+        # no direct match with non-variable coordinates, try with variable
+        for label, coord_list in wyckoff_label_coords_dict.items():
+            for coords in coord_list:
+                if any(i in coords.tolist() for i in ["x", "y", "z", "-x", "-y", "-z"]):
+                    if _compare_arrays(defect_site.frac_coords, coords):
+                        return label
+
+        return None  # No match found
+
+    # Loop over the names
+    defect_site = defect_entry.defect.site
+    return find_closest_match(defect_site)
+
+
 class DefectsGenerator:
     def __init__(
         self,
@@ -350,7 +478,7 @@ class DefectsGenerator:
         is desired, this can be controlled by specifying keyword arguments in DefectsGenerator(),
         which are passed to the `get_supercell_structure()` method.
 
-        # TODO: This 👆 is the current ShakeNBreak default, but will be updated!
+        # TODO: Describe naming scheme here
 
         # TODO: Mention how charge states are generated, and how to modify, as shown in the example notebook.
         # Also show how to remove certain defects from the dictionary? Mightn't be worth the space for this though
