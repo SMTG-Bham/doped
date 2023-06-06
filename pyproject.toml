@@ -78,7 +78,9 @@ select = [  # from pymatgen
 ignore = [
   "B028",    # No explicit stacklevel keyword argument found
   "D101",    # Missing docstring in public class (docstring in init instead)
+  "D200",    # One-line docstring should fit on one line with quotes
   "D205",    # 1 blank line required between summary line and description
+  "D212",    # Multi-line docstring summary should start at the first line
   "PLR2004", # Magic number
   "PLR",     # pylint refactor
 ]
@@ -86,3 +88,10 @@ ignore = [
 [[tool.mypy.overrides]]
 module = ["tabulate.*"]
 ignore_missing_imports = true
+
+[tool.docformatter]
+recursive = true
+pre-summary-newline = true
+make-summary-multi-line = true
+wrap-summaries = 79
+wrap-descriptions = 79
