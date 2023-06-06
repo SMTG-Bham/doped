@@ -1,4 +1,7 @@
-"""Code to generate Defect objects and supercell structures for ab-initio calculations."""
+"""
+Code to generate Defect objects and supercell structures for ab-initio
+calculations.
+"""
 import copy
 import warnings
 from itertools import chain
@@ -44,7 +47,8 @@ def get_defect_entry_from_defect(
     charge_state: int,
     dummy_species: DummySpecies = dummy_species,
 ):
-    """Generate DefectEntry object from a Defect object.
+    """
+    Generate DefectEntry object from a Defect object.
 
     This is used to describe a Defect with a specified simulation cell.
     """
@@ -72,7 +76,9 @@ def get_defect_entry_from_defect(
 
 
 def _round_floats(obj):
-    """Recursively round floats in a dictionary to 5 decimal places."""
+    """
+    Recursively round floats in a dictionary to 5 decimal places.
+    """
     if isinstance(obj, float):
         return round(obj, 5) + 0.0
     if isinstance(obj, dict):
@@ -83,7 +89,10 @@ def _round_floats(obj):
 
 
 def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
-    """Returns the corresponding defect dictionary key for a pymatgen Defect object."""
+    """
+    Returns the corresponding defect dictionary key for a pymatgen Defect
+    object.
+    """
     if defect_type == DefectType.Vacancy:
         return "vacancies"
     if defect_type == DefectType.Substitution:
@@ -100,10 +109,12 @@ def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
 
 
 def closest_site_info(defect_entry, n=1):
-    """Return the element and distance (rounded to 2 decimal places) of the closest site to
-    defect_entry.sc_defect_frac_coords in defect_entry.sc_entry.structure, with distance > 0.01
-    (i.e. so not the site itself), and if there are multiple elements with the same distance,
-    sort alphabetically and return the first one.
+    """
+    Return the element and distance (rounded to 2 decimal places) of the
+    closest site to defect_entry.sc_defect_frac_coords in
+    defect_entry.sc_entry.structure, with distance > 0.01 (i.e. so not the site
+    itself), and if there are multiple elements with the same distance, sort
+    alphabetically and return the first one.
 
     If n is set, then it returns the nth closest site, where the nth site must be at least
     0.02 Å further away than the n-1th site.
@@ -134,7 +145,9 @@ def closest_site_info(defect_entry, n=1):
 
 
 def get_defect_name_from_entry(defect_entry):
-    """Get the doped/SnB defect name from DefectEntry object."""
+    """
+    Get the doped/SnB defect name from DefectEntry object.
+    """
     sga = SpacegroupAnalyzer(defect_entry.sc_entry.structure)
     return (
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
@@ -143,15 +156,18 @@ def get_defect_name_from_entry(defect_entry):
 
 
 def name_defect_entries(defect_entries):
-    """Create a dictionary of {Name: DefectEntry} from a list of DefectEntry objects, where the
-    names are set according to the default doped algorithm; which is to use the pymatgen defect
-    name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless there are multiple
-    inequivalent sites for the defect, in which case the point group of the defect site is appended
-    (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique, then element identity and distance
-    to the nearest neighbour of the defect site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83
-    etc.).
-    For interstitials, the same naming scheme is used, but the point group is always appended
-    to the pymatgen defect name.
+    """
+    Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
+    objects, where the names are set according to the default doped algorithm;
+    which is to use the pymatgen defect name (e.g. v_Cd, Cd_Te etc.) for
+    vacancies/antisites/substitutions, unless there are multiple inequivalent
+    sites for the defect, in which case the point group of the defect site is
+    appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique,
+    then element identity and distance to the nearest neighbour of the defect
+    site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.).
+
+    For interstitials, the same naming scheme is used, but the point group is
+    always appended to the pymatgen defect name.
     """
     defect_naming_dict = {}
     for defect_entry in defect_entries:
@@ -378,12 +394,17 @@ sch_symbols = list(_SCH2HERM.keys())
 
 
 def herm2sch(herm_symbol):
-    """Convert from Hermann-Mauguin to Schoenflies."""
+    """
+    Convert from Hermann-Mauguin to Schoenflies.
+    """
     return _HERM2SCH.get(herm_symbol, None)
 
 
 def get_wyckoff_dict_from_sgn(sgn):
-    """Get dictionary of {Wyckoff label: coordinates} for a given space group number."""
+    """
+    Get dictionary of {Wyckoff label: coordinates} for a given space group
+    number.
+    """
     wyckoff = Wyckoff(sgn).wyckoff
     wyckoff_label_coords_dict = {}
 
@@ -416,17 +437,23 @@ def get_wyckoff_dict_from_sgn(sgn):
 
 
 def get_wyckoff_label(defect_entry, wyckoff_dict=None):
-    """Return the Wyckoff label for a defect entry's site, given a dictionary of Wyckoff labels and
-    coordinates (`wyckoff_dict`). If `wyckoff_dict` is not provided, the spacegroup of the bulk
-    structure is determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
+    """
+    Return the Wyckoff label for a defect entry's site, given a dictionary of
+    Wyckoff labels and coordinates (`wyckoff_dict`).
+
+    If `wyckoff_dict` is not provided, the spacegroup of the bulk structure is
+    determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
     """
     if wyckoff_dict is None:
         sga = SpacegroupAnalyzer(defect_entry.defect.structure)
         wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
 
     def _compare_arrays(coord_list, coord_array):
-        """Compare a list of arrays of sympy expressions (`coord_list`) with an array of coordinates
-        (`coord_array`). Returns the matching array from the list.
+        """
+        Compare a list of arrays of sympy expressions (`coord_list`) with an
+        array of coordinates (`coord_array`).
+
+        Returns the matching array from the list.
         """
         x, y, z = symbols("x y z")
         variable_dict = {}  # dict for x,y,z
@@ -482,27 +509,31 @@ class DefectsGenerator:
         interstitial_coords: Optional[List] = None,
         **kwargs,
     ):
-        """Generates pymatgen DefectEntry objects for defects in the input host structure.
-        By default, generates all intrinsic defects, but extrinsic defects (impurities)
-        can also be created using the `extrinsic` argument.
+        """
+        Generates pymatgen DefectEntry objects for defects in the input host
+        structure. By default, generates all intrinsic defects, but extrinsic
+        defects (impurities) can also be created using the `extrinsic`
+        argument.
 
         Interstitial sites are generated using Voronoi tessellation by default (found
         to be the most reliable), however these can also be manually specified using
         the `interstitial_coords` argument.
 
-        Supercells are generated for each defect using the pymatgen `get_supercell_structure()`
-        method, with `doped` default settings of `min_length = 10` (minimum supercell length
-        of 10 Å) and `min_atoms = 50` (minimum 50 atoms in supercell). If a different supercell
-        is desired, this can be controlled by specifying keyword arguments in DefectsGenerator(),
+        Supercells are generated for each defect using the pymatgen
+        `get_supercell_structure()` method, with `doped` default settings of
+        `min_length = 10` (minimum supercell length of 10 Å) and `min_atoms = 50`
+        (minimum 50 atoms in supercell). If a different supercell is desired, this
+        can be controlled by specifying keyword arguments in DefectsGenerator(),
         which are passed to the `get_supercell_structure()` method.
 
-        The algorithm for determining defect entry names is to use the pymatgen defect name
-        (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless there are multiple
-        inequivalent sites for the defect, in which case the point group of the defect site is
-        appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique, then element
-        identity and distance to the nearest neighbour of the defect site is appended (e.g.
-        v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.). For interstitials, the same naming scheme is used,
-        but the point group is always appended to the pymatgen defect name.
+        The algorithm for determining defect entry names is to use the pymatgen defect
+        name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless
+        there are multiple inequivalent sites for the defect, in which case the point
+        group of the defect site is appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if
+        this is still not unique, then element identity and distance to the nearest
+        neighbour of the defect site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83
+        etc.). For interstitials, the same naming scheme is used, but the point group
+        is always appended to the pymatgen defect name.
 
         # TODO: Mention how charge states are generated, and how to modify, as shown in the example
         # notebook
@@ -701,7 +732,9 @@ class DefectsGenerator:
         print(self._defect_generator_info())
 
     def as_dict(self):
-        """JSON-serializable dict representation of DefectsGenerator."""
+        """
+        JSON-serializable dict representation of DefectsGenerator.
+        """
         return {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
@@ -713,8 +746,9 @@ class DefectsGenerator:
 
     @classmethod
     def from_dict(cls, d):
-        """Reconstructs DefectsGenerator object from a dict representation
-        created using DefectsGenerator.as_dict().
+        """
+        Reconstructs DefectsGenerator object from a dict representation created
+        using DefectsGenerator.as_dict().
 
         Args:
             d (dict): dict representation of DefectsGenerator.
@@ -738,8 +772,9 @@ class DefectsGenerator:
         return defects_generator
 
     def _defect_generator_info(self):
-        """Returns a string with information about the defects that have been generated by the
-        DefectsGenerator.
+        """
+        Returns a string with information about the defects that have been
+        generated by the DefectsGenerator.
         """
         info_string = ""
         for defect_class, defect_list in self.defects.items():
@@ -821,8 +856,10 @@ class DefectsGenerator:
         return info_string
 
     def __getattr__(self, attr):
-        """Redirects an unknown attribute/method call to the defect_entries dictionary attribute,
-        if the attribute doesn't exist in DefectsGenerator.
+        """
+        Redirects an unknown attribute/method call to the defect_entries
+        dictionary attribute, if the attribute doesn't exist in
+        DefectsGenerator.
         """
         if hasattr(self.defect_entries, attr):
             return getattr(self.defect_entries, attr)
@@ -830,14 +867,19 @@ class DefectsGenerator:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __getitem__(self, key):
-        """Makes DefectsGenerator object subscriptable, so that it can be indexed like a dictionary,
-        using the defect_entries dictionary attribute.
+        """
+        Makes DefectsGenerator object subscriptable, so that it can be indexed
+        like a dictionary, using the defect_entries dictionary attribute.
         """
         return self.defect_entries[key]
 
     def __setitem__(self, key, value):
-        """Set the value of a specific key (defect name) in the defect_entries dictionary.
-        Also adds the corresponding defect to the self.defects dictionary, if it doesn't already exist.
+        """
+        Set the value of a specific key (defect name) in the defect_entries
+        dictionary.
+
+        Also adds the corresponding defect to the self.defects dictionary, if
+        it doesn't already exist.
         """
         # check the input, must be a DefectEntry object, with same supercell and primitive structure
         if not isinstance(value, DefectEntry):
@@ -877,26 +919,37 @@ class DefectsGenerator:
             self.defects[defects_key].append(value.defect)
 
     def __delitem__(self, key):
-        """Deletes the specified defect entry from the defect_entries dictionary.
-        Doesn't remove the defect from the defects dictionary attribute, as there
-        may be other charge states of the same defect still present.
+        """
+        Deletes the specified defect entry from the defect_entries dictionary.
+
+        Doesn't remove the defect from the defects dictionary attribute, as
+        there may be other charge states of the same defect still present.
         """
         del self.defect_entries[key]
 
     def __contains__(self, key):
-        """Returns True if the defect_entries dictionary contains the specified defect name."""
+        """
+        Returns True if the defect_entries dictionary contains the specified
+        defect name.
+        """
         return key in self.defect_entries
 
     def __len__(self):
-        """Returns the number of entries in the defect_entries dictionary."""
+        """
+        Returns the number of entries in the defect_entries dictionary.
+        """
         return len(self.defect_entries)
 
     def __iter__(self):
-        """Returns an iterator over the defect_entries dictionary."""
+        """
+        Returns an iterator over the defect_entries dictionary.
+        """
         return iter(self.defect_entries)
 
     def __str__(self):
-        """Returns a string representation of the DefectsGenerator object."""
+        """
+        Returns a string representation of the DefectsGenerator object.
+        """
         return (
             f"DefectsGenerator for input {self.primitive_structure.composition}, space group "
             f"{self.primitive_structure.get_space_group_info()[0]} with {len(self)} defect entries "
@@ -904,7 +957,8 @@ class DefectsGenerator:
         )
 
     def __repr__(self):
-        """Returns a string representation of the DefectsGenerator object, and prints the
-        DefectsGenerator info.
+        """
+        Returns a string representation of the DefectsGenerator object, and
+        prints the DefectsGenerator info.
         """
         return self.__str__() + "\n" + self._defect_generator_info()
