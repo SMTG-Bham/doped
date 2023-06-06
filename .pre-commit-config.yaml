@@ -34,3 +34,11 @@ repos:
         stages: [commit,commit-msg]
         exclude_types: [html]
         additional_dependencies: [tomli] # needed to read pyproject.toml for python < 3.11
+
+  # format docstring length:
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.1
+    hooks:
+      - id: docformatter
+        additional_dependencies: [tomli]
+        args: [--in-place,--config,./pyproject.toml]
