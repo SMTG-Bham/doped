@@ -12,10 +12,8 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Defect calculations set up
-- Related: Print Wyckoff position of proposed interstitial sites (and optional output of Wyckoff sites which are neither atomic nor Voronoi sites)
-- Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no magnetic ordering!**
+- Defect complexes: Functionality to setup and parse calculations – can do this with new `pymatgen` code?
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
-    - If we have this implemented, can then remove some of the fluff in `defectsmaker.py` (i.e. classes other than `ChargedDefectStructures()`?)
 - Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Functions for generating input files, parsing (with GKFO correction) and plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
 - Add defect expansion code functionality to regenerate defect structures from a smaller supercell in a larger one. Useful for supercell size convergence tests, and accelerating `ShakeNBreak` etc. If/when adding, make sure to link in `SnB` docs as well.
@@ -53,10 +51,15 @@
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Test coverage.
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
-- Generate docs. 
-  - Add note about `NUPDOWN` for triplet states (bipolarons). 
+- Generate docs.
+  - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation approach for interstitials, but note user can use charge-density based approach if needing to be super-lean for some reason.
   - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
   - Readily-usable in conjunction with `atomate`, `AiiDA`, `CarrierCapture`, and give some examples.
+  - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no
+    magnetic ordering!** – which you can check in the `OUTCAR` by looking at `magnetization (x)` `y`
+    and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
+    bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
+    will be added to `doped` VASP calc scripts.
