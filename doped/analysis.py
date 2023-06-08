@@ -225,7 +225,7 @@ def defect_entry_from_paths(
     except RuntimeError as exc:
         # if auto site-matching failed, try use transformation.json
         # The goal is to find the `defect_site_idx` or `defect_site_idx` based on the
-        # tranformation.
+        # transformation.
         transformation_path = os.path.join(defect_path, "transformation.json")
         if not os.path.exists(transformation_path):  # try next folder up
             orig_transformation_path = transformation_path

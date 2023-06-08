@@ -100,7 +100,7 @@ def get_correction_freysoldt(
                     bulk_sc_structure (Structure) bulk structure corresponding to
                         defect supercell structure (uses Lattice for charge correction)
 
-                    defect_frac_sc_coords (3 x 1 array) Fracitional co-ordinates of
+                    defect_frac_sc_coords (3 x 1 array) Fracitional coordinates of
                         defect location in supercell structure
                 optional:
                     'encut' : energy cutoff desired for Freysoldt correction

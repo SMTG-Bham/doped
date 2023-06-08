@@ -70,15 +70,15 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
     def setUp(self):
         self.dielectric = 15.0
 
-        struc = PymatgenTest.get_structure("VO2")
-        struc.make_supercell(3)
-        vac = Vacancy(struc, struc.sites[0], charge=-3)
+        struct = PymatgenTest.get_structure("VO2")
+        struct.make_supercell(3)
+        vac = Vacancy(struct, struct.sites[0], charge=-3)
 
-        # load neccessary parameters for defect_entry to make use
+        # load necessary parameters for defect_entry to make use
         # of Freysoldt and Kumagai corrections
         p = {}
         ids = vac.generate_defect_structure(1)
-        abc = struc.lattice.abc
+        abc = struct.lattice.abc
         axisdata = [np.arange(0.0, lattval, 0.2) for lattval in abc]
         bldata = [np.array([1.0 for u in np.arange(0.0, lattval, 0.2)]) for lattval in abc]
         dldata = [
@@ -91,21 +91,21 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
                 "bulk_planar_averages": bldata,
                 "defect_planar_averages": dldata,
                 "initial_defect_structure": ids,
-                "defect_frac_sc_coords": struc.sites[0].frac_coords,
-                "bulk_sc_structure": struc,
+                "defect_frac_sc_coords": struct.sites[0].frac_coords,
+                "bulk_sc_structure": struct,
             }
         )
 
         bulk_atomic_site_averages, defect_atomic_site_averages = [], []
         defect_site_with_sc_lattice = PeriodicSite(
-            struc.sites[0].specie,
-            struc.sites[0].coords,
-            struc.lattice,
+            struct.sites[0].specie,
+            struct.sites[0].coords,
+            struct.lattice,
             coords_are_cartesian=True,
         )
         max_dist = 9.6
         pert_amnt = 1.0
-        for site_ind, site in enumerate(struc.sites):
+        for site_ind, site in enumerate(struct.sites):
             if site.specie.symbol == "O":
                 Oval = -30.6825
                 bulk_atomic_site_averages.append(Oval)
@@ -125,7 +125,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
                     )
                     defect_atomic_site_averages.append(defect_site_val)
 
-        site_matching_indices = [[ind, ind - 1] for ind in range(len(struc.sites)) if ind != 0]
+        site_matching_indices = [[ind, ind - 1] for ind in range(len(struct.sites)) if ind != 0]
 
         p.update(
             {
