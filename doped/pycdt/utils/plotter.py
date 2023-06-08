@@ -9,13 +9,13 @@ matplotlib.use("agg")
 
 import matplotlib.pyplot as plt
 
-class StructureRelaxPlotter(object):
+
+class StructureRelaxPlotter:
     """
-    This class plots movement of atomic sites as a function of radius
+    This class plots movement of atomic sites as a function of radius.
 
-    relaxation_data is list of [distance to defect, distance atom moved,
-                                index in structure, percentage contribution to total relaxation]
-
+    relaxation_data is list of [distance to defect, distance atom moved, index
+    in structure, percentage contribution to total relaxation]
     """
 
     def __init__(self, relaxation_data, sampling_radius):
@@ -29,7 +29,7 @@ class StructureRelaxPlotter(object):
         plt.clf()
         fig, ax1 = plt.subplots()
 
-        ax1.set_xlabel("Radius from Defect ($\AA$)", fontsize=20)
+        ax1.set_xlabel("Radius from Defect ($\\AA$)", fontsize=20)
 
         ax1.plot(
             self.relaxation_data[:, 0],
@@ -60,7 +60,7 @@ class StructureRelaxPlotter(object):
             label="delocalization region",
         )
 
-        ax1.set_ylabel("Relaxation amount ($\AA$)", color="b", fontsize=15)
+        ax1.set_ylabel("Relaxation amount ($\\AA$)", color="b", fontsize=15)
         ax2.set_ylabel("Percentage of total relaxation (%)\n", color="r", fontsize=15)
         plt.legend(loc=0)
 
@@ -69,27 +69,25 @@ class StructureRelaxPlotter(object):
         return plt
 
 
-class SingleParticlePlotter(object):
+class SingleParticlePlotter:
     """
-    This class plots single particle KS wavefunction as a function of radiusfrom defect
+    This class plots single particle KS wavefunction as a function of
+    radiusfrom defect.
 
-    relaxation_data is list of [distance to defect, distance atom moved,
-                                index in structure, percentage contribution to total relaxation]
-
+    relaxation_data is list of [distance to defect, distance atom moved, index
+    in structure, percentage contribution to total relaxation]
     """
 
     def __init__(self, defect_ks_delocal_data):
         self.defect_ks_delocal_data = defect_ks_delocal_data
         self.nspin = len(defect_ks_delocal_data["localized_band_indices"])
         lbl_dict = defect_ks_delocal_data["localized_band_indices"]
-        self.localized_bands = set(
-            [band_index for spin_list in lbl_dict.values() for band_index in spin_list]
-        )
-        print("Localized KS wavefunction bands are {}".format(self.localized_bands))
+        self.localized_bands = {band_index for spin_list in lbl_dict.values() for band_index in spin_list}
+        print(f"Localized KS wavefunction bands are {self.localized_bands}")
 
     def plot(self, bandnum, title=""):
         if bandnum not in self.localized_bands:
-            raise ValueError("{} is not in {}".format(bandnum, self.localized_bands))
+            raise ValueError(f"{bandnum} is not in {self.localized_bands}")
 
         plt.figure()
         plt.clf()
@@ -98,7 +96,7 @@ class SingleParticlePlotter(object):
         final_out = self.defect_ks_delocal_data["followup_wf_parse"][bandnum]
         dat = final_out["0"]["rad_dist_data"]["tot"]
 
-        ax1.set_xlabel("Radius from Defect ($\AA$)")
+        ax1.set_xlabel("Radius from Defect ($\\AA$)")
         ax1.plot(dat[0], dat[1], "b")
         ax2 = ax1.twinx()
         ax2.plot(dat[0], 100.0 * np.array(dat[2]), "r")
