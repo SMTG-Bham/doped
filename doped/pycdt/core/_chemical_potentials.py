@@ -382,7 +382,7 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
         and sub elements of interest.
 
         Args:
-            mpid (str): Structure id of the system in the MP databse.
+            mpid (str): Structure id of the system in the MP database.
             mapi_key (str): Materials API key to access database
                 (if not in ~/.pmgrc.yaml already)
         """
@@ -417,7 +417,7 @@ class MPChemPotAnalyzer(ChemPotAnalyzer):
                     if sub_el in entry.composition:
                         self.entries["subs_set"][sub_el].append(entry)
 
-        else:  # this is recommended approach for running sub species seperately (assumes subs
+        else:  # this is recommended approach for running sub species separately (assumes subs
             # are in dilute concentrations)
             with MPRester(api_key=self.mapi_key) as mp:
                 self.entries["bulk_derived"] = mp.get_entries_in_chemsys(self.bulk_species_symbol)
@@ -857,7 +857,7 @@ class UserChemPotInputGenerator:
             }  # all elements in
             # phase diagram
         else:
-            if len(self.bulk_composition) == 2:  # neccessary because binary species have chempots
+            if len(self.bulk_composition) == 2:  # necessary because binary species have chempots
                 # written as "A-rich, B-rich"
                 setupphases = {phase.split("_")[0] for facet in MPgga_muvals for phase in facet.split("-")}
             else:

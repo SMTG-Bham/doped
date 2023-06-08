@@ -154,7 +154,7 @@ class ChargedDefectsStructuresTest(PymatgenTest):
         assert not len(CDS.defects["substitutions"])  # testing antisite flag
 
     def test_subs_and_interstits(self):
-        # test manual subtitution specification
+        # test manual substitution specification
         CDS = ChargedDefectsStructures(
             self.gaas_struct,
             antisites_flag=False,

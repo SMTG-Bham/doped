@@ -748,9 +748,9 @@ class SingleDefectParser:
                 with MPRester(api_key=api_key) as mp:
                     tmp_mplist = mp.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
                 mplist = [
-                    ment.entry_id
-                    for ment in tmp_mplist
-                    if ment.composition.reduced_composition
+                    mp_ent.entry_id
+                    for mp_ent in tmp_mplist
+                    if mp_ent.composition.reduced_composition
                     == bulk_sc_structure.composition.reduced_composition
                 ]
             except Exception as exc:
