@@ -36,5 +36,3 @@ v1.0.6
 - Refactor `dope_stuff` to `plotting` and `analysis` to be more clear and PROfessional, yo
 - Refactor from hard-coded defaults / slightly-less-human-readable `json` files to `yaml` files with default settings.
 - Refactor `defectsmaker` output, more efficient, cleaner and informative
-
-

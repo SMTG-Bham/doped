@@ -37,7 +37,12 @@
 - Improved methods for estimating/determining the final site degeneracy/multiplicity from relaxed structures. See `pydefect` for tools for this. Should be doable with current point symmetry tools, especially when both the defect and bulk structures are available. Also add consideration of odd/even number of electrons to account for spin degeneracy.
 - Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
-- Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`. Seán K has functions and notebooks for transferring to `py-sc-fermi` and generating nice plots with the outputs, so will add this.
+- Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
+  - Alex Squires has functions/notebooks from Seán (-> Xinwei -> Jiayi) -> Alex, for transferring to
+    `py-sc-fermi` and generating nice plots with the outputs, so add this and make it our suggested
+    workflow in the docs etc.
+  - `py-sc-fermi` may have functionality for dealing with complex defect concentrations in the future
+    (see Slack with Alex; 07/06/23)
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?

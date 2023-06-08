@@ -1,19 +1,19 @@
 import os
 import tarfile
 from shutil import copyfile
-import numpy as np
 
+import numpy as np
 from monty.tempfile import ScratchDir
-from pymatgen.io.vasp import Locpot
-from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 from pymatgen.core.sites import PeriodicSite
+from pymatgen.io.vasp import Locpot
+from pymatgen.util.testing import PymatgenTest
 
 from doped.utils.corrections import (
     freysoldt_correction_from_paths,
-    kumagai_correction_from_paths,
     get_correction_freysoldt,
     get_correction_kumagai,
+    kumagai_correction_from_paths,
 )
 
 test_files_dir = os.path.join(os.path.dirname(__file__), "../doped/pycdt/test_files")
@@ -45,12 +45,10 @@ class FilePathCorrectionsTest(PymatgenTest):
                 plot=True,
                 filename="test_freysoldt_correction",
             )
-            self.assertAlmostEqual(
-                fcc, -1.4954476868106865
-            )  # note this has been updated from the
+            self.assertAlmostEqual(fcc, -1.4954476868106865)  # note this has been updated from the
             # pycdt version, because there they used a `transformation.json` that gave an
             # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
-            self.assertTrue(os.path.exists("test_freysoldt_correction_axis1.pdf"))
+            assert os.path.exists("test_freysoldt_correction_axis1.pdf")
 
             kcc = kumagai_correction_from_paths(
                 "test_path_files/sub_1_Sb_on_Ga/charge_2/",
@@ -61,12 +59,12 @@ class FilePathCorrectionsTest(PymatgenTest):
                 filename="test_kumagai_correction",
             )
             self.assertAlmostEqual(kcc, 0.638776853061614)
-            self.assertTrue(os.path.exists("test_kumagai_correction.pdf"))
+            assert os.path.exists("test_kumagai_correction.pdf")
 
 
 class FiniteSizeChargeCorrectionTest(PymatgenTest):
     """
-    Test functions for getting freysoldt and kumagai corrections
+    Test functions for getting freysoldt and kumagai corrections.
     """
 
     def setUp(self):
@@ -82,16 +80,9 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         ids = vac.generate_defect_structure(1)
         abc = struc.lattice.abc
         axisdata = [np.arange(0.0, lattval, 0.2) for lattval in abc]
-        bldata = [
-            np.array([1.0 for u in np.arange(0.0, lattval, 0.2)]) for lattval in abc
-        ]
+        bldata = [np.array([1.0 for u in np.arange(0.0, lattval, 0.2)]) for lattval in abc]
         dldata = [
-            np.array(
-                [
-                    (-1 - np.cos(2 * np.pi * u / lattval))
-                    for u in np.arange(0.0, lattval, 0.2)
-                ]
-            )
+            np.array([(-1 - np.cos(2 * np.pi * u / lattval)) for u in np.arange(0.0, lattval, 0.2)])
             for lattval in abc
         ]
         p.update(
@@ -119,32 +110,22 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
                 Oval = -30.6825
                 bulk_atomic_site_averages.append(Oval)
                 if site_ind:
-                    dist_to_defect = site.distance_and_image(
-                        defect_site_with_sc_lattice
-                    )[0]
+                    dist_to_defect = site.distance_and_image(defect_site_with_sc_lattice)[0]
                     defect_site_val = (
-                        Oval
-                        - 0.3
-                        + pert_amnt * ((max_dist - dist_to_defect) / max_dist) ** 2
+                        Oval - 0.3 + pert_amnt * ((max_dist - dist_to_defect) / max_dist) ** 2
                     )
                     defect_atomic_site_averages.append(defect_site_val)
             else:
                 Vval = -51.6833
                 bulk_atomic_site_averages.append(Vval)
                 if site_ind:
-                    dist_to_defect = site.distance_and_image(
-                        defect_site_with_sc_lattice
-                    )[0]
+                    dist_to_defect = site.distance_and_image(defect_site_with_sc_lattice)[0]
                     defect_site_val = (
-                        Vval
-                        - 0.3
-                        + pert_amnt * ((max_dist - dist_to_defect) / max_dist) ** 2
+                        Vval - 0.3 + pert_amnt * ((max_dist - dist_to_defect) / max_dist) ** 2
                     )
                     defect_atomic_site_averages.append(defect_site_val)
 
-        site_matching_indices = [
-            [ind, ind - 1] for ind in range(len(struc.sites)) if ind != 0
-        ]
+        site_matching_indices = [[ind, ind - 1] for ind in range(len(struc.sites)) if ind != 0]
 
         p.update(
             {
@@ -156,10 +137,8 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         self.defect_entry = DefectEntry(vac, 0.0, parameters=p)
 
     def test_get_correction_freysoldt(self):
-        freyout = get_correction_freysoldt(
-            self.defect_entry, self.dielectric, partflag="All", axis=None
-        )
-        self.assertEqual(freyout, 5.445950368792991)
+        freyout = get_correction_freysoldt(self.defect_entry, self.dielectric, partflag="All", axis=None)
+        assert freyout == 5.445950368792991
 
         freyout = get_correction_freysoldt(
             self.defect_entry, self.dielectric, partflag="AllSplit", axis=None
@@ -169,9 +148,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         self.assertAlmostEqual(freyout[2], 5.445950368792991)
 
     def test_get_correction_kumagai(self):
-        kumagaiout = get_correction_kumagai(
-            self.defect_entry, self.dielectric, partflag="AllSplit"
-        )
+        kumagaiout = get_correction_kumagai(self.defect_entry, self.dielectric, partflag="AllSplit")
         self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
         self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
         self.assertAlmostEqual(kumagaiout[2], 1.2343741327723443)

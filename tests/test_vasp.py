@@ -6,20 +6,15 @@ from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
 
-from doped.vasp import DefectRelaxSet, vasp_gam_files, vasp_std_files, vasp_ncl_files
-
+from doped.vasp import DefectRelaxSet, vasp_gam_files, vasp_ncl_files, vasp_std_files
 
 test_files_dir = os.path.join(os.path.dirname(__file__), "../doped/pycdt/test_files")
 
 
 class DefectRelaxTest(unittest.TestCase):
     def setUp(self):
-        self.structure = Structure.from_file(
-            os.path.join(test_files_dir, "POSCAR_Cr2O3")
-        )
-        self.user_settings = loadfn(
-            os.path.join(test_files_dir, "test_vasp_settings.yaml")
-        )
+        self.structure = Structure.from_file(os.path.join(test_files_dir, "POSCAR_Cr2O3"))
+        self.user_settings = loadfn(os.path.join(test_files_dir, "test_vasp_settings.yaml"))
         self.path = "Cr2O3"
         self.neutral_def_incar_min = {
             "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
@@ -34,24 +29,22 @@ class DefectRelaxTest(unittest.TestCase):
 
     def test_neutral_defect_incar(self):
         drs = DefectRelaxSet(self.structure)
-        self.assertTrue(self.neutral_def_incar_min.items() <= drs.incar.items())
-        self.assertTrue(set(self.def_keys).issubset(drs.incar))
+        assert self.neutral_def_incar_min.items() <= drs.incar.items()
+        assert set(self.def_keys).issubset(drs.incar)
 
     def test_charged_defect_incar(self):
         drs = DefectRelaxSet(self.structure, charge=1)
-        self.assertTrue(self.neutral_def_incar_min.items() <= drs.incar.items())
-        self.assertTrue(set(self.def_keys).issubset(drs.incar))
+        assert self.neutral_def_incar_min.items() <= drs.incar.items()
+        assert set(self.def_keys).issubset(drs.incar)
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720}
-        drs = DefectRelaxSet(
-            self.structure, charge=1, user_incar_settings=user_incar_settings
-        )
-        self.assertTrue(self.neutral_def_incar_min.items() <= drs.incar.items())
-        self.assertTrue(set(self.def_keys).issubset(drs.incar))
-        self.assertEqual(drs.incar["ENCUT"], 720)
-        self.assertEqual(drs.incar["EDIFF"], 1e-8)
-        self.assertEqual(drs.incar["EDIFFG"], 0.1)
+        drs = DefectRelaxSet(self.structure, charge=1, user_incar_settings=user_incar_settings)
+        assert self.neutral_def_incar_min.items() <= drs.incar.items()
+        assert set(self.def_keys).issubset(drs.incar)
+        assert drs.incar["ENCUT"] == 720
+        assert drs.incar["EDIFF"] == 1e-08
+        assert drs.incar["EDIFFG"] == 0.1
 
 
 class VaspInputTestCase(unittest.TestCase):
@@ -63,9 +56,7 @@ class VaspInputTestCase(unittest.TestCase):
         )
 
     def tearDown(self):
-        for folder in os.listdir(
-            self.CDTE_DATA_DIR
-        ):  # remove all generated CdTe defect folders
+        for folder in os.listdir(self.CDTE_DATA_DIR):  # remove all generated CdTe defect folders
             if os.path.isdir(folder):
                 shutil.rmtree(folder)
 
@@ -87,8 +78,8 @@ class VaspInputTestCase(unittest.TestCase):
             check_potcar_spec=False,
         ):
             print(f"{generated_dir}/{folder}")
-            self.assertTrue(os.path.exists(f"{generated_dir}/{folder}"))
-            self.assertTrue(os.path.exists(f"{generated_dir}/{folder}/{vasp_type}"))
+            assert os.path.exists(f"{generated_dir}/{folder}")
+            assert os.path.exists(f"{generated_dir}/{folder}/{vasp_type}")
 
             # load the Incar, Poscar and Kpoints and check it matches the previous:
             test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
@@ -98,27 +89,23 @@ class VaspInputTestCase(unittest.TestCase):
             incar.pop("NUPDOWN", None)
             test_incar.pop("NELECT", None)
             incar.pop("NELECT", None)
-            self.assertEqual(test_incar, incar)
+            assert test_incar == incar
 
             if check_poscar:
                 test_poscar = Poscar.from_file(
                     f"{data_dir}/{folder}/vasp_gam/POSCAR"  # POSCAR always checked
                     # against vasp_gam unperturbed POSCAR
                 )
-                poscar = Poscar.from_file(
-                    f"{generated_dir}/{folder}/{vasp_type}/POSCAR"
-                )
-                self.assertEqual(test_poscar.structure, poscar.structure)
+                poscar = Poscar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POSCAR")
+                assert test_poscar.structure == poscar.structure
 
             if check_potcar_spec:
-                with open(
-                    f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", "r"
-                ) as file:
+                with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec") as file:
                     contents = file.readlines()
-                    self.assertIn(contents[0], ["Cd", "Cd\n"])
-                    self.assertIn(contents[1], ["Te", "Te\n"])
+                    assert contents[0] in ["Cd", "Cd\n"]
+                    assert contents[1] in ["Te", "Te\n"]
                     if "Se" in folder:
-                        self.assertIn(contents[2], ["Se", "Se\n"])
+                        assert contents[2] in ["Se", "Se\n"]
 
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
@@ -175,10 +162,10 @@ class VaspInputTestCase(unittest.TestCase):
             potcar_spec=True,
         )
 
-        with open("v_Te_s1_0/vasp_gam/POTCAR.spec", "r") as file:
+        with open("v_Te_s1_0/vasp_gam/POTCAR.spec") as file:
             contents = file.readlines()
-            self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
-            self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
+            assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
+            assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
 
         # test no files written with write_files=False
         self.tearDown()
@@ -189,7 +176,7 @@ class VaspInputTestCase(unittest.TestCase):
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
-                self.assertFalse(os.path.exists(f"./{folder}"))
+                assert not os.path.exists(f"./{folder}")
 
     def test_vasp_gam_files_single_defect_entry(self):
         # dict call acts on DefectsGenerator.defect_entries dict attribute:
@@ -210,7 +197,7 @@ class VaspInputTestCase(unittest.TestCase):
         )
 
         # assert only neutral directory written:
-        self.assertFalse(os.path.exists("v_Cd_s0_-1"))
+        assert not os.path.exists("v_Cd_s0_-1")
 
         # test custom POTCAR choice:
         # dict call acts on DefectsGenerator.defect_entries dict attribute
@@ -227,15 +214,15 @@ class VaspInputTestCase(unittest.TestCase):
             potcar_spec=True,
         )
 
-        with open("v_Te_s1_0/vasp_gam/POTCAR.spec", "r") as file:
+        with open("v_Te_s1_0/vasp_gam/POTCAR.spec") as file:
             contents = file.readlines()
-            self.assertIn(contents[0], ["Cd_sv_GW", "Cd_sv_GW\n"])
-            self.assertIn(contents[1], ["Te_sv_GW", "Te_sv_GW\n"])
+            assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
+            assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
 
         # test no files written with write_files=False
         self.tearDown()
         vasp_gam_files(vac_Te_dict, user_potcar_functional=None, write_files=False)
-        self.assertFalse(os.path.exists(f"v_Te_s1_0"))
+        assert not os.path.exists("v_Te_s1_0")
 
     def test_vasp_std_files(self):
         vasp_std_files(
@@ -274,7 +261,7 @@ class VaspInputTestCase(unittest.TestCase):
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
-                self.assertFalse(os.path.exists(f"./{folder}"))
+                assert not os.path.exists(f"./{folder}")
 
     def test_vasp_std_files_single_defect_entry(self):
         # test interstitials this time:
@@ -315,7 +302,7 @@ class VaspInputTestCase(unittest.TestCase):
         )
 
         self.check_generated_vasp_inputs(
-            generated_dir=f"Cd_i_m1b_+2",
+            generated_dir="Cd_i_m1b_+2",
             data_dir=f"{self.CDTE_DATA_DIR}/Cd_i_m1b_+2",
             vasp_type="vasp_std",
             check_poscar=False,
@@ -324,10 +311,8 @@ class VaspInputTestCase(unittest.TestCase):
 
         # test no files written with write_files=False
         self.tearDown()
-        vasp_gam_files(
-            single_defect_entry, user_potcar_functional=None, write_files=False
-        )
-        self.assertFalse(os.path.exists(f"Cd_i_m1b_+2"))
+        vasp_gam_files(single_defect_entry, user_potcar_functional=None, write_files=False)
+        assert not os.path.exists("Cd_i_m1b_+2")
 
     def test_vasp_ncl_files(self):
         vasp_ncl_files(
@@ -356,13 +341,11 @@ class VaspInputTestCase(unittest.TestCase):
         )
         for folder in os.listdir(self.CDTE_DATA_DIR):
             if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
-                self.assertFalse(os.path.exists(f"./{folder}"))
+                assert not os.path.exists(f"./{folder}")
 
     def test_vasp_ncl_files_single_defect_dict(self):
         # test substitutions this time:
-        single_defect_dict = self.cdte_generated_defect_dict["substitutions"][
-            0
-        ]  # sub_2_Se_on_Te
+        single_defect_dict = self.cdte_generated_defect_dict["substitutions"][0]  # sub_2_Se_on_Te
         vasp_ncl_files(
             single_defect_dict,
             user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
@@ -398,11 +381,9 @@ class VaspInputTestCase(unittest.TestCase):
 
         # test no files written with write_files=False
         self.tearDown()
-        vasp_ncl_files(
-            single_defect_dict, user_potcar_functional=None, write_files=False
-        )
+        vasp_ncl_files(single_defect_dict, user_potcar_functional=None, write_files=False)
         for charge in range(-1, 6):
-            self.assertFalse(os.path.exists(f"sub_2_Se_on_Te_{charge}"))
+            assert not os.path.exists(f"sub_2_Se_on_Te_{charge}")
 
 
 if __name__ == "__main__":
