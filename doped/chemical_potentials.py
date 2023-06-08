@@ -111,9 +111,9 @@ def _make_molecular_entry(computed_entry):
     input elemental ComputedEntry.
     """
     assert len(computed_entry.composition.elements) == 1  # Elemental!
-    struc, formula, total_magnetization = make_molecule_in_a_box(computed_entry.data["pretty_formula"])
+    struct, formula, total_magnetization = make_molecule_in_a_box(computed_entry.data["pretty_formula"])
     molecular_entry = ComputedStructureEntry(
-        structure=struc,
+        structure=struct,
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
         composition=Composition(formula),
         parameters=None,
@@ -519,7 +519,7 @@ class CompetingPhases:
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
-        #  struc = sym.get_primitive_standard_structure() -> output this structure
+        #  struct = sym.get_primitive_standard_structure() -> output this structure
         hse06_relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
 
         potcar_dict = copy.deepcopy(default_potcar_dict)
@@ -1152,7 +1152,8 @@ class CompetingPhasesAnalyzer:
             sort_by (str): If set, will sort the chemical potential limits in the output
                 dataframe according to the chemical potential of the specified element (from
                 element-rich to element-poor conditions).
-        Retruns:
+
+        Returns:
             Pandas DataFrame, optionally saved to csv.
         """
         intrinsic_phase_diagram_entries = []
@@ -1450,7 +1451,7 @@ def combine_extrinsic(first, second, extrinsic_species):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dicitonary")
+            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
         new_facets[new_key] = v1
@@ -1463,7 +1464,7 @@ def combine_extrinsic(first, second, extrinsic_species):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dicitonary")
+            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
         new_facets_wrt_elt[new_key] = v1

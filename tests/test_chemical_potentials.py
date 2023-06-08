@@ -434,12 +434,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert new_api_key_error in e.exception
 
     def test_convergence_setup(self):
-        # potcar spec doesnt need potcars set up for pmg and it still works
+        # potcar spec doesn't need potcars set up for pmg and it still works
         self.cp.convergence_setup(potcar_spec=True)
         assert len(self.cp.metals) == 6
         assert self.cp.metals[0].data["band_gap"] == 0
         assert not self.cp.nonmetals[0].data["molecule"]
-        # this shouldnt exist - dont need to convergence test for molecules
+        # this shouldn't exist - don't need to convergence test for molecules
         assert not Path("competing_phases/O2_EaH_0").is_dir()
 
         # test if it writes out the files correctly

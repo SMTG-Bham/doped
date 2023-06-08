@@ -95,3 +95,8 @@ pre-summary-newline = true
 make-summary-multi-line = true
 wrap-summaries = 79
 wrap-descriptions = 79
+
+[tool.codespell]
+ignore-words-list = """
+titel,te,bu,aack,unx,nd,efect
+"""

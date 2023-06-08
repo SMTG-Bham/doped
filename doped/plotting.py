@@ -28,7 +28,7 @@ default_fonts = [
 # TODO: Lean out the options for this function (inherited from AIDE)(particularly those that can
 #  just be edited by the user with the returned Matplotlib object - show example of this in
 #  notebooks maybe?)
-# TOOD: Add option to only plot defect states that are stable at some point in the bandgap
+# TODO: Add option to only plot defect states that are stable at some point in the bandgap
 # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And make this the
 #  default if no chempot_limits are specified? Or better default to plot both the most (most-electronegative-)anion-rich
 #  and the (most-electropositive-)cation-rich chempot limits?
@@ -184,10 +184,10 @@ def _aide_pmg_plot(
             potential of each element
         xlim:
             Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
-            set manually when including transition level labels, so that they dont' cross the axes.
+            set manually when including transition level labels, so that they don't cross the axes.
         ylim:
             Tuple (min,max) giving the range for the formation energy axis. This may need to be
-            set manually when including transition level labels, so that they dont' cross the axes.
+            set manually when including transition level labels, so that they don't cross the axes.
         ax_fontsize:
             float  multiplier to change axis label fontsize
         lg_fontsize:
