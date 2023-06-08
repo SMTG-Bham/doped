@@ -139,17 +139,14 @@ def _make_molecular_entry(computed_entry):
 
 
 def _calculate_formation_energies(data, elemental):
-    df = pd.DataFrame(data)
     for d in data:
         for e in elemental.keys():
             d[e] = Composition(d["formula"]).as_dict()[e]
 
-    df2 = pd.DataFrame(data)
-    df2["formation_energy"] = df2["energy_per_fu"]
+    df = pd.DataFrame(data)
+    df["formation_energy"] = df["energy_per_fu"]
     for k, v in elemental.items():
-        df2["formation_energy"] -= df2[k] * v
-
-    df["formation_energy"] = df2["formation_energy"]
+        df["formation_energy"] -= df[k] * v
 
     df["num_atoms_in_fu"] = df["energy_per_fu"] / df["energy_per_atom"]
     df["num_species"] = df["formula"].apply(lambda x: len(Composition(x).as_dict()))
