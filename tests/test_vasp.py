@@ -109,7 +109,7 @@ class VaspInputTestCase(unittest.TestCase):
 
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
-            self.assertDictEqual(test_kpoints.as_dict(), kpoints.as_dict())
+            assert test_kpoints.as_dict() == kpoints.as_dict()
 
         if data_dir is None:
             data_dir = self.CDTE_DATA_DIR
@@ -290,7 +290,7 @@ class VaspInputTestCase(unittest.TestCase):
 
         # test unperturbed POSCAR:
         vasp_std_files(
-            single_defect_dict,
+            single_defect_entry,
             user_incar_settings={
                 "ENCUT": 350,
                 "LREAL": "Auto",
