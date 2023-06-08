@@ -8,6 +8,7 @@ analysing defect calculations, with publication-quality outputs.
 """
 
 import warnings
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,8 +35,8 @@ default_fonts = [
 #  and the (most-electropositive-)cation-rich chempot limits?
 def formation_energy_plot(
     defect_phase_diagram,
-    chempot_limits: dict = None,
-    elt_refs: dict = None,
+    chempot_limits: Optional[Dict] = None,
+    elt_refs: Optional[Dict] = None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -43,14 +44,14 @@ def formation_energy_plot(
     lg_fontsize=1.0,
     lg_position=None,
     fermi_level=None,
-    title: str = None,
+    title: Optional[str] = None,
     saved=False,
     colormap="Dark2",
     frameon=False,
     chempot_table=True,
-    pd_facets: list = None,
+    pd_facets: Optional[List] = None,
     auto_labels: bool = False,
-    filename: str = None,
+    filename: Optional[str] = None,
     emphasis=False,
 ):
     """
@@ -101,7 +102,7 @@ def formation_energy_plot(
         a matplotlib object
     """
     if chempot_limits and "facets" in chempot_limits:
-        if not pd_facets:
+        if pd_facets is None:
             pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:
@@ -576,8 +577,8 @@ def pretty_axis(ax=None, fonts=None):
 
 def all_lines_formation_energy_plot(
     defect_phase_diagram,
-    chempot_limits=None,
-    elt_refs: dict = None,
+    chempot_limits: Optional[Dict] = None,
+    elt_refs: Optional[Dict] = None,
     fonts=None,
     xlim=None,
     ylim=None,
@@ -590,9 +591,9 @@ def all_lines_formation_energy_plot(
     colormap="Dark2",
     frameon=False,
     chempot_table=True,
-    pd_facets: list = None,
+    pd_facets: Optional[List] = None,
     auto_labels: bool = False,
-    filename: str = None,
+    filename: Optional[str] = None,
 ):
     """
     Produce a defect formation energy vs Fermi energy plot (i.e. a defect
@@ -644,7 +645,7 @@ def all_lines_formation_energy_plot(
         a matplotlib object
     """
     if chempot_limits and "facets" in chempot_limits:
-        if not pd_facets:
+        if pd_facets is None:
             pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to calculate and plot formation energies
         for facet in pd_facets:

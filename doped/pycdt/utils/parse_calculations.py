@@ -5,6 +5,7 @@ Parses the computed data from VASP defect calculations.
 import glob
 import os
 import warnings
+from typing import Optional, Type, Union
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -25,11 +26,17 @@ from doped.pycdt.core import _chemical_potentials
 _ignore_pmg_warnings()
 
 
-def _custom_formatwarning(msg, *args, **kwargs):
+def _custom_formatwarning(
+    message: Union[Warning, str],
+    category: Type[Warning],
+    filename: str,
+    lineno: int,
+    line: Optional[str] = None,
+) -> str:
     """
     Reformat warnings to just print the warning message.
     """
-    return f"{msg}\n"
+    return f"{message}\n"
 
 
 warnings.formatwarning = _custom_formatwarning

@@ -11,6 +11,7 @@ import copy
 import os
 import warnings
 from operator import itemgetter
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -612,10 +613,10 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
 
 def formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempot_limits: dict = None,
-    pd_facets: list = None,
+    chempot_limits: Optional[Dict] = None,
+    pd_facets: Optional[List] = None,
     fermi_level: float = 0,
-    hide_cols: list = None,
+    hide_cols: Optional[List] = None,
     show_key: bool = True,
 ):
     """
@@ -661,14 +662,14 @@ def formation_energy_table(
 
     if "facets" in chempot_limits:
         list_of_dfs = []
-        if not pd_facets:
+        if pd_facets is None:
             pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
         for facet in pd_facets:
             bold_print("Facet: " + unicodeify(facet))
             df = single_formation_energy_table(
                 defect_phase_diagram,
-                chempots=chempot_limits["facets"][facet],
+                chempot_limits=chempot_limits["facets"][facet],
                 fermi_level=fermi_level,
                 hide_cols=hide_cols,
                 show_key=show_key,
@@ -681,7 +682,7 @@ def formation_energy_table(
     # else return {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
     df = single_formation_energy_table(
         defect_phase_diagram,
-        chempots=chempot_limits,
+        chempot_limits=chempot_limits,
         fermi_level=fermi_level,
         hide_cols=hide_cols,
         show_key=show_key,
@@ -691,9 +692,9 @@ def formation_energy_table(
 
 def single_formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempots: dict = None,
+    chempot_limits: Optional[Dict] = None,
     fermi_level: float = 0,
-    hide_cols: list = None,
+    hide_cols: Optional[List] = None,
     show_key: bool = True,
 ):
     """
@@ -705,7 +706,7 @@ def single_formation_energy_table(
         defect_phase_diagram (DefectPhaseDiagram):
              DefectPhaseDiagram object (likely created from
              analysis.dpd_from_defect_dict)
-        chempots (dict):
+        chempot_limits (dict):
             Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
             specified, chemical potentials are not included in the formation energy calculation
             (all set to zero energy).
@@ -740,7 +741,7 @@ def single_formation_energy_table(
             # fermi level
         header += ["Formation Energy"]
         formation_energy = defect_entry.formation_energy(
-            chemical_potentials=chempots, fermi_level=fermi_level
+            chemical_potentials=chempot_limits, fermi_level=fermi_level
         )
         row += [f"{formation_energy:.2f} eV"]
 
