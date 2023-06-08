@@ -1,3 +1,8 @@
+"""
+Functions for setting up and parsing competing phase calculations in order to
+determine and analyse the elemental chemical potentials for defect formation
+energies.
+"""
 import contextlib
 import copy
 import os
@@ -39,17 +44,31 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 #  with `plot_cplap_ternary`.
 
 
-def make_molecule_in_a_box(element):
-    # (but do try to fix it so that the nupdown is the same as magnetisation
-    # so that it makes that assignment easier later on when making files)
-    # the bond distances are taken from various sources and *not* thoroughly vetted
+def make_molecule_in_a_box(element: str):
+    """
+    Generate a X2 'molecule-in-a-box' structure for the input element X, (i.e.
+    a 30 Å cubed supercell with a single X2 molecule in the centre).
+
+    This is the natural state of several elemental competing phases, such
+    as O2, N2, H2, F2 and Cl2. Initial bond lengths are set to the experimental
+    bond lengths of these gaseous molecules.
+
+    Args:
+        element (str): Element symbol of the molecule to generate.
+
+    Returns:
+        Structure: pymatgen Structure object of the molecule in a box.
+        str: Chemical formula of the molecule in a box.
+        int: Total magnetization of the molecule in a box (0 for all X2 except
+            O2 which has a triplet ground state (S=1)).
+    """
     lattice = [[30, 0, 0], [0, 30, 0], [0, 0, 30]]
     all_structures = {
         "O2": {
             "structure": Structure(
                 lattice=lattice,
                 species=["O", "O"],
-                coords=[[15, 15, 15], [15, 15, 16.22]],
+                coords=[[15, 15, 15], [15, 15, 16.21]],
                 coords_are_cartesian=True,
             ),
             "formula": "O2",
@@ -59,7 +78,7 @@ def make_molecule_in_a_box(element):
             "structure": Structure(
                 lattice=lattice,
                 species=["N", "N"],
-                coords=[[15, 15, 15], [15, 15, 16.09]],
+                coords=[[15, 15, 15], [15, 15, 16.10]],
                 coords_are_cartesian=True,
             ),
             "formula": "N2",
@@ -79,7 +98,7 @@ def make_molecule_in_a_box(element):
             "structure": Structure(
                 lattice=lattice,
                 species=["F", "F"],
-                coords=[[15, 15, 15], [15, 15, 16.44]],
+                coords=[[15, 15, 15], [15, 15, 16.42]],
                 coords_are_cartesian=True,
             ),
             "formula": "F2",
@@ -101,6 +120,11 @@ def make_molecule_in_a_box(element):
         structure = all_structures[element]["structure"]
         formula = all_structures[element]["formula"]
         total_magnetization = all_structures[element]["total_magnetization"]
+
+    else:
+        raise ValueError(
+            f"Element {element} is not currently supported for molecule-in-a-box structure generation."
+        )
 
     return structure, formula, total_magnetization
 
@@ -137,7 +161,7 @@ def _make_molecular_entry(computed_entry):
 
 
 def _calculate_formation_energies(data, elemental):
-    df = pd.DataFrame(data)
+    formation_energy_df = pd.DataFrame(data)
     for d in data:
         for e in elemental:
             d[e] = Composition(d["formula"]).as_dict()[e]
@@ -147,19 +171,23 @@ def _calculate_formation_energies(data, elemental):
     for k, v in elemental.items():
         df2["formation_energy"] -= df2[k] * v
 
-    df["formation_energy"] = df2["formation_energy"]
+    formation_energy_df["formation_energy"] = df2["formation_energy"]
 
-    df["num_atoms_in_fu"] = df["energy_per_fu"] / df["energy_per_atom"]
-    df["num_species"] = df["formula"].apply(lambda x: len(Composition(x).as_dict()))
+    formation_energy_df["num_atoms_in_fu"] = (
+        formation_energy_df["energy_per_fu"] / formation_energy_df["energy_per_atom"]
+    )
+    formation_energy_df["num_species"] = formation_energy_df["formula"].apply(
+        lambda x: len(Composition(x).as_dict())
+    )
 
     # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
-    df = df.sort_values(
+    formation_energy_df = formation_energy_df.sort_values(
         by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
     )
     # drop num_atoms_in_fu and num_species
-    df = df.drop(columns=["num_atoms_in_fu", "num_species"])
+    formation_energy_df = formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
 
-    return df
+    return formation_energy_df
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom):
