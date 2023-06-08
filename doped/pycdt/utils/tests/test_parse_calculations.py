@@ -2,12 +2,12 @@ import os
 import tarfile
 import unittest
 from shutil import copyfile
-import numpy as np
 
+import numpy as np
 from monty.tempfile import ScratchDir
-from pymatgen.analysis.defects.core import DefectEntry, Substitution, Vacancy
-from pymatgen.core import Element, PeriodicSite
-from pymatgen.io.vasp import Locpot, Vasprun
+from pymatgen.analysis.defects.core import Substitution
+from pymatgen.core import Element
+from pymatgen.io.vasp import Locpot
 from pymatgen.util.testing import PymatgenTest
 
 from doped.pycdt.utils.parse_calculations import PostProcess, SingleDefectParser
@@ -40,15 +40,10 @@ class SingleDefectParserTest(PymatgenTest):
                 18.12,
                 charge=2,
             )
-            self.assertIsInstance(sdp, SingleDefectParser)
-            self.assertIsInstance(sdp.defect_entry.defect, Substitution)
-            self.assertEqual(
-                sdp.defect_entry.parameters["bulk_path"], "test_path_files/bulk/"
-            )
-            self.assertEqual(
-                sdp.defect_entry.parameters["defect_path"],
-                "test_path_files/sub_1_Sb_on_Ga/charge_2/",
-            )
+            assert isinstance(sdp, SingleDefectParser)
+            assert isinstance(sdp.defect_entry.defect, Substitution)
+            assert sdp.defect_entry.parameters["bulk_path"] == "test_path_files/bulk/"
+            assert sdp.defect_entry.parameters["defect_path"] == "test_path_files/sub_1_Sb_on_Ga/charge_2/"
 
             # test_freysoldt_loader
             for param_key in [
@@ -57,7 +52,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "defect_planar_averages",
                 "defect_frac_sc_coords",
             ]:
-                self.assertFalse(param_key in sdp.defect_entry.parameters.keys())
+                assert param_key not in sdp.defect_entry.parameters.keys()
             sdp.freysoldt_loader()
             for param_key in [
                 "axis_grid",
@@ -66,7 +61,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "initial_defect_structure",
                 "defect_frac_sc_coords",
             ]:
-                self.assertTrue(param_key in sdp.defect_entry.parameters.keys())
+                assert param_key in sdp.defect_entry.parameters
 
             # test_kumagai_loader
             for param_key in [
@@ -75,7 +70,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "site_matching_indices",
                 "sampling_radius",
             ]:
-                self.assertFalse(param_key in sdp.defect_entry.parameters.keys())
+                assert param_key not in sdp.defect_entry.parameters.keys()
             sdp.kumagai_loader()
             for param_key in [
                 "bulk_atomic_site_averages",
@@ -83,7 +78,7 @@ class SingleDefectParserTest(PymatgenTest):
                 "site_matching_indices",
                 "defect_frac_sc_coords",
             ]:
-                self.assertTrue(param_key in sdp.defect_entry.parameters.keys())
+                assert param_key in sdp.defect_entry.parameters
 
             # test_get_stdrd_metadata
             sdp.get_stdrd_metadata()
@@ -95,16 +90,16 @@ class SingleDefectParserTest(PymatgenTest):
                 "defect_energy",
                 "run_metadata",
             ]:
-                self.assertTrue(param_key in sdp.defect_entry.parameters.keys())
+                assert param_key in sdp.defect_entry.parameters
 
             # test_get_bulk_gap_data
             sdp.get_bulk_gap_data()
             self.assertAlmostEqual(sdp.defect_entry.parameters["gap"], 1.2167)
 
             # test_run_compatibility
-            self.assertFalse("is_compatible" in sdp.defect_entry.parameters)
+            assert "is_compatible" not in sdp.defect_entry.parameters
             sdp.run_compatibility()
-            self.assertTrue("is_compatible" in sdp.defect_entry.parameters)
+            assert "is_compatible" in sdp.defect_entry.parameters
 
 
 class PostProcessTest(PymatgenTest):
@@ -115,15 +110,15 @@ class PostProcessTest(PymatgenTest):
             copyfile(os.path.join(file_loc, "vasprun.xml_GaAs"), "bulk/vasprun.xml")
             pp = PostProcess(".", mapi_key="c2LiJRMiBeaN5iXsH")  # SK MP Imperial email A/C API key
             gaas_cp = pp.get_chempot_limits()
-            self.assertEqual({"As-GaAs", "Ga-GaAs"}, set(gaas_cp.keys()))
+            assert {"As-GaAs", "Ga-GaAs"} == set(gaas_cp.keys())
             np.testing.assert_almost_equal(
                 [-4.65807055, -4.9884807425],
                 [gaas_cp["As-GaAs"][Element(elt)] for elt in ["As", "Ga"]],
-                decimal=3)
+                decimal=3,
+            )
             np.testing.assert_almost_equal(
-                [-6.618, -3.028],
-                [gaas_cp["Ga-GaAs"][Element(elt)] for elt in ["As", "Ga"]],
-                decimal=3)
+                [-6.618, -3.028], [gaas_cp["Ga-GaAs"][Element(elt)] for elt in ["As", "Ga"]], decimal=3
+            )
 
 
 if __name__ == "__main__":
