@@ -160,18 +160,27 @@ def _make_molecular_entry(computed_entry):
     return molecular_entry
 
 
-def _calculate_formation_energies(data, elemental):
-    formation_energy_df = pd.DataFrame(data)
+def _calculate_formation_energies(data: list, elemental: dict):
+    """
+    Calculate formation energies for a list of dictionaries, using the input
+    elemental reference energies.
+
+    Args:
+        data (list): List of dictionaries containing the energy data of the
+            phases to calculate formation energies for.
+        elemental (dict): Dictionary of elemental reference energies.
+
+    Returns:
+        pd.DataFrame: DataFrame formation energies of the input phases.
+    """
     for d in data:
         for e in elemental:
             d[e] = Composition(d["formula"]).as_dict()[e]
 
-    df2 = pd.DataFrame(data)
-    df2["formation_energy"] = df2["energy_per_fu"]
+    formation_energy_df = pd.DataFrame(data)
+    formation_energy_df["formation_energy"] = formation_energy_df["energy_per_fu"]
     for k, v in elemental.items():
-        df2["formation_energy"] -= df2[k] * v
-
-    formation_energy_df["formation_energy"] = df2["formation_energy"]
+        formation_energy_df["formation_energy"] -= formation_energy_df[k] * v
 
     formation_energy_df["num_atoms_in_fu"] = (
         formation_energy_df["energy_per_fu"] / formation_energy_df["energy_per_atom"]
@@ -199,8 +208,8 @@ def _renormalise_entry(entry, renormalisation_energy_per_atom):
     renormalised_entry_dict["energy"] = entry.energy - renormalisation_energy_per_atom * sum(
         entry.composition.values()
     )  # entry.energy includes MP corrections as desired
-    renormalised_entry = PDEntry.from_dict(renormalised_entry_dict)
-    return renormalised_entry
+
+    return PDEntry.from_dict(renormalised_entry_dict)
 
 
 def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
@@ -228,37 +237,33 @@ def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
         )
         phase_diagram = PhaseDiagram(entries)
 
-    chem_lims = phase_diagram.get_all_chempots(redcomp)
-
-    return chem_lims
+    return phase_diagram.get_all_chempots(redcomp)
 
 
 class CompetingPhases:
-    """
-    Class to generate the input files for competing phases on the phase diagram
-    for the host material (determining the chemical potential limits).
-    Materials Project (MP) data is used, along with an uncertainty range
-    specified by `e_above_hull`, to determine the relevant competing phases.
-    Diatomic gaseous molecules are generated as molecules-in-a-box as
-    appropriate.
-
-    TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
-    composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
-    and generate from there)
-    E.g. from pycdt chemical_potentials:
-    #                 "However, no stable entry with this composition exists "
-    #                 "in the MP database!\nPlease consider submitting the "
-    #                 "POSCAR to the MP xtaltoolkit, so future users will "
-    #                 "know about this structure:"
-    #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
-    analyze_GGA_chempots code for example.
-    TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
-    (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
-    """
+    # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
+    # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
+    # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
+    # and generate from there)
+    # E.g. from pycdt chemical_potentials:
+    # #                 "However, no stable entry with this composition exists "
+    # #                 "in the MP database!\nPlease consider submitting the "
+    # #                 "POSCAR to the MP xtaltoolkit, so future users will "
+    # #                 "know about this structure:"
+    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
+    # analyze_GGA_chempots code for example.
+    # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
+    # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
+        Class to generate the input files for competing phases on the phase
+        diagram for the host material (determining the chemical potential
+        limits). Materials Project (MP) data is used, along with an uncertainty
+        range specified by `e_above_hull`, to determine the relevant competing
+        phases. Diatomic gaseous molecules are generated as molecules-in-a-box
+        as appropriate.
+
         Args:
             composition (str, Composition): Composition of host material
                 (e.g. 'LiFePO4', or Composition('LiFePO4'), or Composition({"Li":1, "Fe":1,
@@ -438,6 +443,7 @@ class CompetingPhases:
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
                 `doped/PBEsol_ConvergenceSet.yaml` for the default settings.
+            **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
         pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "PBEsol_ConvergenceSet.yaml"))
@@ -474,7 +480,7 @@ class CompetingPhases:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             for kpoint in range(min_nm, max_nm, step_nm):
-                dis = DictSet(
+                dict_set = DictSet(
                     e.structure,
                     pbesol_convrg_set,
                     user_kpoints_settings={"reciprocal_density": kpoint},
@@ -482,12 +488,12 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
+                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 fname = (
                     f"competing_phases/{e.name}_EaH"
                     f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 )  # TODO: competing_phases folder name should be an optional parameter
-                dis.write_input(fname, **kwargs)
+                dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
@@ -502,7 +508,7 @@ class CompetingPhases:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
             for kpoint in range(min_m, max_m, step_m):
-                dis = DictSet(
+                dict_set = DictSet(
                     e.structure,
                     pbesol_convrg_set,
                     user_kpoints_settings={"reciprocal_density": kpoint},
@@ -510,12 +516,12 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dis.kpoints.kpts[0])
+                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 fname = (
                     f"competing_phases/{e.name}_EaH_"
                     f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 )
-                dis.write_input(fname, **kwargs)
+                dict_set.write_input(fname, **kwargs)
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
@@ -544,6 +550,7 @@ class CompetingPhases:
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
                 `doped/HSE06_RelaxSet.yaml` for the default settings.
+            **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
@@ -578,7 +585,7 @@ class CompetingPhases:
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
-            dis = DictSet(
+            dict_set = DictSet(
                 e.structure,
                 hse06_relax_set,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
@@ -586,8 +593,8 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{e.name}_EaH_" f"{round(e.data['e_above_hull'],4)}/vasp_std"
-            dis.write_input(fname, **kwargs)
+            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
@@ -601,15 +608,15 @@ class CompetingPhases:
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
-            dis = DictSet(
+            dict_set = DictSet(
                 e.structure,
                 hse06_relax_set,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_" f"{round(e.data['e_above_hull'],4)}/vasp_std"
-            dis.write_input(fname, **kwargs)
+            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
@@ -623,7 +630,7 @@ class CompetingPhases:
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
-            dis = DictSet(
+            dict_set = DictSet(
                 e.structure,
                 hse06_relax_set,
                 user_kpoints_settings=Kpoints().from_dict(
@@ -636,7 +643,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
             fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
-            dis.write_input(fname, **kwargs)
+            dict_set.write_input(fname, **kwargs)
 
 
 # TODO: Add full_sub_approach option
@@ -1123,12 +1130,12 @@ class CompetingPhasesAnalyzer:
             }
             temp_data.append(d)
 
-        df = _calculate_formation_energies(temp_data, self.elemental_energies)
+        formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
         if csv_fname is not None:
-            df.to_csv(csv_fname, index=False)
+            formation_energy_df.to_csv(csv_fname, index=False)
             print(f"Competing phase formation energies have been saved to {csv_fname}.")
 
-        self.data = df.to_dict(orient="records")
+        self.data = formation_energy_df.to_dict(orient="records")
 
     def from_csv(self, csv):
         """
@@ -1140,7 +1147,7 @@ class CompetingPhasesAnalyzer:
         Returns:
             None, sets self.data and self.elemental_energies.
         """
-        df = pd.read_csv(csv)
+        formation_energy_df = pd.read_csv(csv)
         columns = [
             "formula",
             "energy_per_fu",
@@ -1148,14 +1155,14 @@ class CompetingPhasesAnalyzer:
             "energy",
             "formation_energy",
         ]
-        if all(x in list(df.columns) for x in columns):
-            droplist = [i for i in df.columns if i not in columns]
-            df = df.drop(droplist, axis=1)
-            d = df.to_dict(orient="records")
-            self.data = d
+        if all(x in list(formation_energy_df.columns) for x in columns):
+            droplist = [i for i in formation_energy_df.columns if i not in columns]
+            formation_energy_df = formation_energy_df.drop(droplist, axis=1)
+            formation_energy_dict = formation_energy_df.to_dict(orient="records")
+            self.data = formation_energy_dict
 
             self.elemental_energies = {}
-            for i in d:
+            for i in formation_energy_dict:
                 c = Composition(i["formula"])
                 if len(c.elements) == 1:
                     elt = c.chemical_system
@@ -1257,16 +1264,16 @@ class CompetingPhasesAnalyzer:
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
-        for k, v in self._intrinsic_chem_limits["facets_wrt_el_refs"].items():
-            lst = []
-            columns = []
-            for k, v in v.items():
-                lst.append(v)
-                columns.append(str(k))
-            chemical_potentials.append(lst)
+        for _, chempot_dict in self._intrinsic_chem_limits["facets_wrt_el_refs"].items():
+            phase_energy_list = []
+            phase_name_columns = []
+            for k, v in chempot_dict.items():
+                phase_name_columns.append(str(k))
+                phase_energy_list.append(v)
+            chemical_potentials.append(phase_energy_list)
 
         # make df, will need it in next step
-        df = pd.DataFrame(chemical_potentials, columns=columns)
+        extrinsic_chempots_df = pd.DataFrame(chemical_potentials, columns=phase_name_columns)
 
         if self.extrinsic_species is not None:
             if verbose:
@@ -1276,7 +1283,7 @@ class CompetingPhasesAnalyzer:
                     e[el] = Composition(e["formula"]).as_dict()[el]
 
             # gets the df into a slightly more convenient dict
-            cpd = df.to_dict(orient="records")
+            cpd = extrinsic_chempots_df.to_dict(orient="records")
             mins = []
             mins_formulas = []
             df3 = pd.DataFrame(extrinsic_formation_energies)
@@ -1291,9 +1298,9 @@ class CompetingPhasesAnalyzer:
                 mins.append(df3[name].min())
                 mins_formulas.append(df3.iloc[df3[name].idxmin()]["formula"])
 
-            df[self.extrinsic_species] = mins
+            extrinsic_chempots_df[self.extrinsic_species] = mins
             col_name = f"{self.extrinsic_species}_limiting_phase"
-            df[col_name] = mins_formulas
+            extrinsic_chempots_df[col_name] = mins_formulas
 
             # 1. work out the formation energies of all dopant competing
             #    phases using the elemental energies
@@ -1310,7 +1317,7 @@ class CompetingPhasesAnalyzer:
             #  those with only one extrinsic competing phase bordering
 
             # reverse engineer chem lims for extrinsic
-            df4 = df.copy().to_dict(orient="records")
+            df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
             cl2 = {
                 "elemental_refs": self.elemental_energies,
                 "facets_wrt_el_refs": {},
@@ -1342,15 +1349,15 @@ class CompetingPhasesAnalyzer:
 
         # save and print
         if csv_fname is not None:
-            df.to_csv(csv_fname, index=False)
+            extrinsic_chempots_df.to_csv(csv_fname, index=False)
             if verbose:
                 print("Saved chemical potential limits to csv file: ", csv_fname)
 
         if verbose:
             print("Calculated chemical potential limits: \n")
-            print(df)
+            print(extrinsic_chempots_df)
 
-        return df
+        return extrinsic_chempots_df
 
     @property
     def chem_limits(self) -> dict:
@@ -1403,7 +1410,7 @@ class CompetingPhasesAnalyzer:
             print(f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk")
             for k, v in self.bulk_composition.as_dict().items():
                 print(int(v), k, end=" ")
-            print(f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy " "(bulk)")
+            print(f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy (bulk)")
 
             if dependent_variable is not None:
                 print(f"{dependent_variable}  # dependent variable (element)")
@@ -1426,15 +1433,15 @@ class CompetingPhasesAnalyzer:
             culled_cplap_entries = {}
             for entry in entries_for_cplap:
                 reduced_comp = Composition(entry["formula"]).reduced_composition
-                if reduced_comp not in culled_cplap_entries:
+                if (
+                    reduced_comp not in culled_cplap_entries
+                    or entry["formation_energy"] < culled_cplap_entries[reduced_comp]["formation_energy"]
+                ):
                     culled_cplap_entries[reduced_comp] = entry
-                else:
-                    if entry["formation_energy"] < culled_cplap_entries[reduced_comp]["formation_energy"]:
-                        culled_cplap_entries[reduced_comp] = entry
 
             print(f"{len(culled_cplap_entries)}  # number of bordering phases")
             for i in culled_cplap_entries.values():
-                print(f"{len(Composition(i['formula']).as_dict())}  # number of elements in " "phase:")
+                print(f"{len(Composition(i['formula']).as_dict())}  # number of elements in phase:")
                 for k, v in Composition(i["formula"]).as_dict().items():
                     print(int(v), k, end=" ")
                 print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")

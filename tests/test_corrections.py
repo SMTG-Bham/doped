@@ -45,7 +45,7 @@ class FilePathCorrectionsTest(PymatgenTest):
                 plot=True,
                 filename="test_freysoldt_correction",
             )
-            self.assertAlmostEqual(fcc, -1.4954476868106865)  # note this has been updated from the
+            assert np.isclose(fcc, -1.4954476868106865, rtol=1e-5)  # note this has been updated from the
             # pycdt version, because there they used a `transformation.json` that gave an
             # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
             assert os.path.exists("test_freysoldt_correction_axis1.pdf")
@@ -58,7 +58,7 @@ class FilePathCorrectionsTest(PymatgenTest):
                 plot=True,
                 filename="test_kumagai_correction",
             )
-            self.assertAlmostEqual(kcc, 0.638776853061614)
+            assert np.isclose(kcc, 0.638776853061614, rtol=1e-5)
             assert os.path.exists("test_kumagai_correction.pdf")
 
 
@@ -143,12 +143,12 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         freyout = get_correction_freysoldt(
             self.defect_entry, self.dielectric, partflag="AllSplit", axis=None
         )
-        self.assertAlmostEqual(freyout[0], 0.975893)
-        self.assertAlmostEqual(freyout[1], 4.4700573687929905)
-        self.assertAlmostEqual(freyout[2], 5.445950368792991)
+        assert np.isclose(freyout[0], 0.975893, rtol=1e-5)
+        assert np.isclose(freyout[1], 4.4700573687929905, rtol=1e-5)
+        assert np.isclose(freyout[2], 5.445950368792991, rtol=1e-5)
 
     def test_get_correction_kumagai(self):
         kumagaiout = get_correction_kumagai(self.defect_entry, self.dielectric, partflag="AllSplit")
-        self.assertAlmostEqual(kumagaiout[0], 0.9763991294314076)
-        self.assertAlmostEqual(kumagaiout[1], 0.2579750033409367)
-        self.assertAlmostEqual(kumagaiout[2], 1.2343741327723443)
+        assert np.isclose(kumagaiout[0], 0.9763991294314076, rtol=1e-5)
+        assert np.isclose(kumagaiout[1], 0.2579750033409367, rtol=1e-5)
+        assert np.isclose(kumagaiout[2], 1.2343741327723443, rtol=1e-5)
