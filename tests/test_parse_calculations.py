@@ -1,8 +1,10 @@
 import os
-import numpy as np
 import unittest
-from doped.pycdt.utils import parse_calculations
+
+import numpy as np
 from pymatgen.core.structure import Structure
+
+from doped.pycdt.utils import parse_calculations
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -14,7 +16,10 @@ class DopedParsingTestCase(unittest.TestCase):
         self.dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
     def test_vacancy_parsing_and_freysoldt(self):
-        """Test parsing of Cd vacancy calculations and correct Freysoldt correction calculated"""
+        """
+        Test parsing of Cd vacancy calculations and correct Freysoldt
+        correction calculated.
+        """
         parsed_vac_Cd_dict = {}
 
         for i in os.listdir(self.EXAMPLE_DIR):
@@ -28,16 +33,14 @@ class DopedParsingTestCase(unittest.TestCase):
                     dielectric=self.dielectric,
                     defect_charge=defect_charge,
                 )
-                bo = sdp.freysoldt_loader()
+                sdp.freysoldt_loader()
                 sdp.get_stdrd_metadata()
                 sdp.get_bulk_gap_data()
                 sdp.run_compatibility()
-                parsed_vac_Cd_dict[
-                    i
-                ] = sdp.defect_entry  # Keep dictionary of parsed defect entries
+                parsed_vac_Cd_dict[i] = sdp.defect_entry  # Keep dictionary of parsed defect entries
 
-        self.assertTrue(len(parsed_vac_Cd_dict) == 3)
-        self.assertTrue(all(f"vac_1_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2]))
+        assert len(parsed_vac_Cd_dict) == 3
+        assert all(f"vac_1_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2])
         # Check that the correct Freysoldt correction is applied
         for name, energy, correction_dict in [
             (
@@ -78,12 +81,13 @@ class DopedParsingTestCase(unittest.TestCase):
                     parsed_vac_Cd_dict[name].site.frac_coords, [0.5, 0.5, 0.5]
                 )
             else:
-                np.testing.assert_array_almost_equal(
-                    parsed_vac_Cd_dict[name].site.frac_coords, [0, 0, 0]
-                )
+                np.testing.assert_array_almost_equal(parsed_vac_Cd_dict[name].site.frac_coords, [0, 0, 0])
 
     def test_interstitial_parsing_and_kumagai(self):
-        """Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV) correction"""
+        """
+        Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
+        correction.
+        """
         for i in os.listdir(self.EXAMPLE_DIR):
             if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
                 defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
@@ -109,18 +113,16 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandedgeshifting_correction": 0.0,
         }
         for k in correction_dict:
-            self.assertAlmostEqual(
-                te_i_2_ent.corrections[k], correction_dict[k], places=3
-            )
+            self.assertAlmostEqual(te_i_2_ent.corrections[k], correction_dict[k], places=3)
         # assert auto-determined interstital site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
-        np.testing.assert_array_almost_equal(
-            te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875]
-        )
+        np.testing.assert_array_almost_equal(te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875])
         os.remove("bulk_voronoi_nodes.json")
 
     def test_substitution_parsing_and_kumagai(self):
-        """Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction"""
+        """
+        Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction.
+        """
         for i in os.listdir(self.EXAMPLE_DIR):
             if "as_1_Te" in i:  # loop folders and parse those with "Int_Te" in name
                 defect_file_path = f"{self.EXAMPLE_DIR}/{i}/vasp_ncl"
@@ -146,17 +148,15 @@ class DopedParsingTestCase(unittest.TestCase):
             "bandedgeshifting_correction": 0.0,
         }
         for k in correction_dict:
-            self.assertAlmostEqual(
-                te_cd_1_ent.corrections[k], correction_dict[k], places=3
-            )
+            self.assertAlmostEqual(te_cd_1_ent.corrections[k], correction_dict[k], places=3)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-        np.testing.assert_array_almost_equal(
-            te_cd_1_ent.site.frac_coords, [0.5000, 0.5000, 0.5000]
-        )
+        np.testing.assert_array_almost_equal(te_cd_1_ent.site.frac_coords, [0.5000, 0.5000, 0.5000])
 
     def test_extrinsic_interstitial_defect_ID(self):
-        """Test parsing of extrinsic F in YTOS interstitial"""
+        """
+        Test parsing of extrinsic F in YTOS interstitial.
+        """
         bulk_sc_structure = Structure.from_file(
             f"{self.EXAMPLE_DIR}/YTOS_Extrinsic_Fluorine_Interstitial/Bulk_POSCAR"
         )
@@ -169,7 +169,7 @@ class DopedParsingTestCase(unittest.TestCase):
         ) = parse_calculations.get_defect_type_and_composition_diff(
             bulk_sc_structure, initial_defect_structure
         )
-        self.assertEqual(def_type, "interstitial")
+        assert def_type == "interstitial"
         self.assertDictEqual(comp_diff, {"F": 1})
         (
             bulk_site_idx,
@@ -178,8 +178,8 @@ class DopedParsingTestCase(unittest.TestCase):
         ) = parse_calculations.get_defect_site_idxs_and_unrelaxed_structure(
             bulk_sc_structure, initial_defect_structure, def_type, comp_diff
         )
-        self.assertEqual(bulk_site_idx, None)
-        self.assertEqual(defect_site_idx, len(unrelaxed_defect_structure) - 1)
+        assert bulk_site_idx is None
+        assert defect_site_idx == len(unrelaxed_defect_structure) - 1
 
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
@@ -190,20 +190,18 @@ class DopedParsingTestCase(unittest.TestCase):
         )
 
     def test_extrinsic_substitution_defect_ID(self):
-        """Test parsing of extrinsic U_on_Cd in CdTe"""
-        bulk_sc_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR"
-        )
-        initial_defect_structure = Structure.from_file(
-            f"{self.EXAMPLE_DIR}/U_on_Cd_POSCAR"
-        )
+        """
+        Test parsing of extrinsic U_on_Cd in CdTe.
+        """
+        bulk_sc_structure = Structure.from_file(f"{self.EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR")
+        initial_defect_structure = Structure.from_file(f"{self.EXAMPLE_DIR}/U_on_Cd_POSCAR")
         (
             def_type,
             comp_diff,
         ) = parse_calculations.get_defect_type_and_composition_diff(
             bulk_sc_structure, initial_defect_structure
         )
-        self.assertEqual(def_type, "substitution")
+        assert def_type == "substitution"
         self.assertDictEqual(comp_diff, {"Cd": -1, "U": 1})
         (
             bulk_site_idx,
@@ -212,8 +210,8 @@ class DopedParsingTestCase(unittest.TestCase):
         ) = parse_calculations.get_defect_site_idxs_and_unrelaxed_structure(
             bulk_sc_structure, initial_defect_structure, def_type, comp_diff
         )
-        self.assertEqual(bulk_site_idx, 0)
-        self.assertEqual(defect_site_idx, 63)  # last site in structure
+        assert bulk_site_idx == 0
+        assert defect_site_idx == 63  # last site in structure
 
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]

@@ -1,8 +1,8 @@
 import warnings
 from datetime import date
 from importlib.metadata import PackageNotFoundError, version
-from packaging.version import parse
 
+from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
@@ -44,9 +44,7 @@ def _ignore_pmg_warnings():
     # globally ignore these POTCAR warnings
     warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
     warnings.filterwarnings("ignore", category=BadInputSetWarning)
-    warnings.filterwarnings(
-        "ignore", message="No POTCAR file with matching TITEL fields"
-    )
+    warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
     warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
     warnings.filterwarnings(
         "ignore", message="POTCAR data with symbol"
@@ -56,5 +54,6 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+
 
 _ignore_pmg_warnings()
