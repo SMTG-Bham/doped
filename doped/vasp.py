@@ -428,43 +428,57 @@ def vasp_gam_files(
     files in the `doped` folder for the default `INCAR` settings, and
     `PotcarSet.yaml` for the default `POTCAR` settings.
 
-    Note that any changes to the default `INCAR`/`POTCAR` settings should be consistent with
-    those used for competing phase (chemical potential) calculations.
+    Note that any changes to the default `INCAR`/`POTCAR` settings should be
+    consistent with those used for competing phase (chemical potential)
+    calculations.
 
     Args:
-        defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
-            Either a `DefectsGenerator` object, or a dictionary of, list of or single `DefectEntry`
-            object, for which to generate VASP input files. If a `DefectsGenerator` object or a
-            dictionary (-> {defect_species: DefectEntry}), the defect folder names will be set equal
-            to `defect_species`. If a list or single `DefectEntry` object is provided, the defect folder
-            names will be set equal to `DefectEntry.name` if the `name` attribute is set, otherwise
+        defect_entries (Union[DefectsGenerator, Dict[DefectEntry],
+        List[DefectEntry], DefectEntry]):
+            Either a `DefectsGenerator` object, or a dictionary of, list of
+            or single `DefectEntry` object, for which to generate VASP input
+            files. If a `DefectsGenerator` object or a dictionary (->
+            {defect_species: DefectEntry}), the defect folder names will be
+            set equal to `defect_species`. If a list or single `DefectEntry`
+            object is provided, the defect folder names will be set equal to
+            `DefectEntry.name` if the `name` attribute is set, otherwise
             generated according to the `doped` convention.
         output_dir (str):
-            Folder in which to create the VASP defect calculation inputs folders. Default is the
-            current directory.
+            Folder in which to create the VASP defect calculation inputs
+            folders. Default is the current directory.
         subfolder (str):
-            Output folder structure is `<output_dir>/<defect_species>/<subfolder>` where `subfolder` =
-            'vasp_gam' by default. Setting `subfolder` to `None` will write the `vasp_gam` input
-            files directly to the `<defect_species>` folder, with no subfolders created.
+            Output folder structure is `<output_dir>/<defect_species>/<subfolder>`
+            where `subfolder` = 'vasp_gam' by default. Setting `subfolder` to
+            `None` will write the `vasp_gam` input files directly to the
+            `<defect_species>` folder, with no subfolders created.
         user_incar_settings (dict):
-            Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or the `HSE06_RelaxSet.yaml` and
-            `DefectSet.yaml` files in the `doped` folder, to see what the default INCAR settings
-            are. Note that any flags that aren't numbers or True/False need to be input as
-            strings with quotation marks (e.g. `{"ALGO": "All"}`).
+            Dictionary of user INCAR settings (AEXX, NCORE etc.) to override
+            default settings. Highly recommended to look at output INCARs
+            or the `HSE06_RelaxSet.yaml` and `DefectSet.yaml` files in the
+            `doped` folder, to see what the default INCAR settings are. Note
+            that any flags that aren't numbers or True/False need to be input
+            as strings with quotation marks (e.g. `{"ALGO": "All"}`).
             (default: None)
-        user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
-        user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+        user_potcar_functional (str):
+            POTCAR functional to use (default = "PBE_54")
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
             `doped/PotcarSet.yaml` for the default `POTCAR` set.
-        write_files (bool): Whether to write the VASP input files to disk. Default is True.
-        write_transformation_info (bool): Whether to write the transformation.json file (with info
-            about generated defect supercell, mainly for logging purposes). Default is False.
+        write_files (bool):
+            Whether to write the VASP input files to disk. Default is True.
+        write_transformation_info (bool):
+            Whether to write the transformation.json file (with info
+            about generated defect supercell, mainly for logging purposes).
+            Default is False.
+        **kwargs:
+            Additiional kwargs to pass to `DefectRelaxSet.write_input()`,
+            to allow POTCAR testing on GH Actions.
 
     Returns:
-        Dictionary of {defect_species: `DefectRelaxSet`} for each defect species in the input
-        defect_dict. `DefectRelaxSet` is a subclass of `pymatgen`'s `DictSet` class,
-        with `incar`, `poscar`, `kpoints` and `potcar` attributes, containing information on the
-        generated files.
+        Dictionary of {defect_species: `DefectRelaxSet`} for each defect
+        species in the input defect_dict. `DefectRelaxSet` is a subclass of
+        `pymatgen`'s `DictSet` class, with `incar`, `poscar`, `kpoints` and
+        `potcar` attributes, containing information on the generated files.
     """
     # check type of input `defect_entries`, and format if necessary:
     defect_entries = _format_defect_entries_input(defect_entries)

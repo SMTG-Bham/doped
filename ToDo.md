@@ -62,6 +62,8 @@
 - Test coverage.
 - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
 - Notebooks in tests; update or delete.
+- Go through docstrings and trim to 80 characters.
+- Add type hints for all functions.
 - Generate docs.
   - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation approach for interstitials, but note user can use charge-density based approach if needing to be super-lean for some reason.
