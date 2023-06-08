@@ -96,16 +96,20 @@ def defect_entry_from_paths(
     bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
     dielectric (float or int or 3x1 matrix or 3x3 matrix):
         ionic + static contributions to dielectric constant
-    charge (int): charge of defect. If not provided, will be automatically determined
-        from the defect calculation outputs (requires POTCARs to be set up with `pymatgen`).
+    charge (int):
+        charge of defect. If not provided, will be automatically determined
+        from the defect calculation outputs (requires POTCARs to be set up
+        with `pymatgen`).
     initial_defect_structure (str):  Path to the unrelaxed defect structure,
         if structure matching with the relaxed defect structure(s) fails.
-    skip_corrections (bool): Whether to skip the calculation and application of finite-size
-        charge corrections to the defect energy.
-    bulk_bandgap_path (str): Path to bulk OUTCAR file for determining the band gap. If the
-        VBM/CBM occur at reciprocal space points not included in the bulk supercell calculation,
-        you should use this tag to point to a bulk bandstructure calculation instead. If None,
-        will use self.defect_entry.parameters["bulk_path"].
+    skip_corrections (bool): Whether to skip the calculation and application of
+        finite-size charge corrections to the defect energy.
+    bulk_bandgap_path (str):
+        Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+        occur at reciprocal space points not included in the bulk supercell
+        calculation, you should use this tag to point to a bulk bandstructure
+        calculation instead. If None, will use self.defect_entry.parameters["bulk_path"].
+    **kwargs: Additional keyword arguments to pass to `SingleDefectParser()`.
 
     Return:
         Parsed `DefectEntry` object.
@@ -163,12 +167,11 @@ def defect_entry_from_paths(
 
             except Exception as e:
                 raise RuntimeError(
-                    f"Defect charge cannot be automatically determined as POTCARs have not "
-                    f"been setup with pymatgen (see Step 2 at "
-                    f"https://github.com/SMTG-UCL/doped#installation). Please specify defect "
-                    f"charge manually using the `charge` argument, or set up POTCARs with "
-                    f"pymatgen. Got error: {e}"
-                )
+                    "Defect charge cannot be automatically determined as POTCARs have not been setup "
+                    "with pymatgen (see Step 2 at https://github.com/SMTG-UCL/doped#installation). "
+                    "Please specify defect charge manually using the `charge` argument, or set up "
+                    "POTCARs with pymatgen."
+                ) from e
 
             if abs(auto_charge) >= 10:  # crazy charge state predicted
                 raise RuntimeError(
@@ -580,11 +583,10 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
             f"Are you sure the correct/same bulk files were used with "
             f"SingleDefectParser and/or get_bulk_gap_data()?"
         )
-    vbm = vbm_vals[0]
-    bandgap = bandgap_vals[0]
-    dpd = DefectPhaseDiagram(list(parsed_defect_dict.values()), vbm, bandgap, filter_compatible=False)
 
-    return dpd
+    return DefectPhaseDiagram(
+        list(parsed_defect_dict.values()), vbm_vals[0], bandgap_vals[0], filter_compatible=False
+    )
 
 
 def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
@@ -667,27 +669,27 @@ def formation_energy_table(
             # potentials, to tabulate formation energies
         for facet in pd_facets:
             bold_print("Facet: " + unicodeify(facet))
-            df = single_formation_energy_table(
+            single_formation_energy_df = single_formation_energy_table(
                 defect_phase_diagram,
                 chempot_limits=chempot_limits["facets"][facet],
                 fermi_level=fermi_level,
                 hide_cols=hide_cols,
                 show_key=show_key,
             )
-            list_of_dfs.append(df)
+            list_of_dfs.append(single_formation_energy_df)
             print("\n")
 
         return list_of_dfs
 
     # else return {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
-    df = single_formation_energy_table(
+    single_formation_energy_df = single_formation_energy_table(
         defect_phase_diagram,
         chempot_limits=chempot_limits,
         fermi_level=fermi_level,
         hide_cols=hide_cols,
         show_key=show_key,
     )
-    return df
+    return single_formation_energy_df
 
 
 def single_formation_energy_table(
@@ -798,7 +800,7 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
     Freysoldt scheme)).
 
     Args:
-        parsed_defect_dict (dict):
+        defect_dict (dict):
             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
             from doped.pycdt.utils.parse_calculations) (see example notebook)
             Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
@@ -849,7 +851,7 @@ def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
     alignment plus 0.65 * image charge correction.
 
     Args:
-        parsed_defect_dict (dict):
+        defect_dict (dict):
             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
             from doped.pycdt.utils.parse_calculations) (see example notebook)
             Must have 'kumagai_meta' in defect.parameters for each charged defect (from
