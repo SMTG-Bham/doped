@@ -24,6 +24,7 @@ import copy
 import itertools
 import warnings
 from math import erfc, exp
+from typing import Optional
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -68,7 +69,7 @@ def get_correction_freysoldt(
     defect_entry,
     dielectric,
     plot: bool = False,
-    filename: str = None,
+    filename: Optional[str] = None,
     partflag="All",
     axis=None,
 ):
@@ -180,7 +181,7 @@ def get_correction_freysoldt(
 
 
 def get_correction_kumagai(
-    defect_entry, dielectric, plot: bool = False, filename: str = None, partflag="All"
+    defect_entry, dielectric, plot: bool = False, filename: Optional[str] = None, partflag="All"
 ):
     """
     Function to compute the Kumagai correction for each defect (modified freysoldt for
@@ -276,7 +277,7 @@ def freysoldt_correction_from_paths(
     dielectric,
     defect_charge,
     plot=False,
-    filename=None,
+    filename: Optional[str] = None,
 ):
     """
     A function for performing the Freysoldt correction with a set of file paths.
@@ -309,7 +310,7 @@ def kumagai_correction_from_paths(
     dielectric,
     defect_charge,
     plot=False,
-    filename=None,
+    filename: Optional[str] = None,
 ):
     """
     A function for performing the Kumagai correction with a set of file paths.
