@@ -67,12 +67,12 @@ class DopedParsingTestCase(unittest.TestCase):
                 },
             ),
         ]:
-            self.assertAlmostEqual(parsed_vac_Cd_dict[name].energy, energy, places=3)
+            assert np.isclose(parsed_vac_Cd_dict[name].energy, energy, atol=1e-3)
             for k in correction_dict:
-                self.assertAlmostEqual(
+                assert np.isclose(
                     parsed_vac_Cd_dict[name].corrections[k],
                     correction_dict[k],
-                    places=3,
+                    atol=1e-3,
                 )
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
@@ -105,15 +105,15 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp.run_compatibility()
                 te_i_2_ent = sdp.defect_entry
 
-        self.assertAlmostEqual(te_i_2_ent.energy, -6.221, places=3)
-        self.assertAlmostEqual(te_i_2_ent.uncorrected_energy, -7.105, places=3)
+        assert np.isclose(te_i_2_ent.energy, -6.221, atol=1e-3)
+        assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
         correction_dict = {
             "charge_correction": 0.8834518111049584,
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
         for k in correction_dict:
-            self.assertAlmostEqual(te_i_2_ent.corrections[k], correction_dict[k], places=3)
+            assert np.isclose(te_i_2_ent.corrections[k], correction_dict[k], atol=1e-3)
         # assert auto-determined interstital site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875])
@@ -140,15 +140,15 @@ class DopedParsingTestCase(unittest.TestCase):
                 sdp.run_compatibility()
                 te_cd_1_ent = sdp.defect_entry
 
-        self.assertAlmostEqual(te_cd_1_ent.energy, -2.7494, places=3)
-        self.assertAlmostEqual(te_cd_1_ent.uncorrected_energy, -2.906, places=3)
+        assert np.isclose(te_cd_1_ent.energy, -2.7494, atol=1e-3)
+        assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
         correction_dict = {
             "charge_correction": 0.15660728758716663,
             "bandfilling_correction": -0.0,
             "bandedgeshifting_correction": 0.0,
         }
         for k in correction_dict:
-            self.assertAlmostEqual(te_cd_1_ent.corrections[k], correction_dict[k], places=3)
+            assert np.isclose(te_cd_1_ent.corrections[k], correction_dict[k], atol=1e-3)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(te_cd_1_ent.site.frac_coords, [0.5000, 0.5000, 0.5000])
@@ -170,7 +170,7 @@ class DopedParsingTestCase(unittest.TestCase):
             bulk_sc_structure, initial_defect_structure
         )
         assert def_type == "interstitial"
-        self.assertDictEqual(comp_diff, {"F": 1})
+        assert comp_diff == {"F": 1}
         (
             bulk_site_idx,
             defect_site_idx,
@@ -202,7 +202,7 @@ class DopedParsingTestCase(unittest.TestCase):
             bulk_sc_structure, initial_defect_structure
         )
         assert def_type == "substitution"
-        self.assertDictEqual(comp_diff, {"Cd": -1, "U": 1})
+        assert comp_diff == {"Cd": -1, "U": 1}
         (
             bulk_site_idx,
             defect_site_idx,
