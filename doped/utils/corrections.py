@@ -1,9 +1,10 @@
 """
-Code to compute finite-size charge corrections for charged defects in periodic systems.
-These functions are built from a combination of useful modules from pymatgen, pycdt and AIDE (by
-Adam Jackson and Alex Ganose), alongside substantial modification, in the efforts of making an
-efficient, user-friendly package for managing and analysing defect calculations,
-with publication-quality outputs.
+Code to compute finite-size charge corrections for charged defects in periodic
+systems. These functions are built from a combination of useful modules from
+pymatgen, pycdt and AIDE (by Adam Jackson and Alex Ganose), alongside
+substantial modification, in the efforts of making an efficient, user-friendly
+package for managing and analysing defect calculations, with publication-
+quality outputs.
 
 The charge-correction methods implemented are:
 1) Freysoldt correction for isotropic systems. Includes:
@@ -19,22 +20,20 @@ If you use the corrections implemented in this module, cite
    Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for anisotropic correction
 """
 
-import warnings
-import itertools
 import copy
+import itertools
+import warnings
 from math import erfc, exp
 
 import numpy as np
 from monty.json import MontyDecoder
 from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
-from doped.pycdt.utils.parse_calculations import SingleDefectParser
 from doped.analysis import _convert_dielectric_to_tensor
+from doped.pycdt.utils.parse_calculations import SingleDefectParser
 
 warnings.simplefilter("default")
-warnings.filterwarnings(
-    "ignore", message="`np.int` is a deprecated alias for the builtin `int`"
-)
+warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
 warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
@@ -44,19 +43,18 @@ def _monty_decode_nested_dicts(d):
     lists of dicts and decode them:
     """
     for key, value in d.items():
-        if isinstance(value, dict) and not any(
-            k in value for k in ["@module", "@class"]
-        ):
+        if isinstance(value, dict) and not any(k in value for k in ["@module", "@class"]):
             _monty_decode_nested_dicts(value)
-        elif isinstance(value, list):
-            if all(isinstance(i, dict) for i in value) and all(
-                k in i for k in ["@module", "@class"] for i in value
-            ):
-                try:
-                    d[key] = [MontyDecoder().process_decoded(i) for i in value]
-                except Exception as exc:
-                    print(f"Failed to decode {key} with error {exc}")
-                    pass
+        elif (
+            isinstance(value, list)
+            and all(isinstance(i, dict) for i in value)
+            and all(k in i for k in ["@module", "@class"] for i in value)
+        ):
+            try:
+                d[key] = [MontyDecoder().process_decoded(i) for i in value]
+            except Exception as exc:
+                print(f"Failed to decode {key} with error {exc}")
+                pass
 
         if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
             try:
@@ -135,7 +133,7 @@ def get_correction_freysoldt(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
             '"potalign".'.format(partflag)
         )
-        return
+        return None
 
     q_model = defect_entry.parameters.get("q_model", None)
     encut = defect_entry.parameters.get("encut", 520)
@@ -153,10 +151,7 @@ def get_correction_freysoldt(
 
     if plot:
         if axis is None:
-            ax_list = [
-                [k, "axis" + str(k)]
-                for k in corr_class.metadata["pot_plot_data"].keys()
-            ]
+            ax_list = [[k, "axis" + str(k)] for k in corr_class.metadata["pot_plot_data"]]
         else:
             ax_list = [[axis, "axis" + str(axis + 1)]]
 
@@ -197,7 +192,7 @@ def get_correction_kumagai(
                 required:
                     bulk_atomic_site_averages (list):  list of bulk structure"s atomic site
                     averaged ESPs * charge, in same order as indices of bulk structure note this
-                    is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1)
+                    is list given by VASP's OUTCAR (so it is multiplied by a test charge of -1).
 
                     defect_atomic_site_averages (list):  list of defect structure"s atomic site
                     averaged ESPs * charge, in same order as indices of defect structure note
@@ -239,7 +234,7 @@ def get_correction_kumagai(
             '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
             '"potalign".'.format(partflag)
         )
-        return
+        return None
 
     sampling_radius = defect_entry.parameters.get("sampling_radius", None)
     gamma = defect_entry.parameters.get("gamma", None)
@@ -249,9 +244,7 @@ def get_correction_kumagai(
         return 0.0
 
     template_defect = copy.deepcopy(defect_entry)
-    corr_class = KumagaiCorrection(
-        dielectric, sampling_radius=sampling_radius, gamma=gamma
-    )
+    corr_class = KumagaiCorrection(dielectric, sampling_radius=sampling_radius, gamma=gamma)
     k_corr_summ = corr_class.get_correction(template_defect)
 
     if plot:
@@ -288,7 +281,7 @@ def freysoldt_correction_from_paths(
     """
     A function for performing the Freysoldt correction with a set of file paths.
     If this correction is used, please reference Freysoldt's original paper.
-    doi: 10.1103/PhysRevLett.102.016402
+    doi: 10.1103/PhysRevLett.102.016402.
 
     :param defect_file_path (str): file path to defect folder of interest
     :param bulk_file_path (str): file path to bulk folder of interest
@@ -301,15 +294,11 @@ def freysoldt_correction_from_paths(
     :return:
         Dictionary of Freysoldt Correction for defect
     """
-    sdp = SingleDefectParser.from_paths(
-        defect_file_path, bulk_file_path, dielectric, defect_charge
-    )
+    sdp = SingleDefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = sdp.freysoldt_loader()
     if plot:
         print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
-    correction = get_correction_freysoldt(
-        sdp.defect_entry, dielectric, plot=plot, filename=filename
-    )
+    correction = get_correction_freysoldt(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
     return correction
 
@@ -324,30 +313,26 @@ def kumagai_correction_from_paths(
 ):
     """
     A function for performing the Kumagai correction with a set of file paths.
-    If this correction is used, please reference Kumagai and Oba's original paper
-    (doi: 10.1103/PhysRevB.89.195205) as well as Freysoldt's original
-    paper (doi: 10.1103/PhysRevLett.102.016402
+    If this correction is used, please reference Kumagai and Oba's original
+    paper (doi: 10.1103/PhysRevB.89.195205) as well as Freysoldt's original
+    paper (doi: 10.1103/PhysRevLett.102.016402.
 
     :param defect_file_path (str): file path to defect folder of interest
-    :param bulk_file_path (str): file path to bulk folder of interest
-    :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            ionic + static contributions to dielectric constant
-    :param charge (int): charge of defect structure of interest
-    :param plot (bool): decides whether to plot electrostatic potential plots or not.
-    :param filename (str): if None, plots are not saved, if a string, then the plot will be saved as
+    :param bulk_file_path (str)
+    : file path to bulk folder of interest : param     dielectric (float or int
+        or 3x1 matrix or 3x3 matrix): ionic +     static contributions to
+        dielectric constant :param charge (int): charge of     defect structure
+        of interest :param plot (bool): decides whether to plot
+        electrostatic potential plots or not. :param filename (str): if None,
+        plots     are not saved, if a string, then the plot will be saved as
         '{filename}.pdf'
-    :return:
-        Dictionary of Kumagai Correction for defect
+    :return: Dictionary of Kumagai Correction for defect
     """
-    sdp = SingleDefectParser.from_paths(
-        defect_file_path, bulk_file_path, dielectric, defect_charge
-    )
+    sdp = SingleDefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = sdp.kumagai_loader()
     if plot:
         print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
-    correction = get_correction_kumagai(
-        sdp.defect_entry, dielectric, plot=plot, filename=filename
-    )
+    correction = get_correction_kumagai(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
     return correction
 
@@ -363,7 +348,8 @@ def get_murphy_image_charge_correction(
     factor=30,
     verbose=False,
 ):
-    """Calculates the anisotropic image charge correction by Sam Murphy in eV.
+    """
+    Calculates the anisotropic image charge correction by Sam Murphy in eV.
 
     This a rewrite of the code 'madelung.pl' written by Sam Murphy (see [1]).
     The default convergence parameter of conv = 0.3 seems to work perfectly
@@ -383,7 +369,6 @@ def get_murphy_image_charge_correction(
         verbose (bool): If True details of the correction will be printed.
 
     Returns:
-
         The image charge correction as {charge: correction}
     """
     inv_diel = np.linalg.inv(dielectric_matrix)
@@ -476,7 +461,7 @@ def get_murphy_image_charge_correction(
             makov = 0.5 * madelung * q**2 * conversion
             lany = 0.65 * makov
             correction[q] = makov
-            print("|   {}    |     {:10f}   |    {:10f}   |".format(q, makov, lany))
+            print(f"|   {q}    |     {makov:10f}   |    {lany:10f}   |")
         print("+--------+------------------+-----------------+")
     return correction
 
@@ -507,9 +492,7 @@ def _get_real_space(conv, inv_diel, det_diel, r_c, axis, sup_latt):
         else:
             return 0.0
 
-    real_space = sum(
-        _real_loop_function(mno) for mno in itertools.product(*axis_ranges)
-    )
+    real_space = sum(_real_loop_function(mno) for mno in itertools.product(*axis_ranges))
     return real_space
 
 
@@ -540,8 +523,6 @@ def _get_recip(
         else:
             return 0.0
 
-    reciprocal = sum(
-        _recip_loop_function(mno) for mno in itertools.product(*axis_ranges)
-    )
+    reciprocal = sum(_recip_loop_function(mno) for mno in itertools.product(*axis_ranges))
     scale_factor = 4 * np.pi / recip_volume
     return reciprocal * scale_factor

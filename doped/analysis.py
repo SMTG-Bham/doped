@@ -1,10 +1,10 @@
-# coding: utf-8
-
 """
 Code to analyse VASP defect calculations.
-These functions are built from a combination of useful modules from pymatgen, alongside
-substantial modification, in the efforts of making an efficient, user-friendly package for
-managing and analysing defect calculations, with publication-quality outputs
+
+These functions are built from a combination of useful modules from pymatgen,
+alongside substantial modification, in the efforts of making an efficient,
+user-friendly package for managing and analysing defect calculations, with
+publication-quality outputs.
 """
 
 import copy
@@ -12,28 +12,32 @@ import os
 import warnings
 from operator import itemgetter
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+from monty.json import MontyDecoder
+from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects.core import DefectEntry
 from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
 from pymatgen.analysis.defects.utils import TopographyAnalyzer
-from pymatgen.util.string import unicodeify
-from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.analysis.structure_matcher import StructureMatcher
-from pymatgen.analysis.defects.core import DefectEntry
-from monty.serialization import loadfn, dumpfn
-from monty.json import MontyDecoder
+from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.util.string import unicodeify
 from tabulate import tabulate
 
-from doped.vasp import DefectRelaxSet
-from doped.pycdt.utils import parse_calculations
 from doped import _ignore_pmg_warnings
+from doped.pycdt.utils import parse_calculations
+from doped.vasp import DefectRelaxSet
 
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
 
 def bold_print(string: str) -> None:
-    """Does what it says on the tin. Prints the input string in bold."""
+    """
+    Does what it says on the tin.
+
+    Prints the input string in bold.
+    """
     print("\033[1m" + string + "\033[0m")
 
 
@@ -67,7 +71,7 @@ def _convert_dielectric_to_tensor(dielectric):
 #  function?), returning a dictionary of defect entries, with the defect name as the key. (i.e.
 #  doing the loop in the example notebook). Show both this function and the individual function
 #  calls in the example notebook. Benefit of this one is that we can then auto-run
-#  `check_defects_compatibility()` at the end of parsing the full defects dict. – When doing
+#  `check_defects_compatibility()` at the end of parsing the full defects dict. - When doing
 #  this, look at `PostProcess` code, and then delete it once all functionality is moved here.
 # TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
 #  (for later integration with `py-sc-fermi`).
@@ -83,8 +87,8 @@ def defect_entry_from_paths(
     **kwargs,
 ):
     """
-    Parse the defect calculation outputs in `defect_path` and return the parsed `DefectEntry`
-    object.
+    Parse the defect calculation outputs in `defect_path` and return the parsed
+    `DefectEntry` object.
 
     Args:
     defect_path (str): path to defect folder of interest (with vasprun.xml(.gz))
@@ -131,9 +135,7 @@ def defect_entry_from_paths(
     (
         defect_vr_path,
         multiple,
-    ) = parse_calculations._get_output_files_and_check_if_multiple(
-        "vasprun.xml", defect_path
-    )
+    ) = parse_calculations._get_output_files_and_check_if_multiple("vasprun.xml", defect_path)
     if multiple:
         warnings.warn(
             f"Multiple `vasprun.xml` files found in defect directory: {defect_path}. Using"
@@ -149,9 +151,7 @@ def defect_entry_from_paths(
             auto_charge = 0  # neutral defect if NELECT not specified
         else:
             potcar_symbols = [titel.split()[1] for titel in defect_vr.potcar_symbols]
-            potcar_settings = {
-                symbol.split("_")[0]: symbol for symbol in potcar_symbols
-            }
+            potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
             neutral_defect_relax_set = DefectRelaxSet(
                 defect_vr.structures[-1],
                 charge=0,
@@ -175,11 +175,7 @@ def defect_entry_from_paths(
                     f"Please specify defect charge manually using the `charge` argument."
                 )
 
-        if (
-            charge is not None
-            and int(charge) != int(auto_charge)
-            and abs(auto_charge) < 5
-        ):
+        if charge is not None and int(charge) != int(auto_charge) and abs(auto_charge) < 5:
             warnings.warn(
                 f"Auto-determined defect charge q={int(auto_charge):+} does not match "
                 f"specified charge q={int(charge):+}. Will continue with specified "
@@ -195,9 +191,7 @@ def defect_entry_from_paths(
     # Can specify initial defect structure (to help PyCDT find the defect site if
     # multiple relaxations were required, else use from defect relaxation OUTCAR:
     if initial_defect_structure:
-        initial_defect_structure = Poscar.from_file(
-            initial_defect_structure
-        ).structure.copy()
+        initial_defect_structure = Poscar.from_file(initial_defect_structure).structure.copy()
     else:
         initial_defect_structure = defect_vr.initial_structure.copy()
 
@@ -250,9 +244,7 @@ def defect_entry_from_paths(
             site = tf["defect_supercell_site"]
             if def_type == "vacancy":
                 poss_deflist = sorted(
-                    bulk_sc_structure.get_sites_in_sphere(
-                        site.coords, 0.2, include_index=True
-                    ),
+                    bulk_sc_structure.get_sites_in_sphere(site.coords, 0.2, include_index=True),
                     key=lambda x: x[1],
                 )
                 searched = "bulk_supercell"
@@ -260,9 +252,7 @@ def defect_entry_from_paths(
                     bulk_site_idx = poss_deflist[0][2]
             else:
                 poss_deflist = sorted(
-                    initial_defect_structure.get_sites_in_sphere(
-                        site.coords, 2.5, include_index=True
-                    ),
+                    initial_defect_structure.get_sites_in_sphere(site.coords, 2.5, include_index=True),
                     key=lambda x: x[1],
                 )
                 searched = "initial_defect_structure"
@@ -334,9 +324,7 @@ def defect_entry_from_paths(
                     "bulk_supercell": bulk_sc_structure,
                     "Voronoi nodes": voronoi_frac_coords,
                 }
-                dumpfn(
-                    struc_and_node_dict, "./bulk_voronoi_nodes.json"
-                )  # for efficient
+                dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
                 # parsing of multiple defects at once
                 print(
                     "Saving parsed Voronoi sites (for interstitial site-matching) to "
@@ -345,9 +333,7 @@ def defect_entry_from_paths(
 
             closest_node_frac_coords = min(
                 voronoi_frac_coords,
-                key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[
-                    0
-                ],
+                key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
             )
             int_site = unrelaxed_defect_structure[defect_site_idx]
             unrelaxed_defect_structure.remove_sites([defect_site_idx])
@@ -399,9 +385,7 @@ def defect_entry_from_paths(
                 f"\n{test_defect_structure}"
             )
 
-    defect_entry = DefectEntry(
-        defect, defect_energy - bulk_energy, corrections={}, parameters=parameters
-    )
+    defect_entry = DefectEntry(defect, defect_energy - bulk_energy, corrections={}, parameters=parameters)
 
     return_sdp = kwargs.pop("return SingleDefectParser", False)  # internal use for tests/debugging
     sdp = parse_calculations.SingleDefectParser(
@@ -421,32 +405,27 @@ def defect_entry_from_paths(
         # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
         def _check_folder_for_file_match(folder, filename):
             return any(
-                filename.lower() in folder_filename.lower()
-                for folder_filename in os.listdir(folder)
+                filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
             )
 
         def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
             aniso_dielectric,
         ):
-            return 3 / sum(
-                1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric)
-            )
+            return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
 
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
-        isotropic_dielectric = all(
-            np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric)
-        )
+        isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
 
         # regardless, try parsing OUTCAR files first (quickest)
-        if _check_folder_for_file_match(
-            defect_path, "OUTCAR"
-        ) and _check_folder_for_file_match(bulk_path, "OUTCAR"):
+        if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
+            bulk_path, "OUTCAR"
+        ):
             try:
                 sdp.kumagai_loader()
             except Exception as kumagai_exc:
-                if _check_folder_for_file_match(
-                    defect_path, "LOCPOT"
-                ) and _check_folder_for_file_match(bulk_path, "LOCPOT"):
+                if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
+                    bulk_path, "LOCPOT"
+                ):
                     try:
                         if not isotropic_dielectric:
                             # convert anisotropic dielectric to harmonic mean of the diagonal:
@@ -454,9 +433,7 @@ def defect_entry_from_paths(
                             # standard arithmetic mean of the diagonal)
                             sdp.defect_entry.parameters[
                                 "dielectric"
-                            ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
-                                dielectric
-                            )
+                            ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
                         sdp.freysoldt_loader()
                         if not isotropic_dielectric:
                             warnings.warn(
@@ -497,9 +474,9 @@ def defect_entry_from_paths(
                     )
                     skip_corrections = True
 
-        elif _check_folder_for_file_match(
-            defect_path, "LOCPOT"
-        ) and _check_folder_for_file_match(bulk_path, "LOCPOT"):
+        elif _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
+            bulk_path, "LOCPOT"
+        ):
             try:
                 if not isotropic_dielectric:
                     # convert anisotropic dielectric to harmonic mean of the diagonal:
@@ -507,9 +484,7 @@ def defect_entry_from_paths(
                     # standard arithmetic mean of the diagonal)
                     sdp.defect_entry.parameters[
                         "dielectric"
-                    ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
-                        dielectric
-                    )
+                    ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
                 sdp.freysoldt_loader()
                 if not isotropic_dielectric:
                     warnings.warn(
@@ -557,7 +532,7 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations (
     format: {"defect_name": defect_entry}), likely created using SingleDefectParser from
     doped.pycdt.utils.parse_calculations), which can then be used to analyse and plot the defect
-    thermodynamics (formation energies, transition levels, concentrations etc)
+    thermodynamics (formation energies, transition levels, concentrations etc).
 
     Args:
         parsed_defect_dict (dict):
@@ -584,7 +559,7 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     # Also add option to just amalgamate and show only the lowest energy states.
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
-    # When doing this, add DOS object attribute, to then use with Alex's doped – py-sc-fermi code.
+    # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
     vbm_vals = []
     bandgap_vals = []
     for defect in parsed_defect_dict.values():
@@ -606,16 +581,16 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
         )
     vbm = vbm_vals[0]
     bandgap = bandgap_vals[0]
-    dpd = DefectPhaseDiagram(
-        list(parsed_defect_dict.values()), vbm, bandgap, filter_compatible=False
-    )
+    dpd = DefectPhaseDiagram(list(parsed_defect_dict.values()), vbm, bandgap, filter_compatible=False)
 
     return dpd
 
 
 def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
-    """Iteratively prints the charge transition levels for the input DefectPhaseDiagram object
-    (via the from a defect_phase_diagram.transition_level_map attribute)
+    """
+    Iteratively prints the charge transition levels for the input
+    DefectPhaseDiagram object (via the from a
+    defect_phase_diagram.transition_level_map attribute).
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
@@ -687,9 +662,7 @@ def formation_energy_table(
     if "facets" in chempot_limits:
         list_of_dfs = []
         if not pd_facets:
-            pd_facets = chempot_limits[
-                "facets"
-            ].keys()  # Phase diagram facets to use for chemical
+            pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
         for facet in pd_facets:
             bold_print("Facet: " + unicodeify(facet))
@@ -724,8 +697,9 @@ def single_formation_energy_table(
     show_key: bool = True,
 ):
     """
-    Prints a defect formation energy table for a single chemical potential limit (i.e. phase diagram
-    facet), and returns the results as a pandas DataFrame.
+    Prints a defect formation energy table for a single chemical potential
+    limit (i.e. phase diagram facet), and returns the results as a pandas
+    DataFrame.
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
@@ -762,9 +736,7 @@ def single_formation_energy_table(
             row += [f"{defect_entry.uncorrected_energy:.2f} eV"]
         if "Corrected Energy" not in hide_cols:
             header += ["Corrected Energy"]
-            row += [
-                f"{defect_entry.energy:.2f} eV"
-            ]  # With 0 chemical potentials, at the calculation
+            row += [f"{defect_entry.energy:.2f} eV"]  # With 0 chemical potentials, at the calculation
             # fermi level
         header += ["Formation Energy"]
         formation_energy = defect_entry.formation_energy(
@@ -815,42 +787,39 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 
 
 def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
-    """Convert input parsed defect dictionary (presumably created using SingleDefectParser
-    from doped.pycdt.utils.parse_calculations) with Freysoldt charge corrections to
+    """
+    Convert input parsed defect dictionary (presumably created using
+    SingleDefectParser from doped.pycdt.utils.parse_calculations) with
+    Freysoldt charge corrections to.
+
     the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
     alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
     Freysoldt scheme)).
+
     Args:
         parsed_defect_dict (dict):
             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
             from doped.pycdt.utils.parse_calculations) (see example notebook)
             Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
             SingleDefectParser.freysoldt_loader())
+
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    from doped.utils.corrections import (
-        get_murphy_image_charge_correction,
-    )  # avoid circular import
+    from doped.utils.corrections import get_murphy_image_charge_correction
 
-    random_defect_entry = list(defect_dict.values())[
-        0
-    ]  # Just need any DefectEntry from
+    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = get_murphy_image_charge_correction(
-        lattice, dielectric
-    )
+    lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
     for defect_name, defect_entry in lz_corrected_defect_dict.items():
         if defect_entry.charge != 0:
             potalign = defect_entry.parameters["freysoldt_meta"][
                 "freysoldt_potential_alignment_correction"
             ]
-            mp_pc_corr = lz_image_charge_corrections[
-                abs(defect_entry.charge)
-            ]  # Makov-Payne PC correction
+            mp_pc_corr = lz_image_charge_corrections[abs(defect_entry.charge)]  # Makov-Payne PC correction
             defect_entry.parameters.update(
                 {
                     "Lany-Zunger_Corrections": {
@@ -870,50 +839,43 @@ def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
 
 
 def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
-    """Convert input parsed defect dictionary (presumably created using SingleDefectParser
-    from doped.pycdt.utils.parse_calculations) with Kumagai charge corrections to
+    """
+    Convert input parsed defect dictionary (presumably created using
+    SingleDefectParser from doped.pycdt.utils.parse_calculations) with Kumagai
+    charge corrections to.
+
     the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
     alignment plus 0.65 * image charge correction.
+
     Args:
         parsed_defect_dict (dict):
             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
             from doped.pycdt.utils.parse_calculations) (see example notebook)
             Must have 'kumagai_meta' in defect.parameters for each charged defect (from
             SingleDefectParser.kumagai_loader())
+
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
-    from doped.utils.corrections import (
-        get_murphy_image_charge_correction,
-    )  # avoid circular import
+    from doped.utils.corrections import get_murphy_image_charge_correction
 
-    random_defect_entry = list(defect_dict.values())[
-        0
-    ]  # Just need any DefectEntry from
+    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
     # defect_dict to get the lattice and dielectric matrix
     lattice = random_defect_entry.bulk_structure.lattice.matrix
     dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = get_murphy_image_charge_correction(
-        lattice, dielectric
-    )
+    lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
     for defect_name, defect_entry in lz_corrected_defect_dict.items():
         if defect_entry.charge != 0:
-            potalign = defect_entry.parameters["kumagai_meta"][
-                "kumagai_potential_alignment_correction"
-            ]
-            makove_payne_pc_correction = lz_image_charge_corrections[
-                abs(defect_entry.charge)
-            ]
+            potalign = defect_entry.parameters["kumagai_meta"]["kumagai_potential_alignment_correction"]
+            makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge)]
             defect_entry.parameters.update(
                 {
                     "Lany-Zunger_Corrections": {
                         "(Kumagai)_Potential_Alignment_Correction": potalign,
                         "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
-                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65
-                        * makove_payne_pc_correction,
-                        "Total_Lany-Zunger_Correction": potalign
-                        + 0.65 * makove_payne_pc_correction,
+                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * makove_payne_pc_correction,
+                        "Total_Lany-Zunger_Correction": potalign + 0.65 * makove_payne_pc_correction,
                     }
                 }
             )
