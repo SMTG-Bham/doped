@@ -4,15 +4,14 @@ Code to generate VASP defect calculation input files.
 import os
 import warnings
 from copy import deepcopy  # See https://stackoverflow.com/a/22341377/14020960
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
-from monty.io import zopen
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
-from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar, incar_params
+from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
 from pymatgen.io.vasp.sets import DictSet
 from shakenbreak.input import (
     _get_bulk_defect_site,
@@ -23,10 +22,6 @@ from shakenbreak.input import (
 
 from doped import _ignore_pmg_warnings
 from doped.generation import DefectsGenerator
-
-if TYPE_CHECKING:
-    import pymatgen.core.periodic_table
-    import pymatgen.core.structure
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
@@ -208,7 +203,7 @@ def _prepare_vasp_files(
     unperturbed_poscar: bool = False,
     write_files: bool = True,
     write_transformation_info: bool = True,
-) -> DefectRelaxSet:
+) -> Optional[DefectRelaxSet]:
     """
     Prepare DefectRelaxSet object for VASP defect supercell input file
     generation.
@@ -387,8 +382,8 @@ def _format_defect_entries_input(
         defect_entries, list
     ):  # also catches case where defect_entries is a single DefectEntry, from above
         # convert to dict with doped names as keys:
-        defect_naming_dict = {}
-        defect_entry_dict = {}
+        defect_naming_dict: Dict[str, DefectEntry] = {}
+        defect_entry_dict: Dict[str, DefectEntry] = {}
         for defect_entry in defect_entries:
             if not hasattr(defect_entry, "name"):
                 defect_name_wout_charge = _get_defect_name_from_obj(defect_entry.defect)
@@ -426,7 +421,7 @@ def vasp_gam_files(
     write_files: bool = True,
     write_transformation_info: bool = False,
     **kwargs,  # to allow POTCAR testing on GH Actions
-) -> Dict[str, DefectRelaxSet]:
+) -> Dict[str, Optional[DefectRelaxSet]]:
     """
     Generates input files for VASP Gamma-point-only (`vasp_gam`) coarse defect
     supercell relaxations. See the `HSE06_RelaxSet.yaml` and `DefectSet.yaml`
@@ -491,7 +486,7 @@ def vasp_gam_files(
             write_transformation_info=write_transformation_info,
         )
 
-        if write_files:
+        if write_files and defect_relax_set is not None:
             defect_relax_set.write_input(
                 defect_relax_set.output_dir,
                 **kwargs,  # kwargs to allow POTCAR testing on GH Actions
@@ -513,7 +508,7 @@ def vasp_std_files(
     unperturbed_poscar: bool = False,
     write_files: bool = True,
     write_transformation_info: bool = False,
-) -> Dict[str, DefectRelaxSet]:
+) -> Dict[str, Optional[DefectRelaxSet]]:
     """
     Generates INCAR, POTCAR and KPOINTS for `vasp_std` defect supercell
     relaxations. By default does not generate POSCAR (input structure) files,
@@ -600,7 +595,7 @@ def vasp_std_files(
             write_transformation_info=write_transformation_info,
         )
 
-        if write_files:  # write INCAR, KPOINTS and POTCAR files
+        if write_files and defect_relax_set is not None:  # write INCAR, KPOINTS and POTCAR files
             # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
             defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
             defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
@@ -623,7 +618,7 @@ def vasp_ncl_files(
     unperturbed_poscar: bool = False,
     write_files: bool = True,
     write_transformation_info: bool = False,
-) -> Dict[str, DefectRelaxSet]:
+) -> Dict[str, Optional[DefectRelaxSet]]:
     """
     Generates INCAR, POTCAR and KPOINTS for `vasp_ncl` (i.e. spin-orbit
     coupling (SOC)) defect supercell singlepoint calculations. By default does
@@ -715,7 +710,7 @@ def vasp_ncl_files(
             write_transformation_info=write_transformation_info,
         )
 
-        if write_files:
+        if write_files and defect_relax_set is not None:
             # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
             defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
             defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
@@ -734,343 +729,343 @@ def vasp_ncl_files(
 # supercell calcs (and note this in vasp_input as well)), ensure consistent INCAR tags in defect
 # supercell defaults and competing phase defaults, point to DefectSet in docstrings for defaults
 # (noting the other INCAR tags that are changed).
-def _vasp_converge_files(
-    structure: "pymatgen.core.Structure",
-    input_dir: Optional[str] = None,
-    incar_settings: Optional[dict] = None,
-    potcar_settings: Optional[dict] = None,
-    config: Optional[str] = None,
-) -> None:
-    """
-    Generates input files for single-shot GGA convergence test calculations.
-
-    Automatically sets ISMEAR (in INCAR) to 2 (if metallic) or 0 if not.
-    Recommended to use with vaspup2.0
-    Args:
-        structure (Structure object):
-            Structure to create input files for.
-        input_dir (str):
-            Folder in which to create 'input' folder with VASP input files.
-            (default: None)
-        incar_settings (dict):
-            Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are. Note that any flags that
-            aren't numbers or True/False need to be input as strings with quotation marks
-            (e.g. `{"ALGO": "All"}`).
-            (default: None)
-        config (str):
-            CONFIG file string. If provided, will also write the CONFIG file (to automate
-            convergence tests with vaspup2.0) to each 'input' directory.
-            (default: None)
-        potcar_settings (dict):
-            Dictionary of user POTCAR settings to override default settings.
-            Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
-            the (Pymatgen) syntax and doped default settings are.
-            (default: None).
-    """
-    # Variable parameters first
-    vaspconvergeincardict = {
-        "# May need to change ISMEAR, NCORE, KPAR, AEXX, ENCUT, NUPDOWN, "
-        + "ISPIN": "variable parameters",
-        "NUPDOWN": "0 # But could be >0 if magnetic behaviour present",
-        "NCORE": 12,
-        "#KPAR": 1,
-        "ENCUT": 400,
-        "ISMEAR": "0 # Non-metal, use Gaussian smearing",
-        "ISPIN": "1 # Change to 2 if spin polarisation or magnetic behaviour present",
-        "GGA": "PS",  # PBEsol
-        "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
-        "EDIFF": 1e-06,
-        "EDIFFG": -0.01,
-        "IBRION": -1,
-        "ISIF": 3,
-        "LASPH": True,
-        "LORBIT": 14,
-        "LREAL": False,
-        "LWAVE": "False # Save filespace, shouldn't need WAVECAR from convergence tests",
-        "NEDOS": 2000,
-        "NELM": 100,
-        "NSW": 0,
-        "PREC": "Accurate",
-        "SIGMA": 0.2,
-    }
-    if all(is_metal(element) for element in structure.composition.elements):
-        vaspconvergeincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
-    if incar_settings:
-        for k in incar_settings:  # check INCAR flags and warn if they don't exist (
-            # typos)
-            if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
-                warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
-                    BadIncarWarning,
-                )
-        vaspconvergeincardict.update(incar_settings)
-
-    # Directory
-    vaspconvergeinputdir = input_dir + "/input/" if input_dir else "VASP_Files/input/"
-    if not os.path.exists(vaspconvergeinputdir):
-        os.makedirs(vaspconvergeinputdir)
-
-    # POTCAR
-    potcar_dict = deepcopy(default_potcar_dict)
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings:
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings:
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-    vaspconvergeinput = DictSet(structure, config_dict=potcar_dict)
-    vaspconvergeinput.potcar.write_file(vaspconvergeinputdir + "POTCAR")
-
-    vaspconvergekpts = Kpoints().from_dict(
-        {"comment": "Kpoints from vasp_gam_files", "generation_style": "Gamma"}
-    )
-    vaspconvergeincar = Incar.from_dict(vaspconvergeincardict)
-    vaspconvergeincar.write_file(vaspconvergeinputdir + "INCAR")
-
-    vaspconvergeposcar = Poscar(structure)
-    vaspconvergeposcar.write_file(vaspconvergeinputdir + "POSCAR")
-
-    vaspconvergekpts.write_file(vaspconvergeinputdir + "KPOINTS")
-    # generate CONFIG file
-    if config:
-        with open(vaspconvergeinputdir + "CONFIG", "w+") as config_file:
-            config_file.write(config)
-        with open(vaspconvergeinputdir + "CONFIG", "a") as config_file:
-            config_file.write(f"""\nname="{input_dir[13:]}" # input_dir""")
-
-
-# Input files for vasp_std
-
-
-def _vasp_std_chempot(
-    structure: "pymatgen.core.Structure",
-    input_dir: Optional[str] = None,
-    incar_settings: Optional[dict] = None,
-    kpoints_settings: Optional[dict] = None,
-    potcar_settings: Optional[dict] = None,
-) -> None:
-    """
-    Generates POSCAR, INCAR, POTCAR and KPOINTS for vasp_std chemical
-    potentials relaxation.:
-
-    Args:
-        structure (Structure object):
-            Structure to create input files for.
-        input_dir (str):
-            Folder in which to create vasp_std calculation inputs folder
-            (default: None)
-        incar_settings (dict):
-            Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are. Note that any flags that
-            aren't numbers or True/False need to be input as strings with quotation marks
-            (e.g. `{"ALGO": "All"}`).
-            (default: None)
-        kpoints_settings (dict):
-            Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
-            options would be "generation_style": "Monkhorst" (rather than "Gamma"),
-            and/or "kpoints": [[3, 3, 1]] etc.
-            Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
-            (default: None)
-        potcar_settings (dict):
-            Dictionary of user POTCAR settings to override default settings.
-            Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
-            the (Pymatgen) syntax and doped default settings are.
-            (default: None).
-    """
-    # INCAR Parameters
-    vaspstdincardict = {
-        "# May need to change NCORE, KPAR, ENCUT" + "ISPIN, POTIM": "variable parameters",
-        "NCORE": 12,
-        "KPAR": 2,
-        "AEXX": 0.25,
-        "ENCUT": 400,
-        "POTIM": 0.2,
-        "LSUBROT": "False # Change to True if relaxation poorly convergent",
-        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
-        "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
-        "EDIFF": 1e-06,  # May need to reduce for tricky relaxations",
-        "EDIFFG": -0.01,
-        "HFSCREEN": 0.2,  # assuming HSE06
-        "IBRION": "1 # May need to change to 2 for difficult/poorly-convergent relaxations",
-        "ISIF": 3,
-        "ISMEAR": 0,
-        "LASPH": True,
-        "LHFCALC": True,
-        "LORBIT": 14,
-        "LREAL": False,
-        "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
-        "LWAVE": True,
-        "NEDOS": 2000,
-        "NELM": 100,
-        "NSW": 200,
-        "PREC": "Accurate",
-        "PRECFOCK": "Fast",
-        "SIGMA": 0.05,
-    }
-
-    # Directory
-    vaspstdinputdir = input_dir + "/vasp_std/" if input_dir else "VASP_Files/vasp_std/"
-    if not os.path.exists(vaspstdinputdir):
-        os.makedirs(vaspstdinputdir)
-
-    # POTCAR
-    potcar_dict = default_potcar_dict
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings:
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings:
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-    vaspstdinput = DictSet(structure, config_dict=potcar_dict)
-    vaspstdinput.potcar.write_file(vaspstdinputdir + "POTCAR")
-
-    if all(is_metal(element) for element in structure.composition.elements):
-        vaspstdincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
-    if all(is_metal(element) for element in structure.composition.elements):
-        vaspstdincardict["SIGMA"] = 0.02
-
-    if incar_settings:
-        for k in incar_settings:  # check INCAR flags and warn if they don't exist (typos)
-            if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
-                warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
-                    BadIncarWarning,
-                )
-        vaspstdincardict.update(incar_settings)
-
-    # POSCAR
-    vaspstdposcar = Poscar(structure)
-    vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
-
-    # KPOINTS
-    vaspstdkpointsdict = {
-        "comment": "Kpoints from doped.vasp_std_files",
-        "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
-        "kpoints": [[2, 2, 2]],
-    }
-    if kpoints_settings:
-        vaspstdkpointsdict.update(kpoints_settings)
-    vaspstdkpts = Kpoints.from_dict(vaspstdkpointsdict)
-    vaspstdkpts.write_file(vaspstdinputdir + "KPOINTS")
-
-    # INCAR
-    vaspstdincar = Incar.from_dict(vaspstdincardict)
-    with zopen(vaspstdinputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspstdincar.get_string())
-
-
-# Input files for vasp_ncl
-
-
-def _vasp_ncl_chempot(
-    structure: "pymatgen.core.Structure",
-    input_dir: Optional[str] = None,
-    incar_settings: Optional[dict] = None,
-    kpoints_settings: Optional[dict] = None,
-    potcar_settings: Optional[dict] = None,
-) -> None:
-    """
-    Generates INCAR, POTCAR and KPOINTS for vasp_ncl chemical potentials
-    relaxation.
-
-    Take CONTCAR from vasp_std for POSCAR.:
-    Args:
-        structure (Structure object):
-            Structure to create input files for.
-        input_dir (str):
-            Folder in which to create vasp_ncl calculation inputs folder
-            (default: None)
-        incar_settings (dict):
-            Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
-            Highly recommended to look at output INCARs or doped.vasp_input
-            source code, to see what the default INCAR settings are. Note that any flags that
-            aren't numbers or True/False need to be input as strings with quotation marks
-            (e.g. `{"ALGO": "All"}`).
-            (default: None)
-        kpoints_settings (dict):
-            Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
-            options would be "generation_style": "Monkhorst" (rather than "Gamma"),
-            and/or "kpoints": [[3, 3, 1]] etc.
-            Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
-            (default: None)
-        potcar_settings (dict):
-            Dictionary of user POTCAR settings to override default settings.
-            Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
-            the (Pymatgen) syntax and doped default settings are.
-            (default: None).
-    """
-    # INCAR Parameters
-    vaspnclincardict = {
-        "# May need to change NELECT, NCORE, KPAR, AEXX, ENCUT, NUPDOWN": "variable parameters",
-        "NCORE": 12,
-        "KPAR": 2,
-        "AEXX": 0.25,
-        "ENCUT": 400,
-        "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
-        "NSW": 0,
-        "LSORBIT": True,
-        "EDIFF": 1e-06,  # tight for final energy and converged DOS
-        "EDIFFG": -0.01,
-        "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
-        "HFSCREEN": 0.2,
-        "IBRION": -1,
-        "ISYM": 0,
-        "ISMEAR": 0,
-        "LASPH": True,
-        "LHFCALC": True,
-        "LORBIT": 14,
-        "LREAL": False,
-        "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
-        "LWAVE": True,
-        "NEDOS": 2000,
-        "NELM": 100,
-        "PREC": "Accurate",
-        "PRECFOCK": "Fast",
-        "SIGMA": 0.05,
-    }
-
-    # Directory
-    vaspnclinputdir = input_dir + "/vasp_ncl/" if input_dir else "VASP_Files/vasp_ncl/"
-    if not os.path.exists(vaspnclinputdir):
-        os.makedirs(vaspnclinputdir)
-
-    # POTCAR
-    potcar_dict = default_potcar_dict
-    if potcar_settings:
-        if "POTCAR_FUNCTIONAL" in potcar_settings:
-            potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
-        if "POTCAR" in potcar_settings:
-            potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
-    vaspnclinput = DictSet(structure, config_dict=potcar_dict)
-    vaspnclinput.potcar.write_file(vaspnclinputdir + "POTCAR")
-
-    if all(is_metal(element) for element in structure.composition.elements):
-        vaspnclincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
-    if all(is_metal(element) for element in structure.composition.elements):
-        vaspnclincardict["SIGMA"] = 0.02
-
-    if incar_settings:
-        for k in incar_settings:  # check INCAR flags and warn if they don't exist (typos)
-            if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
-                warnings.warn(  # but only checking keys, not values so we can add comments etc
-                    "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
-                    BadIncarWarning,
-                )
-        vaspnclincardict.update(incar_settings)
-
-    # KPOINTS
-    vaspnclkpointsdict = {
-        "comment": "Kpoints from doped.vasp_ncl_files",
-        "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
-        "kpoints": [[2, 2, 2]],
-    }
-    if kpoints_settings:
-        vaspnclkpointsdict.update(kpoints_settings)
-    vaspnclkpts = Kpoints.from_dict(vaspnclkpointsdict)
-    vaspnclkpts.write_file(vaspnclinputdir + "KPOINTS")
-
-    # INCAR
-    vaspnclincar = Incar.from_dict(vaspnclincardict)
-    with zopen(vaspnclinputdir + "INCAR", "wt") as incar_file:
-        incar_file.write(vaspnclincar.get_string())
+# def _vasp_converge_files(
+#     structure: "pymatgen.core.Structure",
+#     input_dir: Optional[str] = None,
+#     incar_settings: Optional[dict] = None,
+#     potcar_settings: Optional[dict] = None,
+#     config: Optional[str] = None,
+# ) -> None:
+#     """
+#     Generates input files for single-shot GGA convergence test calculations.
+#
+#     Automatically sets ISMEAR (in INCAR) to 2 (if metallic) or 0 if not.
+#     Recommended to use with vaspup2.0
+#     Args:
+#         structure (Structure object):
+#             Structure to create input files for.
+#         input_dir (str):
+#             Folder in which to create 'input' folder with VASP input files.
+#             (default: None)
+#         incar_settings (dict):
+#             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
+#             Highly recommended to look at output INCARs or doped.vasp_input
+#             source code, to see what the default INCAR settings are. Note that any flags that
+#             aren't numbers or True/False need to be input as strings with quotation marks
+#             (e.g. `{"ALGO": "All"}`).
+#             (default: None)
+#         config (str):
+#             CONFIG file string. If provided, will also write the CONFIG file (to automate
+#             convergence tests with vaspup2.0) to each 'input' directory.
+#             (default: None)
+#         potcar_settings (dict):
+#             Dictionary of user POTCAR settings to override default settings.
+#             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
+#             the (Pymatgen) syntax and doped default settings are.
+#             (default: None).
+#     """
+#     # Variable parameters first
+#     vaspconvergeincardict = {
+#         "# May need to change ISMEAR, NCORE, KPAR, AEXX, ENCUT, NUPDOWN, "
+#         + "ISPIN": "variable parameters",
+#         "NUPDOWN": "0 # But could be >0 if magnetic behaviour present",
+#         "NCORE": 12,
+#         "#KPAR": 1,
+#         "ENCUT": 400,
+#         "ISMEAR": "0 # Non-metal, use Gaussian smearing",
+#         "ISPIN": "1 # Change to 2 if spin polarisation or magnetic behaviour present",
+#         "GGA": "PS",  # PBEsol
+#         "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
+#         "EDIFF": 1e-06,
+#         "EDIFFG": -0.01,
+#         "IBRION": -1,
+#         "ISIF": 3,
+#         "LASPH": True,
+#         "LORBIT": 14,
+#         "LREAL": False,
+#         "LWAVE": "False # Save filespace, shouldn't need WAVECAR from convergence tests",
+#         "NEDOS": 2000,
+#         "NELM": 100,
+#         "NSW": 0,
+#         "PREC": "Accurate",
+#         "SIGMA": 0.2,
+#     }
+#     if all(is_metal(element) for element in structure.composition.elements):
+#         vaspconvergeincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
+#     if incar_settings:
+#         for k in incar_settings:  # check INCAR flags and warn if they don't exist (
+#             # typos)
+#             if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
+#                 warnings.warn(  # but only checking keys, not values so we can add comments etc
+#                     "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
+#                     BadIncarWarning,
+#                 )
+#         vaspconvergeincardict.update(incar_settings)
+#
+#     # Directory
+#     vaspconvergeinputdir = input_dir + "/input/" if input_dir else "VASP_Files/input/"
+#     if not os.path.exists(vaspconvergeinputdir):
+#         os.makedirs(vaspconvergeinputdir)
+#
+#     # POTCAR
+#     potcar_dict = deepcopy(default_potcar_dict)
+#     if potcar_settings:
+#         if "POTCAR_FUNCTIONAL" in potcar_settings:
+#             potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
+#         if "POTCAR" in potcar_settings:
+#             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+#     vaspconvergeinput = DictSet(structure, config_dict=potcar_dict)
+#     vaspconvergeinput.potcar.write_file(vaspconvergeinputdir + "POTCAR")
+#
+#     vaspconvergekpts = Kpoints().from_dict(
+#         {"comment": "Kpoints from vasp_gam_files", "generation_style": "Gamma"}
+#     )
+#     vaspconvergeincar = Incar.from_dict(vaspconvergeincardict)
+#     vaspconvergeincar.write_file(vaspconvergeinputdir + "INCAR")
+#
+#     vaspconvergeposcar = Poscar(structure)
+#     vaspconvergeposcar.write_file(vaspconvergeinputdir + "POSCAR")
+#
+#     vaspconvergekpts.write_file(vaspconvergeinputdir + "KPOINTS")
+#     # generate CONFIG file
+#     if config:
+#         with open(vaspconvergeinputdir + "CONFIG", "w+") as config_file:
+#             config_file.write(config)
+#         with open(vaspconvergeinputdir + "CONFIG", "a") as config_file:
+#             config_file.write(f"""\nname="{input_dir[13:]}" # input_dir""")
+#
+#
+# # Input files for vasp_std
+#
+#
+# def _vasp_std_chempot(
+#     structure: "pymatgen.core.Structure",
+#     input_dir: Optional[str] = None,
+#     incar_settings: Optional[dict] = None,
+#     kpoints_settings: Optional[dict] = None,
+#     potcar_settings: Optional[dict] = None,
+# ) -> None:
+#     """
+#     Generates POSCAR, INCAR, POTCAR and KPOINTS for vasp_std chemical
+#     potentials relaxation.:
+#
+#     Args:
+#         structure (Structure object):
+#             Structure to create input files for.
+#         input_dir (str):
+#             Folder in which to create vasp_std calculation inputs folder
+#             (default: None)
+#         incar_settings (dict):
+#             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
+#             Highly recommended to look at output INCARs or doped.vasp_input
+#             source code, to see what the default INCAR settings are. Note that any flags that
+#             aren't numbers or True/False need to be input as strings with quotation marks
+#             (e.g. `{"ALGO": "All"}`).
+#             (default: None)
+#         kpoints_settings (dict):
+#             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
+#             options would be "generation_style": "Monkhorst" (rather than "Gamma"),
+#             and/or "kpoints": [[3, 3, 1]] etc.
+#             Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
+#             (default: None)
+#         potcar_settings (dict):
+#             Dictionary of user POTCAR settings to override default settings.
+#             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
+#             the (Pymatgen) syntax and doped default settings are.
+#             (default: None).
+#     """
+#     # INCAR Parameters
+#     vaspstdincardict = {
+#         "# May need to change NCORE, KPAR, ENCUT" + "ISPIN, POTIM": "variable parameters",
+#         "NCORE": 12,
+#         "KPAR": 2,
+#         "AEXX": 0.25,
+#         "ENCUT": 400,
+#         "POTIM": 0.2,
+#         "LSUBROT": "False # Change to True if relaxation poorly convergent",
+#         "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
+#         "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
+#         "EDIFF": 1e-06,  # May need to reduce for tricky relaxations",
+#         "EDIFFG": -0.01,
+#         "HFSCREEN": 0.2,  # assuming HSE06
+#         "IBRION": "1 # May need to change to 2 for difficult/poorly-convergent relaxations",
+#         "ISIF": 3,
+#         "ISMEAR": 0,
+#         "LASPH": True,
+#         "LHFCALC": True,
+#         "LORBIT": 14,
+#         "LREAL": False,
+#         "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
+#         "LWAVE": True,
+#         "NEDOS": 2000,
+#         "NELM": 100,
+#         "NSW": 200,
+#         "PREC": "Accurate",
+#         "PRECFOCK": "Fast",
+#         "SIGMA": 0.05,
+#     }
+#
+#     # Directory
+#     vaspstdinputdir = input_dir + "/vasp_std/" if input_dir else "VASP_Files/vasp_std/"
+#     if not os.path.exists(vaspstdinputdir):
+#         os.makedirs(vaspstdinputdir)
+#
+#     # POTCAR
+#     potcar_dict = default_potcar_dict
+#     if potcar_settings:
+#         if "POTCAR_FUNCTIONAL" in potcar_settings:
+#             potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
+#         if "POTCAR" in potcar_settings:
+#             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+#     vaspstdinput = DictSet(structure, config_dict=potcar_dict)
+#     vaspstdinput.potcar.write_file(vaspstdinputdir + "POTCAR")
+#
+#     if all(is_metal(element) for element in structure.composition.elements):
+#         vaspstdincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
+#     if all(is_metal(element) for element in structure.composition.elements):
+#         vaspstdincardict["SIGMA"] = 0.02
+#
+#     if incar_settings:
+#         for k in incar_settings:  # check INCAR flags and warn if they don't exist (typos)
+#             if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
+#                 warnings.warn(  # but only checking keys, not values so we can add comments etc
+#                     "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
+#                     BadIncarWarning,
+#                 )
+#         vaspstdincardict.update(incar_settings)
+#
+#     # POSCAR
+#     vaspstdposcar = Poscar(structure)
+#     vaspstdposcar.write_file(vaspstdinputdir + "POSCAR")
+#
+#     # KPOINTS
+#     vaspstdkpointsdict = {
+#         "comment": "Kpoints from doped.vasp_std_files",
+#         "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
+#         "kpoints": [[2, 2, 2]],
+#     }
+#     if kpoints_settings:
+#         vaspstdkpointsdict.update(kpoints_settings)
+#     vaspstdkpts = Kpoints.from_dict(vaspstdkpointsdict)
+#     vaspstdkpts.write_file(vaspstdinputdir + "KPOINTS")
+#
+#     # INCAR
+#     vaspstdincar = Incar.from_dict(vaspstdincardict)
+#     with zopen(vaspstdinputdir + "INCAR", "wt") as incar_file:
+#         incar_file.write(vaspstdincar.get_string())
+#
+#
+# # Input files for vasp_ncl
+#
+#
+# def _vasp_ncl_chempot(
+#     structure: "pymatgen.core.Structure",
+#     input_dir: Optional[str] = None,
+#     incar_settings: Optional[dict] = None,
+#     kpoints_settings: Optional[dict] = None,
+#     potcar_settings: Optional[dict] = None,
+# ) -> None:
+#     """
+#     Generates INCAR, POTCAR and KPOINTS for vasp_ncl chemical potentials
+#     relaxation.
+#
+#     Take CONTCAR from vasp_std for POSCAR.:
+#     Args:
+#         structure (Structure object):
+#             Structure to create input files for.
+#         input_dir (str):
+#             Folder in which to create vasp_ncl calculation inputs folder
+#             (default: None)
+#         incar_settings (dict):
+#             Dictionary of user INCAR settings (AEXX, NCORE etc.) to override default settings.
+#             Highly recommended to look at output INCARs or doped.vasp_input
+#             source code, to see what the default INCAR settings are. Note that any flags that
+#             aren't numbers or True/False need to be input as strings with quotation marks
+#             (e.g. `{"ALGO": "All"}`).
+#             (default: None)
+#         kpoints_settings (dict):
+#             Dictionary of user KPOINTS settings (in pymatgen Kpoints.from_dict() format). Common
+#             options would be "generation_style": "Monkhorst" (rather than "Gamma"),
+#             and/or "kpoints": [[3, 3, 1]] etc.
+#             Default KPOINTS is Gamma-centred 2 x 2 x 2 mesh.
+#             (default: None)
+#         potcar_settings (dict):
+#             Dictionary of user POTCAR settings to override default settings.
+#             Highly recommended to look at `default_potcar_dict` from doped.vasp_input to see what
+#             the (Pymatgen) syntax and doped default settings are.
+#             (default: None).
+#     """
+#     # INCAR Parameters
+#     vaspnclincardict = {
+#         "# May need to change NELECT, NCORE, KPAR, AEXX, ENCUT, NUPDOWN": "variable parameters",
+#         "NCORE": 12,
+#         "KPAR": 2,
+#         "AEXX": 0.25,
+#         "ENCUT": 400,
+#         "ICORELEVEL": "0 # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction",
+#         "NSW": 0,
+#         "LSORBIT": True,
+#         "EDIFF": 1e-06,  # tight for final energy and converged DOS
+#         "EDIFFG": -0.01,
+#         "ALGO": "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered",
+#         "HFSCREEN": 0.2,
+#         "IBRION": -1,
+#         "ISYM": 0,
+#         "ISMEAR": 0,
+#         "LASPH": True,
+#         "LHFCALC": True,
+#         "LORBIT": 14,
+#         "LREAL": False,
+#         "LVHAR": "True # Needed if using the Freysoldt (FNV) charge correction scheme",
+#         "LWAVE": True,
+#         "NEDOS": 2000,
+#         "NELM": 100,
+#         "PREC": "Accurate",
+#         "PRECFOCK": "Fast",
+#         "SIGMA": 0.05,
+#     }
+#
+#     # Directory
+#     vaspnclinputdir = input_dir + "/vasp_ncl/" if input_dir else "VASP_Files/vasp_ncl/"
+#     if not os.path.exists(vaspnclinputdir):
+#         os.makedirs(vaspnclinputdir)
+#
+#     # POTCAR
+#     potcar_dict = default_potcar_dict
+#     if potcar_settings:
+#         if "POTCAR_FUNCTIONAL" in potcar_settings:
+#             potcar_dict["POTCAR_FUNCTIONAL"] = potcar_settings["POTCAR_FUNCTIONAL"]
+#         if "POTCAR" in potcar_settings:
+#             potcar_dict["POTCAR"].update(potcar_settings.pop("POTCAR"))
+#     vaspnclinput = DictSet(structure, config_dict=potcar_dict)
+#     vaspnclinput.potcar.write_file(vaspnclinputdir + "POTCAR")
+#
+#     if all(is_metal(element) for element in structure.composition.elements):
+#         vaspnclincardict["ISMEAR"] = "2 # Metal, use Methfessel-Paxton smearing scheme"
+#     if all(is_metal(element) for element in structure.composition.elements):
+#         vaspnclincardict["SIGMA"] = 0.02
+#
+#     if incar_settings:
+#         for k in incar_settings:  # check INCAR flags and warn if they don't exist (typos)
+#             if k not in incar_params.keys():  # this code is taken from pymatgen.io.vasp.inputs
+#                 warnings.warn(  # but only checking keys, not values so we can add comments etc
+#                     "Cannot find %s from your user_incar_settings in the list of INCAR flags" % (k),
+#                     BadIncarWarning,
+#                 )
+#         vaspnclincardict.update(incar_settings)
+#
+#     # KPOINTS
+#     vaspnclkpointsdict = {
+#         "comment": "Kpoints from doped.vasp_ncl_files",
+#         "generation_style": "Gamma",  # Set to Monkhorst for Monkhorst-Pack generation
+#         "kpoints": [[2, 2, 2]],
+#     }
+#     if kpoints_settings:
+#         vaspnclkpointsdict.update(kpoints_settings)
+#     vaspnclkpts = Kpoints.from_dict(vaspnclkpointsdict)
+#     vaspnclkpts.write_file(vaspnclinputdir + "KPOINTS")
+#
+#     # INCAR
+#     vaspnclincar = Incar.from_dict(vaspnclincardict)
+#     with zopen(vaspnclinputdir + "INCAR", "wt") as incar_file:
+#         incar_file.write(vaspnclincar.get_string())
