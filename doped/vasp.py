@@ -77,6 +77,10 @@ class DefectRelaxSet(DictSet):
 
     @property
     def incar(self):
+        """
+        Returns the Incar object generated from the config_dict, with NELECT
+        and NUPDOWN set accordingly.
+        """
         inc = super(self.__class__, self).incar
         try:
             inc["NELECT"] = self.nelect - self.charge
@@ -121,7 +125,8 @@ class DefectRelaxSet(DictSet):
         """
         try:
             return super().all_input
-        except:  # Expecting the error to be POTCAR related, its ignored
+
+        except Exception:
             kpoints = self.kpoints
             incar = self.incar
             if np.product(kpoints.kpts) < 4 and incar.get("ISMEAR", 0) == -5:
@@ -174,7 +179,7 @@ def _get_transformation_info(defect_species: str, defect_entry: DefectEntry) -> 
     # 40 chars in all cases):
     poscar_comment = f"{defect_species} {approx_coords}"
 
-    transformation_dict = {
+    return {  # transformation dict
         "defect_type": defect_entry.defect.defect_type,
         "defect_unit_cell_site": defect_entry.defect.site,
         "defect_supercell_site": defect_site,
@@ -186,8 +191,6 @@ def _get_transformation_info(defect_species: str, defect_entry: DefectEntry) -> 
         "Defect": defect_entry.defect,
         "DefectEntry": defect_entry,
     }
-
-    return transformation_dict
 
 
 def _prepare_vasp_files(
@@ -253,10 +256,7 @@ def _prepare_vasp_files(
     defect_supercell = single_defect_entry.sc_entry.structure
     transformation_dict = _get_transformation_info(defect_species, single_defect_entry)
 
-    if subfolder is None:
-        vaspinputdir = defect_dir  # defect_dir is = {output_dir}/{defect_species}
-    else:
-        vaspinputdir = f"{defect_dir}/{subfolder}"
+    vaspinputdir = defect_dir if subfolder is None else f"{defect_dir}/{subfolder}"
 
     if user_potcar_functional is not None:
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
@@ -399,18 +399,20 @@ def _format_defect_entries_input(
             defect_entry_dict[defect_entry.name] = defect_entry
         defect_entries = defect_entry_dict
 
-    if isinstance(defect_entries, dict):  # check correct format
-        if not all(isinstance(defect_entry, DefectEntry) for defect_entry in defect_entries.values()):
-            raise TypeError(
-                f"Input defect_entries dict must be of the form {{defect_name: DefectEntry}}, got dict "
-                f"with values of type {[type(value) for value in defect_entries.values()]} instead"
-            )
+    # check correct format:
+    if isinstance(defect_entries, dict) and not all(
+        isinstance(defect_entry, DefectEntry) for defect_entry in defect_entries.values()
+    ):
+        raise TypeError(
+            f"Input defect_entries dict must be of the form {{defect_name: DefectEntry}}, got dict "
+            f"with values of type {[type(value) for value in defect_entries.values()]} instead"
+        )
 
     return defect_entries
 
 
-# TODO: Implement renaming folders like SnB if we try to write a folder that already exists, and the structures don't
-#  match (otherwise overwrite)
+# TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
+#  and the structures don't match (otherwise overwrite)
 def vasp_gam_files(
     defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
     output_dir: str = ".",
@@ -433,8 +435,7 @@ def vasp_gam_files(
     calculations.
 
     Args:
-        defect_entries (Union[DefectsGenerator, Dict[DefectEntry],
-        List[DefectEntry], DefectEntry]):
+        defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
             Either a `DefectsGenerator` object, or a dictionary of, list of
             or single `DefectEntry` object, for which to generate VASP input
             files. If a `DefectsGenerator` object or a dictionary (->
