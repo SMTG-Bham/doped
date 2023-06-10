@@ -12,7 +12,7 @@ import numpy as np
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import StructureMatcher
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 
 from doped.generation import DefectsGenerator
 
@@ -67,7 +67,9 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         prim_struc_wout_oxi = cdte_defect_gen.primitive_structure.copy()
         prim_struc_wout_oxi.remove_oxidation_states()
         assert structure_matcher.fit(prim_struc_wout_oxi, self.cdte_bulk)
-        np.testing.assert_array_equal(cdte_defect_gen.supercell_matrix, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+        np.testing.assert_array_equal(
+            cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
+        )
 
         # test defects
         assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
@@ -91,22 +93,22 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             for defect in defect_list
         )
 
-        # test defect attributes
+        # test some relevant defect attributes
         assert cdte_defect_gen.defects["vacancies"][0].name == "v_Cd"
-        assert cdte_defect_gen.defects["vacancies"][0].charge == 0
+        assert cdte_defect_gen.defects["vacancies"][0].oxi_state == -2
         assert cdte_defect_gen.defects["vacancies"][0].multiplicity == 1
         assert cdte_defect_gen.defects["vacancies"][0].defect_type == DefectType.Vacancy
         assert cdte_defect_gen.defects["vacancies"][0].structure == cdte_defect_gen.primitive_structure
-        assert (
-            cdte_defect_gen.defects["vacancies"][0].supercell_structure
-            == cdte_defect_gen.supercell_structure
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            cdte_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
+            cdte_defect_gen.primitive_structure.lattice.matrix,
         )
-        # assert cdte_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
-        #     "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
-        # )
-        assert cdte_defect_gen.defects["vacancies"][0].defect_site_coords == [0, 0, 0]
-        assert cdte_defect_gen.defects["vacancies"][0].defect_site_coords_frac == [0, 0, 0]
-        assert cdte_defect_gen.defects["vacancies"][0].defect_site_coords_are_cartesian is False
+        assert cdte_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
+            "Cd2+", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        )
+        assert cdte_defect_gen.defects["vacancies"][0].site == PeriodicSite(
+            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        )
 
         # test defect entries
         assert len(cdte_defect_gen.defect_entries) == 50
@@ -117,17 +119,49 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
 
         # test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
-        assert cdte_defect_gen.defect_entries["v_Cd"].charge == 0
-        assert cdte_defect_gen.defect_entries["v_Cd"].multiplicity == 1
-        assert cdte_defect_gen.defect_entries["v_Cd"].defect_type == "vacancies"
-        # neutral_defect_entry.wyckoff = wyckoff_label
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].charge_state == 0
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect_type == DefectType.Interstitial
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff_label == "16e"
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
+        np.testing.assert_array_equal(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
+            np.array([0.38, 0.38, 0.37]),
+        )
+        # sc_defect_frac_coords
+        # sc_entry
 
-        # test charge states
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
+        assert (
+            cdte_defect_gen.defect_entries["v_Cd_0"].defect.structure
+            == cdte_defect_gen.primitive_structure
+        )
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_structure.lattice.matrix,
+            cdte_defect_gen.primitive_structure.lattice.matrix,
+        )
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
+            "Cd2+", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        )
+        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
+            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        )
+
+        # assert each defect entry has the name and wyckoff label attributes:
+        for defect_entry in cdte_defect_gen.defect_entries.values():
+            assert defect_entry.name in defect_entry.defect.name
+            assert defect_entry.wyckoff_label in defect_entry.defect.wyckoff_label
+
+        # assert structures are same as those in generated data folders
+
+        # TODO: test charge states (when charge state algorithm is implemented)
 
         # test other structures
         # test wyckoff generation for all space groups
         # test as_dict etc methods
-        # test saving to and loading from json
+        # test saving to and loading from json (and that attributes remain)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_generator_tqdm(self, mock_stdout):
