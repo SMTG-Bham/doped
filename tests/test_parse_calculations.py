@@ -1,3 +1,6 @@
+"""
+Test parsing of calculations and corrections.
+"""
 import os
 import unittest
 
