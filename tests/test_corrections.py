@@ -1,3 +1,6 @@
+"""
+Test functions for getting freysoldt and kumagai corrections.
+"""
 import os
 import tarfile
 from shutil import copyfile

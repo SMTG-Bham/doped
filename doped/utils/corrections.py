@@ -40,8 +40,8 @@ warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 def _monty_decode_nested_dicts(d):
     """
-    Recursively find any dictionaries in defect_entry.parameters, which may be nested in dicts or in
-    lists of dicts and decode them:
+    Recursively find any dictionaries in defect_entry.parameters, which may be
+    nested in dicts or in lists of dicts, and decode them.
     """
     for key, value in d.items():
         if isinstance(value, dict) and not any(k in value for k in ["@module", "@class"]):
@@ -299,9 +299,8 @@ def freysoldt_correction_from_paths(
     _ = sdp.freysoldt_loader()
     if plot:
         print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
-    correction = get_correction_freysoldt(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
-    return correction
+    return get_correction_freysoldt(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
 
 def kumagai_correction_from_paths(
@@ -333,9 +332,8 @@ def kumagai_correction_from_paths(
     _ = sdp.kumagai_loader()
     if plot:
         print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
-    correction = get_correction_kumagai(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
-    return correction
+    return get_correction_kumagai(sdp.defect_entry, dielectric, plot=plot, filename=filename)
 
 
 # The following functions are taken from the deprecated AIDE package developed by the dynamic duo
@@ -464,12 +462,12 @@ def get_murphy_image_charge_correction(
             correction[q] = makov
             print(f"|   {q}    |     {makov:10f}   |    {lany:10f}   |")
         print("+--------+------------------+-----------------+")
+
     return correction
 
 
 def _get_real_space(conv, inv_diel, det_diel, r_c, axis, sup_latt):
     # Calculate real space component
-    real_space = 0.0
     axis_ranges = [range(-a, a) for a in axis]
 
     # Pre-compute square of cutoff distance for cheaper comparison than
@@ -488,13 +486,11 @@ def _get_real_space(conv, inv_diel, det_diel, r_c, axis, sup_latt):
             mod = np.dot(d_super_cart, inv_diel)
             dot_prod = np.dot(mod, d_super_cart)
             N = np.sqrt(dot_prod)
-            contribution = 1 / np.sqrt(det_diel) * erfc(conv * N) / N
-            return contribution
-        else:
-            return 0.0
+            return 1 / np.sqrt(det_diel) * erfc(conv * N) / N
 
-    real_space = sum(_real_loop_function(mno) for mno in itertools.product(*axis_ranges))
-    return real_space
+        return 0.0
+
+    return sum(_real_loop_function(mno) for mno in itertools.product(*axis_ranges))
 
 
 def _get_recip(
@@ -519,10 +515,9 @@ def _get_recip(
         if any(mno):
             mod = np.dot(d_super_cart, dielectric_matrix)
             dot_prod = np.dot(mod, d_super_cart)
-            contribution = exp(-dot_prod / (4 * conv**2)) / dot_prod
-            return contribution
-        else:
-            return 0.0
+            return exp(-dot_prod / (4 * conv**2)) / dot_prod
+
+        return 0.0
 
     reciprocal = sum(_recip_loop_function(mno) for mno in itertools.product(*axis_ranges))
     scale_factor = 4 * np.pi / recip_volume

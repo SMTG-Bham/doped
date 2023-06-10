@@ -1,3 +1,6 @@
+"""
+Tests for the `doped.vasp` module.
+"""
 import os
 import shutil
 import unittest
