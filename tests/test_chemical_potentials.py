@@ -1,8 +1,12 @@
+"""
+Tests for the `doped.chemical_potentials` module.
+"""
 import os
 import shutil
 import unittest
 from pathlib import Path
 
+import numpy as np
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 
@@ -43,7 +47,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(stable_cpa.elemental) == 2
         assert len(self.ext_cpa.elemental) == 3
         assert any(entry["formula"] == "O2" for entry in stable_cpa.data)
-        self.assertAlmostEqual(
+        assert np.isclose(
             [entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"][0],
             -119.619571095,
         )
@@ -52,8 +56,8 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_cpa_chempots(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        df1 = stable_cpa.calculate_chempots()
-        assert list(df1["O"])[0] == 0
+        chempot_df = stable_cpa.calculate_chempots()
+        assert list(chempot_df["O"])[0] == 0
         # check if it's no longer Element
         assert type(list(stable_cpa.intrinsic_chem_limits["elemental_refs"].keys())[0]) == str
 
@@ -66,31 +70,28 @@ class ChemPotsTestCase(unittest.TestCase):
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        df = self.ext_cpa.calculate_chempots()
-        assert list(df["La_limiting_phase"])[0] == "La2Zr2O7"
-        self.assertAlmostEqual(list(df["La"])[0], -9.46298748)
+        chempot_df = self.ext_cpa.calculate_chempots()
+        assert list(chempot_df["La_limiting_phase"])[0] == "La2Zr2O7"
+        assert np.isclose(list(chempot_df["La"])[0], -9.46298748)
 
     def test_cpa_chem_limits(self):
         # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        self.assertDictEqual(stable_cpa.chem_limits, self.parsed_chempots)
+        assert stable_cpa.chem_limits == self.parsed_chempots
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        self.assertDictEqual(
-            self.ext_cpa.chem_limits["elemental_refs"],
-            self.parsed_ext_chempots["elemental_refs"],
-        )
+        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
     def test_sort_by(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        df1 = stable_cpa.calculate_chempots(sort_by="Zr")
-        assert list(df1["Zr"])[0] == 0
-        assert list(df1["Zr"])[1] == -10.975428439999998
+        chempot_df = stable_cpa.calculate_chempots(sort_by="Zr")
+        assert list(chempot_df["Zr"])[0] == 0
+        assert list(chempot_df["Zr"])[1] == -10.975428439999998
 
         with self.assertRaises(KeyError):
             stable_cpa.calculate_chempots(sort_by="M")
@@ -153,18 +154,18 @@ class ChemPotsTestCase(unittest.TestCase):
         # -278.46392292, 'formation_energy': -10.951109995000003}, {'formula': 'La2Zr2O7',
         # 'kpoints': '3x3x3', 'energy_per_fu': -119.619571095, 'energy_per_atom':
         # -10.874506463181818, 'energy': -239.23914219, 'formation_energy': -40.87683184}]
-        self.assertAlmostEqual(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
-        self.assertAlmostEqual(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
-        self.assertAlmostEqual(ext_cpa.data[0]["energy"], -20.01834464)
-        self.assertAlmostEqual(ext_cpa.data[0]["formation_energy"], 0.0)
-        self.assertAlmostEqual(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
-        self.assertAlmostEqual(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
-        self.assertAlmostEqual(ext_cpa.data[-1]["energy"], -239.23914219)
-        self.assertAlmostEqual(ext_cpa.data[-1]["formation_energy"], -40.87683184)
-        self.assertAlmostEqual(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
-        self.assertAlmostEqual(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
-        self.assertAlmostEqual(ext_cpa.data[6]["energy"], -85.04840861)
-        self.assertAlmostEqual(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
+        assert np.isclose(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
+        assert np.isclose(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
+        assert np.isclose(ext_cpa.data[0]["energy"], -20.01834464)
+        assert np.isclose(ext_cpa.data[0]["formation_energy"], 0.0)
+        assert np.isclose(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
+        assert np.isclose(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
+        assert np.isclose(ext_cpa.data[-1]["energy"], -239.23914219)
+        assert np.isclose(ext_cpa.data[-1]["formation_energy"], -40.87683184)
+        assert np.isclose(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
+        assert np.isclose(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
+        assert np.isclose(ext_cpa.data[6]["energy"], -85.04840861)
+        assert np.isclose(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
 
         # check if it works from a list
         all_paths = []
@@ -272,13 +273,13 @@ class FormationEnergyTestCase(unittest.TestCase):
             },
         ]
 
-        df = chemical_potentials._calculate_formation_energies(data, elemental)
-        print(df)
-        assert df["formula"][0] == "O2"  # definite order
-        assert df["formation_energy"][0] == 0
-        assert df["formula"][1] == "Zr"
-        assert df["formation_energy"][1] == 0
-        self.assertAlmostEqual(df["formation_energy"][4], -10.975428440000002)  # lowest energy ZrO2
+        formation_energy_df = chemical_potentials._calculate_formation_energies(data, elemental)
+        assert formation_energy_df["formula"][0] == "O2"  # definite order
+        assert formation_energy_df["formation_energy"][0] == 0
+        assert formation_energy_df["formula"][1] == "Zr"
+        assert formation_energy_df["formation_energy"][1] == 0
+        # lowest energy ZrO2:
+        assert np.isclose(formation_energy_df["formation_energy"][4], -10.975428440000002)
 
 
 class CombineExtrinsicTestCase(unittest.TestCase):
@@ -329,10 +330,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.entries[0].data["total_magnetization"] == 2
         assert self.cp.entries[0].data["e_above_hull"] == 0
         assert self.cp.entries[0].data["molecule"]
-        self.assertAlmostEqual(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
-        self.assertAlmostEqual(self.cp.entries[0].data["energy"], -9.8959109375)
+        assert np.isclose(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        assert np.isclose(self.cp.entries[0].data["energy"], -9.8959109375)
         assert self.cp.entries[1].name == "Zr"
-        self.assertAlmostEqual(self.cp.entries[1].data["total_magnetization"], 0, places=3)
+        assert np.isclose(self.cp.entries[1].data["total_magnetization"], 0, places=3)
         assert self.cp.entries[1].data["e_above_hull"] == 0
         assert not self.cp.entries[1].data["molecule"]
         assert self.cp.entries[2].name == "Zr3O"
@@ -360,10 +361,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert cp.entries[0].data["total_magnetization"] == 2
         assert cp.entries[0].data["e_above_hull"] == 0
         assert cp.entries[0].data["molecule"]
-        self.assertAlmostEqual(cp.entries[0].data["energy_per_atom"], -4.94795546875)
-        self.assertAlmostEqual(cp.entries[0].data["energy"], -9.8959109375)
+        assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
+        assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
         assert cp.entries[1].name == "Zr"
-        self.assertAlmostEqual(cp.entries[1].data["total_magnetization"], 0, places=3)
+        assert np.isclose(cp.entries[1].data["total_magnetization"], 0, places=3)
         assert cp.entries[1].data["e_above_hull"] == 0
         assert not cp.entries[1].data["molecule"]
         assert cp.entries[2].name == "Zr3O"
@@ -393,7 +394,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert o2_entries[0].data["total_magnetization"] == 2
         assert o2_entries[0].data["e_above_hull"] == 0
         assert o2_entries[0].data["molecule"]
-        self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
+        assert np.isclose(o2_entries[0].data["energy_per_atom"], -4.94795546875)
 
         cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True, api_key=self.api_key
@@ -408,7 +409,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert o2_entries[0].data["total_magnetization"] == 2
         assert o2_entries[0].data["e_above_hull"] == 0
         assert o2_entries[0].data["molecule"]
-        self.assertAlmostEqual(o2_entries[0].data["energy_per_atom"], -4.94795546875)
+        assert np.isclose(o2_entries[0].data["energy_per_atom"], -4.94795546875)
 
     def test_api_keys_errors(self):
         with self.assertRaises(ValueError) as e:
