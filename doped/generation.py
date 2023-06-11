@@ -20,10 +20,12 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
+from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.transformations.advanced_transformations import _proj
 from sympy import Eq, simplify, solve, symbols
 from tabulate import tabulate
 from tqdm import tqdm
@@ -172,6 +174,7 @@ def name_defect_entries(defect_entries):
     defect_naming_dict = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_entry(defect_entry)
+        print(full_defect_name)
         if defect_entry.defect.defect_type == DefectType.Interstitial:
             # append point group to pmg name for interstitials
             # need to determine matching key, update it, then recheck if matching until unique
@@ -250,7 +253,7 @@ def name_defect_entries(defect_entries):
 
                     matching_names = False
 
-                    n += 1
+                n += 1
 
         else:  # vacancies and substitutions, start with pmg name
             shortest_defect_name = full_defect_name.rsplit("_", 2)[0]  # pmg name
@@ -314,6 +317,7 @@ def name_defect_entries(defect_entries):
                         defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
 
                 full_defect_name += closest_site_info(defect_entry, n=n)
+                print(prev_defect_entry_full_name, full_defect_name)
 
                 if not any(name for name in defect_naming_dict if full_defect_name in name):
                     # no match, can add to dict
@@ -344,7 +348,7 @@ def name_defect_entries(defect_entries):
 
                     matching_names = False
 
-                    n += 1
+                n += 1
 
     return defect_naming_dict
 
@@ -507,6 +511,7 @@ class DefectsGenerator:
         structure: Structure,
         extrinsic: Optional[Union[str, List, Dict]] = None,
         interstitial_coords: Optional[List] = None,
+        generate_supercell: bool = True,
         **kwargs,
     ):
         """
@@ -519,12 +524,14 @@ class DefectsGenerator:
         to be the most reliable), however these can also be manually specified using
         the `interstitial_coords` argument.
 
-        Supercells are generated for each defect using the pymatgen
+        By default, supercells are generated for each defect using the pymatgen
         `get_supercell_structure()` method, with `doped` default settings of
         `min_length = 10` (minimum supercell length of 10 Å) and `min_atoms = 50`
         (minimum 50 atoms in supercell). If a different supercell is desired, this
         can be controlled by specifying keyword arguments in DefectsGenerator(),
         which are passed to the `get_supercell_structure()` method.
+        Alternatively if `generate_supercell = False`, then no supercell is generated
+        and the input structure is used as the defect & bulk supercell.
 
         The algorithm for determining defect entry names is to use the pymatgen defect
         name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless
@@ -539,12 +546,6 @@ class DefectsGenerator:
         # notebook
         # Also show how to remove certain defects from the dictionary? Mightn't be worth the space for
         # this though
-        # TODO: Add option to not reduce the structure to the primitive cell, and just use the input
-        # structure as the bulk supercell, in case the user doesn't want to generate the supercell with
-        # `pymatgen`. In this case, warn the user that this might take a while, especially for
-        # interstitials in low-symmetry systems. Add note to docs that if for some reason this is the case,
-        # the user could use a modified version of the pymatgen interstitial finding tools directly along
-        # with multi-processing
 
         Args:
             structure (Structure):
@@ -564,8 +565,25 @@ class DefectsGenerator:
                 interstitial defect sites. Default (when interstitial_coords not
                 specified) is to automatically generate interstitial sites using
                 Voronoi tessellation.
+            generate_supercell (bool):
+                Whether to generate a supercell for the output defect entries
+                (using pymatgen's `CubicSupercellTransformation` and ASE's
+                `find_optimal_cell_shape()` functions) or not. If False, then the
+                input structure is used as the defect & bulk supercell.
             **kwargs:
                 Keyword arguments to be passed to the `get_supercell_structure()` method.
+
+        Attributes:
+            defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
+                objects generated.
+            defect_entries (Dict): Dictionary of {defect_name: DefectEntry} for all
+                defect entries (with charge state and supercell properties) generated.
+            primitive_structure (Structure): Primitive cell structure of the host
+                used to generate defects.
+            supercell_matrix (Matrix): Matrix to generate defect/bulk supercells from
+                the primitive cell structure.
+            bulk_supercell (Structure): Supercell structure of the host
+                (equal to primitive_structure * supercell_matrix).
         """
         self.defects = {}  # {defect_type: [Defect, ...]}
         self.defect_entries = {}  # {defect_name: DefectEntry}
@@ -577,158 +595,229 @@ class DefectsGenerator:
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description("Getting primitive structure")
 
-        # Reduce structure to primitive cell for efficient defect generation
-        # same symprec as defect generators in pymatgen-analysis-defects:
-        sga = SpacegroupAnalyzer(structure, symprec=1e-2)
-        prim_struct = sga.get_primitive_standard_structure()
-        clean_prim_struct_dict = _round_floats(prim_struct.as_dict())
-        self.primitive_structure = Structure.from_dict(clean_prim_struct_dict)
-        pbar.update(5)  # 5% of progress bar
+        try:  # put code in try/except block so progress bar always closed if interrupted
+            # Reduce structure to primitive cell for efficient defect generation
+            # same symprec as defect generators in pymatgen-analysis-defects:
+            sga = SpacegroupAnalyzer(structure, symprec=1e-2)
+            prim_struct = sga.get_primitive_standard_structure()
+            if prim_struct.num_sites < structure.num_sites:
+                clean_prim_struct_dict = _round_floats(prim_struct.as_dict())
+                primitive_structure = Structure.from_dict(clean_prim_struct_dict)
+            else:  # primitive cell is the same as input structure, so use input structure to avoid
+                # rotations
+                primitive_structure = structure
+            pbar.update(5)  # 5% of progress bar
 
-        # Generate defects
-        # Vacancies:
-        pbar.set_description("Generating vacancies")
-        vac_generator_obj = VacancyGenerator()
-        vac_generator = vac_generator_obj.generate(self.primitive_structure)
-        self.defects["vacancies"] = list(vac_generator)
-        pbar.update(5)  # 10% of progress bar
-
-        # Antisites:
-        pbar.set_description("Generating substitutions")
-        antisite_generator_obj = AntiSiteGenerator()
-        as_generator = antisite_generator_obj.generate(self.primitive_structure)
-        self.defects["substitutions"] = list(as_generator)
-        pbar.update(5)  # 15% of progress bar
-
-        # Substitutions:
-        substitution_generator_obj = SubstitutionGenerator()
-        if isinstance(extrinsic, str):  # substitute all host elements
-            substitutions = {
-                el.symbol: [extrinsic] for el in self.primitive_structure.composition.elements
-            }
-        elif isinstance(extrinsic, list):  # substitute all host elements
-            substitutions = {el.symbol: extrinsic for el in self.primitive_structure.composition.elements}
-        elif isinstance(extrinsic, dict):  # substitute only specified host elements
-            substitutions = extrinsic
-        else:
-            warnings.warn(
-                f"Invalid `extrinsic` defect input. Got type {type(extrinsic)}, but string or list or "
-                f"dict required. No extrinsic defects will be generated."
+            # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
+            # same supercell is used for each defect and bulk calculation
+            pbar.set_description("Generating simulation supercell")
+            pmg_supercell_matrix = get_sc_fromstruct(
+                primitive_structure,
+                min_atoms=kwargs.get("min_atoms", 50),
+                max_atoms=kwargs.get("max_atoms", 240),  # same as current pymatgen default
+                min_length=kwargs.get("min_length", 10),  # same as current pymatgen default
+                force_diagonal=kwargs.get("force_diagonal", False),  # same as current pymatgen default
             )
-            substitutions = {}
 
-        if substitutions:
-            sub_generator = substitution_generator_obj.generate(
-                self.primitive_structure, substitution=substitutions
+            # check if input structure is already >10 Å in each direction:
+            a = structure.lattice.matrix[0]
+            b = structure.lattice.matrix[1]
+            c = structure.lattice.matrix[2]
+
+            length_vecs = np.array(
+                [
+                    c - _proj(c, a),  # a-c plane
+                    a - _proj(a, c),
+                    b - _proj(b, a),  # b-a plane
+                    a - _proj(a, b),
+                    c - _proj(c, b),  # b-c plane
+                    b - _proj(b, c),
+                ]
             )
-            if "substitutions" in self.defects:
-                self.defects["substitutions"].extend(list(sub_generator))
+
+            def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
+                # first rotate primitive structure to match target structure:
+                mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
+                rotation_matrix = mapping[1]
+                supercell_matrix = mapping[2]
+                rotation_symmop = SymmOp.from_rotation_and_translation(
+                    rotation_matrix=rotation_matrix.T
+                )  # Transpose = inverse of rotation matrices (
+                # orthogonal matrices), better numerical stability
+                output_prim_struct = prim_struct.copy()
+                output_prim_struct.apply_operation(rotation_symmop)
+                return output_prim_struct, supercell_matrix
+
+            if np.min(np.linalg.norm(length_vecs, axis=1)) >= kwargs.get("min_length", 10):
+                # input structure is >10 Å in each direction
+                if (
+                    not generate_supercell
+                    or structure.num_sites <= (primitive_structure * pmg_supercell_matrix).num_sites
+                ):
+                    # input structure has fewer or same number of atoms as pmg supercell or
+                    # generate_supercell=False, so use input structure:
+                    self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
+                        primitive_structure, structure
+                    )
+                else:
+                    self.supercell_matrix = pmg_supercell_matrix
+
+            elif not generate_supercell:
+                # input structure is <10 Å in at least one direction, and generate_supercell=False,
+                # so use input structure but warn user:
+                warnings.warn(
+                    f"Input structure is <10 Å in at least one direction (minimum image distance = "
+                    f"{np.min(np.linalg.norm(length_vecs, axis=1)):.2f} Å, which is usually too "
+                    f"small for accurate defect calculations, but generate_supercell=False, so "
+                    f"using input structure as defect & bulk supercells. Caution advised!"
+                )
+                self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
+                    primitive_structure, structure
+                )
+
             else:
-                self.defects["substitutions"] = list(sub_generator)
-        pbar.update(5)  # 20% of progress bar
+                self.supercell_matrix = pmg_supercell_matrix
+            self.bulk_supercell = self.primitive_structure * self.supercell_matrix
+            pbar.update(10)  # 15% of progress bar
 
-        # Interstitials:
-        # determine which, if any, extrinsic elements are present:
-        pbar.set_description("Generating interstitials")
-        # previous generators add oxidation states, but messes with interstitial generators, so
-        # remove oxi states:
-        self.primitive_structure.remove_oxidation_states()
-        if isinstance(extrinsic, str):
-            extrinsic_elements = [extrinsic]
-        elif isinstance(extrinsic, list):
-            extrinsic_elements = extrinsic
-        elif isinstance(extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
-            # convert to flattened list of extrinsic elements:
-            extrinsic_elements = list(
-                chain(*[i if isinstance(i, list) else [i] for i in extrinsic.values()])
-            )
-            extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
-        else:
-            extrinsic_elements = []
+            # Generate defects
+            # Vacancies:
+            pbar.set_description("Generating vacancies")
+            vac_generator_obj = VacancyGenerator()
+            vac_generator = vac_generator_obj.generate(self.primitive_structure)
+            self.defects["vacancies"] = list(vac_generator)
+            pbar.update(5)  # 20% of progress bar
 
-        if interstitial_coords:
-            # For the moment, this assumes interstitial_sites
-            insertions = {
-                el.symbol: interstitial_coords for el in self.primitive_structure.composition.elements
-            }
-            insertions.update({el: interstitial_coords for el in extrinsic_elements})
-            interstitial_generator_obj = InterstitialGenerator()
-            interstitial_generator = interstitial_generator_obj.generate(
-                self.primitive_structure, insertions=insertions
-            )
-            self.defects["interstitials"] = list(interstitial_generator)
+            # Antisites:
+            pbar.set_description("Generating substitutions")
+            antisite_generator_obj = AntiSiteGenerator()
+            as_generator = antisite_generator_obj.generate(self.primitive_structure)
+            self.defects["substitutions"] = list(as_generator)
+            pbar.update(5)  # 25% of progress bar
 
-        else:
-            # Generate interstitial sites using Voronoi tessellation
-            voronoi_interstitial_generator_obj = VoronoiInterstitialGenerator()
-            voronoi_interstitial_generator = voronoi_interstitial_generator_obj.generate(
-                self.primitive_structure,
-                insert_species=[el.symbol for el in self.primitive_structure.composition.elements]
-                + extrinsic_elements,
-            )
-            self.defects["interstitials"] = list(voronoi_interstitial_generator)
-
-        pbar.update(15)  # 35% of progress bar, generating interstitials typically takes the longest
-
-        # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the same
-        # supercell is used for each defect and bulk calculation
-        pbar.set_description("Generating simulation supercell")
-        self.supercell_matrix = get_sc_fromstruct(
-            self.primitive_structure,
-            min_atoms=kwargs.get("min_atoms", 50),
-            max_atoms=kwargs.get("max_atoms", 240),  # same as current pymatgen default
-            min_length=kwargs.get("min_length", 10),  # same as current pymatgen default
-            force_diagonal=kwargs.get("force_diagonal", False),  # same as current pymatgen default
-        )
-        pbar.update(10)  # 45% of progress bar
-
-        # Generate DefectEntry objects:
-        pbar.set_description("Determining Wyckoff sites")
-        num_defects = sum([len(defect_list) for defect_list in self.defects.values()])
-
-        defect_entry_list = []
-        wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
-        for _defect_type, defect_list in self.defects.items():
-            for defect in defect_list:
-                defect_supercell = defect.get_supercell_structure(
-                    sc_mat=self.supercell_matrix,
-                    dummy_species="X",  # keep track of the defect frac coords in the supercell
+            # Substitutions:
+            substitution_generator_obj = SubstitutionGenerator()
+            if isinstance(extrinsic, str):  # substitute all host elements
+                substitutions = {
+                    el.symbol: [extrinsic] for el in self.primitive_structure.composition.elements
+                }
+            elif isinstance(extrinsic, list):  # substitute all host elements
+                substitutions = {
+                    el.symbol: extrinsic for el in self.primitive_structure.composition.elements
+                }
+            elif isinstance(extrinsic, dict):  # substitute only specified host elements
+                substitutions = extrinsic
+            else:
+                warnings.warn(
+                    f"Invalid `extrinsic` defect input. Got type {type(extrinsic)}, but string or list or "
+                    f"dict required. No extrinsic defects will be generated."
                 )
-                neutral_defect_entry = get_defect_entry_from_defect(
-                    defect,
-                    defect_supercell,
-                    0,
-                    dummy_species=DummySpecies("X"),
+                substitutions = {}
+
+            if substitutions:
+                sub_generator = substitution_generator_obj.generate(
+                    self.primitive_structure, substitution=substitutions
                 )
-                wyckoff_label = get_wyckoff_label(neutral_defect_entry, wyckoff_label_dict)
-                neutral_defect_entry.wyckoff = wyckoff_label
-                defect_entry_list.append(neutral_defect_entry)
-                pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
+                if "substitutions" in self.defects:
+                    self.defects["substitutions"].extend(list(sub_generator))
+                else:
+                    self.defects["substitutions"] = list(sub_generator)
+            pbar.update(5)  # 30% of progress bar
 
-        pbar.set_description("Generating DefectEntry objects")
-        named_defect_dict = name_defect_entries(defect_entry_list)
-        pbar.update(5)  # 95% of progress bar
+            # Interstitials:
+            # determine which, if any, extrinsic elements are present:
+            pbar.set_description("Generating interstitials")
+            # previous generators add oxidation states, but messes with interstitial generators, so
+            # remove oxi states:
+            self.primitive_structure.remove_oxidation_states()
+            if isinstance(extrinsic, str):
+                extrinsic_elements = [extrinsic]
+            elif isinstance(extrinsic, list):
+                extrinsic_elements = extrinsic
+            elif isinstance(extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
+                # convert to flattened list of extrinsic elements:
+                extrinsic_elements = list(
+                    chain(*[i if isinstance(i, list) else [i] for i in extrinsic.values()])
+                )
+                extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
+            else:
+                extrinsic_elements = []
 
-        for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-            defect = neutral_defect_entry.defect
-            # set defect charge states: currently from +/-1 to defect oxi state
-            if defect.oxi_state > 0:
-                charge_states = [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
-            elif defect.oxi_state < 0:
-                charge_states = [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
-            else:  # oxi_state is 0
-                charge_states = [-1, 0, 1]
+            if interstitial_coords:
+                # For the moment, this assumes interstitial_sites
+                insertions = {
+                    el.symbol: interstitial_coords for el in self.primitive_structure.composition.elements
+                }
+                insertions.update({el: interstitial_coords for el in extrinsic_elements})
+                interstitial_generator_obj = InterstitialGenerator()
+                interstitial_generator = interstitial_generator_obj.generate(
+                    self.primitive_structure, insertions=insertions
+                )
+                self.defects["interstitials"] = list(interstitial_generator)
 
-            for charge in charge_states:
-                # TODO: Will be updated to our chosen charge generation algorithm!
-                defect_entry = copy.deepcopy(neutral_defect_entry)
-                defect_entry.charge_state = charge
-                defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
-                defect_entry.name = defect_name  # set name attribute
-                self.defect_entries[defect_name] = defect_entry
-                pbar.update((1 / num_defects) * (pbar.total - pbar.n))  # 100% of progress bar
+            else:
+                # Generate interstitial sites using Voronoi tessellation
+                voronoi_interstitial_generator_obj = VoronoiInterstitialGenerator()
+                voronoi_interstitial_generator = voronoi_interstitial_generator_obj.generate(
+                    self.primitive_structure,
+                    insert_species=[el.symbol for el in self.primitive_structure.composition.elements]
+                    + extrinsic_elements,
+                )
+                self.defects["interstitials"] = list(voronoi_interstitial_generator)
+
+            pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
+
+            # Generate DefectEntry objects:
+            pbar.set_description("Determining Wyckoff sites")
+            num_defects = sum([len(defect_list) for defect_list in self.defects.values()])
+
+            defect_entry_list = []
+            wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+            for _defect_type, defect_list in self.defects.items():
+                for defect in defect_list:
+                    defect_supercell = defect.get_supercell_structure(
+                        sc_mat=self.supercell_matrix,
+                        dummy_species="X",  # keep track of the defect frac coords in the supercell
+                    )
+                    neutral_defect_entry = get_defect_entry_from_defect(
+                        defect,
+                        defect_supercell,
+                        0,
+                        dummy_species=DummySpecies("X"),
+                    )
+                    wyckoff_label = get_wyckoff_label(neutral_defect_entry, wyckoff_label_dict)
+                    neutral_defect_entry.wyckoff = wyckoff_label
+                    defect_entry_list.append(neutral_defect_entry)
+                    pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
+
+            pbar.set_description("Generating DefectEntry objects")
+            named_defect_dict = name_defect_entries(defect_entry_list)
+            pbar.update(5)  # 95% of progress bar
+
+            for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
+                defect = neutral_defect_entry.defect
+                # set defect charge states: currently from +/-1 to defect oxi state
+                if defect.oxi_state > 0:
+                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
+                elif defect.oxi_state < 0:
+                    charge_states = [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
+                else:  # oxi_state is 0
+                    charge_states = [-1, 0, 1]
+
+                for charge in charge_states:
+                    # TODO: Will be updated to our chosen charge generation algorithm!
+                    defect_entry = copy.deepcopy(neutral_defect_entry)
+                    defect_entry.charge_state = charge
+                    defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
+                    defect_entry.name = defect_name  # set name attribute
+                    self.defect_entries[defect_name] = defect_entry
+                    pbar.update((1 / num_defects) * (pbar.total - pbar.n))  # 100% of progress bar
+
+        except Exception as e:
+            pbar.close()
+            raise e
+
         pbar.close()
-
         print(self._defect_generator_info())
 
     def as_dict(self):
