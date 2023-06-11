@@ -68,11 +68,16 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         prim_struc_wout_oxi = cdte_defect_gen.primitive_structure.copy()
         prim_struc_wout_oxi.remove_oxidation_states()
         assert structure_matcher.fit(prim_struc_wout_oxi, self.cdte_bulk)
-        np.testing.assert_array_equal(
+        assert np.allclose(prim_struc_wout_oxi.lattice.matrix, self.cdte_bulk.lattice.matrix)
+        np.testing.assert_allclose(
             cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         )
         assert structure_matcher.fit(
             prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix, cdte_defect_gen.bulk_supercell
+        )
+        assert np.allclose(
+            (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
+            self.cdte_bulk.lattice.matrix,
         )
 
         # test defects
@@ -190,10 +195,185 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             DefectsGenerator(self.cdte_bulk)
             assert len(w) == 0
 
+    def test_ytos_supercell_input(self):
+        # note that this tests the case of an input structure which is >10 Å in each direction and has
+        # the same number of atoms as the pmg supercell, so the input structure is used as the supercell
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell)  # Y2Ti2S2O5 supercell
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        ytos_defect_gen_info = (
+            """Vacancies    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+-----------  ------------------  ------------------  --------  ---------
+v_Y          [-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
+v_Ti         [-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
+v_S          [-1,0,+1,+2]        [0.80,0.80,0.00]    2         8h
+v_O_C1       [-1,0,+1,+2]        [0.90,0.40,0.50]    4         16l
+v_O_C2h      [-1,0,+1,+2]        [0.00,0.00,0.00]    1         2a
+
+Substitutions    Charge States             Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ------------------------  ------------------  --------  ---------
+Y_Ti             [-1,0,+1]                 [0.92,0.92,0.00]    2         8h
+Y_S              [-1,0,+1,+2,+3,+4,+5]     [0.80,0.80,0.00]    2         8h
+Y_O_C1           [-1,0,+1,+2,+3,+4,+5]     [0.90,0.40,0.50]    4         16l
+Y_O_C2h          [-1,0,+1,+2,+3,+4,+5]     [0.00,0.00,0.00]    1         2a
+Ti_Y             [-1,0,+1]                 [0.67,0.67,0.00]    2         8h
+Ti_S             [-1,0,+1,+2,+3,+4,+5,+6]  [0.80,0.80,0.00]    2         8h
+Ti_O_C1          [-1,0,+1,+2,+3,+4,+5,+6]  [0.90,0.40,0.50]    4         16l
+Ti_O_C2h         [-1,0,+1,+2,+3,+4,+5,+6]  [0.00,0.00,0.00]    1         2a
+S_Y              [-5,-4,-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
+S_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
+S_O_C1           [-1,0,+1]                 [0.90,0.40,0.50]    4         16l
+S_O_C2h          [-1,0,+1]                 [0.00,0.00,0.00]    1         2a
+O_Y              [-5,-4,-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
+O_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
+O_S              [-1,0,+1]                 [0.80,0.80,0.00]    2         8h
+
+Interstitials    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ---------------  ------------------  --------  ---------
+Y_i_C1_S2.03     [-1,0,+1,+2,+3]  [0.36,0.73,0.63]    10        32o
+Y_i_C1_Y1.92     [-1,0,+1,+2,+3]  [0.18,0.68,0.50]    4         16l
+Y_i_Cs_O1.71     [-1,0,+1,+2,+3]  [0.68,0.04,0.00]    8         16l
+Y_i_Cs_O1.92     [-1,0,+1,+2,+3]  [0.42,0.42,0.00]    2         8h
+Y_i_Cs_O1.95     [-1,0,+1,+2,+3]  [0.29,0.64,0.00]    8         16l
+Y_i_Cs_O2.68     [-1,0,+1,+2,+3]  [0.52,0.52,0.00]    2         8h
+Ti_i_C1_S2.03    [-1,0,+1,+2,+3]  [0.36,0.73,0.63]    10        32o
+Ti_i_C1_Y1.92    [-1,0,+1,+2,+3]  [0.18,0.68,0.50]    4         16l
+Ti_i_Cs_O1.71    [-1,0,+1,+2,+3]  [0.68,0.04,0.00]    8         16l
+Ti_i_Cs_O1.92    [-1,0,+1,+2,+3]  [0.42,0.42,0.00]    2         8h
+Ti_i_Cs_O1.95    [-1,0,+1,+2,+3]  [0.29,0.64,0.00]    8         16l
+Ti_i_Cs_O2.68    [-1,0,+1,+2,+3]  [0.52,0.52,0.00]    2         8h
+S_i_C1_S2.03     [-1,0,+1,+2]     [0.36,0.73,0.63]    10        32o
+S_i_C1_Y1.92     [-1,0,+1,+2]     [0.18,0.68,0.50]    4         16l
+S_i_Cs_O1.71     [-1,0,+1,+2]     [0.68,0.04,0.00]    8         16l
+S_i_Cs_O1.92     [-1,0,+1,+2]     [0.42,0.42,0.00]    2         8h
+S_i_Cs_O1.95     [-1,0,+1,+2]     [0.29,0.64,0.00]    8         16l
+S_i_Cs_O2.68     [-1,0,+1,+2]     [0.52,0.52,0.00]    2         8h
+O_i_C1_S2.03     [-2,-1,0,+1]     [0.36,0.73,0.63]    10        32o
+O_i_C1_Y1.92     [-2,-1,0,+1]     [0.18,0.68,0.50]    4         16l
+O_i_Cs_O1.71     [-2,-1,0,+1]     [0.68,0.04,0.00]    8         16l
+O_i_Cs_O1.92     [-2,-1,0,+1]     [0.42,0.42,0.00]    2         8h
+O_i_Cs_O1.95     [-2,-1,0,+1]     [0.29,0.64,0.00]    8         16l
+O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
+
+\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
+            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
+            "structure (returned by spglib)\n\n"
+        )
+
+        assert ytos_defect_gen_info in output
+
+        # test attributes:
+        structure_matcher = StructureMatcher()
+        prim_struc_wout_oxi = ytos_defect_gen.primitive_structure.copy()
+        prim_struc_wout_oxi.remove_oxidation_states()
+        assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
+            prim_struc_wout_oxi, self.ytos_bulk_supercell
+        )
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi, self.ytos_bulk_supercell.get_primitive_structure()
+        )  # reduces to primitive, but StructureMatcher still matches
+        assert not np.allclose(prim_struc_wout_oxi.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix)
+        assert np.allclose(
+            ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
+        )
+        assert structure_matcher.fit(
+            ytos_defect_gen.bulk_supercell, self.ytos_bulk_supercell.get_primitive_structure()
+        )  # reduces to primitive, but StructureMatcher still matches
+
+        np.testing.assert_allclose(
+            ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
+        )
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi * ytos_defect_gen.supercell_matrix, ytos_defect_gen.bulk_supercell
+        )
+
+        # test defects
+        assert len(ytos_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(ytos_defect_gen.defects["vacancies"]) == 5
+        assert all(
+            defect.defect_type == DefectType.Vacancy for defect in ytos_defect_gen.defects["vacancies"]
+        )
+        assert len(ytos_defect_gen.defects["substitutions"]) == 15
+        assert all(
+            defect.defect_type == DefectType.Substitution
+            for defect in ytos_defect_gen.defects["substitutions"]
+        )
+        assert len(ytos_defect_gen.defects["interstitials"]) == 24
+        assert all(
+            defect.defect_type == DefectType.Interstitial
+            for defect in ytos_defect_gen.defects["interstitials"]
+        )
+        assert all(
+            isinstance(defect, Defect)
+            for defect_list in ytos_defect_gen.defects.values()
+            for defect in defect_list
+        )
+
+        # test some relevant defect attributes
+        assert ytos_defect_gen.defects["vacancies"][0].name == "v_Y"
+        assert ytos_defect_gen.defects["vacancies"][0].oxi_state == -3
+        assert ytos_defect_gen.defects["vacancies"][0].multiplicity == 2
+        assert ytos_defect_gen.defects["vacancies"][0].defect_type == DefectType.Vacancy
+        assert ytos_defect_gen.defects["vacancies"][0].structure == ytos_defect_gen.primitive_structure
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            ytos_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
+            ytos_defect_gen.primitive_structure.lattice.matrix,
+        )
+
+        # test defect entries
+        assert len(ytos_defect_gen.defect_entries) == 221
+        assert len(ytos_defect_gen) == 221
+        assert all(
+            isinstance(defect_entry, DefectEntry)
+            for defect_entry in ytos_defect_gen.defect_entries.values()
+        )
+
+        # test defect entry attributes
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].name == "O_i_Cs_O2.68_0"
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].charge_state == 0
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_-2"].charge_state == -2
+        assert (
+            ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].defect.defect_type == DefectType.Interstitial
+        )
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].wyckoff == "8h"
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].defect.multiplicity == 2
+        np.testing.assert_allclose(
+            ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].sc_defect_frac_coords,
+            np.array([0.828227, 0.171773, 0.030638]),
+            rtol=1e-2,
+        )
+        for defect_name, defect_entry in ytos_defect_gen.defect_entries.items():
+            assert defect_entry.name == defect_name
+            assert defect_entry.charge_state == int(defect_name.split("_")[-1])
+            assert defect_entry.wyckoff  # wyckoff label is not None
+            assert defect_entry.defect
+            np.testing.assert_allclose(
+                defect_entry.sc_entry.structure.lattice.matrix,
+                ytos_defect_gen.bulk_supercell.lattice.matrix,
+            )
+
+        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
+        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
+        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.multiplicity == 2
+        assert ytos_defect_gen.defect_entries["v_Y_0"].wyckoff == "8h"
+        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.defect_type == DefectType.Vacancy
+        assert (
+            ytos_defect_gen.defect_entries["v_Y_0"].defect.structure == ytos_defect_gen.primitive_structure
+        )
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            ytos_defect_gen.defect_entries["v_Y_0"].defect.defect_structure.lattice.matrix,
+            ytos_defect_gen.primitive_structure.lattice.matrix,
+        )
+
 
 class WyckoffTest(unittest.TestCase):
     def test_wyckoff_dict_from_sgn(self):
-        for sgn in range(1, 230):  # TODO: Space group 230 doesn't work, will PR!
+        for sgn in range(1, 231):
             wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
             assert isinstance(wyckoff_dict, dict)
             assert all(isinstance(k, str) for k in wyckoff_dict)
