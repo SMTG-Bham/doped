@@ -52,14 +52,14 @@ class DefectRelaxTest(unittest.TestCase):
 
 class VaspInputTestCase(unittest.TestCase):
     def setUp(self):
-        self.DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-        self.CDTE_DATA_DIR = os.path.join(self.DATA_DIR, "CdTe")
+        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
         self.cdte_defects_generator = loadfn(
-            os.path.join(self.CDTE_DATA_DIR, "CdTe_defects_generator.json")
+            os.path.join(self.cdte_data_dir, "CdTe_defects_generator.json")
         )
 
     def tearDown(self):
-        for folder in os.listdir(self.CDTE_DATA_DIR):  # remove all generated CdTe defect folders
+        for folder in os.listdir(self.cdte_data_dir):  # remove all generated CdTe defect folders
             if os.path.isdir(folder):
                 shutil.rmtree(folder)
 
@@ -115,7 +115,7 @@ class VaspInputTestCase(unittest.TestCase):
             assert test_kpoints.as_dict() == kpoints.as_dict()
 
         if data_dir is None:
-            data_dir = self.CDTE_DATA_DIR
+            data_dir = self.cdte_data_dir
 
         if single_defect_dir:
             _check_single_vasp_dir(
@@ -147,7 +147,7 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(check_potcar_spec=True)
 
         # test custom POTCAR choice:
@@ -177,8 +177,8 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
             write_files=False,
         )
-        for folder in os.listdir(self.CDTE_DATA_DIR):
-            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+        for folder in os.listdir(self.cdte_data_dir):
+            if os.path.isdir(f"{self.cdte_data_dir}/{folder}"):
                 assert not os.path.exists(f"./{folder}")
 
     def test_vasp_gam_files_single_defect_entry(self):
@@ -191,10 +191,10 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(
             generated_dir="v_Cd_s0_0",
-            data_dir=f"{self.CDTE_DATA_DIR}/v_Cd_s0_0",
+            data_dir=f"{self.cdte_data_dir}/v_Cd_s0_0",
             check_potcar_spec=True,
             single_defect_dir=True,
         )
@@ -239,7 +239,7 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False)
 
         vasp_std_files(
@@ -262,8 +262,8 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
             write_files=False,
         )
-        for folder in os.listdir(self.CDTE_DATA_DIR):
-            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+        for folder in os.listdir(self.cdte_data_dir):
+            if os.path.isdir(f"{self.cdte_data_dir}/{folder}"):
                 assert not os.path.exists(f"./{folder}")
 
     def test_vasp_std_files_single_defect_entry(self):
@@ -281,11 +281,11 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         print(os.listdir())
         self.check_generated_vasp_inputs(
             generated_dir="Cd_i_m1b_+2",
-            data_dir=f"{self.CDTE_DATA_DIR}/Cd_i_m1b_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_m1b_+2",
             vasp_type="vasp_std",
             check_poscar=False,
             single_defect_dir=True,
@@ -306,7 +306,7 @@ class VaspInputTestCase(unittest.TestCase):
 
         self.check_generated_vasp_inputs(
             generated_dir="Cd_i_m1b_+2",
-            data_dir=f"{self.CDTE_DATA_DIR}/Cd_i_m1b_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_m1b_+2",
             vasp_type="vasp_std",
             check_poscar=False,
             single_defect_dir=True,
@@ -324,7 +324,7 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False)
 
         vasp_ncl_files(
@@ -342,8 +342,8 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
             write_files=False,
         )
-        for folder in os.listdir(self.CDTE_DATA_DIR):
-            if os.path.isdir(f"{self.CDTE_DATA_DIR}/{folder}"):
+        for folder in os.listdir(self.cdte_data_dir):
+            if os.path.isdir(f"{self.cdte_data_dir}/{folder}"):
                 assert not os.path.exists(f"./{folder}")
 
     def test_vasp_ncl_files_single_defect_dict(self):
@@ -355,11 +355,11 @@ class VaspInputTestCase(unittest.TestCase):
             user_potcar_functional=None,
         )
 
-        # assert that the same folders in self.CDTE_DATA_DIR are present in the current directory
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
         for charge in range(-1, 6):
             self.check_generated_vasp_inputs(
                 generated_dir=f"sub_2_Se_on_Te_{charge}",
-                data_dir=f"{self.CDTE_DATA_DIR}/sub_2_Se_on_Te_{charge}",
+                data_dir=f"{self.cdte_data_dir}/sub_2_Se_on_Te_{charge}",
                 vasp_type="vasp_ncl",
                 check_poscar=False,
                 single_defect_dir=True,
@@ -376,7 +376,7 @@ class VaspInputTestCase(unittest.TestCase):
         for charge in range(-1, 6):
             self.check_generated_vasp_inputs(
                 generated_dir=f"sub_2_Se_on_Te_{charge}",
-                data_dir=f"{self.CDTE_DATA_DIR}/sub_2_Se_on_Te_{charge}",
+                data_dir=f"{self.cdte_data_dir}/sub_2_Se_on_Te_{charge}",
                 vasp_type="vasp_ncl",
                 check_poscar=True,
                 single_defect_dir=True,
