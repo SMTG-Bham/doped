@@ -21,7 +21,7 @@ from shakenbreak.input import (
 )
 
 from doped import _ignore_pmg_warnings
-from doped.generation import DefectsGenerator
+from doped.generation import DefectsGenerator, _custom_formatwarning
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
@@ -30,6 +30,7 @@ default_defect_set = loadfn(os.path.join(MODULE_DIR, "DefectSet.yaml"))
 default_relax_set["INCAR"].update(default_defect_set["INCAR"])
 
 _ignore_pmg_warnings()
+warnings.formatwarning = _custom_formatwarning
 
 
 class DefectRelaxSet(DictSet):
@@ -413,6 +414,7 @@ def _format_defect_entries_input(
 
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
 #  and the structures don't match (otherwise overwrite)
+# TODO: Output bulk folder as well? As singleshot calc in each case.
 def vasp_gam_files(
     defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
     output_dir: str = ".",
