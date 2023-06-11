@@ -619,7 +619,8 @@ class DefectsGenerator:
                 primitive_structure = Structure.from_dict(clean_prim_struct_dict)
             else:  # primitive cell is the same as input structure, so use input structure to avoid
                 # rotations
-                primitive_structure = structure
+                # wrap to unit cell:
+                primitive_structure = Structure.from_sites([site.to_unit_cell() for site in structure])
             pbar.update(5)  # 5% of progress bar
 
             # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
