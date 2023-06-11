@@ -5,7 +5,7 @@ calculations.
 import copy
 import warnings
 from itertools import chain
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
 from ase.spacegroup.wyckoff import Wyckoff
@@ -41,6 +41,22 @@ from tqdm import tqdm
 #  tf you mean 'tricky'??)
 
 dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
+
+
+def _custom_formatwarning(
+    message: Union[Warning, str],
+    category: Type[Warning],
+    filename: str,
+    lineno: int,
+    line: Optional[str] = None,
+) -> str:
+    """
+    Reformat warnings to just print the warning message.
+    """
+    return f"{message}\n"
+
+
+warnings.formatwarning = _custom_formatwarning
 
 
 def get_defect_entry_from_defect(
@@ -174,7 +190,6 @@ def name_defect_entries(defect_entries):
     defect_naming_dict = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_entry(defect_entry)
-        print(full_defect_name)
         if defect_entry.defect.defect_type == DefectType.Interstitial:
             # append point group to pmg name for interstitials
             # need to determine matching key, update it, then recheck if matching until unique
@@ -317,7 +332,6 @@ def name_defect_entries(defect_entries):
                         defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
 
                 full_defect_name += closest_site_info(defect_entry, n=n)
-                print(prev_defect_entry_full_name, full_defect_name)
 
                 if not any(name for name in defect_naming_dict if full_defect_name in name):
                     # no match, can add to dict
@@ -646,7 +660,8 @@ class DefectsGenerator:
                 # orthogonal matrices), better numerical stability
                 output_prim_struct = prim_struct.copy()
                 output_prim_struct.apply_operation(rotation_symmop)
-                return output_prim_struct, supercell_matrix
+                clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
+                return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
             if np.min(np.linalg.norm(length_vecs, axis=1)) >= kwargs.get("min_length", 10):
                 # input structure is >10 Å in each direction
@@ -660,13 +675,14 @@ class DefectsGenerator:
                         primitive_structure, structure
                     )
                 else:
+                    self.primitive_structure = primitive_structure
                     self.supercell_matrix = pmg_supercell_matrix
 
             elif not generate_supercell:
                 # input structure is <10 Å in at least one direction, and generate_supercell=False,
                 # so use input structure but warn user:
                 warnings.warn(
-                    f"Input structure is <10 Å in at least one direction (minimum image distance = "
+                    f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
                     f"{np.min(np.linalg.norm(length_vecs, axis=1)):.2f} Å, which is usually too "
                     f"small for accurate defect calculations, but generate_supercell=False, so "
                     f"using input structure as defect & bulk supercells. Caution advised!"
@@ -676,6 +692,7 @@ class DefectsGenerator:
                 )
 
             else:
+                self.primitive_structure = primitive_structure
                 self.supercell_matrix = pmg_supercell_matrix
             self.bulk_supercell = self.primitive_structure * self.supercell_matrix
             pbar.update(10)  # 15% of progress bar
@@ -817,7 +834,9 @@ class DefectsGenerator:
             pbar.close()
             raise e
 
-        pbar.close()
+        finally:
+            pbar.close()
+
         print(self._defect_generator_info())
 
     def as_dict(self):
@@ -1040,7 +1059,8 @@ class DefectsGenerator:
         Returns a string representation of the DefectsGenerator object.
         """
         return (
-            f"DefectsGenerator for input {self.primitive_structure.composition}, space group "
+            f"DefectsGenerator for input composition "
+            f"{self.primitive_structure.composition.to_pretty_string()}, space group "
             f"{self.primitive_structure.get_space_group_info()[0]} with {len(self)} defect entries "
             f"created."
         )
