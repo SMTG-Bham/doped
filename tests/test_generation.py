@@ -13,6 +13,7 @@ from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.generation import DefectsGenerator, get_wyckoff_dict_from_sgn
 
@@ -75,9 +76,11 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         assert structure_matcher.fit(
             prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix, cdte_defect_gen.bulk_supercell
         )
+        sga = SpacegroupAnalyzer(self.cdte_bulk)
+        conv_cdte = sga.get_conventional_standard_structure()
         assert np.allclose(
             (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
-            self.cdte_bulk.lattice.matrix,
+            (conv_cdte * 2 * np.eye(3)).lattice.matrix,
         )
 
         # test defects
@@ -197,7 +200,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
 
     def test_ytos_supercell_input(self):
         # note that this tests the case of an input structure which is >10 Å in each direction and has
-        # the same number of atoms as the pmg supercell, so the input structure is used as the supercell
+        # more atoms (198) than the pmg supercell (99), so the pmg supercell is used
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
@@ -278,16 +281,22 @@ O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
             prim_struc_wout_oxi, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
         assert not np.allclose(prim_struc_wout_oxi.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix)
-        assert np.allclose(
+        assert not np.allclose(
             ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
-        )
+        )  # different supercell because Kat YTOS one has 198 atoms but min >10Å one is 99 atoms
         assert structure_matcher.fit(
             ytos_defect_gen.bulk_supercell, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
 
-        np.testing.assert_allclose(
-            ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
-        )
+        try:
+            np.testing.assert_allclose(
+                ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
+            )
+        except AssertionError:  # symmetry equivalent matrices (a, b equivalent for primitive YTOS)
+            np.testing.assert_allclose(
+                ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 0, 0]])
+            )
+
         assert structure_matcher.fit(
             prim_struc_wout_oxi * ytos_defect_gen.supercell_matrix, ytos_defect_gen.bulk_supercell
         )
@@ -342,11 +351,19 @@ O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
         )
         assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].wyckoff == "8h"
         assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].defect.multiplicity == 2
-        np.testing.assert_allclose(
-            ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].sc_defect_frac_coords,
-            np.array([0.828227, 0.171773, 0.030638]),
-            rtol=1e-2,
-        )
+        try:
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].sc_defect_frac_coords,
+                np.array([0.828227, 0.171773, 0.030638]),
+                rtol=1e-2,
+            )
+        except AssertionError:  # symmetry equivalent matrices (a, b equivalent for primitive YTOS)
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].sc_defect_frac_coords,
+                np.array([0.171773, 0.828227, 0.030638]),
+                rtol=1e-2,
+            )
+
         for defect_name, defect_entry in ytos_defect_gen.defect_entries.items():
             assert defect_entry.name == defect_name
             assert defect_entry.charge_state == int(defect_name.split("_")[-1])
