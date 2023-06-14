@@ -17,14 +17,11 @@
 *__pycache__/
 *.pyc
 
-# Ignore SMTG Paper Talk PowerPoint stuff
-DWTB_Paper_Talk.pptx
-
 # No PyPi stuff
 pypi_packaging.sh
 dist/
 build/
 
 # Local notes & testing folder
-doped_JOSS_project/
+JOSS/
 local_doped_testing/
