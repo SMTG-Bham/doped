@@ -629,7 +629,7 @@ class DefectsGenerator:
             pmg_supercell_matrix = get_sc_fromstruct(
                 primitive_structure,
                 min_atoms=kwargs.get("min_atoms", 50),
-                max_atoms=kwargs.get("max_atoms", 240),  # same as current pymatgen default
+                max_atoms=kwargs.get("max_atoms", 500),  # different to current pymatgen default (240)
                 min_length=kwargs.get("min_length", 10),  # same as current pymatgen default
                 force_diagonal=kwargs.get("force_diagonal", False),  # same as current pymatgen default
             )
@@ -695,7 +695,21 @@ class DefectsGenerator:
             else:
                 self.primitive_structure = primitive_structure
                 self.supercell_matrix = pmg_supercell_matrix
+
             self.bulk_supercell = self.primitive_structure * self.supercell_matrix
+            # check that generated supercell is >10 Å in each direction:
+            if np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1)) < kwargs.get(
+                "min_length", 10
+            ):
+                warnings.warn(
+                    f"\nAuto-generated supercell is <10 Å in at least one direction (minimum image "
+                    f"distance = "
+                    f"{np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1)):.2f} Å, "
+                    f"which is usually too small for accurate defect calculations. You can try increasing "
+                    f"max_atoms (default = 500), or manually identifying a suitable supercell matrix "
+                    f"(which can then be specified with the `supercell_matrix` argument)."
+                )
+
             pbar.update(10)  # 15% of progress bar
 
             # Generate defects
