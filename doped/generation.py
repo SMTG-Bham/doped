@@ -698,8 +698,10 @@ class DefectsGenerator:
 
             self.bulk_supercell = self.primitive_structure * self.supercell_matrix
             # check that generated supercell is >10 Å in each direction:
-            if np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1)) < kwargs.get(
-                "min_length", 10
+            if (
+                np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1))
+                < kwargs.get("min_length", 10)
+                and generate_supercell
             ):
                 warnings.warn(
                     f"\nAuto-generated supercell is <10 Å in at least one direction (minimum image "
