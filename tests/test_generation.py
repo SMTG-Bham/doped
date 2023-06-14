@@ -347,10 +347,10 @@ O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
         assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].charge_state == 0
         assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_-2"].charge_state == -2
         assert (
-            ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].defect.defect_type == DefectType.Interstitial
+            ytos_defect_gen.defect_entries["O_i_Cs_O2.68_-1"].defect.defect_type == DefectType.Interstitial
         )
-        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].wyckoff == "8h"
-        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].defect.multiplicity == 2
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_-1"].wyckoff == "8h"
+        assert ytos_defect_gen.defect_entries["O_i_Cs_O2.68_-1"].defect.multiplicity == 2
         try:
             np.testing.assert_allclose(
                 ytos_defect_gen.defect_entries["O_i_Cs_O2.68_0"].sc_defect_frac_coords,
@@ -376,9 +376,9 @@ O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
 
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
-        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.multiplicity == 2
-        assert ytos_defect_gen.defect_entries["v_Y_0"].wyckoff == "8h"
-        assert ytos_defect_gen.defect_entries["v_Y_0"].defect.defect_type == DefectType.Vacancy
+        assert ytos_defect_gen.defect_entries["v_Y_-2"].defect.multiplicity == 2
+        assert ytos_defect_gen.defect_entries["v_Y_-2"].wyckoff == "8h"
+        assert ytos_defect_gen.defect_entries["v_Y_-2"].defect.defect_type == DefectType.Vacancy
         assert (
             ytos_defect_gen.defect_entries["v_Y_0"].defect.structure == ytos_defect_gen.primitive_structure
         )
@@ -386,6 +386,155 @@ O_i_Cs_O2.68     [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
             ytos_defect_gen.defect_entries["v_Y_0"].defect.defect_structure.lattice.matrix,
             ytos_defect_gen.primitive_structure.lattice.matrix,
         )
+
+    def test_lmno(self):
+        # battery material with a variety of important Wyckoff sites (and the terminology mainly
+        # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        lmno_defect_gen_info = (
+            """Vacancies    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+-----------  ------------------  ------------------  --------  ---------
+v_Li         [-1,0,+1]           [0.00,0.00,0.00]    8         8c
+v_Mn         [-4,-3,-2,-1,0,+1]  [0.12,0.13,0.62]    12        12d
+v_Ni         [-2,-1,0,+1]        [0.12,0.88,0.38]    4         4b
+v_O_C1       [-1,0,+1,+2]        [0.10,0.12,0.39]    24        24e
+v_O_C3       [-1,0,+1,+2]        [0.12,0.62,0.88]    8         8c
+
+Substitutions    Charge States             Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ------------------------  ------------------  --------  ---------
+Li_Mn            [-3,-2,-1,0,+1]           [0.12,0.13,0.62]    12        12d
+Li_Ni            [-1,0,+1]                 [0.12,0.88,0.38]    4         4b
+Li_O_C1          [-1,0,+1,+2,+3]           [0.10,0.12,0.39]    24        24e
+Li_O_C3          [-1,0,+1,+2,+3]           [0.12,0.62,0.88]    8         8c
+Mn_Li            [-1,0,+1]                 [0.00,0.00,0.00]    8         8c
+Mn_Ni            [-1,0,+1]                 [0.12,0.88,0.38]    4         4b
+Mn_O_C1          [-1,0,+1,+2,+3,+4]        [0.10,0.12,0.39]    24        24e
+Mn_O_C3          [-1,0,+1,+2,+3,+4]        [0.12,0.62,0.88]    8         8c
+Ni_Li            [-1,0,+1]                 [0.00,0.00,0.00]    8         8c
+Ni_Mn            [-2,-1,0,+1]              [0.12,0.13,0.62]    12        12d
+Ni_O_C1          [-1,0,+1,+2,+3,+4]        [0.10,0.12,0.39]    24        24e
+Ni_O_C3          [-1,0,+1,+2,+3,+4]        [0.12,0.62,0.88]    8         8c
+O_Li             [-3,-2,-1,0,+1]           [0.00,0.00,0.00]    8         8c
+O_Mn             [-6,-5,-4,-3,-2,-1,0,+1]  [0.12,0.13,0.62]    12        12d
+O_Ni             [-4,-3,-2,-1,0,+1]        [0.12,0.88,0.38]    4         4b
+
+Interstitials    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ---------------  ------------------  --------  ---------
+Li_i_C1_Li1.75   [-1,0,+1]        [0.69,0.05,0.55]    24        24e
+Li_i_C1_O1.72    [-1,0,+1]        [0.73,1.00,0.50]    24        24e
+Li_i_C1_O1.78    [-1,0,+1]        [0.50,0.01,0.73]    24        24e
+Li_i_C2_Li1.83   [-1,0,+1]        [0.58,0.38,0.83]    24        12d
+Li_i_C2_Li1.84   [-1,0,+1]        [0.65,0.13,0.60]    12        12d
+Li_i_C2_Li1.86   [-1,0,+1]        [0.59,0.12,0.66]    12        12d
+Li_i_C3          [-1,0,+1]        [1.00,0.00,0.50]    8         8c
+Mn_i_C1_Li1.75   [-1,0,+1,+2,+3]  [0.69,0.05,0.55]    24        24e
+Mn_i_C1_O1.72    [-1,0,+1,+2,+3]  [0.73,1.00,0.50]    24        24e
+Mn_i_C1_O1.78    [-1,0,+1,+2,+3]  [0.50,0.01,0.73]    24        24e
+Mn_i_C2_Li1.83   [-1,0,+1,+2,+3]  [0.58,0.38,0.83]    24        12d
+Mn_i_C2_Li1.84   [-1,0,+1,+2,+3]  [0.65,0.13,0.60]    12        12d
+Mn_i_C2_Li1.86   [-1,0,+1,+2,+3]  [0.59,0.12,0.66]    12        12d
+Mn_i_C3          [-1,0,+1,+2,+3]  [1.00,0.00,0.50]    8         8c
+Ni_i_C1_Li1.75   [-1,0,+1,+2]     [0.69,0.05,0.55]    24        24e
+Ni_i_C1_O1.72    [-1,0,+1,+2]     [0.73,1.00,0.50]    24        24e
+Ni_i_C1_O1.78    [-1,0,+1,+2]     [0.50,0.01,0.73]    24        24e
+Ni_i_C2_Li1.83   [-1,0,+1,+2]     [0.58,0.38,0.83]    24        12d
+Ni_i_C2_Li1.84   [-1,0,+1,+2]     [0.65,0.13,0.60]    12        12d
+Ni_i_C2_Li1.86   [-1,0,+1,+2]     [0.59,0.12,0.66]    12        12d
+Ni_i_C3          [-1,0,+1,+2]     [1.00,0.00,0.50]    8         8c
+O_i_C1_Li1.75    [-2,-1,0,+1]     [0.69,0.05,0.55]    24        24e
+O_i_C1_O1.72     [-2,-1,0,+1]     [0.73,1.00,0.50]    24        24e
+O_i_C1_O1.78     [-2,-1,0,+1]     [0.50,0.01,0.73]    24        24e
+O_i_C2_Li1.83    [-2,-1,0,+1]     [0.58,0.38,0.83]    24        12d
+O_i_C2_Li1.84    [-2,-1,0,+1]     [0.65,0.13,0.60]    12        12d
+O_i_C2_Li1.86    [-2,-1,0,+1]     [0.59,0.12,0.66]    12        12d
+O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
+
+\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
+            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
+            "structure (returned by spglib)\n\n"
+        )
+
+        assert lmno_defect_gen_info in output
+
+        # test attributes:
+        structure_matcher = StructureMatcher()
+        prim_struc_wout_oxi = lmno_defect_gen.primitive_structure.copy()
+        prim_struc_wout_oxi.remove_oxidation_states()
+        assert structure_matcher.fit(prim_struc_wout_oxi, self.lmno_primitive)
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi, lmno_defect_gen.bulk_supercell
+        )  # reduces to primitive, but StructureMatcher still matches
+        assert np.allclose(prim_struc_wout_oxi.lattice.matrix, self.lmno_primitive.lattice.matrix)
+
+        np.testing.assert_allclose(
+            lmno_defect_gen.supercell_matrix, np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+        )
+
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi * lmno_defect_gen.supercell_matrix, lmno_defect_gen.bulk_supercell
+        )
+
+        # test defects
+        assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(lmno_defect_gen.defects["vacancies"]) == 5
+        assert all(
+            defect.defect_type == DefectType.Vacancy for defect in lmno_defect_gen.defects["vacancies"]
+        )
+        assert len(lmno_defect_gen.defects["substitutions"]) == 15
+        assert all(
+            defect.defect_type == DefectType.Substitution
+            for defect in lmno_defect_gen.defects["substitutions"]
+        )
+        assert len(lmno_defect_gen.defects["interstitials"]) == 28
+        assert all(
+            defect.defect_type == DefectType.Interstitial
+            for defect in lmno_defect_gen.defects["interstitials"]
+        )
+        assert all(
+            isinstance(defect, Defect)
+            for defect_list in lmno_defect_gen.defects.values()
+            for defect in defect_list
+        )
+
+        # test defect entries
+        assert len(lmno_defect_gen.defect_entries) == 207
+        assert len(lmno_defect_gen) == 207
+        assert all(
+            isinstance(defect_entry, DefectEntry)
+            for defect_entry in lmno_defect_gen.defect_entries.values()
+        )
+
+        # test defect entry attributes
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].name == "Ni_i_C2_Li1.84_+2"
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].charge_state == +2
+        assert (
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.defect_type
+            == DefectType.Interstitial
+        )
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].wyckoff == "12d"
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.multiplicity == 12
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].sc_defect_frac_coords,
+            np.array([0.32536836, 0.0625, 0.29963164]),
+            rtol=1e-2,
+        )
+
+        for defect_name, defect_entry in lmno_defect_gen.defect_entries.items():
+            assert defect_entry.name == defect_name
+            assert defect_entry.charge_state == int(defect_name.split("_")[-1])
+            assert defect_entry.wyckoff  # wyckoff label is not None
+            assert defect_entry.defect
+            np.testing.assert_allclose(
+                defect_entry.sc_entry.structure.lattice.matrix,
+                lmno_defect_gen.bulk_supercell.lattice.matrix,
+            )
 
 
 class WyckoffTest(unittest.TestCase):
