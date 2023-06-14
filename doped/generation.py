@@ -657,8 +657,8 @@ class DefectsGenerator:
                 supercell_matrix = mapping[2]
                 rotation_symmop = SymmOp.from_rotation_and_translation(
                     rotation_matrix=rotation_matrix.T
-                )  # Transpose = inverse of rotation matrices (
-                # orthogonal matrices), better numerical stability
+                )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
+                # stability
                 output_prim_struct = prim_struct.copy()
                 output_prim_struct.apply_operation(rotation_symmop)
                 clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
