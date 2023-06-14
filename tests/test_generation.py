@@ -536,6 +536,116 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
                 lmno_defect_gen.bulk_supercell.lattice.matrix,
             )
 
+    def test_zns_non_diagonal_supercell(self):
+        # test inputting a non-diagonal supercell structure -> correct primitive structure
+        # determined and reasonable supercell generated
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            zns_defect_gen = DefectsGenerator(self.non_diagonal_ZnS)  # ZnS non-diagonal supercell
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        zns_defect_gen_info = (
+            """Vacancies    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+-----------  ---------------  ------------------  --------  ---------
+v_Zn         [-2,-1,0,+1]     [0.00,0.00,0.00]    1         4a
+v_S          [-1,0,+1,+2]     [0.25,0.25,0.25]    1         4c
+
+Substitutions    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ------------------  ------------------  --------  ---------
+Zn_S             [-1,0,+1,+2,+3,+4]  [0.25,0.25,0.25]    1         4c
+S_Zn             [-4,-3,-2,-1,0,+1]  [0.00,0.00,0.00]    1         4a
+
+Interstitials    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
+---------------  ---------------  ------------------  --------  ---------
+Zn_i_C3v         [-1,0,+1,+2]     [0.63,0.63,0.63]    4         16e
+Zn_i_Td_S2.35    [-1,0,+1,+2]     [0.50,0.50,0.50]    1         4b
+Zn_i_Td_Zn2.35   [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
+S_i_C3v          [-1,0,+1,+2]     [0.63,0.63,0.63]    4         16e
+S_i_Td_S2.35     [-1,0,+1,+2]     [0.50,0.50,0.50]    1         4b
+S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
+
+\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
+            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
+            "structure (returned by spglib)\n\n"
+        )
+
+        assert zns_defect_gen_info in output
+
+        # test attributes:
+        structure_matcher = StructureMatcher()
+        prim_struc_wout_oxi = zns_defect_gen.primitive_structure.copy()
+        prim_struc_wout_oxi.remove_oxidation_states()
+        assert structure_matcher.fit(prim_struc_wout_oxi, self.non_diagonal_ZnS)
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi, zns_defect_gen.bulk_supercell
+        )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
+        assert not np.allclose(prim_struc_wout_oxi.lattice.matrix, self.non_diagonal_ZnS.lattice.matrix)
+
+        np.testing.assert_allclose(
+            zns_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
+        )
+
+        assert structure_matcher.fit(
+            prim_struc_wout_oxi * zns_defect_gen.supercell_matrix, zns_defect_gen.bulk_supercell
+        )
+
+        # test defects
+        assert len(zns_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(zns_defect_gen.defects["vacancies"]) == 2
+        assert all(
+            defect.defect_type == DefectType.Vacancy for defect in zns_defect_gen.defects["vacancies"]
+        )
+        assert len(zns_defect_gen.defects["substitutions"]) == 2
+        assert all(
+            defect.defect_type == DefectType.Substitution
+            for defect in zns_defect_gen.defects["substitutions"]
+        )
+        assert len(zns_defect_gen.defects["interstitials"]) == 6
+        assert all(
+            defect.defect_type == DefectType.Interstitial
+            for defect in zns_defect_gen.defects["interstitials"]
+        )
+        assert all(
+            isinstance(defect, Defect)
+            for defect_list in zns_defect_gen.defects.values()
+            for defect in defect_list
+        )
+
+        # test defect entries
+        assert len(zns_defect_gen.defect_entries) == 44
+        assert len(zns_defect_gen) == 44
+        assert all(
+            isinstance(defect_entry, DefectEntry)
+            for defect_entry in zns_defect_gen.defect_entries.values()
+        )
+
+        # test defect entry attributes
+        assert zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].name == "S_i_Td_S2.35_+2"
+        assert zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].charge_state == +2
+        assert (
+            zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].defect.defect_type == DefectType.Interstitial
+        )
+        assert zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].wyckoff == "4b"
+        assert zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].defect.multiplicity == 1
+        np.testing.assert_allclose(
+            zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].sc_defect_frac_coords,
+            np.array([0.25, 0.25, 0.25]),
+            rtol=1e-2,
+        )
+
+        for defect_name, defect_entry in zns_defect_gen.defect_entries.items():
+            assert defect_entry.name == defect_name
+            assert defect_entry.charge_state == int(defect_name.split("_")[-1])
+            assert defect_entry.wyckoff  # wyckoff label is not None
+            assert defect_entry.defect
+            np.testing.assert_allclose(
+                defect_entry.sc_entry.structure.lattice.matrix,
+                zns_defect_gen.bulk_supercell.lattice.matrix,
+            )
+
 
 class WyckoffTest(unittest.TestCase):
     def test_wyckoff_dict_from_sgn(self):
