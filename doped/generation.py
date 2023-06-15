@@ -166,7 +166,12 @@ def get_defect_name_from_entry(defect_entry):
     """
     Get the doped/SnB defect name from DefectEntry object.
     """
-    sga = SpacegroupAnalyzer(defect_entry.sc_entry.structure)
+    defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
+        sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
+        dummy_species="X",
+    )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
+    # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
+    sga = SpacegroupAnalyzer(defect_diagonal_supercell, symprec=1e-2)
     return (
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
         f"_{closest_site_info(defect_entry)}"
