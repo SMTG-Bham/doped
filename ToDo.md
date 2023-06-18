@@ -14,7 +14,6 @@
 ## Defect calculations set up
 - Defect complexes: Functionality to setup and parse calculations – can do this with new `pymatgen` code?
 - Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
-- Add function to post-process and remove closely-located interstitials for structures with large voids (from SMTG #software Slack (Yong-Seok): "If your structure has large space for interstitials and it predicts lots of atoms closely positioned to each other (& take longer time to predict), you can increase min_dist  (default is 0.5) in remove_collisions function in [python path]/python3.9/site-packages/pymatgen/analysis/defects/utils.py"), and add note to example notebooks about this.
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
   point to post-processing tools for these online (in docs/example notebooks, `aiida-defects` for  QE,
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
@@ -26,6 +25,8 @@
 
 ## Post-processing / analysis / plotting
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
+- Try redetermine defect symmetry and site multiplicity (particularly important for interstitials, as
+  relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
@@ -83,3 +84,4 @@
     and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
     bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
     will be added to `doped` VASP calc scripts.
+  - Show usage of `convert_prim_site_to_conv_site` in notebooks/docs.
