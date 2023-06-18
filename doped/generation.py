@@ -20,9 +20,10 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
@@ -30,9 +31,8 @@ from sympy import Eq, simplify, solve, symbols
 from tabulate import tabulate
 from tqdm import tqdm
 
-# TODO: Use new doped naming functions in SnB
-# TODO: Should have option to provide the bulk supercell to use, and generate from this, in case ppl
-#  want to directly compare to calculations with the same supercell before etc
+# TODO: Use new doped naming functions in SnB, as well as defect entry generation etc. Streamline SnB
+#  notebook with these!
 # TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
 #  supercell coords in this case, so will need functions for transforming between primitive and
 #  supercell defect structures (will want this for defect parsing as well). Defectivator has functions
@@ -154,7 +154,9 @@ def closest_site_info(defect_entry, n=1):
     site_distances = [
         site_distances[i]
         for i in range(len(site_distances))
-        if i == 0 or site_distances[i][0] - site_distances[i - 1][0] > 0.02
+        if i == 0
+        or site_distances[i][0] - site_distances[i - 1][0] > 0.02
+        or site_distances[i][1].specie.symbol != site_distances[i - 1][1].specie.symbol
     ]
 
     min_distance, closest_site = site_distances[n - 1]
@@ -459,6 +461,23 @@ def get_wyckoff_dict_from_sgn(sgn):
     return wyckoff_label_coords_dict
 
 
+def get_conv_cell_site(defect_entry):
+    """
+    Get defect site in conventional unit cell.
+    """
+    sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
+    # convert defect site to conventional unit cell for Wyckoff label matching / info printing:
+    conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
+    prim_to_conv_transf_matrix = np.linalg.inv(conv_to_prim_transf_matrix)
+    conv_structure = sga.get_primitive_standard_structure() * prim_to_conv_transf_matrix
+    conv_cell_pos = np.dot(defect_entry.defect.site.frac_coords, conv_to_prim_transf_matrix)
+    conv_cell_site = PeriodicSite(
+        defect_entry.defect.site.specie, conv_cell_pos, conv_structure.lattice, to_unit_cell=True
+    )  # ensure wrapped to unit cell
+    conv_cell_site.frac_coords = [np.mod(np.round(f, 3), 1) for f in conv_cell_site.frac_coords]
+    return conv_cell_site
+
+
 def get_wyckoff_label(defect_entry, wyckoff_dict=None):
     """
     Return the Wyckoff label for a defect entry's site, given a dictionary of
@@ -468,7 +487,7 @@ def get_wyckoff_label(defect_entry, wyckoff_dict=None):
     determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
     """
     if wyckoff_dict is None:
-        sga = SpacegroupAnalyzer(defect_entry.defect.structure)
+        sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
         wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
 
     def _compare_arrays(coord_list, coord_array):
@@ -503,7 +522,7 @@ def get_wyckoff_label(defect_entry, wyckoff_dict=None):
                     expr_value = simplify(sympy_expr).subs(variable_dict)
 
                 # Check if the evaluated expression matches the corresponding coordinate
-                if not np.isclose(float(coord), float(expr_value), rtol=1e-2):
+                if not np.isclose(float(coord), float(expr_value), atol=0.001):
                     match = False
                     break
 
@@ -520,8 +539,11 @@ def get_wyckoff_label(defect_entry, wyckoff_dict=None):
 
         return None  # No match found
 
-    unit_cell_defect_site = defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
-    return find_closest_match(unit_cell_defect_site, wyckoff_dict)
+    defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
+
+    # convert defect site to conventional unit cell for Wyckoff label matching:
+    conv_cell_defect_site = get_conv_cell_site(defect_entry)
+    return find_closest_match(conv_cell_defect_site, wyckoff_dict)
 
 
 class DefectsGenerator:
@@ -531,7 +553,8 @@ class DefectsGenerator:
         extrinsic: Optional[Union[str, List, Dict]] = None,
         interstitial_coords: Optional[List] = None,
         generate_supercell: bool = True,
-        **kwargs,
+        supercell_gen_kwargs: Optional[Dict] = None,
+        interstitial_gen_kwargs: Optional[Dict] = None,
     ):
         """
         Generates pymatgen DefectEntry objects for defects in the input host
@@ -540,15 +563,17 @@ class DefectsGenerator:
         argument.
 
         Interstitial sites are generated using Voronoi tessellation by default (found
-        to be the most reliable), however these can also be manually specified using
-        the `interstitial_coords` argument.
+        to be the most reliable), which can be controlled using the
+        `interstitial_gen_kwargs` argument (passed as keyword arguments to the
+        `VoronoiInterstitialGenerator` class). Alternatively, a list of interstitial
+        sites can be manually specified using the `interstitial_coords` argument.
 
         By default, supercells are generated for each defect using the pymatgen
         `get_supercell_structure()` method, with `doped` default settings of
         `min_length = 10` (minimum supercell length of 10 Å) and `min_atoms = 50`
         (minimum 50 atoms in supercell). If a different supercell is desired, this
-        can be controlled by specifying keyword arguments in DefectsGenerator(),
-        which are passed to the `get_supercell_structure()` method.
+        can be controlled by specifying keyword arguments with `supercell_gen_kwargs`,
+        which are passed to the `get_sc_fromstruct()` function.
         Alternatively if `generate_supercell = False`, then no supercell is generated
         and the input structure is used as the defect & bulk supercell.
 
@@ -563,8 +588,6 @@ class DefectsGenerator:
 
         # TODO: Mention how charge states are generated, and how to modify, as shown in the example
         # notebook
-        # Also show how to remove certain defects from the dictionary? Mightn't be worth the space for
-        # this though
 
         Args:
             structure (Structure):
@@ -589,8 +612,15 @@ class DefectsGenerator:
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
                 `find_optimal_cell_shape()` functions) or not. If False, then the
                 input structure is used as the defect & bulk supercell.
-            **kwargs:
-                Keyword arguments to be passed to the `get_supercell_structure()` method.
+            supercell_gen_kwargs (Dict):
+                Keyword arguments to be passed to the `get_sc_fromstruct` function
+                in `pymatgen.analysis.defects.supercells` (such as `min_atoms`
+                (default = 50), `max_atoms` (default = 500), `min_length` (default
+                = 10), and `force_diagonal` (default = False)).
+            interstitial_gen_kwargs (Dict):
+                Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
+                class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
+                `InterstitialGenerator` if `interstitial_coords` is specified.
 
         Attributes:
             defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
@@ -610,6 +640,10 @@ class DefectsGenerator:
             extrinsic = []
         if interstitial_coords is None:
             interstitial_coords = []
+        if supercell_gen_kwargs is None:
+            supercell_gen_kwargs = {}
+        if interstitial_gen_kwargs is None:
+            interstitial_gen_kwargs = {}
 
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description("Getting primitive structure")
@@ -619,6 +653,7 @@ class DefectsGenerator:
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = SpacegroupAnalyzer(structure, symprec=1e-2)
             prim_struct = sga.get_primitive_standard_structure()
+            self.conventional_structure = sga.get_conventional_standard_structure()
             if prim_struct.num_sites < structure.num_sites:
                 clean_prim_struct_dict = _round_floats(prim_struct.as_dict())
                 primitive_structure = Structure.from_dict(clean_prim_struct_dict)
@@ -633,10 +668,14 @@ class DefectsGenerator:
             pbar.set_description("Generating simulation supercell")
             pmg_supercell_matrix = get_sc_fromstruct(
                 primitive_structure,
-                min_atoms=kwargs.get("min_atoms", 50),
-                max_atoms=kwargs.get("max_atoms", 500),  # different to current pymatgen default (240)
-                min_length=kwargs.get("min_length", 10),  # same as current pymatgen default
-                force_diagonal=kwargs.get("force_diagonal", False),  # same as current pymatgen default
+                min_atoms=supercell_gen_kwargs.get("min_atoms", 50),
+                max_atoms=supercell_gen_kwargs.get(
+                    "max_atoms", 500
+                ),  # different to current pymatgen default (240)
+                min_length=supercell_gen_kwargs.get("min_length", 10),  # same as current pymatgen default
+                force_diagonal=supercell_gen_kwargs.get(
+                    "force_diagonal", False
+                ),  # same as current pymatgen default
             )
 
             # check if input structure is already >10 Å in each direction:
@@ -669,7 +708,7 @@ class DefectsGenerator:
                 clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
                 return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
-            if np.min(np.linalg.norm(length_vecs, axis=1)) >= kwargs.get("min_length", 10):
+            if np.min(np.linalg.norm(length_vecs, axis=1)) >= supercell_gen_kwargs.get("min_length", 10):
                 # input structure is >10 Å in each direction
                 if (
                     not generate_supercell
@@ -705,7 +744,7 @@ class DefectsGenerator:
             # check that generated supercell is >10 Å in each direction:
             if (
                 np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1))
-                < kwargs.get("min_length", 10)
+                < supercell_gen_kwargs.get("min_length", 10)
                 and generate_supercell
             ):
                 warnings.warn(
@@ -788,7 +827,7 @@ class DefectsGenerator:
                     el.symbol: interstitial_coords for el in self.primitive_structure.composition.elements
                 }
                 insertions.update({el: interstitial_coords for el in extrinsic_elements})
-                interstitial_generator_obj = InterstitialGenerator()
+                interstitial_generator_obj = InterstitialGenerator(**interstitial_gen_kwargs)
                 interstitial_generator = interstitial_generator_obj.generate(
                     self.primitive_structure, insertions=insertions
                 )
@@ -796,13 +835,66 @@ class DefectsGenerator:
 
             else:
                 # Generate interstitial sites using Voronoi tessellation
-                voronoi_interstitial_generator_obj = VoronoiInterstitialGenerator()
-                voronoi_interstitial_generator = voronoi_interstitial_generator_obj.generate(
-                    self.primitive_structure,
-                    insert_species=[el.symbol for el in self.primitive_structure.composition.elements]
-                    + extrinsic_elements,
-                )
-                self.defects["interstitials"] = list(voronoi_interstitial_generator)
+                vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
+                tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
+                # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
+                cand_sites_and_mul = [*vig._get_candidate_sites(self.primitive_structure)]
+                tight_cand_sites_and_mul = [*tight_vig._get_candidate_sites(self.primitive_structure)]
+
+                structure_matcher = StructureMatcher(
+                    interstitial_gen_kwargs.get("ltol", 0.2),
+                    interstitial_gen_kwargs.get("stol", 0.3),
+                    interstitial_gen_kwargs.get("angle_tol", 5),
+                )  # pymatgen-analysis-defects default
+                unique_tight_cand_sites_and_mul = [
+                    cand_site_and_mul
+                    for cand_site_and_mul in tight_cand_sites_and_mul
+                    if cand_site_and_mul not in cand_sites_and_mul
+                ]
+
+                # structure-match the non-matching site & multiplicity tuples, and return the site &
+                # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
+                output_sites_and_multiplicities = []
+                for cand_site_and_mul in cand_sites_and_mul:
+                    matching_sites_and_mul = []
+                    if cand_site_and_mul not in tight_cand_sites_and_mul:
+                        for tight_cand_site_and_mul in unique_tight_cand_sites_and_mul:
+                            interstitial_struct = self.primitive_structure.copy()
+                            interstitial_struct.insert(
+                                0, "H", cand_site_and_mul[0], coords_are_cartesian=False
+                            )
+                            tight_interstitial_struct = self.primitive_structure.copy()
+                            tight_interstitial_struct.insert(
+                                0, "H", tight_cand_site_and_mul[0], coords_are_cartesian=False
+                            )
+                            if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
+                                matching_sites_and_mul += [tight_cand_site_and_mul]
+
+                    # take the site and multiplicity with the lower multiplicity
+                    output_sites_and_multiplicities.append(
+                        min(
+                            [cand_site_and_mul, *matching_sites_and_mul],
+                            key=lambda cand_site_and_mul: cand_site_and_mul[1],
+                        )
+                    )
+
+                self.defects["interstitials"] = []
+                ig = InterstitialGenerator(
+                    interstitial_gen_kwargs.get("min_dist", 0.9),
+                )  # pmg defects default
+                for species in [
+                    el.symbol for el in self.primitive_structure.composition.elements
+                ] + extrinsic_elements:
+                    cand_sites = [cand_site for cand_site, mul in output_sites_and_multiplicities]
+                    multiplicity = [mul for cand_site, mul in output_sites_and_multiplicities]
+
+                    self.defects["interstitials"].extend(
+                        ig.generate(
+                            structure,
+                            insertions={species: cand_sites},
+                            multiplicies={species: multiplicity},  # typo in pymatgen-analysis-defects
+                        )
+                    )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
@@ -871,6 +963,8 @@ class DefectsGenerator:
             "defects": self.defects,
             "defect_entries": self.defect_entries,
             "primitive_structure": self.primitive_structure,
+            "conventional_structure": self.conventional_structure,
+            "bulk_supercell": self.bulk_supercell,
             "supercell_matrix": self.supercell_matrix,
         }
 
@@ -897,6 +991,8 @@ class DefectsGenerator:
             "defect_entries"
         ]  # TODO: Saving and reloading removes the name attribute from defect entries, need to fix this!
         defects_generator.primitive_structure = d_decoded["primitive_structure"]
+        defects_generator.conventional_structure = d_decoded["conventional_structure"]
+        defects_generator.bulk_supercell = d_decoded["bulk_supercell"]
         defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
 
         return defects_generator
@@ -912,8 +1008,7 @@ class DefectsGenerator:
             header = [
                 defect_class.capitalize(),
                 "Charge States",
-                "Unit Cell Coords",
-                "\x1B[3mg\x1B[0m_site",
+                "Conv. Cell Coords",
                 "Wyckoff",
             ]
             defect_type = defect_list[0].defect_type
@@ -958,13 +1053,12 @@ class DefectsGenerator:
                 charges = "[" + ",".join(charges) + "]"
                 neutral_defect_entry = self.defect_entries[defect_name + "_0"]  # neutral has no +/- sign
                 frac_coords_string = ",".join(
-                    f"{x:.2f}" for x in neutral_defect_entry.defect.site.frac_coords
+                    f"{x:.3f}" for x in get_conv_cell_site(neutral_defect_entry).frac_coords
                 )
                 row = [
                     defect_name,
                     charges,
                     f"[{frac_coords_string}]",
-                    neutral_defect_entry.defect.multiplicity,
                     neutral_defect_entry.wyckoff,
                 ]
                 table.append(row)
@@ -977,10 +1071,13 @@ class DefectsGenerator:
                 )
                 + "\n\n"
             )
+        conventional_cell_comp = self.conventional_structure.composition
+        formula, fu = conventional_cell_comp.get_reduced_formula_and_factor(iupac_ordering=True)
         info_string += (
-            "\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
-            "structure (returned by spglib)\n"
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
+            f"conventional ('conv.') unit cell, which comprises {fu} formula unit(s) of {formula}.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+            "standard structure (returned by spglib)."
         )
 
         return info_string
