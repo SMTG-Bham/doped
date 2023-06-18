@@ -85,6 +85,12 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
             self.cdte_bulk_supercell.lattice.matrix,
         )
+        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, self.cdte_bulk)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(
+            cdte_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure(self.cdte_bulk).lattice.matrix,
+        )
 
         # test defects
         assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
@@ -151,6 +157,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
                 defect_entry.sc_entry.structure.lattice.matrix,
                 cdte_defect_gen.bulk_supercell.lattice.matrix,
             )
+            assert defect_entry.defect.multiplicity * 4 == int(defect_entry.wyckoff[:-1])
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
@@ -173,10 +180,12 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         )
 
         # TODO: test charge states (when charge state algorithm is implemented)
-        # test other input structures
+        # test other input structures (defective CdTe supercell, and primitive one-atom Cu)
         # test as_dict etc methods
-        # test saving to and loading from json (and that attributes remain)
+        # test saving to and loading from json (and that _all_ attributes remain)
         # test extrinsic and interstitial_coords parameters
+        # test interstitial and supercell gen kwargs
+        # test that voronoi and Wyckoff multiplicities are equal, and then just use Wyckoff labels
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -232,6 +241,9 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
             (conv_cdte * 2 * np.eye(3)).lattice.matrix,
         )
+        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, conv_cdte)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(cdte_defect_gen.conventional_structure.lattice.matrix, conv_cdte.lattice.matrix)
 
         # test defects
         assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
@@ -443,6 +455,13 @@ O_i_Cs_S2.03     [-2,-1,0,+1]     [0.36,0.73,0.63]    10        32o
             prim_struc_wout_oxi * ytos_defect_gen.supercell_matrix, ytos_defect_gen.bulk_supercell
         )
 
+        assert structure_matcher.fit(ytos_defect_gen.conventional_structure, self.ytos_bulk_supercell)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(
+            ytos_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure(self.ytos_bulk_supercell).lattice.matrix,
+        )
+
         # test defects
         assert len(ytos_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(ytos_defect_gen.defects["vacancies"]) == 5
@@ -623,6 +642,12 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
         assert structure_matcher.fit(
             prim_struc_wout_oxi * lmno_defect_gen.supercell_matrix, lmno_defect_gen.bulk_supercell
         )
+        assert structure_matcher.fit(lmno_defect_gen.conventional_structure, self.lmno_primitive)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(
+            lmno_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure(self.lmno_primitive).lattice.matrix,
+        )
 
         # test defects
         assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
@@ -733,6 +758,12 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
 
         assert structure_matcher.fit(
             prim_struc_wout_oxi * zns_defect_gen.supercell_matrix, zns_defect_gen.bulk_supercell
+        )
+        assert structure_matcher.fit(zns_defect_gen.conventional_structure, self.non_diagonal_ZnS)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(
+            zns_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure(self.non_diagonal_ZnS).lattice.matrix,
         )
 
         # test defects
@@ -854,6 +885,12 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
 
         assert structure_matcher.fit(
             prim_struc_wout_oxi * zns_defect_gen.supercell_matrix, zns_defect_gen.bulk_supercell
+        )
+        assert structure_matcher.fit(zns_defect_gen.conventional_structure, self.non_diagonal_ZnS)
+        sga = SpacegroupAnalyzer()
+        assert np.allclose(
+            zns_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure(self.non_diagonal_ZnS).lattice.matrix,
         )
 
         # test defects
