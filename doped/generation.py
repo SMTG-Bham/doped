@@ -803,11 +803,8 @@ class DefectsGenerator:
             pbar.update(5)  # 30% of progress bar
 
             # Interstitials:
-            # determine which, if any, extrinsic elements are present:
             pbar.set_description("Generating interstitials")
-            # previous generators add oxidation states, but messes with interstitial generators, so
-            # remove oxi states:
-            self.primitive_structure.remove_oxidation_states()
+            # determine which, if any, extrinsic elements are present:
             if isinstance(extrinsic, str):
                 extrinsic_elements = [extrinsic]
             elif isinstance(extrinsic, list):
@@ -890,9 +887,9 @@ class DefectsGenerator:
 
                     self.defects["interstitials"].extend(
                         ig.generate(
-                            structure,
+                            self.primitive_structure,
                             insertions={species: cand_sites},
-                            multiplicies={species: multiplicity},  # typo in pymatgen-analysis-defects
+                            multiplicities={species: multiplicity},  # typo in pymatgen-analysis-defects
                         )
                     )
 
@@ -918,6 +915,13 @@ class DefectsGenerator:
                     )
                     wyckoff_label = get_wyckoff_label(neutral_defect_entry, wyckoff_label_dict)
                     neutral_defect_entry.wyckoff = wyckoff_label
+                    neutral_defect_entry.defect.wyckoff = wyckoff_label
+                    neutral_defect_entry.conv_cell_frac_coords = get_conv_cell_site(
+                        neutral_defect_entry
+                    ).frac_coords
+                    neutral_defect_entry.defect.conv_cell_frac_coords = get_conv_cell_site(
+                        neutral_defect_entry
+                    ).frac_coords
                     defect_entry_list.append(neutral_defect_entry)
                     pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
 
@@ -1053,7 +1057,7 @@ class DefectsGenerator:
                 charges = "[" + ",".join(charges) + "]"
                 neutral_defect_entry = self.defect_entries[defect_name + "_0"]  # neutral has no +/- sign
                 frac_coords_string = ",".join(
-                    f"{x:.3f}" for x in get_conv_cell_site(neutral_defect_entry).frac_coords
+                    f"{x:.3f}" for x in neutral_defect_entry.conv_cell_frac_coords
                 )
                 row = [
                     defect_name,

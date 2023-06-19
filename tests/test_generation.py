@@ -11,7 +11,7 @@ from unittest.mock import patch
 import numpy as np
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
-from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
@@ -23,10 +23,35 @@ class DefectsGeneratorTest(unittest.TestCase):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
-        self.cdte_bulk = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
-        sga = SpacegroupAnalyzer(self.cdte_bulk)
-        conv_cdte = sga.get_conventional_standard_structure()
-        self.cdte_bulk_supercell = conv_cdte * 2 * np.eye(3)
+        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
+        sga = SpacegroupAnalyzer(self.prim_cdte)
+        self.conv_cdte = sga.get_conventional_standard_structure()
+        self.cdte_bulk_supercell = self.conv_cdte * 2 * np.eye(3)
+        self.cdte_defect_gen_info = (
+            """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
+-----------  ---------------  -------------------  ---------
+v_Cd         [-2,-1,0,+1]     [0.000,0.000,0.000]  4a
+v_Te         [-1,0,+1,+2]     [0.250,0.250,0.250]  4c
+
+Substitutions    Charge States       Conv. Cell Coords    Wyckoff
+---------------  ------------------  -------------------  ---------
+Cd_Te            [-1,0,+1,+2,+3,+4]  [0.250,0.250,0.250]  4c
+Te_Cd            [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.000]  4a
+
+Interstitials    Charge States       Conv. Cell Coords    Wyckoff
+---------------  ------------------  -------------------  ---------
+Cd_i_C3v         [-1,0,+1,+2]        [0.625,0.375,0.375]  16e
+Cd_i_Td_Cd2.83   [-1,0,+1,+2]        [0.750,0.750,0.750]  4d
+Cd_i_Td_Te2.83   [-1,0,+1,+2]        [0.500,0.500,0.500]  4b
+Te_i_C3v         [-1,0,+1,+2,+3,+4]  [0.625,0.375,0.375]  16e
+Te_i_Td_Cd2.83   [-1,0,+1,+2,+3,+4]  [0.750,0.750,0.750]  4d
+Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
+            "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of CdTe.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+            "standard structure (returned by spglib)."
+        )
 
         self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
@@ -36,60 +61,35 @@ class DefectsGeneratorTest(unittest.TestCase):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            cdte_defect_gen = DefectsGenerator(self.cdte_bulk)
+            cdte_defect_gen = DefectsGenerator(self.prim_cdte)
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
-        cdte_defect_gen_info = (
-            """Vacancies    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
------------  ---------------  ------------------  --------  ---------
-v_Cd         [-2,-1,0,+1]     [0.00,0.00,0.00]    1         4a
-v_Te         [-1,0,+1,+2]     [0.25,0.25,0.25]    1         4c
-
-Substitutions    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------  ------------------  --------  ---------
-Cd_Te            [-1,0,+1,+2,+3,+4]  [0.25,0.25,0.25]    1         4c
-Te_Cd            [-4,-3,-2,-1,0,+1]  [0.00,0.00,0.00]    1         4a
-
-Interstitials    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------  ------------------  --------  ---------
-Cd_i_C3v         [-1,0,+1,+2]        [0.12,0.62,0.62]    4         16e
-Cd_i_Td_Cd2.83   [-1,0,+1,+2]        [0.75,0.75,0.75]    1         4d
-Cd_i_Td_Te2.83   [-1,0,+1,+2]        [0.50,0.50,0.50]    1         4b
-Te_i_C3v         [-1,0,+1,+2,+3,+4]  [0.12,0.62,0.62]    4         16e
-Te_i_Td_Cd2.83   [-1,0,+1,+2,+3,+4]  [0.75,0.75,0.75]    1         4d
-Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
-
-\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
-            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
-            "structure (returned by spglib)\n\n"
-        )
-
-        assert cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
+        assert self.cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
         # intersitials (https://doi.org/10.1016/j.solener.2013.12.017)
 
         # test attributes:
-        structure_matcher = StructureMatcher()
-        prim_struc_wout_oxi = cdte_defect_gen.primitive_structure.copy()
-        prim_struc_wout_oxi.remove_oxidation_states()
-        assert structure_matcher.fit(prim_struc_wout_oxi, self.cdte_bulk)
-        assert np.allclose(prim_struc_wout_oxi.lattice.matrix, self.cdte_bulk.lattice.matrix)
+        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
+        assert structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
+        assert np.allclose(
+            cdte_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
+        )  # same lattice
         np.testing.assert_allclose(
             cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         )
         assert structure_matcher.fit(
-            prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix, cdte_defect_gen.bulk_supercell
+            cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix,
+            cdte_defect_gen.bulk_supercell,
         )
         assert np.allclose(
-            (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
+            (cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix).lattice.matrix,
             self.cdte_bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, self.cdte_bulk)
-        sga = SpacegroupAnalyzer()
+        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, self.prim_cdte)
         assert np.allclose(
             cdte_defect_gen.conventional_structure.lattice.matrix,
-            sga.get_conventional_standard_structure(self.cdte_bulk).lattice.matrix,
+            self.conv_cdte.lattice.matrix,
         )
 
         # test defects
@@ -143,6 +143,15 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].charge_state == 0
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff == "16e"
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
+        np.testing.assert_allclose(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
+            np.array([0.625, 0.375, 0.375]),
+        )
+        np.testing.assert_allclose(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
+            np.array([0.625, 0.375, 0.375]),
+        )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
@@ -153,6 +162,9 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             assert defect_entry.charge_state == int(defect_name.split("_")[-1])
             assert defect_entry.wyckoff  # wyckoff label is not None
             assert defect_entry.defect
+            assert defect_entry.defect.wyckoff
+            assert isinstance(defect_entry.conv_cell_frac_coords, np.ndarray)
+            assert isinstance(defect_entry.defect.conv_cell_frac_coords, np.ndarray)
             np.testing.assert_allclose(
                 defect_entry.sc_entry.structure.lattice.matrix,
                 cdte_defect_gen.bulk_supercell.lattice.matrix,
@@ -196,54 +208,30 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
-        cdte_defect_gen_info = (
-            """Vacancies    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
------------  ---------------  ------------------  --------  ---------
-v_Cd         [-2,-1,0,+1]     [0.00,0.00,0.00]    1         4a
-v_Te         [-1,0,+1,+2]     [0.25,0.25,0.25]    1         4c
-
-Substitutions    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------  ------------------  --------  ---------
-Cd_Te            [-1,0,+1,+2,+3,+4]  [0.25,0.25,0.25]    1         4c
-Te_Cd            [-4,-3,-2,-1,0,+1]  [0.00,0.00,0.00]    1         4a
-
-Interstitials    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------  ------------------  --------  ---------
-Cd_i_C3v         [-1,0,+1,+2]        [0.12,0.62,0.62]    4         16e
-Cd_i_Td_Cd2.83   [-1,0,+1,+2]        [0.75,0.75,0.75]    1         4d
-Cd_i_Td_Te2.83   [-1,0,+1,+2]        [0.50,0.50,0.50]    1         4b
-Te_i_C3v         [-1,0,+1,+2,+3,+4]  [0.12,0.62,0.62]    4         16e
-Te_i_Td_Cd2.83   [-1,0,+1,+2,+3,+4]  [0.75,0.75,0.75]    1         4d
-Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
-
-\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
-            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
-            "structure (returned by spglib)\n\n"
-        )
-
-        assert cdte_defect_gen_info in output
+        assert self.cdte_defect_gen_info in output
 
         # test attributes:
-        structure_matcher = StructureMatcher()
-        prim_struc_wout_oxi = cdte_defect_gen.primitive_structure.copy()
-        prim_struc_wout_oxi.remove_oxidation_states()
-        assert structure_matcher.fit(prim_struc_wout_oxi, self.cdte_bulk)
-        assert np.allclose(prim_struc_wout_oxi.lattice.matrix, self.cdte_bulk.lattice.matrix)
+        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
+        assert structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
+        assert np.allclose(
+            cdte_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
+        )  # same lattice
         np.testing.assert_allclose(
             cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         )
         assert structure_matcher.fit(
-            prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix, cdte_defect_gen.bulk_supercell
+            cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix,
+            cdte_defect_gen.bulk_supercell,
         )
-        sga = SpacegroupAnalyzer(self.cdte_bulk)
-        conv_cdte = sga.get_conventional_standard_structure()
         assert np.allclose(
-            (prim_struc_wout_oxi * cdte_defect_gen.supercell_matrix).lattice.matrix,
-            (conv_cdte * 2 * np.eye(3)).lattice.matrix,
+            (cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix).lattice.matrix,
+            self.cdte_bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, conv_cdte)
-        sga = SpacegroupAnalyzer()
-        assert np.allclose(cdte_defect_gen.conventional_structure.lattice.matrix, conv_cdte.lattice.matrix)
+        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, self.prim_cdte)
+        assert np.allclose(
+            cdte_defect_gen.conventional_structure.lattice.matrix,
+            self.conv_cdte.lattice.matrix,
+        )
 
         # test defects
         assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
@@ -296,6 +284,15 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].charge_state == 0
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff == "16e"
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
+        np.testing.assert_allclose(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
+            np.array([0.625, 0.375, 0.375]),
+        )
+        np.testing.assert_allclose(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
+            np.array([0.625, 0.375, 0.375]),
+        )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
@@ -305,6 +302,9 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
             assert defect_entry.name == defect_name
             assert defect_entry.charge_state == int(defect_name.split("_")[-1])
             assert defect_entry.wyckoff  # wyckoff label is not None
+            assert defect_entry.defect.wyckoff
+            assert isinstance(defect_entry.conv_cell_frac_coords, np.ndarray)
+            assert isinstance(defect_entry.defect.conv_cell_frac_coords, np.ndarray)
             assert defect_entry.defect
             np.testing.assert_allclose(
                 defect_entry.sc_entry.structure.lattice.matrix,
@@ -335,7 +335,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
     def test_generator_tqdm(self, mock_stdout):
         with patch("doped.generation.tqdm") as mocked_tqdm:
             mocked_instance = mocked_tqdm.return_value
-            DefectsGenerator(self.cdte_bulk)
+            DefectsGenerator(self.prim_cdte)
             mocked_tqdm.assert_called_once()
             mocked_tqdm.assert_called_with(total=100)
             mocked_instance.set_description.assert_any_call("Getting primitive structure")
@@ -349,7 +349,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.50,0.50,0.50]    1         4b
     def test_warnings(self):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            DefectsGenerator(self.cdte_bulk)
+            DefectsGenerator(self.prim_cdte)
             assert len(w) == 0
 
     def test_ytos_supercell_input(self):
