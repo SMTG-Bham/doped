@@ -72,6 +72,8 @@
   - Notebooks in tests; update or delete.
   - Go through docstrings and trim to 80 characters.
   - Add type hints for all functions.
+  - Check code for each function is relatively lean & efficient, can check with ChatGPT for any gnarly
+    ones.
   - Run `pre-commit run --all-files` to check all files.
 - Generate docs.
   - Add note about `NUPDOWN` for triplet states (bipolarons).

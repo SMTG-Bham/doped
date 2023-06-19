@@ -194,183 +194,91 @@ def name_defect_entries(defect_entries):
     For interstitials, the same naming scheme is used, but the point group is
     always appended to the pymatgen defect name.
     """
+
+    def get_shorter_name(full_defect_name, split_number):
+        if split_number < 1:  # if split number is less than 1, return full name
+            return full_defect_name
+        return full_defect_name.rsplit("_", split_number)[0]
+
+    def get_matching_names(defect_naming_dict, defect_name):
+        return [name for name in defect_naming_dict if defect_name in name]
+
+    def handle_unique_match(defect_naming_dict, matching_names, split_number):
+        if len(matching_names) == 1:
+            previous_entry = defect_naming_dict.pop(matching_names[0])
+            previous_entry_full_name = get_defect_name_from_entry(previous_entry)
+            previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
+            defect_naming_dict[previous_entry_name] = previous_entry
+
+        return defect_naming_dict
+
+    def append_closest_site_info(name, entry, n):
+        return name + closest_site_info(entry, n=n)
+
+    def handle_multiple_matches(defect_naming_dict, full_defect_name, defect_entry):
+        n = 2
+        while True:
+            for name in list(defect_naming_dict.keys()):
+                if full_defect_name == name:
+                    prev_defect_entry_full_name = append_closest_site_info(
+                        name, defect_naming_dict[name], n
+                    )
+                    prev_defect_entry = defect_naming_dict.pop(name)
+                    defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
+
+            full_defect_name = append_closest_site_info(full_defect_name, defect_entry, n)
+
+            if not any(name for name in defect_naming_dict if full_defect_name in name):
+                return defect_naming_dict, full_defect_name
+
+            if n > 4:
+                return handle_repeated_name(defect_naming_dict, full_defect_name)
+            n += 1
+
+    def handle_repeated_name(defect_naming_dict, full_defect_name):
+        for name in list(defect_naming_dict.keys()):
+            if full_defect_name == name:
+                prev_defect_entry = defect_naming_dict.pop(name)
+                defect_naming_dict[name + "a"] = prev_defect_entry
+                defect_name = full_defect_name + "b"
+                break
+            if full_defect_name == name[:-1]:
+                last_letters = [name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name]
+                last_letters.sort()
+                new_letter = chr(ord(last_letters[-1]) + 1)
+                defect_name = full_defect_name + new_letter
+                break
+        return defect_naming_dict, defect_name
+
     defect_naming_dict = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_entry(defect_entry)
-        if defect_entry.defect.defect_type == DefectType.Interstitial:
-            # append point group to pmg name for interstitials
-            # need to determine matching key, update it, then recheck if matching until unique
-            shorter_defect_name = full_defect_name.rsplit("_", 1)[0]  # pmg name + point group
-            matching_previous_defect_name = [
-                name for name in defect_naming_dict if shorter_defect_name in name
-            ]
-            if not matching_previous_defect_name:
-                defect_naming_dict[shorter_defect_name] = defect_entry
-                continue
+        split_number = 1 if defect_entry.defect.defect_type == DefectType.Interstitial else 2
+        shorter_defect_name = get_shorter_name(full_defect_name, split_number)
+        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+            defect_naming_dict[shorter_defect_name] = defect_entry
+            continue
 
-            matching_previous_shorter_defect_names = [
-                name for name in defect_naming_dict if name == shorter_defect_name
-            ]
-            if len(matching_previous_shorter_defect_names) > 1:
-                raise ValueError(
-                    f"Multiple defect entries with same name: {matching_previous_shorter_defect_names}"
-                )
+        matching_shorter_names = get_matching_names(defect_naming_dict, shorter_defect_name)
+        defect_naming_dict = handle_unique_match(defect_naming_dict, matching_shorter_names, split_number)
+        shorter_defect_name = get_shorter_name(full_defect_name, split_number - 1)
+        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+            defect_naming_dict[shorter_defect_name] = defect_entry
+            continue
 
-            if len(matching_previous_shorter_defect_names) == 1:
-                # match for shortest_defect_name, need to rename previous entry
-                prev_defect_entry = defect_naming_dict.pop(matching_previous_shorter_defect_names[0])
-                prev_defect_entry_full_name = get_defect_name_from_entry(
-                    prev_defect_entry
-                )  # w/closest site info
-                defect_naming_dict[
-                    prev_defect_entry_full_name
-                ] = prev_defect_entry  # update previous entry
+        matching_shorter_names = get_matching_names(defect_naming_dict, shorter_defect_name)
+        defect_naming_dict = handle_unique_match(
+            defect_naming_dict, matching_shorter_names, split_number - 1
+        )
+        shorter_defect_name = get_shorter_name(full_defect_name, split_number - 2)
+        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+            defect_naming_dict[shorter_defect_name] = defect_entry
+            continue
 
-            if not any(name for name in defect_naming_dict if full_defect_name in name):
-                # renaming previous entry no means no match with full defect name
-                defect_naming_dict[full_defect_name] = defect_entry
-                continue
-
-            # if still no match, need to add closest site info to name
-            matching_names = True
-            n = 2
-            while matching_names:
-                # append 2nd, 3rd, 4th etc closest site info to name until unique:
-                for name in list(defect_naming_dict.keys()):
-                    if full_defect_name == name:
-                        prev_defect_entry_full_name = name + closest_site_info(
-                            defect_naming_dict[name], n=n
-                        )
-                        prev_defect_entry = defect_naming_dict.pop(name)
-                        defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
-
-                full_defect_name += closest_site_info(defect_entry, n=n)
-
-                if not any(name for name in defect_naming_dict if full_defect_name in name):
-                    # no match, can add to dict
-                    defect_naming_dict[full_defect_name] = defect_entry
-                    matching_names = False
-
-                elif n > 4:  # revert to a,b,c... naming if still not unique at this point
-                    # (extremely rare, essentially only if generating defects using a defective
-                    # supercell as the 'bulk base')
-                    for name in list(defect_naming_dict.keys()):
-                        if full_defect_name == name:
-                            prev_defect_entry = defect_naming_dict.pop(name)
-                            defect_naming_dict[name + "a"] = prev_defect_entry
-                            defect_naming_dict[full_defect_name + "b"] = defect_entry
-                            break
-
-                        if full_defect_name == name[:-1]:
-                            # rename to {defect_name}{iterated letter}
-                            last_letters = [
-                                name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name
-                            ]
-                            last_letters.sort()
-                            last_letter = last_letters[-1]
-                            new_letter = chr(ord(last_letter) + 1)
-                            full_defect_name = f"{full_defect_name}{new_letter}"
-                            defect_naming_dict[full_defect_name] = defect_entry
-                            break
-
-                    matching_names = False
-
-                n += 1
-
-        else:  # vacancies and substitutions, start with pmg name
-            shortest_defect_name = full_defect_name.rsplit("_", 2)[0]  # pmg name
-            matching_previous_defect_names = [
-                name for name in defect_naming_dict if shortest_defect_name in name
-            ]
-            if not matching_previous_defect_names:
-                defect_naming_dict[shortest_defect_name] = defect_entry
-                continue
-
-            matching_previous_shortest_defect_names = [
-                name for name in defect_naming_dict if name == shortest_defect_name
-            ]
-            if len(matching_previous_shortest_defect_names) > 1:
-                raise ValueError(
-                    f"Multiple defect entries with same name: "
-                    f"{matching_previous_shortest_defect_names}"
-                )
-
-            if len(matching_previous_shortest_defect_names) == 1:
-                # match for shortest_defect_name, need to rename previous entry
-                prev_defect_entry = defect_naming_dict.pop(matching_previous_shortest_defect_names[0])
-                prev_defect_entry_full_name = get_defect_name_from_entry(prev_defect_entry)
-                prev_defect_entry_shorter_name = prev_defect_entry_full_name.rsplit("_", 1)[
-                    0
-                ]  # pmg name + point group
-                defect_naming_dict[prev_defect_entry_shorter_name] = prev_defect_entry
-
-            shorter_defect_name = full_defect_name.rsplit("_", 1)[0]  # pmg name + point group
-            if not any(name for name in defect_naming_dict if shorter_defect_name in name):
-                # renaming previous entry no means no match with shorter defect name
-                defect_naming_dict[shorter_defect_name] = defect_entry
-                continue
-
-            if any(name for name in defect_naming_dict if shorter_defect_name == name):
-                # match for shorter_defect_name, need to rename previous entry
-                prev_defect_entry = defect_naming_dict.pop(
-                    [name for name in defect_naming_dict if shorter_defect_name == name][0]
-                )
-                prev_defect_entry_full_name = get_defect_name_from_entry(
-                    prev_defect_entry
-                )  # w/closest site info
-                defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
-
-            if not any(name for name in defect_naming_dict if full_defect_name in name):
-                # renaming previous entry no means no match with full defect name
-                defect_naming_dict[full_defect_name] = defect_entry
-                continue
-
-            # if still no match, need to add closest site info to name
-            matching_names = True
-            n = 2
-            while matching_names:
-                # append 2nd, 3rd, 4th etc closest site info to name until unique:
-                for name in list(defect_naming_dict.keys()):
-                    if full_defect_name == name:
-                        prev_defect_entry_full_name = name + closest_site_info(
-                            defect_naming_dict[name], n=n
-                        )
-                        prev_defect_entry = defect_naming_dict.pop(name)
-                        defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
-
-                full_defect_name += closest_site_info(defect_entry, n=n)
-
-                if not any(name for name in defect_naming_dict if full_defect_name in name):
-                    # no match, can add to dict
-                    defect_naming_dict[full_defect_name] = defect_entry
-                    matching_names = False
-
-                elif n > 4:  # revert to a,b,c... naming if still not unique at this point
-                    # (extremely rare, essentially only if generating defects using a defective
-                    # supercell as the 'bulk base')
-                    for name in list(defect_naming_dict.keys()):
-                        if full_defect_name == name:
-                            prev_defect_entry = defect_naming_dict.pop(name)
-                            defect_naming_dict[name + "a"] = prev_defect_entry
-                            defect_naming_dict[full_defect_name + "b"] = defect_entry
-                            break
-
-                        if full_defect_name == name[:-1]:
-                            # rename to {defect_name}{iterated letter}
-                            last_letters = [
-                                name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name
-                            ]
-                            last_letters.sort()
-                            last_letter = last_letters[-1]
-                            new_letter = chr(ord(last_letter) + 1)
-                            full_defect_name = f"{full_defect_name}{new_letter}"
-                            defect_naming_dict[full_defect_name] = defect_entry
-                            break
-
-                    matching_names = False
-
-                n += 1
-
+        defect_naming_dict, full_defect_name = handle_multiple_matches(
+            defect_naming_dict, full_defect_name, defect_entry
+        )
+        defect_naming_dict[full_defect_name] = defect_entry
     return defect_naming_dict
 
 
