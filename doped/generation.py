@@ -886,43 +886,47 @@ class DefectsGenerator:
                 vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
                 tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
                 # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
-                cand_sites_and_mul = [*vig._get_candidate_sites(self.primitive_structure)]
-                tight_cand_sites_and_mul = [*tight_vig._get_candidate_sites(self.primitive_structure)]
+                cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
+                tight_cand_sites_mul_and_equiv_fpos = [
+                    *tight_vig._get_candidate_sites(self.primitive_structure)
+                ]
 
                 structure_matcher = StructureMatcher(
                     interstitial_gen_kwargs.get("ltol", 0.2),
                     interstitial_gen_kwargs.get("stol", 0.3),
                     interstitial_gen_kwargs.get("angle_tol", 5),
                 )  # pymatgen-analysis-defects default
-                unique_tight_cand_sites_and_mul = [
-                    cand_site_and_mul
-                    for cand_site_and_mul in tight_cand_sites_and_mul
-                    if cand_site_and_mul not in cand_sites_and_mul
+                unique_tight_cand_sites_mul_and_equiv_fpos = [
+                    cand_site_mul_and_equiv_fpos
+                    for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
+                    if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
                 ]
 
                 # structure-match the non-matching site & multiplicity tuples, and return the site &
                 # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
-                output_sites_and_multiplicities = []
-                for cand_site_and_mul in cand_sites_and_mul:
-                    matching_sites_and_mul = []
-                    if cand_site_and_mul not in tight_cand_sites_and_mul:
-                        for tight_cand_site_and_mul in unique_tight_cand_sites_and_mul:
+                output_sites_mul_and_equiv_fpos = []
+                for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
+                    matching_sites_mul_and_equiv_fpos = []
+                    if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
+                        for (
+                            tight_cand_site_mul_and_equiv_fpos
+                        ) in unique_tight_cand_sites_mul_and_equiv_fpos:
                             interstitial_struct = self.primitive_structure.copy()
                             interstitial_struct.insert(
-                                0, "H", cand_site_and_mul[0], coords_are_cartesian=False
+                                0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
                             )
                             tight_interstitial_struct = self.primitive_structure.copy()
                             tight_interstitial_struct.insert(
-                                0, "H", tight_cand_site_and_mul[0], coords_are_cartesian=False
+                                0, "H", tight_cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
                             )
                             if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
-                                matching_sites_and_mul += [tight_cand_site_and_mul]
+                                matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
 
                     # take the site and multiplicity with the lower multiplicity
-                    output_sites_and_multiplicities.append(
+                    output_sites_mul_and_equiv_fpos.append(
                         min(
-                            [cand_site_and_mul, *matching_sites_and_mul],
-                            key=lambda cand_site_and_mul: cand_site_and_mul[1],
+                            [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
+                            key=lambda cand_site_mul_and_equiv_fpos: cand_site_mul_and_equiv_fpos[1],
                         )
                     )
 
@@ -933,14 +937,14 @@ class DefectsGenerator:
                 for species in [
                     el.symbol for el in self.primitive_structure.composition.elements
                 ] + extrinsic_elements:
-                    cand_sites = [cand_site for cand_site, mul in output_sites_and_multiplicities]
-                    multiplicity = [mul for cand_site, mul in output_sites_and_multiplicities]
+                    cand_sites, multiplicity, equiv_fpos = zip(*cand_sites_mul_and_equiv_fpos)
 
                     self.defects["interstitials"].extend(
                         ig.generate(
                             self.primitive_structure,
                             insertions={species: cand_sites},
-                            multiplicities={species: multiplicity},  # typo in pymatgen-analysis-defects
+                            multiplicities={species: multiplicity},
+                            equivalent_positions={species: equiv_fpos},
                         )
                     )
 
@@ -957,6 +961,7 @@ class DefectsGenerator:
                     defect_supercell = defect.get_supercell_structure(
                         sc_mat=self.supercell_matrix,
                         dummy_species="X",  # keep track of the defect frac coords in the supercell
+                        target_frac_coords=np.array([0.5, 0.5, 0.5]),
                     )
                     neutral_defect_entry = get_defect_entry_from_defect(
                         defect,
@@ -964,6 +969,7 @@ class DefectsGenerator:
                         0,
                         dummy_species=DummySpecies("X"),
                     )
+                    neutral_defect_entry.bulk_supercell = self.bulk_supercell
                     neutral_defect_entry.conventional_structure = self.conventional_structure
                     neutral_defect_entry.defect.conventional_structure = self.conventional_structure
                     wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
