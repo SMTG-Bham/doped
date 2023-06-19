@@ -206,6 +206,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
         # test extrinsic and interstitial_coords parameters
         # test interstitial and supercell gen kwargs
         # test that voronoi and Wyckoff multiplicities are equal, and then just use Wyckoff labels
+        # test target_frac_coords setting, and some centred defect supercells
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -326,8 +327,20 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
                 defect_entry.defect.conventional_structure.lattice.matrix,
                 self.conv_cdte.lattice.matrix,
             )
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            distances = []
+            for site in defect_entry.conventional_structure:
+                distances.append(
+                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+                )
+            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            assert np.allclose(
+                defect_entry.bulk_supercell.lattice.matrix, cdte_defect_gen.bulk_supercell.lattice.matrix
+            )
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
+        # TODO: Test v_Cd supercell site here
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
         assert cdte_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
