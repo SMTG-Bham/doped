@@ -509,9 +509,10 @@ def get_conv_cell_site(defect_entry):
     return defect_conv_cell_sites[0]
 
 
-def get_wyckoff_label(defect_entry, wyckoff_dict=None):
+def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
     """
-    Return the Wyckoff label for a defect entry's site, given a dictionary of
+    Return the Wyckoff label and list of equivalent fractional coordinates
+    within the conventional cell for the defect_entry, given a dictionary of
     Wyckoff labels and coordinates (`wyckoff_dict`).
 
     If `wyckoff_dict` is not provided, the spacegroup of the bulk structure is
@@ -965,7 +966,7 @@ class DefectsGenerator:
                     )
                     neutral_defect_entry.conventional_structure = self.conventional_structure
                     neutral_defect_entry.defect.conventional_structure = self.conventional_structure
-                    wyckoff_label, conv_cell_coord_list = get_wyckoff_label(
+                    wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
                         neutral_defect_entry, wyckoff_label_dict
                     )
                     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
@@ -1133,7 +1134,7 @@ class DefectsGenerator:
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             f"conventional ('conv.') unit cell, which comprises {fu} formula unit(s) of {formula}.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure (returned by spglib)."
+            "standard structure, for which doped uses the spglib convention."
         )
 
         return info_string

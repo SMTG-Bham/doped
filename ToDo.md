@@ -84,4 +84,7 @@
     and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
     bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
     will be added to `doped` VASP calc scripts.
-  - Show usage of `convert_prim_site_to_conv_site` in notebooks/docs.
+  - Show usage of `get_conv_cell_site` in notebooks/docs.
+  - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
+    Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
+    `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).

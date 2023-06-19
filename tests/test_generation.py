@@ -31,26 +31,26 @@ class DefectsGeneratorTest(unittest.TestCase):
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
 v_Cd         [-2,-1,0,+1]     [0.000,0.000,0.000]  4a
-v_Te         [-1,0,+1,+2]     [0.250,0.250,0.250]  4c
+v_Te         [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
 
 Substitutions    Charge States       Conv. Cell Coords    Wyckoff
 ---------------  ------------------  -------------------  ---------
-Cd_Te            [-1,0,+1,+2,+3,+4]  [0.250,0.250,0.250]  4c
+Cd_Te            [-1,0,+1,+2,+3,+4]  [0.750,0.750,0.750]  4d
 Te_Cd            [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.000]  4a
 
 Interstitials    Charge States       Conv. Cell Coords    Wyckoff
 ---------------  ------------------  -------------------  ---------
-Cd_i_C3v         [-1,0,+1,+2]        [0.625,0.375,0.375]  16e
-Cd_i_Td_Cd2.83   [-1,0,+1,+2]        [0.750,0.750,0.750]  4d
+Cd_i_C3v         [-1,0,+1,+2]        [0.375,0.375,0.375]  16e
+Cd_i_Td_Cd2.83   [-1,0,+1,+2]        [0.250,0.250,0.250]  4c
 Cd_i_Td_Te2.83   [-1,0,+1,+2]        [0.500,0.500,0.500]  4b
-Te_i_C3v         [-1,0,+1,+2,+3,+4]  [0.625,0.375,0.375]  16e
-Te_i_Td_Cd2.83   [-1,0,+1,+2,+3,+4]  [0.750,0.750,0.750]  4d
+Te_i_C3v         [-1,0,+1,+2,+3,+4]  [0.375,0.375,0.375]  16e
+Te_i_Td_Cd2.83   [-1,0,+1,+2,+3,+4]  [0.250,0.250,0.250]  4c
 Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of CdTe.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure (returned by spglib)."
+            "standard structure, for which doped uses the spglib convention."
         )
 
         self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
@@ -146,11 +146,11 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
-            np.array([0.625, 0.375, 0.375]),
+            np.array([0.375, 0.375, 0.375]),
         )
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
-            np.array([0.625, 0.375, 0.375]),
+            np.array([0.375, 0.375, 0.375]),
         )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
@@ -168,6 +168,14 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
             np.testing.assert_allclose(
                 defect_entry.sc_entry.structure.lattice.matrix,
                 cdte_defect_gen.bulk_supercell.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                self.conv_cdte.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.defect.conventional_structure.lattice.matrix,
+                self.conv_cdte.lattice.matrix,
             )
             assert defect_entry.defect.multiplicity * 4 == int(defect_entry.wyckoff[:-1])
 
@@ -287,16 +295,16 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
-            np.array([0.625, 0.375, 0.375]),
+            np.array([0.375, 0.375, 0.375]),
         )
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
-            np.array([0.625, 0.375, 0.375]),
+            np.array([0.375, 0.375, 0.375]),
         )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
-            np.array([0.3125, 0.1875, 0.1875]),
+            np.array([0.1875, 0.1875, 0.1875]),
         )
         for defect_name, defect_entry in cdte_defect_gen.defect_entries.items():
             assert defect_entry.name == defect_name
@@ -309,6 +317,14 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
             np.testing.assert_allclose(
                 defect_entry.sc_entry.structure.lattice.matrix,
                 cdte_defect_gen.bulk_supercell.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                self.conv_cdte.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.defect.conventional_structure.lattice.matrix,
+                self.conv_cdte.lattice.matrix,
             )
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
@@ -364,62 +380,63 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
         ytos_defect_gen_info = (
-            """Vacancies    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
------------  ------------------  ------------------  --------  ---------
-v_Y          [-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
-v_Ti         [-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
-v_S          [-1,0,+1,+2]        [0.80,0.80,0.00]    2         8h
-v_O_C2v      [-1,0,+1,+2]        [0.90,0.40,0.50]    4         16l
-v_O_D4h      [-1,0,+1,+2]        [0.00,0.00,0.00]    1         2a
+            """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Y          [-3,-2,-1,0,+1]     [0.000,0.000,0.666]  4e
+v_Ti         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.922]  4e
+v_S          [-1,0,+1,+2]        [0.000,0.000,0.795]  4e
+v_O_C2v      [-1,0,+1,+2]        [0.000,0.500,0.401]  8g
+v_O_D4h      [-1,0,+1,+2]        [0.000,0.000,0.000]  2a
 
-Substitutions    Charge States             Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------------  ------------------  --------  ---------
-Y_Ti             [-1,0,+1]                 [0.92,0.92,0.00]    2         8h
-Y_S              [-1,0,+1,+2,+3,+4,+5]     [0.80,0.80,0.00]    2         8h
-Y_O_C2v          [-1,0,+1,+2,+3,+4,+5]     [0.90,0.40,0.50]    4         16l
-Y_O_D4h          [-1,0,+1,+2,+3,+4,+5]     [0.00,0.00,0.00]    1         2a
-Ti_Y             [-1,0,+1]                 [0.67,0.67,0.00]    2         8h
-Ti_S             [-1,0,+1,+2,+3,+4,+5,+6]  [0.80,0.80,0.00]    2         8h
-Ti_O_C2v         [-1,0,+1,+2,+3,+4,+5,+6]  [0.90,0.40,0.50]    4         16l
-Ti_O_D4h         [-1,0,+1,+2,+3,+4,+5,+6]  [0.00,0.00,0.00]    1         2a
-S_Y              [-5,-4,-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
-S_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
-S_O_C2v          [-1,0,+1]                 [0.90,0.40,0.50]    4         16l
-S_O_D4h          [-1,0,+1]                 [0.00,0.00,0.00]    1         2a
-O_Y              [-5,-4,-3,-2,-1,0,+1]     [0.67,0.67,0.00]    2         8h
-O_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.92,0.92,0.00]    2         8h
-O_S              [-1,0,+1]                 [0.80,0.80,0.00]    2         8h
+Substitutions    Charge States             Conv. Cell Coords    Wyckoff
+---------------  ------------------------  -------------------  ---------
+Y_Ti             [-1,0,+1]                 [0.000,0.000,0.922]  4e
+Y_S              [-1,0,+1,+2,+3,+4,+5]     [0.000,0.000,0.795]  4e
+Y_O_C2v          [-1,0,+1,+2,+3,+4,+5]     [0.000,0.500,0.401]  8g
+Y_O_D4h          [-1,0,+1,+2,+3,+4,+5]     [0.000,0.000,0.000]  2a
+Ti_Y             [-1,0,+1]                 [0.000,0.000,0.666]  4e
+Ti_S             [-1,0,+1,+2,+3,+4,+5,+6]  [0.000,0.000,0.795]  4e
+Ti_O_C2v         [-1,0,+1,+2,+3,+4,+5,+6]  [0.000,0.500,0.401]  8g
+Ti_O_D4h         [-1,0,+1,+2,+3,+4,+5,+6]  [0.000,0.000,0.000]  2a
+S_Y              [-5,-4,-3,-2,-1,0,+1]     [0.000,0.000,0.666]  4e
+S_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.922]  4e
+S_O_C2v          [-1,0,+1]                 [0.000,0.500,0.401]  8g
+S_O_D4h          [-1,0,+1]                 [0.000,0.000,0.000]  2a
+O_Y              [-5,-4,-3,-2,-1,0,+1]     [0.000,0.000,0.666]  4e
+O_Ti             [-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.922]  4e
+O_S              [-1,0,+1]                 [0.000,0.000,0.795]  4e
 
-Interstitials    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ---------------  ------------------  --------  ---------
-Y_i_C2v          [-1,0,+1,+2,+3]  [0.18,0.68,0.50]    4         16l
-Y_i_C4v_O1.92    [-1,0,+1,+2,+3]  [0.42,0.42,0.00]    2         8h
-Y_i_C4v_O2.68    [-1,0,+1,+2,+3]  [0.52,0.52,0.00]    2         8h
-Y_i_Cs_O1.71     [-1,0,+1,+2,+3]  [0.68,0.04,0.00]    8         16l
-Y_i_Cs_O1.95     [-1,0,+1,+2,+3]  [0.29,0.64,0.00]    8         16l
-Y_i_Cs_S2.03     [-1,0,+1,+2,+3]  [0.36,0.73,0.63]    10        32o
-Ti_i_C2v         [-1,0,+1,+2,+3]  [0.18,0.68,0.50]    4         16l
-Ti_i_C4v_O1.92   [-1,0,+1,+2,+3]  [0.42,0.42,0.00]    2         8h
-Ti_i_C4v_O2.68   [-1,0,+1,+2,+3]  [0.52,0.52,0.00]    2         8h
-Ti_i_Cs_O1.71    [-1,0,+1,+2,+3]  [0.68,0.04,0.00]    8         16l
-Ti_i_Cs_O1.95    [-1,0,+1,+2,+3]  [0.29,0.64,0.00]    8         16l
-Ti_i_Cs_S2.03    [-1,0,+1,+2,+3]  [0.36,0.73,0.63]    10        32o
-S_i_C2v          [-1,0,+1,+2]     [0.18,0.68,0.50]    4         16l
-S_i_C4v_O1.92    [-1,0,+1,+2]     [0.42,0.42,0.00]    2         8h
-S_i_C4v_O2.68    [-1,0,+1,+2]     [0.52,0.52,0.00]    2         8h
-S_i_Cs_O1.71     [-1,0,+1,+2]     [0.68,0.04,0.00]    8         16l
-S_i_Cs_O1.95     [-1,0,+1,+2]     [0.29,0.64,0.00]    8         16l
-S_i_Cs_S2.03     [-1,0,+1,+2]     [0.36,0.73,0.63]    10        32o
-O_i_C2v          [-2,-1,0,+1]     [0.18,0.68,0.50]    4         16l
-O_i_C4v_O1.92    [-2,-1,0,+1]     [0.42,0.42,0.00]    2         8h
-O_i_C4v_O2.68    [-2,-1,0,+1]     [0.52,0.52,0.00]    2         8h
-O_i_Cs_O1.71     [-2,-1,0,+1]     [0.68,0.04,0.00]    8         16l
-O_i_Cs_O1.95     [-2,-1,0,+1]     [0.29,0.64,0.00]    8         16l
-O_i_Cs_S2.03     [-2,-1,0,+1]     [0.36,0.73,0.63]    10        32o
-
-\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
-            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
-            "structure (returned by spglib)\n\n"
+Interstitials    Charge States    Conv. Cell Coords    Wyckoff
+---------------  ---------------  -------------------  ---------
+Y_i_C2v          [-1,0,+1,+2,+3]  [0.500,0.000,0.184]  8g
+Y_i_C4v_O1.92    [-1,0,+1,+2,+3]  [0.000,0.000,0.418]  4e
+Y_i_C4v_O2.68    [-1,0,+1,+2,+3]  [0.000,0.000,0.515]  4e
+Y_i_Cs_O1.71     [-1,0,+1,+2,+3]  [0.681,0.319,0.357]  16m
+Y_i_Cs_O1.95     [-1,0,+1,+2,+3]  [0.175,0.825,0.461]  16m
+Y_i_D2d          [-1,0,+1,+2,+3]  [0.500,0.000,0.250]  4d
+Ti_i_C2v         [-1,0,+1,+2,+3]  [0.500,0.000,0.184]  8g
+Ti_i_C4v_O1.92   [-1,0,+1,+2,+3]  [0.000,0.000,0.418]  4e
+Ti_i_C4v_O2.68   [-1,0,+1,+2,+3]  [0.000,0.000,0.515]  4e
+Ti_i_Cs_O1.71    [-1,0,+1,+2,+3]  [0.681,0.319,0.357]  16m
+Ti_i_Cs_O1.95    [-1,0,+1,+2,+3]  [0.175,0.825,0.461]  16m
+Ti_i_D2d         [-1,0,+1,+2,+3]  [0.500,0.000,0.250]  4d
+S_i_C2v          [-1,0,+1,+2]     [0.500,0.000,0.184]  8g
+S_i_C4v_O1.92    [-1,0,+1,+2]     [0.000,0.000,0.418]  4e
+S_i_C4v_O2.68    [-1,0,+1,+2]     [0.000,0.000,0.515]  4e
+S_i_Cs_O1.71     [-1,0,+1,+2]     [0.681,0.319,0.357]  16m
+S_i_Cs_O1.95     [-1,0,+1,+2]     [0.175,0.825,0.461]  16m
+S_i_D2d          [-1,0,+1,+2]     [0.500,0.000,0.250]  4d
+O_i_C2v          [-2,-1,0,+1]     [0.500,0.000,0.184]  8g
+O_i_C4v_O1.92    [-2,-1,0,+1]     [0.000,0.000,0.418]  4e
+O_i_C4v_O2.68    [-2,-1,0,+1]     [0.000,0.000,0.515]  4e
+O_i_Cs_O1.71     [-2,-1,0,+1]     [0.681,0.319,0.357]  16m
+O_i_Cs_O1.95     [-2,-1,0,+1]     [0.175,0.825,0.461]  16m
+O_i_D2d          [-2,-1,0,+1]     [0.500,0.000,0.250]  4d
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
+            "conventional ('conv.') unit cell, which comprises 2 formula unit(s) of Y2Ti2S2O5.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+            "standard structure (returned by spglib)."
         )
 
         assert ytos_defect_gen_info in output
