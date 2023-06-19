@@ -206,7 +206,7 @@ Te_i_Td_Te2.83   [-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
         # test extrinsic and interstitial_coords parameters
         # test interstitial and supercell gen kwargs
         # test that voronoi and Wyckoff multiplicities are equal, and then just use Wyckoff labels
-        # test target_frac_coords setting, and some centred defect supercells
+        # test target_frac_coords setting, and defect_supercell_site property
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
