@@ -597,6 +597,7 @@ class DefectsGenerator:
         generate_supercell: bool = True,
         supercell_gen_kwargs: Optional[Dict] = None,
         interstitial_gen_kwargs: Optional[Dict] = None,
+        target_frac_coords: Optional[List] = None,
     ):
         """
         Generates pymatgen DefectEntry objects for defects in the input host
@@ -663,6 +664,10 @@ class DefectsGenerator:
                 Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
                 class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
                 `InterstitialGenerator` if `interstitial_coords` is specified.
+            target_frac_coords (List):
+                Defects are placed at the closest equivalent site to these fractional
+                coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
+                if not set (i.e. the supercell centre, to aid visualisation).
 
         Attributes:
             defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
@@ -686,6 +691,8 @@ class DefectsGenerator:
             supercell_gen_kwargs = {}
         if interstitial_gen_kwargs is None:
             interstitial_gen_kwargs = {}
+        if target_frac_coords is None:
+            target_frac_coords = [0.5, 0.5, 0.5]
 
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description("Getting primitive structure")
@@ -958,10 +965,11 @@ class DefectsGenerator:
             wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
             for _defect_type, defect_list in self.defects.items():
                 for defect in defect_list:
-                    defect_supercell = defect.get_supercell_structure(
+                    defect_supercell, defect_supercell_site = defect.get_supercell_structure(
                         sc_mat=self.supercell_matrix,
                         dummy_species="X",  # keep track of the defect frac coords in the supercell
-                        target_frac_coords=np.array([0.5, 0.5, 0.5]),
+                        target_frac_coords=target_frac_coords,
+                        return_site=True,
                     )
                     neutral_defect_entry = get_defect_entry_from_defect(
                         defect,
@@ -969,6 +977,7 @@ class DefectsGenerator:
                         0,
                         dummy_species=DummySpecies("X"),
                     )
+                    neutral_defect_entry.defect_supercell_site = defect_supercell_site
                     neutral_defect_entry.bulk_supercell = self.bulk_supercell
                     neutral_defect_entry.conventional_structure = self.conventional_structure
                     neutral_defect_entry.defect.conventional_structure = self.conventional_structure
