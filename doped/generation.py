@@ -461,21 +461,52 @@ def get_wyckoff_dict_from_sgn(sgn):
     return wyckoff_label_coords_dict
 
 
+def _frac_coords_sort_func(coords):
+    """
+    Sorting function to apply on an iterable of fractional coordinates, where
+    entries are sorted by the number of x, y, z that are (almost) equal (i.e.
+    between 0 and 3), then by the magnitude of x, y, z.
+    """
+    num_equals = sum(
+        np.isclose(coords[i], coords[j], atol=1e-3)
+        for i in range(len(coords))
+        for j in range(i + 1, len(coords))
+    )
+    magnitude = sum(np.abs(coords))
+    return (-num_equals, magnitude)
+
+
 def get_conv_cell_site(defect_entry):
     """
-    Get defect site in conventional unit cell.
+    Get an equivalent site of the defect entry in the conventional structure of
+    the host material.
     """
-    sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
-    # convert defect site to conventional unit cell for Wyckoff label matching / info printing:
+    sga = SpacegroupAnalyzer(defect_entry.defect.structure)
     conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
-    prim_to_conv_transf_matrix = np.linalg.inv(conv_to_prim_transf_matrix)
-    conv_structure = sga.get_primitive_standard_structure() * prim_to_conv_transf_matrix
-    conv_cell_pos = np.dot(defect_entry.defect.site.frac_coords, conv_to_prim_transf_matrix)
-    conv_cell_site = PeriodicSite(
-        defect_entry.defect.site.specie, conv_cell_pos, conv_structure.lattice, to_unit_cell=True
-    )  # ensure wrapped to unit cell
-    conv_cell_site.frac_coords = [np.mod(np.round(f, 3), 1) for f in conv_cell_site.frac_coords]
-    return conv_cell_site
+    prim_struct_with_X = defect_entry.defect.structure.copy()
+    prim_struct_with_X.remove_oxidation_states()
+    prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
+    regenerated_conv_structure = prim_struct_with_X * np.linalg.inv(conv_to_prim_transf_matrix)
+
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"])
+    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, regenerated_conv_structure)
+
+    # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
+    # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
+    defect_conv_cell_sites = [
+        PeriodicSite(
+            defect_entry.defect.site.specie,
+            site.frac_coords,
+            defect_entry.conventional_structure.lattice,
+            to_unit_cell=True,
+        )
+        for site in s2_like_s1.sites
+        if site.specie.symbol == "X"
+    ]
+
+    defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
+
+    return defect_conv_cell_sites[0]
 
 
 def get_wyckoff_label(defect_entry, wyckoff_dict=None):
@@ -527,15 +558,25 @@ def get_wyckoff_label(defect_entry, wyckoff_dict=None):
                     break
 
             if match:
-                return True  # This is the matching array
+                # return coord list with sympy expressions subbed with variable_dict:
+                return [
+                    np.array(
+                        [
+                            np.mod(float(simplify(sympy_expr).subs(variable_dict)), 1)
+                            for sympy_expr in sympy_array
+                        ]
+                    )
+                    for sympy_array in coord_list
+                ]
 
-        return False  # No match found
+        return None  # No match found
 
     # get match of coords in wyckoff_label_coords to defect site coords:
     def find_closest_match(defect_site, wyckoff_label_coords_dict):
         for label, coord_list in wyckoff_label_coords_dict.items():
-            if _compare_arrays(coord_list, np.array(defect_site.frac_coords)):
-                return label
+            subbed_coord_list = _compare_arrays(coord_list, np.array(defect_site.frac_coords))
+            if subbed_coord_list is not None:
+                return label, subbed_coord_list
 
         return None  # No match found
 
@@ -653,14 +694,17 @@ class DefectsGenerator:
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = SpacegroupAnalyzer(structure, symprec=1e-2)
             prim_struct = sga.get_primitive_standard_structure()
-            self.conventional_structure = sga.get_conventional_standard_structure()
+            self.conventional_structure = Structure.from_dict(
+                _round_floats(sga.get_conventional_standard_structure().as_dict())
+            )
             if prim_struct.num_sites < structure.num_sites:
-                clean_prim_struct_dict = _round_floats(prim_struct.as_dict())
-                primitive_structure = Structure.from_dict(clean_prim_struct_dict)
+                primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
+
             else:  # primitive cell is the same as input structure, so use input structure to avoid
                 # rotations
                 # wrap to unit cell:
                 primitive_structure = Structure.from_sites([site.to_unit_cell() for site in structure])
+
             pbar.update(5)  # 5% of progress bar
 
             # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
@@ -698,7 +742,13 @@ class DefectsGenerator:
                 # first rotate primitive structure to match target structure:
                 mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
                 rotation_matrix = mapping[1]
-                supercell_matrix = mapping[2]
+                if np.allclose(rotation_matrix, -1 * np.eye(3)):
+                    # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
+                    # equivalent to no rotation. Just use the identity matrix instead.
+                    rotation_matrix = np.eye(3)
+                    supercell_matrix = -1 * mapping[2]
+                else:
+                    supercell_matrix = mapping[2]
                 rotation_symmop = SymmOp.from_rotation_and_translation(
                     rotation_matrix=rotation_matrix.T
                 )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
@@ -913,15 +963,17 @@ class DefectsGenerator:
                         0,
                         dummy_species=DummySpecies("X"),
                     )
-                    wyckoff_label = get_wyckoff_label(neutral_defect_entry, wyckoff_label_dict)
+                    neutral_defect_entry.conventional_structure = self.conventional_structure
+                    neutral_defect_entry.defect.conventional_structure = self.conventional_structure
+                    wyckoff_label, conv_cell_coord_list = get_wyckoff_label(
+                        neutral_defect_entry, wyckoff_label_dict
+                    )
+                    conv_cell_coord_list.sort(key=_frac_coords_sort_func)
+                    ideal_conv_cell_site = conv_cell_coord_list[0]
                     neutral_defect_entry.wyckoff = wyckoff_label
                     neutral_defect_entry.defect.wyckoff = wyckoff_label
-                    neutral_defect_entry.conv_cell_frac_coords = get_conv_cell_site(
-                        neutral_defect_entry
-                    ).frac_coords
-                    neutral_defect_entry.defect.conv_cell_frac_coords = get_conv_cell_site(
-                        neutral_defect_entry
-                    ).frac_coords
+                    neutral_defect_entry.conv_cell_frac_coords = ideal_conv_cell_site
+                    neutral_defect_entry.defect.conv_cell_frac_coords = ideal_conv_cell_site
                     defect_entry_list.append(neutral_defect_entry)
                     pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
 
