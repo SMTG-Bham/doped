@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Type, Union
 import numpy as np
 from ase.spacegroup.wyckoff import Wyckoff
 from monty.json import MontyDecoder
+from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.generators import (
     AntiSiteGenerator,
@@ -985,6 +986,34 @@ class DefectsGenerator:
                 )
 
         return defects_generator
+
+    def to_json(self, filename: Optional[str] = None):
+        """
+        Save the DefectsGenerator object as a json file, which can be reloaded
+        with the DefectsGenerator.from_json() class method.
+
+        Args:
+            filename (str): Filename to save json file as. If None, the filename will be
+                set as "{Chemical Formula}_defects_generator.json" where {Chemical Formula}
+                is the chemical formula of the host material.
+        """
+        if filename is None:
+            filename = f"{self.primitive_structure.composition.to_pretty_string()}_defects_generator.json"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: str):
+        """
+        Load a DefectsGenerator object from a json file.
+
+        Args:
+            filename (str): Filename of json file to load DefectsGenerator object from.
+
+        Returns:
+            DefectsGenerator object
+        """
+        return loadfn(filename)
 
     def _defect_generator_info(self):
         """
