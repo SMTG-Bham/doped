@@ -33,7 +33,9 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Post-processing / analysis / plotting
-- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR settings, and warn user if not.
+- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
+  settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
+  zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
   relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
@@ -78,8 +80,8 @@
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - Update to be compatible with new `pymatgen`
   - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
-  - Use doped naming conventions and functions, and site-matching functions (and anything else?) in
-    `ShakeNBreak`.
+  - Use doped naming conventions and functions, site-matching functions, defect entry generation
+    functions (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
