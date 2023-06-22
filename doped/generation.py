@@ -31,8 +31,6 @@ from sympy import Eq, simplify, solve, symbols
 from tabulate import tabulate
 from tqdm import tqdm
 
-# TODO: Use new doped naming functions in SnB, as well as defect entry generation etc. Streamline SnB
-#  notebook with these!
 # TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
 #  supercell coords in this case, so will need functions for transforming between primitive and
 #  supercell defect structures (will want this for defect parsing as well). Defectivator has functions
@@ -40,7 +38,7 @@ from tqdm import tqdm
 #  get symmetry-equivalent positions of relaxed interstitial position in unrelaxed bulk (easy pal,
 #  tf you mean 'tricky'??)
 
-dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
+_dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
 
 def _custom_formatwarning(
@@ -63,7 +61,7 @@ def get_defect_entry_from_defect(
     defect: Defect,
     defect_supercell: Structure,
     charge_state: int,
-    dummy_species: DummySpecies = dummy_species,
+    dummy_species: DummySpecies = _dummy_species,
 ):
     """
     Generate DefectEntry object from a Defect object.
@@ -588,19 +586,20 @@ class DefectsGenerator:
                 the primitive cell structure.
             bulk_supercell (Structure): Supercell structure of the host
                 (equal to primitive_structure * supercell_matrix).
+
+            `DefectsGenerator` input parameters are also set as attributes.
         """
         self.defects = {}  # {defect_type: [Defect, ...]}
         self.defect_entries = {}  # {defect_name: DefectEntry}
-        if extrinsic is None:
-            extrinsic = []
-        if interstitial_coords is None:
-            interstitial_coords = []
-        if supercell_gen_kwargs is None:
-            supercell_gen_kwargs = {}
-        if interstitial_gen_kwargs is None:
-            interstitial_gen_kwargs = {}
-        if target_frac_coords is None:
-            target_frac_coords = [0.5, 0.5, 0.5]
+        self.structure = structure
+        self.extrinsic = extrinsic if extrinsic is not None else []
+        self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
+        self.generate_supercell = generate_supercell
+        self.supercell_gen_kwargs = supercell_gen_kwargs if supercell_gen_kwargs is not None else {}
+        self.interstitial_gen_kwargs = (
+            interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
+        )
+        self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
 
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description("Getting primitive structure")
@@ -608,18 +607,20 @@ class DefectsGenerator:
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = SpacegroupAnalyzer(structure, symprec=1e-2)
+            sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
             prim_struct = sga.get_primitive_standard_structure()
             self.conventional_structure = Structure.from_dict(
                 _round_floats(sga.get_conventional_standard_structure().as_dict())
             )
-            if prim_struct.num_sites < structure.num_sites:
+            if prim_struct.num_sites < self.structure.num_sites:
                 primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
 
             else:  # primitive cell is the same as input structure, so use input structure to avoid
                 # rotations
                 # wrap to unit cell:
-                primitive_structure = Structure.from_sites([site.to_unit_cell() for site in structure])
+                primitive_structure = Structure.from_sites(
+                    [site.to_unit_cell() for site in self.structure]
+                )
 
             pbar.update(5)  # 5% of progress bar
 
@@ -628,20 +629,22 @@ class DefectsGenerator:
             pbar.set_description("Generating simulation supercell")
             pmg_supercell_matrix = get_sc_fromstruct(
                 primitive_structure,
-                min_atoms=supercell_gen_kwargs.get("min_atoms", 50),
-                max_atoms=supercell_gen_kwargs.get(
+                min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),
+                max_atoms=self.supercell_gen_kwargs.get(
                     "max_atoms", 500
                 ),  # different to current pymatgen default (240)
-                min_length=supercell_gen_kwargs.get("min_length", 10),  # same as current pymatgen default
-                force_diagonal=supercell_gen_kwargs.get(
+                min_length=self.supercell_gen_kwargs.get(
+                    "min_length", 10
+                ),  # same as current pymatgen default
+                force_diagonal=self.supercell_gen_kwargs.get(
                     "force_diagonal", False
                 ),  # same as current pymatgen default
             )
 
             # check if input structure is already >10 Å in each direction:
-            a = structure.lattice.matrix[0]
-            b = structure.lattice.matrix[1]
-            c = structure.lattice.matrix[2]
+            a = self.structure.lattice.matrix[0]
+            b = self.structure.lattice.matrix[1]
+            c = self.structure.lattice.matrix[2]
 
             length_vecs = np.array(
                 [
@@ -655,6 +658,11 @@ class DefectsGenerator:
             )
 
             def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
+                """
+                Rotates the input prim_struct to match the target_struct
+                orientation, and returns the supercell matrix to convert from
+                the rotated prim_struct to the target_struct.
+                """
                 # first rotate primitive structure to match target structure:
                 mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
                 rotation_matrix = mapping[1]
@@ -674,32 +682,34 @@ class DefectsGenerator:
                 clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
                 return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
-            if np.min(np.linalg.norm(length_vecs, axis=1)) >= supercell_gen_kwargs.get("min_length", 10):
+            if np.min(np.linalg.norm(length_vecs, axis=1)) >= self.supercell_gen_kwargs.get(
+                "min_length", 10
+            ):
                 # input structure is >10 Å in each direction
                 if (
-                    not generate_supercell
-                    or structure.num_sites <= (primitive_structure * pmg_supercell_matrix).num_sites
+                    not self.generate_supercell
+                    or self.structure.num_sites <= (primitive_structure * pmg_supercell_matrix).num_sites
                 ):
                     # input structure has fewer or same number of atoms as pmg supercell or
                     # generate_supercell=False, so use input structure:
                     self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
-                        primitive_structure, structure
+                        primitive_structure, self.structure
                     )
                 else:
                     self.primitive_structure = primitive_structure
                     self.supercell_matrix = pmg_supercell_matrix
 
-            elif not generate_supercell:
+            elif not self.generate_supercell:
                 # input structure is <10 Å in at least one direction, and generate_supercell=False,
                 # so use input structure but warn user:
                 warnings.warn(
                     f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
                     f"{np.min(np.linalg.norm(length_vecs, axis=1)):.2f} Å, which is usually too "
-                    f"small for accurate defect calculations, but generate_supercell=False, so "
+                    f"small for accurate defect calculations, but generate_supercell = False, so "
                     f"using input structure as defect & bulk supercells. Caution advised!"
                 )
                 self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
-                    primitive_structure, structure
+                    primitive_structure, self.structure
                 )
 
             else:
@@ -710,8 +720,8 @@ class DefectsGenerator:
             # check that generated supercell is >10 Å in each direction:
             if (
                 np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1))
-                < supercell_gen_kwargs.get("min_length", 10)
-                and generate_supercell
+                < self.supercell_gen_kwargs.get("min_length", 10)
+                and self.generate_supercell
             ):
                 warnings.warn(
                     f"\nAuto-generated supercell is <10 Å in at least one direction (minimum image "
@@ -741,20 +751,20 @@ class DefectsGenerator:
 
             # Substitutions:
             substitution_generator_obj = SubstitutionGenerator()
-            if isinstance(extrinsic, str):  # substitute all host elements
+            if isinstance(self.extrinsic, str):  # substitute all host elements
                 substitutions = {
-                    el.symbol: [extrinsic] for el in self.primitive_structure.composition.elements
+                    el.symbol: [self.extrinsic] for el in self.primitive_structure.composition.elements
                 }
-            elif isinstance(extrinsic, list):  # substitute all host elements
+            elif isinstance(self.extrinsic, list):  # substitute all host elements
                 substitutions = {
-                    el.symbol: extrinsic for el in self.primitive_structure.composition.elements
+                    el.symbol: self.extrinsic for el in self.primitive_structure.composition.elements
                 }
-            elif isinstance(extrinsic, dict):  # substitute only specified host elements
-                substitutions = extrinsic
+            elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
+                substitutions = self.extrinsic
             else:
                 warnings.warn(
-                    f"Invalid `extrinsic` defect input. Got type {type(extrinsic)}, but string or list or "
-                    f"dict required. No extrinsic defects will be generated."
+                    f"Invalid `extrinsic` defect input. Got type {type(self.extrinsic)}, but string or "
+                    f"list or dict required. No extrinsic defects will be generated."
                 )
                 substitutions = {}
 
@@ -771,26 +781,27 @@ class DefectsGenerator:
             # Interstitials:
             pbar.set_description("Generating interstitials")
             # determine which, if any, extrinsic elements are present:
-            if isinstance(extrinsic, str):
-                extrinsic_elements = [extrinsic]
-            elif isinstance(extrinsic, list):
-                extrinsic_elements = extrinsic
-            elif isinstance(extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
+            if isinstance(self.extrinsic, str):
+                extrinsic_elements = [self.extrinsic]
+            elif isinstance(self.extrinsic, list):
+                extrinsic_elements = self.extrinsic
+            elif isinstance(self.extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
                 # convert to flattened list of extrinsic elements:
                 extrinsic_elements = list(
-                    chain(*[i if isinstance(i, list) else [i] for i in extrinsic.values()])
+                    chain(*[i if isinstance(i, list) else [i] for i in self.extrinsic.values()])
                 )
                 extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
             else:
                 extrinsic_elements = []
 
-            if interstitial_coords:
+            if self.interstitial_coords:
                 # For the moment, this assumes interstitial_sites
                 insertions = {
-                    el.symbol: interstitial_coords for el in self.primitive_structure.composition.elements
+                    el.symbol: self.interstitial_coords
+                    for el in self.primitive_structure.composition.elements
                 }
-                insertions.update({el: interstitial_coords for el in extrinsic_elements})
-                interstitial_generator_obj = InterstitialGenerator(**interstitial_gen_kwargs)
+                insertions.update({el: self.interstitial_coords for el in extrinsic_elements})
+                interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
                 interstitial_generator = interstitial_generator_obj.generate(
                     self.primitive_structure, insertions=insertions
                 )
@@ -798,7 +809,7 @@ class DefectsGenerator:
 
             else:
                 # Generate interstitial sites using Voronoi tessellation
-                vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
+                vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
                 tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
                 # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
                 cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
@@ -807,9 +818,9 @@ class DefectsGenerator:
                 ]
 
                 structure_matcher = StructureMatcher(
-                    interstitial_gen_kwargs.get("ltol", 0.2),
-                    interstitial_gen_kwargs.get("stol", 0.3),
-                    interstitial_gen_kwargs.get("angle_tol", 5),
+                    self.interstitial_gen_kwargs.get("ltol", 0.2),
+                    self.interstitial_gen_kwargs.get("stol", 0.3),
+                    self.interstitial_gen_kwargs.get("angle_tol", 5),
                 )  # pymatgen-analysis-defects default
                 unique_tight_cand_sites_mul_and_equiv_fpos = [
                     cand_site_mul_and_equiv_fpos
@@ -847,7 +858,7 @@ class DefectsGenerator:
 
                 self.defects["interstitials"] = []
                 ig = InterstitialGenerator(
-                    interstitial_gen_kwargs.get("min_dist", 0.9),
+                    self.interstitial_gen_kwargs.get("min_dist", 0.9),
                 )  # pmg defects default
                 for species in [
                     el.symbol for el in self.primitive_structure.composition.elements
@@ -876,14 +887,14 @@ class DefectsGenerator:
                     defect_supercell, defect_supercell_site = defect.get_supercell_structure(
                         sc_mat=self.supercell_matrix,
                         dummy_species="X",  # keep track of the defect frac coords in the supercell
-                        target_frac_coords=target_frac_coords,
+                        target_frac_coords=self.target_frac_coords,
                         return_site=True,
                     )
                     neutral_defect_entry = get_defect_entry_from_defect(
                         defect,
                         defect_supercell,
                         0,
-                        dummy_species=DummySpecies("X"),
+                        dummy_species=_dummy_species,
                     )
                     neutral_defect_entry.defect_supercell_site = defect_supercell_site
                     neutral_defect_entry.bulk_supercell = self.bulk_supercell
@@ -940,12 +951,7 @@ class DefectsGenerator:
         return {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
-            "defects": self.defects,
-            "defect_entries": self.defect_entries,
-            "primitive_structure": self.primitive_structure,
-            "conventional_structure": self.conventional_structure,
-            "bulk_supercell": self.bulk_supercell,
-            "supercell_matrix": self.supercell_matrix,
+            **self.__dict__,
         }
 
     @classmethod
@@ -960,20 +966,23 @@ class DefectsGenerator:
         Returns:
             DefectsGenerator object
         """
+        # TODO: Saving and reloading removes the name attribute from defect entries (and wyckoff and
+        #  others?), need to fix this!
+        # All other attributes correctly regenerated here, or need to be modified? Check!!
         d_decoded = MontyDecoder().process_decoded(d)  # decode dict
         defects_generator = cls.__new__(
             cls
         )  # Create new DefectsGenerator object without invoking __init__
 
         # Manually set object attributes
-        defects_generator.defects = d_decoded["defects"]
-        defects_generator.defect_entries = d_decoded[
-            "defect_entries"
-        ]  # TODO: Saving and reloading removes the name attribute from defect entries, need to fix this!
-        defects_generator.primitive_structure = d_decoded["primitive_structure"]
-        defects_generator.conventional_structure = d_decoded["conventional_structure"]
-        defects_generator.bulk_supercell = d_decoded["bulk_supercell"]
-        defects_generator.supercell_matrix = d_decoded["supercell_matrix"]
+        for key, value in d_decoded.items():
+            if hasattr(defects_generator, key):
+                setattr(defects_generator, key, value)
+            else:
+                warnings.warn(
+                    f"Attribute {key} found in dict but not a valid attribute for "
+                    f"DefectsGenerator object!"
+                )
 
         return defects_generator
 
@@ -1102,13 +1111,14 @@ class DefectsGenerator:
         # check supercell
         defect_supercell = value.defect.get_supercell_structure(
             sc_mat=self.supercell_matrix,
-            dummy_species="X",  # keep track of the defect frac coords in the supercell
+            dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
+            target_frac_coords=self.target_frac_coords,
         )
         defect_entry = get_defect_entry_from_defect(
             value.defect,
             defect_supercell,
             charge_state=0,  # just checking supercell structure here
-            dummy_species=DummySpecies("X"),
+            dummy_species=_dummy_species,
         )
         if defect_entry.sc_entry != value.sc_entry:
             raise ValueError(
