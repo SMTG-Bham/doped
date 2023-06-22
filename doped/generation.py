@@ -833,7 +833,7 @@ class DefectsGenerator:
                 for species in [
                     el.symbol for el in self.primitive_structure.composition.elements
                 ] + extrinsic_elements:
-                    cand_sites, multiplicity, equiv_fpos = zip(*cand_sites_mul_and_equiv_fpos)
+                    cand_sites, multiplicity, equiv_fpos = zip(*output_sites_mul_and_equiv_fpos)
 
                     self.defects["interstitials"].extend(
                         ig.generate(
