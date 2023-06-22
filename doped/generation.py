@@ -281,50 +281,6 @@ def name_defect_entries(defect_entries):
     return defect_naming_dict
 
 
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
-_PTG_IDS = [
-    ("C1", "1", 1),
-    ("Ci", "-1", 2),
-    ("C2", "2", 3),
-    ("Cs", "m", 6),
-    ("C2h", "2/m", 10),
-    ("D2", "222", 16),
-    ("C2v", "mm2", 25),
-    ("D2h", "mmm", 47),
-    ("C4", "4", 75),
-    ("S4", "-4", 81),
-    ("C4h", "4/m", 83),
-    ("D4", "422", 89),
-    ("C4v", "4mm", 99),
-    ("D2d", "-42m", 111),
-    ("D4h", "4/mmm", 123),
-    ("C3", "3", 143),
-    ("C3i", "-3", 147),
-    ("D3", "32", 149),
-    ("C3v", "3m", 156),
-    ("D3d", "-3m", 162),
-    ("C6", "6", 168),
-    ("C3h", "-6", 174),
-    ("C6h", "6/m", 175),
-    ("D6", "622", 177),
-    ("C6v", "6mm", 183),
-    ("D3h", "-6m2", 189),
-    ("D6h", "6/mmm", 191),
-    ("T", "23", 195),
-    ("Th", "m-3", 200),
-    ("O", "432", 207),
-    ("Td", "-43m", 215),
-    ("Oh", "m-3m", 221),
-]
-
-_SCH2HERM = {t[0]: t[1] for t in _PTG_IDS}
-_HERM2SCH = {t[1]: t[0] for t in _PTG_IDS}
-_SPGID2SCH = {t[2]: t[0] for t in _PTG_IDS}
-_SCH2SPGID = {t[0]: t[2] for t in _PTG_IDS}
-
-sch_symbols = list(_SCH2HERM.keys())
-
-
 def herm2sch(herm_symbol):
     """
     Convert from Hermann-Mauguin to Schoenflies.
@@ -609,7 +565,19 @@ class DefectsGenerator:
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
-            prim_struct = sga.get_primitive_standard_structure()
+
+            # for some materials (e.g. zinc blende), there are multiple equivalent primitive cells
+            # so for reproducibility and in line with most structure conventions/definitions, take the one
+            # with the lowest sum norm of the fractional coordinates of the sites (i.e. favour Cd (0,0, 0)
+            # and Te (0.25, 0.25, 0.25) over Cd (0.0, 0.0, 0.0) and Te (0.75, 0.75, 0.75) for F-43m CdTe)
+            possible_prim_structs = []
+            for _i in range(10):
+                struct = sga.get_primitive_standard_structure()
+                possible_prim_structs.append(struct)
+                sga = SpacegroupAnalyzer(struct, symprec=1e-2)
+
+            possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
+            prim_struct = Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
             self.conventional_structure = Structure.from_dict(
                 _round_floats(sga.get_conventional_standard_structure().as_dict())
             )
@@ -622,6 +590,7 @@ class DefectsGenerator:
                 primitive_structure = Structure.from_sites(
                     [site.to_unit_cell() for site in self.structure]
                 )
+                primitive_structure = Structure.from_dict(_round_floats(primitive_structure.as_dict()))
 
             pbar.update(5)  # 5% of progress bar
 
@@ -1209,3 +1178,47 @@ class DefectsGenerator:
         prints the DefectsGenerator info.
         """
         return self.__str__() + "\n" + self._defect_generator_info()
+
+
+# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
+_PTG_IDS = [
+    ("C1", "1", 1),
+    ("Ci", "-1", 2),
+    ("C2", "2", 3),
+    ("Cs", "m", 6),
+    ("C2h", "2/m", 10),
+    ("D2", "222", 16),
+    ("C2v", "mm2", 25),
+    ("D2h", "mmm", 47),
+    ("C4", "4", 75),
+    ("S4", "-4", 81),
+    ("C4h", "4/m", 83),
+    ("D4", "422", 89),
+    ("C4v", "4mm", 99),
+    ("D2d", "-42m", 111),
+    ("D4h", "4/mmm", 123),
+    ("C3", "3", 143),
+    ("C3i", "-3", 147),
+    ("D3", "32", 149),
+    ("C3v", "3m", 156),
+    ("D3d", "-3m", 162),
+    ("C6", "6", 168),
+    ("C3h", "-6", 174),
+    ("C6h", "6/m", 175),
+    ("D6", "622", 177),
+    ("C6v", "6mm", 183),
+    ("D3h", "-6m2", 189),
+    ("D6h", "6/mmm", 191),
+    ("T", "23", 195),
+    ("Th", "m-3", 200),
+    ("O", "432", 207),
+    ("Td", "-43m", 215),
+    ("Oh", "m-3m", 221),
+]
+
+_SCH2HERM = {t[0]: t[1] for t in _PTG_IDS}
+_HERM2SCH = {t[1]: t[0] for t in _PTG_IDS}
+_SPGID2SCH = {t[2]: t[0] for t in _PTG_IDS}
+_SCH2SPGID = {t[0]: t[2] for t in _PTG_IDS}
+
+sch_symbols = list(_SCH2HERM.keys())
