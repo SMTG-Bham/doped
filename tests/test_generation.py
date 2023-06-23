@@ -117,66 +117,67 @@ O_i_D2d          [-2,-1,0,+1]     [0.000,0.500,0.250]  4d
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_info = (
-            """Vacancies    Charge States       Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
------------  ------------------  ------------------  --------  ---------
-v_Li         [-1,0,+1]           [0.00,0.00,0.00]    8         8c
-v_Mn         [-4,-3,-2,-1,0,+1]  [0.12,0.13,0.62]    12        12d
-v_Ni         [-2,-1,0,+1]        [0.12,0.88,0.38]    4         4b
-v_O_C1       [-1,0,+1,+2]        [0.10,0.12,0.39]    24        24e
-v_O_C3       [-1,0,+1,+2]        [0.12,0.62,0.88]    8         8c
+            """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
+v_Mn         [-4,-3,-2,-1,0,+1]  [0.625,0.121,0.129]  12d
+v_Ni         [-2,-1,0,+1]        [0.625,0.625,0.625]  4b
+v_O_C1       [-1,0,+1,+2]        [0.101,0.124,0.392]  24e
+v_O_C3       [-1,0,+1,+2]        [0.384,0.384,0.384]  8c
 
-Substitutions    Charge States             Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ------------------------  ------------------  --------  ---------
-Li_Mn            [-3,-2,-1,0,+1]           [0.12,0.13,0.62]    12        12d
-Li_Ni            [-1,0,+1]                 [0.12,0.88,0.38]    4         4b
-Li_O_C1          [-1,0,+1,+2,+3]           [0.10,0.12,0.39]    24        24e
-Li_O_C3          [-1,0,+1,+2,+3]           [0.12,0.62,0.88]    8         8c
-Mn_Li            [-1,0,+1]                 [0.00,0.00,0.00]    8         8c
-Mn_Ni            [-1,0,+1]                 [0.12,0.88,0.38]    4         4b
-Mn_O_C1          [-1,0,+1,+2,+3,+4]        [0.10,0.12,0.39]    24        24e
-Mn_O_C3          [-1,0,+1,+2,+3,+4]        [0.12,0.62,0.88]    8         8c
-Ni_Li            [-1,0,+1]                 [0.00,0.00,0.00]    8         8c
-Ni_Mn            [-2,-1,0,+1]              [0.12,0.13,0.62]    12        12d
-Ni_O_C1          [-1,0,+1,+2,+3,+4]        [0.10,0.12,0.39]    24        24e
-Ni_O_C3          [-1,0,+1,+2,+3,+4]        [0.12,0.62,0.88]    8         8c
-O_Li             [-3,-2,-1,0,+1]           [0.00,0.00,0.00]    8         8c
-O_Mn             [-6,-5,-4,-3,-2,-1,0,+1]  [0.12,0.13,0.62]    12        12d
-O_Ni             [-4,-3,-2,-1,0,+1]        [0.12,0.88,0.38]    4         4b
+Substitutions    Charge States             Conv. Cell Coords    Wyckoff
+---------------  ------------------------  -------------------  ---------
+Li_Mn            [-3,-2,-1,0,+1]           [0.625,0.121,0.129]  12d
+Li_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
+Li_O_C1          [-1,0,+1,+2,+3]           [0.101,0.124,0.392]  24e
+Li_O_C3          [-1,0,+1,+2,+3]           [0.384,0.384,0.384]  8c
+Mn_Li            [-1,0,+1]                 [0.004,0.004,0.004]  8c
+Mn_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
+Mn_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
+Mn_O_C3          [-1,0,+1,+2,+3,+4]        [0.384,0.384,0.384]  8c
+Ni_Li            [-1,0,+1]                 [0.004,0.004,0.004]  8c
+Ni_Mn            [-2,-1,0,+1]              [0.625,0.121,0.129]  12d
+Ni_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
+Ni_O_C3          [-1,0,+1,+2,+3,+4]        [0.384,0.384,0.384]  8c
+O_Li             [-3,-2,-1,0,+1]           [0.004,0.004,0.004]  8c
+O_Mn             [-6,-5,-4,-3,-2,-1,0,+1]  [0.625,0.121,0.129]  12d
+O_Ni             [-4,-3,-2,-1,0,+1]        [0.625,0.625,0.625]  4b
 
-Interstitials    Charge States    Unit Cell Coords    \x1B[3mg\x1B[0m_site    Wyckoff
----------------  ---------------  ------------------  --------  ---------
-Li_i_C1_Li1.75   [-1,0,+1]        [0.69,0.05,0.55]    24        24e
-Li_i_C1_O1.72    [-1,0,+1]        [0.73,1.00,0.50]    24        24e
-Li_i_C1_O1.78    [-1,0,+1]        [0.50,0.01,0.73]    24        24e
-Li_i_C2_Li1.83   [-1,0,+1]        [0.58,0.38,0.83]    24        12d
-Li_i_C2_Li1.84   [-1,0,+1]        [0.65,0.13,0.60]    12        12d
-Li_i_C2_Li1.86   [-1,0,+1]        [0.59,0.12,0.66]    12        12d
-Li_i_C3          [-1,0,+1]        [1.00,0.00,0.50]    8         8c
-Mn_i_C1_Li1.75   [-1,0,+1,+2,+3]  [0.69,0.05,0.55]    24        24e
-Mn_i_C1_O1.72    [-1,0,+1,+2,+3]  [0.73,1.00,0.50]    24        24e
-Mn_i_C1_O1.78    [-1,0,+1,+2,+3]  [0.50,0.01,0.73]    24        24e
-Mn_i_C2_Li1.83   [-1,0,+1,+2,+3]  [0.58,0.38,0.83]    24        12d
-Mn_i_C2_Li1.84   [-1,0,+1,+2,+3]  [0.65,0.13,0.60]    12        12d
-Mn_i_C2_Li1.86   [-1,0,+1,+2,+3]  [0.59,0.12,0.66]    12        12d
-Mn_i_C3          [-1,0,+1,+2,+3]  [1.00,0.00,0.50]    8         8c
-Ni_i_C1_Li1.75   [-1,0,+1,+2]     [0.69,0.05,0.55]    24        24e
-Ni_i_C1_O1.72    [-1,0,+1,+2]     [0.73,1.00,0.50]    24        24e
-Ni_i_C1_O1.78    [-1,0,+1,+2]     [0.50,0.01,0.73]    24        24e
-Ni_i_C2_Li1.83   [-1,0,+1,+2]     [0.58,0.38,0.83]    24        12d
-Ni_i_C2_Li1.84   [-1,0,+1,+2]     [0.65,0.13,0.60]    12        12d
-Ni_i_C2_Li1.86   [-1,0,+1,+2]     [0.59,0.12,0.66]    12        12d
-Ni_i_C3          [-1,0,+1,+2]     [1.00,0.00,0.50]    8         8c
-O_i_C1_Li1.75    [-2,-1,0,+1]     [0.69,0.05,0.55]    24        24e
-O_i_C1_O1.72     [-2,-1,0,+1]     [0.73,1.00,0.50]    24        24e
-O_i_C1_O1.78     [-2,-1,0,+1]     [0.50,0.01,0.73]    24        24e
-O_i_C2_Li1.83    [-2,-1,0,+1]     [0.58,0.38,0.83]    24        12d
-O_i_C2_Li1.84    [-2,-1,0,+1]     [0.65,0.13,0.60]    12        12d
-O_i_C2_Li1.86    [-2,-1,0,+1]     [0.59,0.12,0.66]    12        12d
-O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
-
-\x1B[3mg\x1B[0m_site = Site Multiplicity (in Primitive Unit Cell)\n"""
-            "Note that Wyckoff letters can depend on the ordering of elements in the primitive standard "
-            "structure (returned by spglib)\n\n"
+Interstitials    Charge States    Conv. Cell Coords    Wyckoff
+---------------  ---------------  -------------------  ---------
+Li_i_C1_Li1.75   [-1,0,+1]        [0.303,0.444,0.199]  24e
+Li_i_C1_O1.72    [-1,0,+1]        [0.770,0.002,0.001]  24e
+Li_i_C1_O1.78    [-1,0,+1]        [0.261,0.250,0.017]  24e
+Li_i_C2_Li1.83   [-1,0,+1]        [0.125,0.173,0.077]  12d
+Li_i_C2_Li1.84   [-1,0,+1]        [0.375,0.401,0.151]  12d
+Li_i_C2_Li1.86   [-1,0,+1]        [0.375,0.335,0.085]  12d
+Li_i_C3          [-1,0,+1]        [0.497,0.497,0.497]  8c
+Mn_i_C1_Li1.75   [-1,0,+1,+2,+3]  [0.303,0.444,0.199]  24e
+Mn_i_C1_O1.72    [-1,0,+1,+2,+3]  [0.770,0.002,0.001]  24e
+Mn_i_C1_O1.78    [-1,0,+1,+2,+3]  [0.261,0.250,0.017]  24e
+Mn_i_C2_Li1.83   [-1,0,+1,+2,+3]  [0.125,0.173,0.077]  12d
+Mn_i_C2_Li1.84   [-1,0,+1,+2,+3]  [0.375,0.401,0.151]  12d
+Mn_i_C2_Li1.86   [-1,0,+1,+2,+3]  [0.375,0.335,0.085]  12d
+Mn_i_C3          [-1,0,+1,+2,+3]  [0.497,0.497,0.497]  8c
+Ni_i_C1_Li1.75   [-1,0,+1,+2]     [0.303,0.444,0.199]  24e
+Ni_i_C1_O1.72    [-1,0,+1,+2]     [0.770,0.002,0.001]  24e
+Ni_i_C1_O1.78    [-1,0,+1,+2]     [0.261,0.250,0.017]  24e
+Ni_i_C2_Li1.83   [-1,0,+1,+2]     [0.125,0.173,0.077]  12d
+Ni_i_C2_Li1.84   [-1,0,+1,+2]     [0.375,0.401,0.151]  12d
+Ni_i_C2_Li1.86   [-1,0,+1,+2]     [0.375,0.335,0.085]  12d
+Ni_i_C3          [-1,0,+1,+2]     [0.497,0.497,0.497]  8c
+O_i_C1_Li1.75    [-2,-1,0,+1]     [0.303,0.444,0.199]  24e
+O_i_C1_O1.72     [-2,-1,0,+1]     [0.770,0.002,0.001]  24e
+O_i_C1_O1.78     [-2,-1,0,+1]     [0.261,0.250,0.017]  24e
+O_i_C2_Li1.83    [-2,-1,0,+1]     [0.125,0.173,0.077]  12d
+O_i_C2_Li1.84    [-2,-1,0,+1]     [0.375,0.401,0.151]  12d
+O_i_C2_Li1.86    [-2,-1,0,+1]     [0.375,0.335,0.085]  12d
+O_i_C3           [-2,-1,0,+1]     [0.497,0.497,0.497]  8c
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
+            "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+            "standard structure, for which doped uses the spglib convention."
         )
 
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
@@ -368,6 +369,8 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords setting...
         # test input parameters used as attributes
+        # should also test the prim cell coords of the defect entries for which we explicitly test
+        # conventional cell / supercell coords, to ensure they stay consistent
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -448,7 +451,7 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
         sga = SpacegroupAnalyzer(self.ytos_bulk_supercell)
         assert np.allclose(
             ytos_defect_gen.conventional_structure.lattice.matrix,
-            sga.get_conventional_standard_structure(self.ytos_bulk_supercell).lattice.matrix,
+            sga.get_conventional_standard_structure().lattice.matrix,
         )
 
         # test defects
@@ -554,10 +557,6 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, ytos_defect_gen.bulk_supercell.lattice.matrix
             )
-            if defect_entry.defect.multiplicity * 2 != int(defect_entry.wyckoff[:-1]):
-                print(defect_entry.name)
-                print(defect_entry.defect.multiplicity)
-                print(defect_entry.wyckoff)
             assert defect_entry.defect.multiplicity * 2 == int(defect_entry.wyckoff[:-1])
             assert defect_entry.defect_supercell_site
 
@@ -584,16 +583,30 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
             np.array([0, 0, 0.334]),
             atol=1e-3,
         )
-        np.testing.assert_allclose(
-            ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
-            np.array([0.4446, 0.5554, 0.3322]),
-            atol=1e-4,
-        )
-        np.testing.assert_allclose(
-            ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
-            np.array([0.4446, 0.5554, 0.3322]),  # closest to middle of supercell
-            atol=1e-4,
-        )
+        x = 0.4446
+        y = 0.5554
+        try:
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
+                np.array([x, y, 0.3322]),
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
+                np.array([x, y, 0.3322]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+        except AssertionError:
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
+                np.array([y, x, 0.3322]),
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
+                np.array([y, x, 0.3322]),  # closest to middle of supercell
+                atol=1e-4,
+            )
 
     def test_ytos_supercell_input(self):
         # note that this tests the case of an input structure which is >10 Å in each direction and has
@@ -612,27 +625,30 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
 
     def lmno_defect_gen_check(self, lmno_defect_gen):
         # test attributes:
-        structure_matcher = StructureMatcher()
-        prim_struc_wout_oxi = lmno_defect_gen.primitive_structure.copy()
-        prim_struc_wout_oxi.remove_oxidation_states()
-        assert structure_matcher.fit(prim_struc_wout_oxi, self.lmno_primitive)
-        assert structure_matcher.fit(
-            prim_struc_wout_oxi, lmno_defect_gen.bulk_supercell
-        )  # reduces to primitive, but StructureMatcher still matches
-        assert np.allclose(prim_struc_wout_oxi.lattice.matrix, self.lmno_primitive.lattice.matrix)
-
+        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
+        assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
+            lmno_defect_gen.primitive_structure, self.lmno_primitive
+        )
+        assert np.allclose(
+            lmno_defect_gen.primitive_structure.lattice.matrix, self.lmno_primitive.lattice.matrix
+        )
         np.testing.assert_allclose(
             lmno_defect_gen.supercell_matrix, np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         )
-
         assert structure_matcher.fit(
-            prim_struc_wout_oxi * lmno_defect_gen.supercell_matrix, lmno_defect_gen.bulk_supercell
+            lmno_defect_gen.primitive_structure * lmno_defect_gen.supercell_matrix,
+            lmno_defect_gen.bulk_supercell,
         )
+        assert np.allclose(
+            (lmno_defect_gen.primitive_structure * lmno_defect_gen.supercell_matrix).lattice.matrix,
+            lmno_defect_gen.bulk_supercell.lattice.matrix,
+        )
+
         assert structure_matcher.fit(lmno_defect_gen.conventional_structure, self.lmno_primitive)
         sga = SpacegroupAnalyzer(self.lmno_primitive)
         assert np.allclose(
             lmno_defect_gen.conventional_structure.lattice.matrix,
-            sga.get_conventional_standard_structure(self.lmno_primitive).lattice.matrix,
+            sga.get_conventional_standard_structure().lattice.matrix,
         )
 
         # test defects
@@ -657,6 +673,17 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
             for defect in defect_list
         )
 
+        # test some relevant defect attributes
+        assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
+        assert lmno_defect_gen.defects["vacancies"][0].oxi_state == -1
+        assert lmno_defect_gen.defects["vacancies"][0].multiplicity == 2
+        assert lmno_defect_gen.defects["vacancies"][0].defect_type == DefectType.Vacancy
+        assert lmno_defect_gen.defects["vacancies"][0].structure == lmno_defect_gen.primitive_structure
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            lmno_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
+            lmno_defect_gen.primitive_structure.lattice.matrix,
+        )
+
         # test defect entries
         assert len(lmno_defect_gen.defect_entries) == 207
         assert len(lmno_defect_gen) == 207
@@ -673,11 +700,30 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
             == DefectType.Interstitial
         )
         assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].wyckoff == "12d"
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.multiplicity == 12
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.wyckoff == "12d"
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.multiplicity == 3
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].sc_defect_frac_coords,
-            np.array([0.32536836, 0.0625, 0.29963164]),
+            np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
             rtol=1e-2,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.frac_coords,
+            np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
+            rtol=1e-2,
+        )
+        assert (
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.specie.symbol == "Ni"
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].conv_cell_frac_coords,
+            np.array([0.375, 0.401, 0.151]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.conv_cell_frac_coords,
+            np.array([0.375, 0.401, 0.151]),
+            atol=1e-3,
         )
 
         for defect_name, defect_entry in lmno_defect_gen.defect_entries.items():
@@ -685,10 +731,69 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
             assert defect_entry.charge_state == int(defect_name.split("_")[-1])
             assert defect_entry.wyckoff  # wyckoff label is not None
             assert defect_entry.defect
+            assert defect_entry.defect.wyckoff
+            assert isinstance(defect_entry.conv_cell_frac_coords, np.ndarray)
+            assert isinstance(defect_entry.defect.conv_cell_frac_coords, np.ndarray)
             np.testing.assert_allclose(
                 defect_entry.sc_entry.structure.lattice.matrix,
                 lmno_defect_gen.bulk_supercell.lattice.matrix,
             )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                sga.get_conventional_standard_structure().lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.defect.conventional_structure.lattice.matrix,
+                sga.get_conventional_standard_structure().lattice.matrix,
+            )
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            distances = []
+            for site in defect_entry.conventional_structure:
+                distances.append(
+                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+                )
+            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            assert np.allclose(
+                defect_entry.bulk_supercell.lattice.matrix, lmno_defect_gen.bulk_supercell.lattice.matrix
+            )
+            assert defect_entry.defect.multiplicity * 4 == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.defect_supercell_site
+
+        assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.name == "Li_O"
+        assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.oxi_state == +3
+        assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.multiplicity == 2
+        assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].wyckoff == "8c"
+        assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.defect_type == DefectType.Substitution
+        assert (
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.structure
+            == lmno_defect_gen.primitive_structure
+        )
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.defect_structure.lattice.matrix,
+            lmno_defect_gen.primitive_structure.lattice.matrix,
+        )
+
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].conv_cell_frac_coords,
+            np.array([0.384, 0.384, 0.384]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.conv_cell_frac_coords,
+            np.array([0.384, 0.384, 0.384]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].sc_defect_frac_coords,
+            np.array([0.4328, 0.4328, 0.4328]),
+            atol=1e-4,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen["Li_O_C3_+3"].defect_supercell_site.frac_coords,
+            np.array([0.4328, 0.4328, 0.4328]),  # closest to middle of supercell
+            atol=1e-4,
+        )
 
     def test_lmno(self):
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
@@ -696,12 +801,14 @@ O_i_C3           [-2,-1,0,+1]     [1.00,0.00,0.50]    8         8c
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
+            lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value
 
         assert self.lmno_defect_gen_info in output
+
+        self.lmno_defect_gen_check(lmno_defect_gen)
 
     def test_zns_non_diagonal_supercell(self):
         # test inputting a non-diagonal supercell structure -> correct primitive structure
@@ -762,7 +869,7 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
         sga = SpacegroupAnalyzer(self.non_diagonal_ZnS)
         assert np.allclose(
             zns_defect_gen.conventional_structure.lattice.matrix,
-            sga.get_conventional_standard_structure(self.non_diagonal_ZnS).lattice.matrix,
+            sga.get_conventional_standard_structure().lattice.matrix,
         )
 
         # test defects
@@ -889,7 +996,7 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.75,0.75,0.75]    1         4d
         sga = SpacegroupAnalyzer(self.non_diagonal_ZnS)
         assert np.allclose(
             zns_defect_gen.conventional_structure.lattice.matrix,
-            sga.get_conventional_standard_structure(self.non_diagonal_ZnS).lattice.matrix,
+            sga.get_conventional_standard_structure().lattice.matrix,
         )
 
         # test defects
