@@ -368,8 +368,10 @@ def get_conv_cell_site(defect_entry):
     ]
 
     defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
+    conv_cell_site = defect_conv_cell_sites[0]
+    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
 
-    return defect_conv_cell_sites[0]
+    return conv_cell_site.to_unit_cell()
 
 
 def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
