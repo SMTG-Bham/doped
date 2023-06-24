@@ -207,6 +207,17 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             "standard structure, for which doped uses the spglib convention."
         )
 
+        # TODO: test charge states (when charge state algorithm is implemented)
+        # test generate_supercell = False for each
+        # test other input structures (defective CdTe supercell, primitive one-atom Cu, CuAg)
+        # test as_dict etc methods
+        # test saving to and loading from json (and that _all_ attributes remain)
+        # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
+        # target_frac_coords setting...
+        # test input parameters used as attributes
+        # should also test the prim cell coords of the defect entries for which we explicitly test
+        # conventional cell / supercell coords, to ensure they stay consistent
+
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
@@ -372,16 +383,6 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             cdte_defect_gen["v_Cd_0"].defect_supercell_site.frac_coords,
             np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
         )
-
-    # TODO: test charge states (when charge state algorithm is implemented)
-    # test other input structures (defective CdTe supercell, primitive one-atom Cu, CuAg)
-    # test as_dict etc methods
-    # test saving to and loading from json (and that _all_ attributes remain)
-    # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
-    # target_frac_coords setting...
-    # test input parameters used as attributes
-    # should also test the prim cell coords of the defect entries for which we explicitly test
-    # conventional cell / supercell coords, to ensure they stay consistent
 
     def test_defects_generator_cdte(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -625,28 +626,40 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             np.array([0, 0, 0.334]),
             atol=1e-3,
         )
-        x = 0.4446
-        y = 0.5554
-        try:
+        if generate_supercell:
+            x = 0.4446
+            y = 0.5554
+            try:
+                np.testing.assert_allclose(
+                    ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
+                    np.array([x, y, 0.3322]),
+                    atol=1e-4,
+                )
+                np.testing.assert_allclose(
+                    ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
+                    np.array([x, y, 0.3322]),  # closest to middle of supercell
+                    atol=1e-4,
+                )
+            except AssertionError:
+                np.testing.assert_allclose(
+                    ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
+                    np.array([y, x, 0.3322]),  # closest to middle of supercell
+                    atol=1e-4,
+                )
+                np.testing.assert_allclose(
+                    ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
+                    np.array([y, x, 0.3322]),  # closest to middle of supercell
+                    atol=1e-4,
+                )
+        else:
             np.testing.assert_allclose(
                 ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
-                np.array([x, y, 0.3322]),
+                np.array([0.3333, 0.3333, 0.3339]),
                 atol=1e-4,
             )
             np.testing.assert_allclose(
                 ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
-                np.array([x, y, 0.3322]),  # closest to middle of supercell
-                atol=1e-4,
-            )
-        except AssertionError:
-            np.testing.assert_allclose(
-                ytos_defect_gen.defect_entries["v_Y_0"].sc_defect_frac_coords,
-                np.array([y, x, 0.3322]),  # closest to middle of supercell
-                atol=1e-4,
-            )
-            np.testing.assert_allclose(
-                ytos_defect_gen["v_Y_0"].defect_supercell_site.frac_coords,
-                np.array([y, x, 0.3322]),  # closest to middle of supercell
+                np.array([0.3333, 0.3333, 0.3339]),  # closest to middle of supercell
                 atol=1e-4,
             )
 
