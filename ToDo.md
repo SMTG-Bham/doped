@@ -48,6 +48,8 @@
   - PR to pymatgen: Update entry.parameters["kumagai_meta"] = (dict(self.metadata)) to entry.parameters["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-UCL/doped/issues/3
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
+- Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
+  (and note this behaviour in examples/docs)
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
