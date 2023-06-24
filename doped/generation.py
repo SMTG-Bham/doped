@@ -328,15 +328,16 @@ def _frac_coords_sort_func(coords):
     """
     Sorting function to apply on an iterable of fractional coordinates, where
     entries are sorted by the number of x, y, z that are (almost) equal (i.e.
-    between 0 and 3), then by the magnitude of x, y, z.
+    between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
+    x, y and z.
     """
     num_equals = sum(
         np.isclose(coords[i], coords[j], atol=1e-3)
         for i in range(len(coords))
         for j in range(i + 1, len(coords))
     )
-    magnitude = sum(np.abs(coords))
-    return (-num_equals, magnitude)
+    magnitude = round(sum(np.abs(coords)), 4)
+    return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
 
 
 def get_conv_cell_site(defect_entry):
