@@ -120,14 +120,14 @@ O_i_D2d          [-2,-1,0,+1]     [0.000,0.500,0.250]  4d
             """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
-v_Mn         [-4,-3,-2,-1,0,+1]  [0.625,0.121,0.129]  12d
+v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
 v_Ni         [-2,-1,0,+1]        [0.625,0.625,0.625]  4b
 v_O_C1       [-1,0,+1,+2]        [0.101,0.124,0.392]  24e
 v_O_C3       [-1,0,+1,+2]        [0.384,0.384,0.384]  8c
 
 Substitutions    Charge States             Conv. Cell Coords    Wyckoff
 ---------------  ------------------------  -------------------  ---------
-Li_Mn            [-3,-2,-1,0,+1]           [0.625,0.121,0.129]  12d
+Li_Mn            [-3,-2,-1,0,+1]           [0.121,0.129,0.625]  12d
 Li_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
 Li_O_C1          [-1,0,+1,+2,+3]           [0.101,0.124,0.392]  24e
 Li_O_C3          [-1,0,+1,+2,+3]           [0.384,0.384,0.384]  8c
@@ -136,42 +136,42 @@ Mn_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
 Mn_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
 Mn_O_C3          [-1,0,+1,+2,+3,+4]        [0.384,0.384,0.384]  8c
 Ni_Li            [-1,0,+1]                 [0.004,0.004,0.004]  8c
-Ni_Mn            [-2,-1,0,+1]              [0.625,0.121,0.129]  12d
+Ni_Mn            [-2,-1,0,+1]              [0.121,0.129,0.625]  12d
 Ni_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
 Ni_O_C3          [-1,0,+1,+2,+3,+4]        [0.384,0.384,0.384]  8c
 O_Li             [-3,-2,-1,0,+1]           [0.004,0.004,0.004]  8c
-O_Mn             [-6,-5,-4,-3,-2,-1,0,+1]  [0.625,0.121,0.129]  12d
+O_Mn             [-6,-5,-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0,+1]        [0.625,0.625,0.625]  4b
 
 Interstitials    Charge States    Conv. Cell Coords    Wyckoff
 ---------------  ---------------  -------------------  ---------
-Li_i_C1_Li1.75   [-1,0,+1]        [0.303,0.444,0.199]  24e
-Li_i_C1_O1.72    [-1,0,+1]        [0.770,0.002,0.001]  24e
-Li_i_C1_O1.78    [-1,0,+1]        [0.261,0.250,0.017]  24e
-Li_i_C2_Li1.83   [-1,0,+1]        [0.125,0.173,0.077]  12d
-Li_i_C2_Li1.84   [-1,0,+1]        [0.375,0.401,0.151]  12d
-Li_i_C2_Li1.86   [-1,0,+1]        [0.375,0.335,0.085]  12d
+Li_i_C1_Li1.75   [-1,0,+1]        [0.199,0.303,0.444]  24e
+Li_i_C1_O1.72    [-1,0,+1]        [0.001,0.770,0.002]  24e
+Li_i_C1_O1.78    [-1,0,+1]        [0.017,0.261,0.250]  24e
+Li_i_C2_Li1.83   [-1,0,+1]        [0.077,0.125,0.173]  12d
+Li_i_C2_Li1.84   [-1,0,+1]        [0.151,0.375,0.401]  12d
+Li_i_C2_Li1.86   [-1,0,+1]        [0.085,0.375,0.335]  12d
 Li_i_C3          [-1,0,+1]        [0.497,0.497,0.497]  8c
-Mn_i_C1_Li1.75   [-1,0,+1,+2,+3]  [0.303,0.444,0.199]  24e
-Mn_i_C1_O1.72    [-1,0,+1,+2,+3]  [0.770,0.002,0.001]  24e
-Mn_i_C1_O1.78    [-1,0,+1,+2,+3]  [0.261,0.250,0.017]  24e
-Mn_i_C2_Li1.83   [-1,0,+1,+2,+3]  [0.125,0.173,0.077]  12d
-Mn_i_C2_Li1.84   [-1,0,+1,+2,+3]  [0.375,0.401,0.151]  12d
-Mn_i_C2_Li1.86   [-1,0,+1,+2,+3]  [0.375,0.335,0.085]  12d
+Mn_i_C1_Li1.75   [-1,0,+1,+2,+3]  [0.199,0.303,0.444]  24e
+Mn_i_C1_O1.72    [-1,0,+1,+2,+3]  [0.001,0.770,0.002]  24e
+Mn_i_C1_O1.78    [-1,0,+1,+2,+3]  [0.017,0.261,0.250]  24e
+Mn_i_C2_Li1.83   [-1,0,+1,+2,+3]  [0.077,0.125,0.173]  12d
+Mn_i_C2_Li1.84   [-1,0,+1,+2,+3]  [0.151,0.375,0.401]  12d
+Mn_i_C2_Li1.86   [-1,0,+1,+2,+3]  [0.085,0.375,0.335]  12d
 Mn_i_C3          [-1,0,+1,+2,+3]  [0.497,0.497,0.497]  8c
-Ni_i_C1_Li1.75   [-1,0,+1,+2]     [0.303,0.444,0.199]  24e
-Ni_i_C1_O1.72    [-1,0,+1,+2]     [0.770,0.002,0.001]  24e
-Ni_i_C1_O1.78    [-1,0,+1,+2]     [0.261,0.250,0.017]  24e
-Ni_i_C2_Li1.83   [-1,0,+1,+2]     [0.125,0.173,0.077]  12d
-Ni_i_C2_Li1.84   [-1,0,+1,+2]     [0.375,0.401,0.151]  12d
-Ni_i_C2_Li1.86   [-1,0,+1,+2]     [0.375,0.335,0.085]  12d
+Ni_i_C1_Li1.75   [-1,0,+1,+2]     [0.199,0.303,0.444]  24e
+Ni_i_C1_O1.72    [-1,0,+1,+2]     [0.001,0.770,0.002]  24e
+Ni_i_C1_O1.78    [-1,0,+1,+2]     [0.017,0.261,0.250]  24e
+Ni_i_C2_Li1.83   [-1,0,+1,+2]     [0.077,0.125,0.173]  12d
+Ni_i_C2_Li1.84   [-1,0,+1,+2]     [0.151,0.375,0.401]  12d
+Ni_i_C2_Li1.86   [-1,0,+1,+2]     [0.085,0.375,0.335]  12d
 Ni_i_C3          [-1,0,+1,+2]     [0.497,0.497,0.497]  8c
-O_i_C1_Li1.75    [-2,-1,0,+1]     [0.303,0.444,0.199]  24e
-O_i_C1_O1.72     [-2,-1,0,+1]     [0.770,0.002,0.001]  24e
-O_i_C1_O1.78     [-2,-1,0,+1]     [0.261,0.250,0.017]  24e
-O_i_C2_Li1.83    [-2,-1,0,+1]     [0.125,0.173,0.077]  12d
-O_i_C2_Li1.84    [-2,-1,0,+1]     [0.375,0.401,0.151]  12d
-O_i_C2_Li1.86    [-2,-1,0,+1]     [0.375,0.335,0.085]  12d
+O_i_C1_Li1.75    [-2,-1,0,+1]     [0.199,0.303,0.444]  24e
+O_i_C1_O1.72     [-2,-1,0,+1]     [0.001,0.770,0.002]  24e
+O_i_C1_O1.78     [-2,-1,0,+1]     [0.017,0.261,0.250]  24e
+O_i_C2_Li1.83    [-2,-1,0,+1]     [0.077,0.125,0.173]  12d
+O_i_C2_Li1.84    [-2,-1,0,+1]     [0.151,0.375,0.401]  12d
+O_i_C2_Li1.86    [-2,-1,0,+1]     [0.085,0.375,0.335]  12d
 O_i_C3           [-2,-1,0,+1]     [0.497,0.497,0.497]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -373,11 +373,24 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
         )
 
+    # TODO: test charge states (when charge state algorithm is implemented)
+    # test other input structures (defective CdTe supercell, primitive one-atom Cu, CuAg)
+    # test as_dict etc methods
+    # test saving to and loading from json (and that _all_ attributes remain)
+    # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
+    # target_frac_coords setting...
+    # test input parameters used as attributes
+    # should also test the prim cell coords of the defect entries for which we explicitly test
+    # conventional cell / supercell coords, to ensure they stay consistent
+
     def test_defects_generator_cdte(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+                assert len(w) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -387,21 +400,14 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
 
         self.cdte_defect_gen_check(cdte_defect_gen)
 
-        # TODO: test charge states (when charge state algorithm is implemented)
-        # test other input structures (defective CdTe supercell, primitive one-atom Cu, CuAg)
-        # test as_dict etc methods
-        # test saving to and loading from json (and that _all_ attributes remain)
-        # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
-        # target_frac_coords setting...
-        # test input parameters used as attributes
-        # should also test the prim cell coords of the defect entries for which we explicitly test
-        # conventional cell / supercell coords, to ensure they stay consistent
-
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell)
+                assert len(w) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -425,13 +431,7 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             mocked_instance.set_description.assert_any_call("Determining Wyckoff sites")
             mocked_instance.set_description.assert_any_call("Generating DefectEntry objects")
 
-    def test_warnings(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            DefectsGenerator(self.prim_cdte)
-            assert len(w) == 0
-
-    def ytos_defect_gen_check(self, ytos_defect_gen):
+    def ytos_defect_gen_check(self, ytos_defect_gen, generate_supercell=False):
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -454,13 +454,18 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             ytos_defect_gen.bulk_supercell, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
 
-        try:
+        if generate_supercell:
+            try:
+                np.testing.assert_allclose(
+                    ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
+                )
+            except AssertionError:  # symmetry equivalent matrices (a, b equivalent for primitive YTOS)
+                np.testing.assert_allclose(
+                    ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 0, 0]])
+                )
+        else:
             np.testing.assert_allclose(
-                ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
-            )
-        except AssertionError:  # symmetry equivalent matrices (a, b equivalent for primitive YTOS)
-            np.testing.assert_allclose(
-                ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 0, 0]])
+                ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 1, 0]])
             )
 
         assert structure_matcher.fit(
@@ -528,16 +533,28 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].wyckoff == "4d"
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.wyckoff == "4d"
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.multiplicity == 2
-        np.testing.assert_allclose(
-            ytos_defect_gen.defect_entries["O_i_D2d_0"].sc_defect_frac_coords,
-            np.array([0.41667, 0.41667, 0.5]),
-            rtol=1e-3,
-        )
-        np.testing.assert_allclose(
-            ytos_defect_gen.defect_entries["O_i_D2d_0"].defect_supercell_site.frac_coords,
-            np.array([0.41667, 0.41667, 0.5]),
-            rtol=1e-3,
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_D2d_0"].sc_defect_frac_coords,
+                np.array([0.41667, 0.41667, 0.5]),
+                rtol=1e-3,
+            )
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_D2d_0"].defect_supercell_site.frac_coords,
+                np.array([0.41667, 0.41667, 0.5]),
+                rtol=1e-3,
+            )
+        else:
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_D2d_0"].sc_defect_frac_coords,
+                np.array([0.3333, 0.5, 0.25]),
+                rtol=1e-3,
+            )
+            np.testing.assert_allclose(
+                ytos_defect_gen.defect_entries["O_i_D2d_0"].defect_supercell_site.frac_coords,
+                np.array([0.3333, 0.5, 0.25]),
+                rtol=1e-3,
+            )
         assert ytos_defect_gen.defect_entries["O_i_D2d_0"].defect_supercell_site.specie.symbol == "O"
 
         np.testing.assert_allclose(
@@ -639,7 +656,10 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell)  # Y2Ti2S2O5 supercell
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell)  # Y2Ti2S2O5 supercell
+                assert len(w) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -647,6 +667,25 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         assert self.ytos_defect_gen_info in output
 
         self.ytos_defect_gen_check(ytos_defect_gen)
+
+    def test_ytos_no_generate_supercell(self):
+        # tests the case of an input structure which is >10 Å in each direction, has
+        # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
+        # so the _input_ supercell is used
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell, generate_supercell=False)
+                assert len(w) == 0
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        assert self.ytos_defect_gen_info in output
+
+        self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
 
     def lmno_defect_gen_check(self, lmno_defect_gen):
         # test attributes:
@@ -744,12 +783,12 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         )
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].conv_cell_frac_coords,
-            np.array([0.375, 0.401, 0.151]),
+            np.array([0.151, 0.375, 0.401]),
             atol=1e-3,
         )
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.conv_cell_frac_coords,
-            np.array([0.375, 0.401, 0.151]),
+            np.array([0.151, 0.375, 0.401]),
             atol=1e-3,
         )
 
@@ -830,7 +869,10 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
+                assert len(w) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value
@@ -1045,7 +1087,10 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
-            zns_defect_gen = DefectsGenerator(self.non_diagonal_ZnS)  # ZnS non-diagonal supercell
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                zns_defect_gen = DefectsGenerator(self.non_diagonal_ZnS)  # ZnS non-diagonal supercell
+                assert len(w) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
