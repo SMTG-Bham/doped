@@ -535,19 +535,23 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
     return oxi_states
 
 
-def _charge_state_probability(charge_state: int, oxi_probability: float) -> float:
+def _charge_state_probability(
+    charge_state: int, oxi_state: int, oxi_probability: float, max_host_oxi_magnitude: int
+) -> float:
     """
     Function to estimate the probability of a given defect charge state, using
-    the magnitude of the charge state and the probability of the corresponding
-    defect element oxidation state.
+    the probability of the corresponding defect element oxidation state, the
+    magnitude of the charge state, and the maximum magnitude of the host
+    oxidation states (i.e. how 'charged' the host is).
 
-    Disfavours large (absolute) charge states, and low probability oxidation
-    states.
+    Disfavours large (absolute) charge states, low probability oxidation
+    states and greater charge/oxidation state magnitudes than that of the host.
 
     Args:
         charge_state (int): Charge state of defect.
-        oxi_probability (float):
-            Probability of corresponding oxidation state of defect element.
+        oxi_state (int): Oxidation state of defect element.
+        oxi_probability (float): Probability of oxidation state of defect element.
+        max_host_oxi_magnitude (int): Maximum host oxidation state magnitude.
 
     Returns:
         float: Probability of the defect charge state (between 0 and 1).
@@ -563,93 +567,182 @@ def _charge_state_probability(charge_state: int, oxi_probability: float) -> floa
     if charge_state == 0:
         return 1
 
-    return 1 / (abs(charge_state) ** 2) * oxi_probability
+    def _defect_vs_host_charge(charge_state: int, host_charge: int) -> float:
+        if abs(charge_state) <= abs(host_charge):
+            return 1
+
+        return 1 / (2 * (abs(charge_state) - abs(host_charge)))
+
+    return oxi_probability * (
+        1
+        / abs(charge_state)
+        * _defect_vs_host_charge(charge_state, max_host_oxi_magnitude)
+        * _defect_vs_host_charge(oxi_state, max_host_oxi_magnitude)
+    ) ** (2 / 3)
 
 
-def guess_defect_charge_states(defect: Defect) -> list:
+def _get_vacancy_charge_states(defect: Defect, padding: int = 1) -> List[int]:
+    """
+    Get the possible charge states for a vacancy defect, which is from +/-1 to
+    the vacancy oxidation state.
+
+    Args:
+        defect (Defect): A `pymatgen` vacancy Defect object.
+        padding (int):
+            Padding for vacancy charge states, such that the vacancy
+            charge states are set to range(vacancy oxi state, padding),
+            if vacancy oxidation state is negative, or to
+            range(-padding, vacancy oxi state), if positive.
+            Default is 1.
+
+    Returns:
+        List[int]: A list of possible charge states for the defect.
+    """
+    if defect.oxi_state > 0:
+        return list(range(-padding, int(defect.oxi_state) + 1))  # from -1 to oxi_state
+    if defect.oxi_state < 0:
+        return list(range(int(defect.oxi_state), padding + 1))  # from oxi_state to +1
+
+    # oxi_state is 0
+    return list(range(-padding, padding + 1))  # from -1 to +1 for default
+
+
+def _get_possible_oxi_states(defect: Defect) -> Dict:
+    """
+    Get the possible oxidation states and probabilities for a defect.
+
+    Args:
+        defect (Defect): A `pymatgen` Defect object.
+
+    Returns:
+        Dict: A dictionary with possible oxidation states as
+            keys and their probabilities as values.
+    """
+    return {
+        k.oxi_state: prob
+        for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
+        if prob > 0.01  # at least 1% occurrence
+    }
+
+
+def _get_charge_states(
+    possible_oxi_states: Dict,
+    orig_oxi: int,
+    max_host_oxi_magnitude: int,
+) -> Dict:
+    return {
+        oxi - orig_oxi: _charge_state_probability(oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude)
+        for oxi, oxi_prob in possible_oxi_states.items()
+    }
+
+
+def guess_defect_charge_states(
+    defect: Defect, probability_threshold: float = 0.01, padding: int = 1
+) -> list:
     """
     Guess the possible charge states of a defect.
 
     Args:
         defect (Defect): `pymatgen` Defect object.
+        probability_threshold (float):
+            Probability threshold for including defect charge states
+            (for substitutions and interstitials). Default is 0.01.
+        padding (int):
+            Padding for vacancy charge states, such that the vacancy
+            charge states are set to range(vacancy oxi state, padding),
+            if vacancy oxidation state is negative, or to
+            range(-padding, vacancy oxi state), if positive.
+            Default is 1.
 
     Returns:
         list: List of defect charge states.
     """
     if defect.defect_type == DefectType.Vacancy:
-        # set defect charge state: from +/-1 to defect oxi state
-        if defect.oxi_state > 0:
-            return [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
-        if defect.oxi_state < 0:
-            return [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
+        # Set defect charge state: from +/-1 to defect oxi state
+        return _get_vacancy_charge_states(defect, padding=padding)
 
-        # oxi_state is 0
-        return [-1, 0, 1]
-
-    possible_oxi_states = {
-        k.oxi_state: prob
-        for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
-        if prob > 0.01
-    }  # at least 1% occurrence
-
+    possible_oxi_states = _get_possible_oxi_states(defect)
+    max_host_oxi_magnitude = max([abs(site.specie.oxi_state) for site in defect.structure])
     if defect.defect_type == DefectType.Substitution:
-        rm_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
-        possible_charge_states = {
-            sub_oxi - rm_oxi: _charge_state_probability(sub_oxi - rm_oxi, sub_oxi_prob)
-            for sub_oxi, sub_oxi_prob in possible_oxi_states.items()
-            if _charge_state_probability(sub_oxi - rm_oxi, sub_oxi_prob) > 0.02
-        }
-
+        orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
+        possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
     else:  # interstitial
-        possible_charge_states = {
-            inter_oxi: _charge_state_probability(inter_oxi, inter_oxi_prob)
-            for inter_oxi, inter_oxi_prob in possible_oxi_states.items()
-            if _charge_state_probability(inter_oxi, inter_oxi_prob) > 0.02
-        }
+        orig_oxi = 0
+        possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
 
-    charge_state_range = (int(min(possible_charge_states.keys())), int(max(possible_charge_states.keys())))
+    charge_state_list = [k for k, v in possible_charge_states.items() if v > probability_threshold]
+    if charge_state_list:
+        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
+    else:
+        charge_state_range = (0, 0)
 
     # check if defect element (interstitial/substitution) is present in structure (i.e. intrinsic
     # interstitial or antisite):
     defect_elt_sites_in_struct = [
         site for site in defect.structure if site.specie.symbol == defect.site.specie.symbol
     ]
-
-    defect_elt_oxi_in_struct = int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+    defect_elt_oxi_in_struct = (
+        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+        if defect_elt_sites_in_struct
+        else None
+    )
 
     if (
         defect.defect_type == DefectType.Substitution
-        and defect_elt_oxi_in_struct - rm_oxi
+        and defect_elt_oxi_in_struct is not None
+        and defect_elt_oxi_in_struct - orig_oxi
         not in range(charge_state_range[0], charge_state_range[1] + 1)
-        and _charge_state_probability(defect_elt_oxi_in_struct - rm_oxi, 0.2) > 0.02
     ):
         # if simple antisite oxidation state difference not included, recheck with bumped up oxi_state
         # probability for the oxi_state of the substitution atom in the structure
-        # should be included unless it gives an absolute charge state >= 5, so set oxi_state
-        # probability to 20%
-        possible_charge_states[defect_elt_oxi_in_struct - rm_oxi] = _charge_state_probability(
-            defect_elt_oxi_in_struct - rm_oxi, 0.2
+        # should really be included unless it gives an absolute charge state >= 5, so set oxi_state
+        # probability to 100%
+        possible_charge_states[defect_elt_oxi_in_struct - orig_oxi] = _charge_state_probability(
+            defect_elt_oxi_in_struct - orig_oxi, defect_elt_oxi_in_struct, 1, max_host_oxi_magnitude
         )
 
-    if defect.defect_type == DefectType.Interstitial and defect_elt_oxi_in_struct not in range(
-        charge_state_range[0], charge_state_range[1] + 1
+    if (
+        defect.defect_type == DefectType.Interstitial
+        and defect_elt_oxi_in_struct is not None
+        and defect_elt_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
     ):
         # if oxidation state of interstitial element in the host structure is not included, include it!
         possible_charge_states[defect_elt_oxi_in_struct] = _charge_state_probability(
-            defect_elt_oxi_in_struct, 1
+            defect_elt_oxi_in_struct - orig_oxi, defect_elt_oxi_in_struct, 1, max_host_oxi_magnitude
         )
 
-    charge_state_range = (int(min(possible_charge_states.keys())), int(max(possible_charge_states.keys())))
+    sorted_charge_state_dict = dict(
+        sorted(possible_charge_states.items(), key=lambda x: x[1], reverse=True)
+    )
+
+    charge_state_list = [k for k, v in sorted_charge_state_dict.items() if v > probability_threshold]
+    if charge_state_list:
+        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
+    else:
+        # if no charge states are included, take most probable (if probability > 0.1*threshold)
+        charge_state_list = [
+            k for k, v in sorted_charge_state_dict.items() if v > 0.1 * probability_threshold
+        ]
+
+        most_likely_charge_state = charge_state_list[0] if charge_state_list else 0
+
+        charge_state_range = (most_likely_charge_state, most_likely_charge_state)
+
+    if (
+        defect.defect_type == DefectType.Substitution
+        and defect_elt_oxi_in_struct is not None
+        and defect_elt_oxi_in_struct - orig_oxi == 0
+        and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
+    ):
+        # if defect is an antisite of two equal oxi state elements, ensure at least (-1, 0, +1) included
+        charge_state_range = (min(charge_state_range[0], -1), max(charge_state_range[1], 1))
 
     # set charge_state_range to min/max of range, ensuring range is extended to 0:
-    if charge_state_range[0] > 0:
-        charge_states = [*range(0, charge_state_range[1] + 1)]
-    elif charge_state_range[1] < 0:
-        charge_states = [*range(charge_state_range[0], 0 + 1)]
-    if charge_state_range[0] == charge_state_range[1]:  # if range is 0
-        charge_states = [*range(-1, 1 + 1)]
+    if charge_state_range[0] == 0 and charge_state_range[1] == 0:  # if range is 0
+        charge_state_range = (-1, 1)
 
-    return charge_states
+    charge_state_range = (min(charge_state_range[0], 0), max(charge_state_range[1], 0))
+    return list(range(charge_state_range[0], charge_state_range[1] + 1))
 
 
 class DefectsGenerator:
@@ -659,6 +752,7 @@ class DefectsGenerator:
         extrinsic: Optional[Union[str, List, Dict]] = None,
         interstitial_coords: Optional[List] = None,
         generate_supercell: bool = True,
+        charge_state_gen_kwargs: Optional[Dict] = None,
         supercell_gen_kwargs: Optional[Dict] = None,
         interstitial_gen_kwargs: Optional[Dict] = None,
         target_frac_coords: Optional[List] = None,
@@ -693,8 +787,15 @@ class DefectsGenerator:
         etc.). For interstitials, the same naming scheme is used, but the point group
         is always appended to the pymatgen defect name.
 
-        # TODO: Mention how charge states are generated, and how to modify, as shown in the example
-        # notebook
+        Possible charge states for the defects are estimated using the probability of
+        the corresponding defect element oxidation state, the magnitude of the charge
+        state, and the maximum magnitude of the host oxidation states (i.e. how
+        'charged' the host is), with large (absolute) charge states, low probability
+        oxidation states and/or greater charge/oxidation state magnitudes than that of
+        the host being disfavoured. This can be controlled using the
+        `probability_threshold` or `padding` keys in the `charge_state_gen_kwargs`
+        parameter, which are passed to the `_charge_state_probability()` function.
+        See docs for examples of modifying the generated charge states.
 
         Args:
             structure (Structure):
@@ -719,6 +820,11 @@ class DefectsGenerator:
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
                 `find_optimal_cell_shape()` functions) or not. If False, then the
                 input structure is used as the defect & bulk supercell.
+            charge_state_gen_kwargs (Dict):
+                Keyword arguments to be passed to the `_charge_state_probability`
+                function (such as `probability_threshold` (default = 0.01, used for
+                substitutions and interstitials) and `padding` (default = 1, used for
+                vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
                 Keyword arguments to be passed to the `get_sc_fromstruct` function
                 in `pymatgen.analysis.defects.supercells` (such as `min_atoms`
@@ -753,6 +859,9 @@ class DefectsGenerator:
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
         self.generate_supercell = generate_supercell
+        self.charge_state_gen_kwargs = (
+            charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
+        )
         self.supercell_gen_kwargs = supercell_gen_kwargs if supercell_gen_kwargs is not None else {}
         self.interstitial_gen_kwargs = (
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
@@ -1087,17 +1196,11 @@ class DefectsGenerator:
             pbar.update(5)  # 95% of progress bar
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                defect = neutral_defect_entry.defect
-                # set defect charge states: currently from +/-1 to defect oxi state
-                if defect.oxi_state > 0:
-                    charge_states = [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
-                elif defect.oxi_state < 0:
-                    charge_states = [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
-                else:  # oxi_state is 0
-                    charge_states = [-1, 0, 1]
+                charge_states = guess_defect_charge_states(
+                    neutral_defect_entry.defect, **self.charge_state_gen_kwargs
+                )
 
                 for charge in charge_states:
-                    # TODO: Will be updated to our chosen charge generation algorithm!
                     defect_entry = copy.deepcopy(neutral_defect_entry)
                     defect_entry.charge_state = charge
                     defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
