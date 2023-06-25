@@ -21,7 +21,7 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
-from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -347,6 +347,27 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
 
 
+def get_primitive_structure(sga):
+    """
+    Get a consistent/deterministic primitive structure from a
+    SpacegroupAnalyzer object.
+
+    For some materials (e.g. zinc blende), there are multiple equivalent
+    primitive cells, so for reproducibility and in line with most structure
+    conventions/definitions, take the one with the lowest summed norm of the
+    fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
+    (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
+    """
+    possible_prim_structs = []
+    for _i in range(10):
+        struct = sga.get_primitive_standard_structure()
+        possible_prim_structs.append(struct)
+        sga = SpacegroupAnalyzer(struct, symprec=1e-2)
+
+    possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
+    return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
+
+
 def get_conv_cell_site(defect_entry):
     """
     Get an equivalent site of the defect entry in the conventional structure of
@@ -357,22 +378,27 @@ def get_conv_cell_site(defect_entry):
     prim_struct_with_X = defect_entry.defect.structure.copy()
     prim_struct_with_X.remove_oxidation_states()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
-    regenerated_conv_structure = prim_struct_with_X * np.linalg.inv(conv_to_prim_transf_matrix)
 
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"])
-    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, regenerated_conv_structure)
-
+    # convert to sga prim structure:
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    s2_like_s1 = sm.get_s2_like_s1(get_primitive_structure(sga), prim_struct_with_X)
     # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
     # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
+    s2_really_like_s1 = Structure.from_sites(
+        [
+            PeriodicSite(
+                site.specie,
+                site.frac_coords,
+                sga.get_primitive_standard_structure().lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+    regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
+
     defect_conv_cell_sites = [
-        PeriodicSite(
-            defect_entry.defect.site.specie,
-            site.frac_coords,
-            defect_entry.conventional_structure.lattice,
-            to_unit_cell=True,
-        )
-        for site in s2_like_s1.sites
-        if site.specie.symbol == "X"
+        site for site in regenerated_conv_structure.sites if site.specie.symbol == "X"
     ]
 
     defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
@@ -427,7 +453,7 @@ def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
                     expr_value = simplify(sympy_expr).subs(variable_dict)
 
                 # Check if the evaluated expression matches the corresponding coordinate
-                if not np.isclose(float(coord), float(expr_value), atol=0.001):
+                if not np.isclose(float(coord), float(expr_value), atol=0.003):
                     match = False
                     break
 
@@ -584,18 +610,7 @@ class DefectsGenerator:
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
 
-            # for some materials (e.g. zinc blende), there are multiple equivalent primitive cells
-            # so for reproducibility and in line with most structure conventions/definitions, take the one
-            # with the lowest sum norm of the fractional coordinates of the sites (i.e. favour Cd (0,0, 0)
-            # and Te (0.25, 0.25, 0.25) over Cd (0.0, 0.0, 0.0) and Te (0.75, 0.75, 0.75) for F-43m CdTe)
-            possible_prim_structs = []
-            for _i in range(10):
-                struct = sga.get_primitive_standard_structure()
-                possible_prim_structs.append(struct)
-                sga = SpacegroupAnalyzer(struct, symprec=1e-2)
-
-            possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
-            prim_struct = Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
+            prim_struct = get_primitive_structure(sga)
             self.conventional_structure = Structure.from_dict(
                 _round_floats(sga.get_conventional_standard_structure().as_dict())
             )
