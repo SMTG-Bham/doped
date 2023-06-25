@@ -2,7 +2,6 @@
 ## Defect calculations set up
 - Defect complexes: Functionality to setup and parse calculations – can do this with new `pymatgen`
   code? Note that our defect-centring code is currently not implemented for this!
-- Better charge state predictor? At least print determined oxidation state ranges, and warning that you're gonna use these to predict defect charge states (so people can see if something off etc.); could use the csv Dan sent on defects slack (17 Mar 21 - this can also be done in pymatgen; see ShakeNBreak most_common_oxi function) and set an arbitrary cutoff for oxidation states that can occur in known materials. Alternative possibility is do +/-2 to fully-ionised+/-2, as this should cover >99% of amphoteric cases right? (See emails with Jimmy – can be easily done with 'padding' option in pymatgen-analysis-defects?)
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
   point to post-processing tools for these online (in docs/example notebooks, `aiida-defects` for  QE,
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
