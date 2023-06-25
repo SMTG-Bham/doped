@@ -208,15 +208,12 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         )
 
         # TODO: test charge states (when charge state algorithm is implemented)
-        # test generate_supercell = False for each
         # test other input structures (defective CdTe supercell, primitive one-atom Cu, CuAg)
         # test as_dict etc methods
         # test saving to and loading from json (and that _all_ attributes remain)
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords setting...
         # test input parameters used as attributes
-        # should also test the prim cell coords of the defect entries for which we explicitly test
-        # conventional cell / supercell coords, to ensure they stay consistent
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
@@ -312,6 +309,10 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             np.array([0.3125, 0.4375, 0.4375]),  # closest to middle of supercell
         )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
+        np.testing.assert_allclose(
+            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
+            np.array([0.625, 0.625, 0.625]),
+        )
 
         for defect_name, defect_entry in cdte_defect_gen.defect_entries.items():
             assert defect_entry.name == defect_name
@@ -536,6 +537,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             ytos_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
             ytos_defect_gen.primitive_structure.lattice.matrix,
         )
+        assert np.allclose(
+            ytos_defect_gen.defects["vacancies"][0].site.frac_coords,
+            np.array([0.6661, 0.6661, 0.0]),
+            atol=1e-3,
+        )
 
         # test defect entries
         assert len(ytos_defect_gen.defect_entries) == 221
@@ -585,6 +591,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         np.testing.assert_allclose(
             ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.conv_cell_frac_coords,
             np.array([0.000, 0.500, 0.25]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.site.frac_coords,
+            np.array([0.25, 0.75, 0.5]),
             atol=1e-3,
         )
 
@@ -681,6 +692,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
                 np.array([0.3333, 0.3333, 0.3339]),  # closest to middle of supercell
                 atol=1e-4,
             )
+        assert np.allclose(
+            ytos_defect_gen["v_Y_0"].defect.site.frac_coords,
+            np.array([0.6661, 0.6661, 0.0]),
+            atol=1e-3,
+        )
 
     def test_ytos_supercell_input(self):
         # note that this tests the case of an input structure which is >10 Å in each direction and has
@@ -784,6 +800,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             lmno_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
             lmno_defect_gen.primitive_structure.lattice.matrix,
         )
+        assert np.allclose(
+            lmno_defect_gen.defects["vacancies"][0].site.frac_coords,
+            np.array([0.0037, 0.0037, 0.0037]),
+            atol=1e-4,
+        )
 
         # test defect entries
         assert len(lmno_defect_gen.defect_entries) == 207
@@ -838,6 +859,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.conv_cell_frac_coords,
             np.array([0.151, 0.375, 0.401]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.site.frac_coords,
+            np.array([0.1250, 0.5993, 0.6507]),
             atol=1e-3,
         )
 
@@ -923,6 +949,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
                 np.array([0.38447, 0.38447, 0.38447]),  # closest to middle of supercell
                 atol=1e-4,
             )
+        np.testing.assert_allclose(
+            lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.site.frac_coords,
+            np.array([0.1155, 0.6155, 0.8845]),
+            atol=1e-3,
+        )
 
     def test_lmno(self):
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
@@ -1032,6 +1063,9 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             zns_defect_gen.defects["vacancies"][1].defect_structure.lattice.matrix,
             zns_defect_gen.primitive_structure.lattice.matrix,
         )
+        assert np.allclose(
+            zns_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.25, 0.25, 0.25])
+        )
 
         # test defect entries
         assert len(zns_defect_gen.defect_entries) == 44
@@ -1080,6 +1114,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         )
         np.testing.assert_allclose(
             zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].defect.conv_cell_frac_coords,
+            np.array([0.5, 0.5, 0.5]),
+            rtol=1e-2,
+        )
+        np.testing.assert_allclose(
+            zns_defect_gen.defect_entries["S_i_Td_S2.35_+2"].defect.site.frac_coords,
             np.array([0.5, 0.5, 0.5]),
             rtol=1e-2,
         )
@@ -1165,6 +1204,11 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
                 np.array([0.359375, 0.546875, 0.4375]),  # closest to middle of supercell
                 atol=1e-4,
             )
+        np.testing.assert_allclose(
+            zns_defect_gen.defect_entries["Zn_S_+2"].defect.site.frac_coords,
+            np.array([0.25, 0.25, 0.25]),
+            atol=1e-3,
+        )
 
     def test_zns_non_diagonal_supercell(self):
         # test inputting a non-diagonal supercell structure -> correct primitive structure
