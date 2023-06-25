@@ -432,7 +432,7 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             mocked_instance.set_description.assert_any_call("Determining Wyckoff sites")
             mocked_instance.set_description.assert_any_call("Generating DefectEntry objects")
 
-    def ytos_defect_gen_check(self, ytos_defect_gen, generate_supercell=False):
+    def ytos_defect_gen_check(self, ytos_defect_gen, generate_supercell=True):
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -448,9 +448,6 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             ytos_defect_gen.primitive_structure.volume,
             self.ytos_bulk_supercell.get_primitive_structure().volume,
         )
-        assert not np.allclose(
-            ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
-        )  # different supercell because Kat YTOS one has 198 atoms but min >10Å one is 99 atoms
         assert structure_matcher.fit(
             ytos_defect_gen.bulk_supercell, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
@@ -464,9 +461,15 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
                 np.testing.assert_allclose(
                     ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 0, 0]])
                 )
+            assert not np.allclose(
+                ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
+            )  # different supercell because Kat YTOS one has 198 atoms but min >10Å one is 99 atoms
         else:
             np.testing.assert_allclose(
                 ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 1, 0]])
+            )
+            assert np.allclose(
+                ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
             )
 
         assert structure_matcher.fit(
@@ -700,7 +703,7 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
 
         self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
 
-    def lmno_defect_gen_check(self, lmno_defect_gen):
+    def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -709,9 +712,14 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         assert np.allclose(
             lmno_defect_gen.primitive_structure.lattice.matrix, self.lmno_primitive.lattice.matrix
         )
-        np.testing.assert_allclose(
-            lmno_defect_gen.supercell_matrix, np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]])
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                lmno_defect_gen.supercell_matrix, np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+            )
+        else:
+            np.testing.assert_allclose(
+                lmno_defect_gen.supercell_matrix, np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+            )
         assert structure_matcher.fit(
             lmno_defect_gen.primitive_structure * lmno_defect_gen.supercell_matrix,
             lmno_defect_gen.bulk_supercell,
@@ -781,16 +789,28 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         assert (
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect.multiplicity == 12
         )  # prim = conv structure in LMNO
-        np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].sc_defect_frac_coords,
-            np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
-            rtol=1e-2,
-        )
-        np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.frac_coords,
-            np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
-            rtol=1e-2,
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].sc_defect_frac_coords,
+                np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.frac_coords,
+                np.array([0.4246, 0.4375, 0.5496]),  # closes to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+        else:
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].sc_defect_frac_coords,
+                np.array([0.15074, 0.375, 0.40074]),  # closes to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.frac_coords,
+                np.array([0.15074, 0.375, 0.40074]),  # closes to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
         assert (
             lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84_+2"].defect_supercell_site.specie.symbol == "Ni"
         )
@@ -865,16 +885,28 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
             np.array([0.384, 0.384, 0.384]),
             atol=1e-3,
         )
-        np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Li_O_C3_+3"].sc_defect_frac_coords,
-            np.array([0.4328, 0.4328, 0.4328]),  # closest to middle of supercell
-            atol=1e-4,
-        )
-        np.testing.assert_allclose(
-            lmno_defect_gen["Li_O_C3_+3"].defect_supercell_site.frac_coords,
-            np.array([0.4328, 0.4328, 0.4328]),  # closest to middle of supercell
-            atol=1e-4,
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Li_O_C3_+3"].sc_defect_frac_coords,
+                np.array([0.4328, 0.4328, 0.4328]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                lmno_defect_gen["Li_O_C3_+3"].defect_supercell_site.frac_coords,
+                np.array([0.4328, 0.4328, 0.4328]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+        else:
+            np.testing.assert_allclose(
+                lmno_defect_gen.defect_entries["Li_O_C3_+3"].sc_defect_frac_coords,
+                np.array([0.38447, 0.38447, 0.38447]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                lmno_defect_gen["Li_O_C3_+3"].defect_supercell_site.frac_coords,
+                np.array([0.38447, 0.38447, 0.38447]),  # closest to middle of supercell
+                atol=1e-4,
+            )
 
     def test_lmno(self):
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
@@ -893,6 +925,30 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
         assert self.lmno_defect_gen_info in output
 
         self.lmno_defect_gen_check(lmno_defect_gen)
+
+    def test_lmno_no_generate_supercell(self):
+        # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
+        # generate_supercell = False
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                lmno_defect_gen = DefectsGenerator(self.lmno_primitive, generate_supercell=False)
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert (
+                "Input structure is <10 Å in at least one direction (minimum image distance = 8.28 Å, "
+                "which is usually too small for accurate defect calculations, but "
+                "generate_supercell = False, so using input structure as defect & bulk supercells. "
+                "Caution advised!" in str(w[-1].message)
+            )
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        assert self.lmno_defect_gen_info in output
+
+        self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
 
     def zns_defect_gen_check(self, zns_defect_gen, generate_supercell=True):
         # test attributes:
