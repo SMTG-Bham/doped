@@ -417,6 +417,22 @@ S_i_Td_Zn2.35    [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
 
         self.cdte_defect_gen_check(cdte_defect_gen)
 
+    def test_cdte_no_generate_supercell_supercell_input(self):
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell, generate_supercell=False)
+                assert len(w) == 0
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        assert self.cdte_defect_gen_info in output
+
+        self.cdte_defect_gen_check(cdte_defect_gen)
+
     @patch("sys.stdout", new_callable=StringIO)
     def test_generator_tqdm(self, mock_stdout):
         with patch("doped.generation.tqdm") as mocked_tqdm:
