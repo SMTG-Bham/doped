@@ -9,10 +9,12 @@ from io import StringIO
 from unittest.mock import patch
 
 import numpy as np
+from ase.build import bulk, make_supercell
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.generation import DefectsGenerator, get_wyckoff_dict_from_sgn
@@ -131,10 +133,10 @@ Li_Mn            [-3,-2,-1,0,+1]           [0.121,0.129,0.625]  12d
 Li_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
 Li_O_C1          [-1,0,+1,+2,+3]           [0.101,0.124,0.392]  24e
 Li_O_C3          [-1,0,+1,+2,+3]           [0.384,0.384,0.384]  8c
-Mn_Li            [-1,0,+1]                 [0.004,0.004,0.004]  8c
-Mn_Ni            [-1,0,+1]                 [0.625,0.625,0.625]  4b
-Mn_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
-Mn_O_C3          [-1,0,+1,+2,+3,+4]        [0.384,0.384,0.384]  8c
+Mn_Li            [-1,0,+1,+2,+3]           [0.004,0.004,0.004]  8c
+Mn_Ni            [-1,0,+1,+2]              [0.625,0.625,0.625]  4b
+Mn_O_C1          [-1,0,+1,+2,+3,+4,+5,+6]  [0.101,0.124,0.392]  24e
+Mn_O_C3          [-1,0,+1,+2,+3,+4,+5,+6]  [0.384,0.384,0.384]  8c
 Ni_Li            [-1,0,+1]                 [0.004,0.004,0.004]  8c
 Ni_Mn            [-2,-1,0,+1]              [0.121,0.129,0.625]  12d
 Ni_O_C1          [-1,0,+1,+2,+3,+4]        [0.101,0.124,0.392]  24e
@@ -220,6 +222,39 @@ Cu_i_Td          [-1,0,+1,+2]     [0.250,0.250,0.250]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Cu.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+            "standard structure, for which doped uses the spglib convention."
+        )
+
+        # AgCu:
+        atoms = bulk("Cu")
+        atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+        atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
+        aaa = AseAtomsAdaptor()
+        self.agcu = aaa.get_structure(atoms)
+
+        self.agcu_defect_gen_info = (
+            """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
+-----------  ---------------  -------------------  ---------
+v_Cu         [-1,0,+1]        [0.000,0.000,0.000]  3a
+v_Ag         [-1,0,+1]        [0.000,0.000,0.500]  3b
+
+Substitutions    Charge States    Conv. Cell Coords    Wyckoff
+---------------  ---------------  -------------------  ---------
+Cu_Ag            [-1,0,+1]        [0.000,0.000,0.500]  3b
+Ag_Cu            [-1,0,+1]        [0.000,0.000,0.000]  3a
+
+Interstitials                 Charge States    Conv. Cell Coords    Wyckoff
+----------------------------  ---------------  -------------------  ---------
+Cu_i_C3v_Ag1.56Cu1.56Ag2.99a  [-1,0,+1,+2]     [0.000,0.000,0.125]  6c
+Cu_i_C3v_Ag1.56Cu1.56Ag2.99b  [-1,0,+1,+2]     [0.000,0.000,0.375]  6c
+Cu_i_C3v_Ag1.80               [-1,0,+1,+2]     [0.000,0.000,0.250]  6c
+Ag_i_C3v_Ag1.56Cu1.56Ag2.99a  [-1,0,+1,+2]     [0.000,0.000,0.125]  6c
+Ag_i_C3v_Ag1.56Cu1.56Ag2.99b  [-1,0,+1,+2]     [0.000,0.000,0.375]  6c
+Ag_i_C3v_Ag1.80               [-1,0,+1,+2]     [0.000,0.000,0.250]  6c
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
+            "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of AgCu.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
             "standard structure, for which doped uses the spglib convention."
         )
@@ -824,8 +859,8 @@ Cu_i_Td          [-1,0,+1,+2]     [0.250,0.250,0.250]  8c
         )
 
         # test defect entries
-        assert len(lmno_defect_gen.defect_entries) == 207
-        assert len(lmno_defect_gen) == 207
+        assert len(lmno_defect_gen.defect_entries) == 214
+        assert len(lmno_defect_gen) == 214
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in lmno_defect_gen.defect_entries.values()
@@ -1402,13 +1437,9 @@ Cu_i_Td          [-1,0,+1,+2]     [0.250,0.250,0.250]  8c
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cu_defect_gen.bulk_supercell.lattice.matrix
             )
-            # assert defect_entry.defect.multiplicity * 4 == int(
-            #     defect_entry.wyckoff[:-1]
-            # )  # 4 prim cells in conv cell in Cu
-            if defect_entry.defect.multiplicity * 4 != int(defect_entry.wyckoff[:-1]):
-                print(defect_entry.name)
-                print(defect_entry.defect.multiplicity * 4)
-                print(int(defect_entry.wyckoff[:-1]))
+            assert defect_entry.defect.multiplicity * 4 == int(
+                defect_entry.wyckoff[:-1]
+            )  # 4 prim cells in conv cell in Cu
             assert defect_entry.defect_supercell_site
 
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.name == "v_Cu"
@@ -1474,6 +1505,273 @@ Cu_i_Td          [-1,0,+1,+2]     [0.250,0.250,0.250]  8c
             )
             DefectsGenerator(self.prim_cu, generate_supercell=False)
             assert single_site_no_supercell_error in e.exception
+
+    def agcu_defect_gen_check(self, agcu_defect_gen, generate_supercell=True):
+        # test attributes:
+        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
+        assert structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
+        assert structure_matcher.fit(
+            agcu_defect_gen.primitive_structure, agcu_defect_gen.bulk_supercell
+        )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
+        assert not np.allclose(  # reduces from input supercell
+            agcu_defect_gen.primitive_structure.lattice.matrix, self.agcu.lattice.matrix
+        )
+
+        if generate_supercell:
+            np.testing.assert_allclose(
+                agcu_defect_gen.supercell_matrix, np.array([[2, 2, 0], [-5, 5, 0], [-3, -3, 6]])
+            )
+        else:
+            np.testing.assert_allclose(
+                agcu_defect_gen.supercell_matrix, np.array([[1, -1, -1], [-1, 1, -1], [-1, -1, 1]])
+            )
+        assert structure_matcher.fit(
+            agcu_defect_gen.primitive_structure * agcu_defect_gen.supercell_matrix,
+            agcu_defect_gen.bulk_supercell,
+        )
+        assert np.allclose(
+            (agcu_defect_gen.primitive_structure * agcu_defect_gen.supercell_matrix).lattice.matrix,
+            agcu_defect_gen.bulk_supercell.lattice.matrix,
+        )
+        assert structure_matcher.fit(agcu_defect_gen.conventional_structure, self.agcu)
+        sga = SpacegroupAnalyzer(self.agcu)
+        assert np.allclose(
+            agcu_defect_gen.conventional_structure.lattice.matrix,
+            sga.get_conventional_standard_structure().lattice.matrix,
+        )
+
+        # test defects
+        assert len(agcu_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(agcu_defect_gen.defects["vacancies"]) == 2
+        assert all(
+            defect.defect_type == DefectType.Vacancy for defect in agcu_defect_gen.defects["vacancies"]
+        )
+        assert len(agcu_defect_gen.defects["substitutions"]) == 2
+        assert all(
+            defect.defect_type == DefectType.Substitution
+            for defect in agcu_defect_gen.defects["substitutions"]
+        )
+        assert len(agcu_defect_gen.defects["interstitials"]) == 6
+        assert all(
+            defect.defect_type == DefectType.Interstitial
+            for defect in agcu_defect_gen.defects["interstitials"]
+        )
+        assert all(
+            isinstance(defect, Defect)
+            for defect_list in agcu_defect_gen.defects.values()
+            for defect in defect_list
+        )
+
+        # test some relevant defect attributes
+        assert agcu_defect_gen.defects["vacancies"][1].name == "v_Ag"
+        assert agcu_defect_gen.defects["vacancies"][1].oxi_state == 0
+        assert agcu_defect_gen.defects["vacancies"][1].multiplicity == 1
+        assert agcu_defect_gen.defects["vacancies"][1].defect_type == DefectType.Vacancy
+        assert agcu_defect_gen.defects["vacancies"][1].structure == agcu_defect_gen.primitive_structure
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            agcu_defect_gen.defects["vacancies"][1].defect_structure.lattice.matrix,
+            agcu_defect_gen.primitive_structure.lattice.matrix,
+        )
+        assert np.allclose(
+            agcu_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.5, 0.5, 0.5])
+        )
+
+        # test defect entries
+        assert len(agcu_defect_gen.defect_entries) == 36
+        assert len(agcu_defect_gen) == 36
+        assert all(
+            isinstance(defect_entry, DefectEntry)
+            for defect_entry in agcu_defect_gen.defect_entries.values()
+        )
+
+        # test defect entry attributes
+        assert (
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].name
+            == "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+        )
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].charge_state == +1
+        assert (
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.defect_type
+            == DefectType.Interstitial
+        )
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].wyckoff == "6c"
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.wyckoff == "6c"
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.multiplicity == 2
+        if generate_supercell:
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].sc_defect_frac_coords,
+                np.array([0.5312, 0.5, 0.3958]),  # closest to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries[
+                    "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+                ].defect_supercell_site.frac_coords,
+                np.array([0.5312, 0.5, 0.3958]),  # closest to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+        else:
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].sc_defect_frac_coords,
+                np.array([0.375, 0.375, 0.375]),  # closest to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries[
+                    "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+                ].defect_supercell_site.frac_coords,
+                np.array([0.375, 0.375, 0.375]),  # closest to [0.5, 0.5, 0.5]
+                rtol=1e-2,
+            )
+        assert (
+            agcu_defect_gen.defect_entries[
+                "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+            ].defect_supercell_site.specie.symbol
+            == "Cu"
+        )
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].conv_cell_frac_coords,
+            np.array([0.0, 0.0, 0.375]),
+            rtol=1e-2,
+        )
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.conv_cell_frac_coords,
+            np.array([0.0, 0.0, 0.375]),
+            rtol=1e-2,
+        )
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.site.frac_coords,
+            np.array([0.625, 0.625, 0.625]),
+            rtol=1e-2,
+        )
+
+        for defect_name, defect_entry in agcu_defect_gen.defect_entries.items():
+            assert defect_entry.name == defect_name
+            assert defect_entry.charge_state == int(defect_name.split("_")[-1])
+            assert defect_entry.wyckoff  # wyckoff label is not None
+            assert defect_entry.defect
+            assert defect_entry.defect.wyckoff
+            assert isinstance(defect_entry.conv_cell_frac_coords, np.ndarray)
+            assert isinstance(defect_entry.defect.conv_cell_frac_coords, np.ndarray)
+            np.testing.assert_allclose(
+                defect_entry.sc_entry.structure.lattice.matrix,
+                agcu_defect_gen.bulk_supercell.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                sga.get_conventional_standard_structure().lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.defect.conventional_structure.lattice.matrix,
+                sga.get_conventional_standard_structure().lattice.matrix,
+            )
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            distances = []
+            for site in defect_entry.conventional_structure:
+                distances.append(
+                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+                )
+            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            assert np.allclose(
+                defect_entry.bulk_supercell.lattice.matrix, agcu_defect_gen.bulk_supercell.lattice.matrix
+            )
+            assert defect_entry.defect.multiplicity * 3 == int(
+                defect_entry.wyckoff[:-1]
+            )  # 3 prim cells in conv cell
+            assert defect_entry.defect_supercell_site
+
+        assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.name == "Ag_Cu"
+        assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.oxi_state == 0
+        assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.multiplicity == 1
+        assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].wyckoff == "3a"
+        assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.defect_type == DefectType.Substitution
+        assert (
+            agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.structure
+            == agcu_defect_gen.primitive_structure
+        )
+        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+            agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.defect_structure.lattice.matrix,
+            agcu_defect_gen.primitive_structure.lattice.matrix,
+        )
+
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Ag_Cu_-1"].conv_cell_frac_coords,
+            np.array([0.0, 0.0, 0.0]),
+            atol=1e-3,
+        )
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.conv_cell_frac_coords,
+            np.array([0.0, 0.0, 0.0]),
+            atol=1e-3,
+        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries["Ag_Cu_-1"].sc_defect_frac_coords,
+                np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                agcu_defect_gen["Ag_Cu_-1"].defect_supercell_site.frac_coords,
+                np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+        else:
+            np.testing.assert_allclose(
+                agcu_defect_gen.defect_entries["Ag_Cu_-1"].sc_defect_frac_coords,
+                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                agcu_defect_gen["Ag_Cu_-1"].defect_supercell_site.frac_coords,
+                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                atol=1e-4,
+            )
+        np.testing.assert_allclose(
+            agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.site.frac_coords,
+            np.array([0.0, 0.0, 0.0]),
+            atol=1e-3,
+        )
+
+    def test_agcu(self):
+        # test initialising with an intermetallic (where pymatgen oxidation state guessing fails)
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                agcu_defect_gen = DefectsGenerator(self.agcu)
+                assert len(w) == 0
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        assert self.agcu_defect_gen_info in output
+
+        self.agcu_defect_gen_check(agcu_defect_gen)
+
+    def test_agcu_no_generate_supercell(self):
+        # test high-symmetry intermetallic with generate_supercell = False
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                agcu_defect_gen = DefectsGenerator(self.agcu, generate_supercell=False)
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert (
+                "Input structure is <10 Å in at least one direction (minimum image distance = 4.42 Å, "
+                "which is usually too small for accurate defect calculations, but "
+                "generate_supercell = False, so using input structure as defect & bulk supercells. "
+                "Caution advised!" in str(w[-1].message)
+            )
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        assert self.agcu_defect_gen_info in output
+
+        self.agcu_defect_gen_check(agcu_defect_gen, generate_supercell=False)
 
 
 class WyckoffTest(unittest.TestCase):
