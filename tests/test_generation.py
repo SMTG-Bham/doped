@@ -411,11 +411,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: test charge states (when charge state algorithm is implemented)
-        # test as_dict etc methods
+        # TODO: test as_dict etc methods
         # test saving to and loading from json (and that _all_ attributes remain)
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
-        # target_frac_coords setting...
+        # target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
