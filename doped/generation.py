@@ -125,7 +125,7 @@ def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry, n=1):
+def closest_site_info(defect_entry, n=1, r=5):
     """
     Return the element and distance (rounded to 2 decimal places) of the
     closest site to defect_entry.sc_defect_frac_coords in
@@ -219,18 +219,25 @@ def name_defect_entries(defect_entries):
         while True:
             for name in list(defect_naming_dict.keys()):
                 if full_defect_name == name:
-                    prev_defect_entry_full_name = append_closest_site_info(
-                        name, defect_naming_dict[name], n
-                    )
-                    prev_defect_entry = defect_naming_dict.pop(name)
-                    defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
+                    try:
+                        prev_defect_entry_full_name = append_closest_site_info(
+                            name, defect_naming_dict[name], n
+                        )
+                        prev_defect_entry = defect_naming_dict.pop(name)
+                        defect_naming_dict[prev_defect_entry_full_name] = prev_defect_entry
 
-            full_defect_name = append_closest_site_info(full_defect_name, defect_entry, n)
+                    except IndexError:
+                        return handle_repeated_name(defect_naming_dict, full_defect_name)
+
+            try:
+                full_defect_name = append_closest_site_info(full_defect_name, defect_entry, n)
+            except IndexError:
+                return handle_repeated_name(defect_naming_dict, full_defect_name)
 
             if not any(name for name in defect_naming_dict if full_defect_name in name):
                 return defect_naming_dict, full_defect_name
 
-            if n > 4:
+            if n == 3:  # if still not unique after 3rd nearest neighbour, just use alphabetical indexing
                 return handle_repeated_name(defect_naming_dict, full_defect_name)
             n += 1
 
