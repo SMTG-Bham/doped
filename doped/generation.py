@@ -561,6 +561,14 @@ class DefectsGenerator:
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
 
+        if len(self.structure) == 1 and not self.generate_supercell:
+            # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
+            # give empty structure
+            raise ValueError(
+                "Input structure has only one site, so cannot generate defects without supercell (i.e. "
+                "with generate_supercell=False)! Vacancy defect will give empty cell!"
+            )
+
         pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
         pbar.set_description("Getting primitive structure")
 
@@ -749,6 +757,8 @@ class DefectsGenerator:
                     self.defects["substitutions"].extend(list(sub_generator))
                 else:
                     self.defects["substitutions"] = list(sub_generator)
+            if self.defects["substitutions"] == []:  # no substitutions, single-elt system, no extrinsic
+                del self.defects["substitutions"]  # remove empty list
             pbar.update(5)  # 30% of progress bar
 
             # Interstitials:
@@ -994,73 +1004,76 @@ class DefectsGenerator:
         """
         info_string = ""
         for defect_class, defect_list in self.defects.items():
-            table = []
-            header = [
-                defect_class.capitalize(),
-                "Charge States",
-                "Conv. Cell Coords",
-                "Wyckoff",
-            ]
-            defect_type = defect_list[0].defect_type
-            matching_defect_types = {
-                defect_entry_name: defect_entry
-                for defect_entry_name, defect_entry in self.defect_entries.items()
-                if defect_entry.defect.defect_type == defect_type
-            }
-            matching_type_names_wout_charge = list(
-                {defect_entry_name.rsplit("_", 1)[0] for defect_entry_name in matching_defect_types}
-            )
-
-            def _first_and_second_element(defect_name):  # for sorting purposes
-                if defect_name.startswith("v"):
-                    return (defect_name.split("_")[1], defect_name.split("_")[1])
-                if defect_name.split("_")[1] == "i":
-                    return (defect_name.split("_")[0], defect_name.split("_")[0])
-
-                return (
-                    defect_name.split("_")[0],
-                    defect_name.split("_")[1],
-                )
-
-            # sort to match order of appearance of elements in the primitive structure
-            # composition, then alphabetically
-            element_list = [el.symbol for el in self.primitive_structure.composition.elements]
-            sorted_defect_names = sorted(
-                matching_type_names_wout_charge,
-                key=lambda s: (
-                    element_list.index(_first_and_second_element(s)[0]),
-                    element_list.index(_first_and_second_element(s)[1]),
-                    s,
-                ),
-            )
-            for defect_name in sorted_defect_names:
-                charges = [
-                    name.rsplit("_", 1)[1]
-                    for name in self.defect_entries
-                    if name.startswith(defect_name + "_")
-                ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
-                # convert list of strings to one string with comma-separated charges
-                charges = "[" + ",".join(charges) + "]"
-                neutral_defect_entry = self.defect_entries[defect_name + "_0"]  # neutral has no +/- sign
-                frac_coords_string = ",".join(
-                    f"{x:.3f}" for x in neutral_defect_entry.conv_cell_frac_coords
-                )
-                row = [
-                    defect_name,
-                    charges,
-                    f"[{frac_coords_string}]",
-                    neutral_defect_entry.wyckoff,
+            if len(defect_list) > 0:
+                table = []
+                header = [
+                    defect_class.capitalize(),
+                    "Charge States",
+                    "Conv. Cell Coords",
+                    "Wyckoff",
                 ]
-                table.append(row)
-            info_string += (
-                tabulate(
-                    table,
-                    headers=header,
-                    stralign="left",
-                    numalign="left",
+                defect_type = defect_list[0].defect_type
+                matching_defect_types = {
+                    defect_entry_name: defect_entry
+                    for defect_entry_name, defect_entry in self.defect_entries.items()
+                    if defect_entry.defect.defect_type == defect_type
+                }
+                matching_type_names_wout_charge = list(
+                    {defect_entry_name.rsplit("_", 1)[0] for defect_entry_name in matching_defect_types}
                 )
-                + "\n\n"
-            )
+
+                def _first_and_second_element(defect_name):  # for sorting purposes
+                    if defect_name.startswith("v"):
+                        return (defect_name.split("_")[1], defect_name.split("_")[1])
+                    if defect_name.split("_")[1] == "i":
+                        return (defect_name.split("_")[0], defect_name.split("_")[0])
+
+                    return (
+                        defect_name.split("_")[0],
+                        defect_name.split("_")[1],
+                    )
+
+                # sort to match order of appearance of elements in the primitive structure
+                # composition, then alphabetically
+                element_list = [el.symbol for el in self.primitive_structure.composition.elements]
+                sorted_defect_names = sorted(
+                    matching_type_names_wout_charge,
+                    key=lambda s: (
+                        element_list.index(_first_and_second_element(s)[0]),
+                        element_list.index(_first_and_second_element(s)[1]),
+                        s,
+                    ),
+                )
+                for defect_name in sorted_defect_names:
+                    charges = [
+                        name.rsplit("_", 1)[1]
+                        for name in self.defect_entries
+                        if name.startswith(defect_name + "_")
+                    ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
+                    # convert list of strings to one string with comma-separated charges
+                    charges = "[" + ",".join(charges) + "]"
+                    neutral_defect_entry = self.defect_entries[
+                        defect_name + "_0"
+                    ]  # neutral has no +/- sign
+                    frac_coords_string = ",".join(
+                        f"{x:.3f}" for x in neutral_defect_entry.conv_cell_frac_coords
+                    )
+                    row = [
+                        defect_name,
+                        charges,
+                        f"[{frac_coords_string}]",
+                        neutral_defect_entry.wyckoff,
+                    ]
+                    table.append(row)
+                info_string += (
+                    tabulate(
+                        table,
+                        headers=header,
+                        stralign="left",
+                        numalign="left",
+                    )
+                    + "\n\n"
+                )
         conventional_cell_comp = self.conventional_structure.composition
         formula, fu = conventional_cell_comp.get_reduced_formula_and_factor(iupac_ordering=True)
         info_string += (
