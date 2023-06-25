@@ -22,6 +22,7 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.composition import Composition, Element
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -402,10 +403,10 @@ def get_conv_cell_site(defect_entry):
     ]
 
     defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
-    conv_cell_site = defect_conv_cell_sites[0]
+    conv_cell_site = defect_conv_cell_sites[0].to_unit_cell()
     conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
 
-    return conv_cell_site.to_unit_cell()
+    return conv_cell_site
 
 
 def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
@@ -485,6 +486,170 @@ def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
     # convert defect site to conventional unit cell for Wyckoff label matching:
     conv_cell_defect_site = get_conv_cell_site(defect_entry)
     return find_closest_match(conv_cell_defect_site, wyckoff_dict)
+
+
+def get_oxi_probabilities(element_symbol: str) -> dict:
+    """
+    Get a dictionary of oxidation states and their probabilities for an
+    element.
+
+    Tries to get the probabilities from the `pymatgen` tabulated ICSD oxidation
+    state probabilities, and if not available, uses the common oxidation states
+    of the element.
+
+    Args:
+        element_symbol (str): Element symbol.
+
+    Returns:
+        dict: Dictionary of oxidation states and their probabilities.
+    """
+    comp_obj = Composition(element_symbol)
+    oxi_probabilities = {
+        k: v
+        for k, v in comp_obj.oxi_prob.items()
+        if k.element.symbol == element_symbol and k.oxi_state != 0
+    }
+    if oxi_probabilities:  # not empty
+        return {k: round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()}
+
+    element_obj = Element(element_symbol)
+    if element_obj.common_oxidation_states:
+        return {
+            k: 1 / len(element_obj.common_oxidation_states) for k in element_obj.common_oxidation_states
+        }  # known common oxidation states
+
+    # no known _common_ oxidation state, make guess and warn user
+    if element_obj.oxidation_states:
+        oxi_states = {
+            k: 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
+        }  # known oxidation states
+    else:
+        oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
+
+    warnings.warn(
+        f"No known common oxidation states in pymatgen/ICSD dataset for element "
+        f"{element_obj.name}. If this results in unreasonable charge states, you "
+        f"should manually edit the defect charge states."
+    )
+
+    return oxi_states
+
+
+def _charge_state_probability(charge_state: int, oxi_probability: float) -> float:
+    """
+    Function to estimate the probability of a given defect charge state, using
+    the magnitude of the charge state and the probability of the corresponding
+    defect element oxidation state.
+
+    Disfavours large (absolute) charge states, and low probability oxidation
+    states.
+
+    Args:
+        charge_state (int): Charge state of defect.
+        oxi_probability (float):
+            Probability of corresponding oxidation state of defect element.
+
+    Returns:
+        float: Probability of the defect charge state (between 0 and 1).
+    """
+    # for defect charge states; 0 to +/-2 likely, 3-4 less likely, 5-6 v unlikely, >=7 unheard of
+
+    # incorporates oxidation state probabilities and overall defect site charge
+    # (and thus by proxy the cationic/anionic identity of the substituting site)
+    # Thought about incorporating the oxi state probabilities (i.e. reducibility/oxidisability)
+    # of the neighbouring elements to this (particularly for vacancies), but no clear-cut
+    # cases where this would actually improve performance
+
+    if charge_state == 0:
+        return 1
+
+    return 1 / (abs(charge_state) ** 2) * oxi_probability
+
+
+def guess_defect_charge_states(defect: Defect) -> list:
+    """
+    Guess the possible charge states of a defect.
+
+    Args:
+        defect (Defect): `pymatgen` Defect object.
+
+    Returns:
+        list: List of defect charge states.
+    """
+    if defect.defect_type == DefectType.Vacancy:
+        # set defect charge state: from +/-1 to defect oxi state
+        if defect.oxi_state > 0:
+            return [*range(-1, int(defect.oxi_state) + 1)]  # from -1 to oxi_state
+        if defect.oxi_state < 0:
+            return [*range(int(defect.oxi_state), 2)]  # from oxi_state to +1
+
+        # oxi_state is 0
+        return [-1, 0, 1]
+
+    possible_oxi_states = {
+        k.oxi_state: prob
+        for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
+        if prob > 0.01
+    }  # at least 1% occurrence
+
+    if defect.defect_type == DefectType.Substitution:
+        rm_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
+        possible_charge_states = {
+            sub_oxi - rm_oxi: _charge_state_probability(sub_oxi - rm_oxi, sub_oxi_prob)
+            for sub_oxi, sub_oxi_prob in possible_oxi_states.items()
+            if _charge_state_probability(sub_oxi - rm_oxi, sub_oxi_prob) > 0.02
+        }
+
+    else:  # interstitial
+        possible_charge_states = {
+            inter_oxi: _charge_state_probability(inter_oxi, inter_oxi_prob)
+            for inter_oxi, inter_oxi_prob in possible_oxi_states.items()
+            if _charge_state_probability(inter_oxi, inter_oxi_prob) > 0.02
+        }
+
+    charge_state_range = (int(min(possible_charge_states.keys())), int(max(possible_charge_states.keys())))
+
+    # check if defect element (interstitial/substitution) is present in structure (i.e. intrinsic
+    # interstitial or antisite):
+    defect_elt_sites_in_struct = [
+        site for site in defect.structure if site.specie.symbol == defect.site.specie.symbol
+    ]
+
+    defect_elt_oxi_in_struct = int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+
+    if (
+        defect.defect_type == DefectType.Substitution
+        and defect_elt_oxi_in_struct - rm_oxi
+        not in range(charge_state_range[0], charge_state_range[1] + 1)
+        and _charge_state_probability(defect_elt_oxi_in_struct - rm_oxi, 0.2) > 0.02
+    ):
+        # if simple antisite oxidation state difference not included, recheck with bumped up oxi_state
+        # probability for the oxi_state of the substitution atom in the structure
+        # should be included unless it gives an absolute charge state >= 5, so set oxi_state
+        # probability to 20%
+        possible_charge_states[defect_elt_oxi_in_struct - rm_oxi] = _charge_state_probability(
+            defect_elt_oxi_in_struct - rm_oxi, 0.2
+        )
+
+    if defect.defect_type == DefectType.Interstitial and defect_elt_oxi_in_struct not in range(
+        charge_state_range[0], charge_state_range[1] + 1
+    ):
+        # if oxidation state of interstitial element in the host structure is not included, include it!
+        possible_charge_states[defect_elt_oxi_in_struct] = _charge_state_probability(
+            defect_elt_oxi_in_struct, 1
+        )
+
+    charge_state_range = (int(min(possible_charge_states.keys())), int(max(possible_charge_states.keys())))
+
+    # set charge_state_range to min/max of range, ensuring range is extended to 0:
+    if charge_state_range[0] > 0:
+        charge_states = [*range(0, charge_state_range[1] + 1)]
+    elif charge_state_range[1] < 0:
+        charge_states = [*range(charge_state_range[0], 0 + 1)]
+    if charge_state_range[0] == charge_state_range[1]:  # if range is 0
+        charge_states = [*range(-1, 1 + 1)]
+
+    return charge_states
 
 
 class DefectsGenerator:
@@ -909,11 +1074,11 @@ class DefectsGenerator:
                         neutral_defect_entry, wyckoff_label_dict
                     )
                     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
-                    ideal_conv_cell_site = conv_cell_coord_list[0]
+                    ideal_conv_cell_coords = np.round(conv_cell_coord_list[0], 5)
                     neutral_defect_entry.wyckoff = wyckoff_label
                     neutral_defect_entry.defect.wyckoff = wyckoff_label
-                    neutral_defect_entry.conv_cell_frac_coords = ideal_conv_cell_site
-                    neutral_defect_entry.defect.conv_cell_frac_coords = ideal_conv_cell_site
+                    neutral_defect_entry.conv_cell_frac_coords = ideal_conv_cell_coords
+                    neutral_defect_entry.defect.conv_cell_frac_coords = ideal_conv_cell_coords
                     defect_entry_list.append(neutral_defect_entry)
                     pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
 
