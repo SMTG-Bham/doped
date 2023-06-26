@@ -80,8 +80,10 @@
 - Logo!
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - Update to be compatible with new `pymatgen`
-  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more efficient than the `doped` version (which is already far more efficient than the original...) and isn't available in current `pymatgen`.
-  - Use doped naming conventions and functions, site-matching functions, defect entry generation
+  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
+    efficient than the `doped` version (which is already far more efficient than the original...) and
+    isn't available in current `pymatgen`.
+  - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
     functions (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
 - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Code tidy up:
@@ -109,6 +111,10 @@
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
+  - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
+    this to their docs as example use cases as well. Also include examples of extending to
+    non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
+    `sumo` to get the DOS plot of a defect calc, and why this is useful.
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
