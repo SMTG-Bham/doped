@@ -4,7 +4,8 @@
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://shakenbreak.readthedocs.io/en/latest/)
 
 # **D**efect **O**riented **P**ython **E**nvironment **D**istribution (`doped`)
-`doped` is a python package for managing solid-state defect calculations, with functionality to
+<img align="right" width="400" src="docs/logo.png">`doped` is a python package for
+managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
 [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for
 [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for defect
@@ -16,7 +17,7 @@ usage.
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-<img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_chempot_plotting.png" width="420">   &nbsp;&nbsp;  <img src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/files/doped_TLD_plot.png" width="390">
+<img align="left" src="docs/doped_chempot_plotting.png" width="420"> <img src="docs/doped_TLD_plot.png" width="390" align="right">
 
 ## Requirements
 `doped` requires `pymatgen>=2022.8.23` and its dependencies.
@@ -75,10 +76,10 @@ MP API, with your unique key available at: https://legacy.materialsproject.org/o
 As shown in the example notebook, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://arxiv.org/abs/2207.09862), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-UCL/doped/blob/master/dope_Example_Notebook.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
 
 Summary GIF:
-![ShakeNBreak Summary](files/SnB_Supercell_Schematic_PES_2sec_Compressed.gif)
+![ShakeNBreak Summary](docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif)
 
 `SnB` CLI Usage:
-![ShakeNBreak CLI](files/SnB_CLI.gif)
+![ShakeNBreak CLI](docs/SnB_CLI.gif)
 
 
 ### Developer Installation
