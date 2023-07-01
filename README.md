@@ -62,7 +62,10 @@ rm -r temp_potcars  # remove the temporary POTCAR directory
 If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show
 `PAW_PBE Na_pv {date}` (you can ignore any `pymatgen` warnings about recognising the `POTCAR`).
 
-If it does not work check that the `PMG_DEFAULT_FUNCTIONAL` is set to whatever your functionals are (e.g. `PBE` or `PBE_54`)
+If this does not work, you may need to add this to the `.pmgrc.yaml` file:
+```
+  PMG_DEFAULT_FUNCTIONAL: PBE_54  # whatever functional label your POTCARs have
+```
 
 This is necessary to generate `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for charged
 defects.
