@@ -101,7 +101,8 @@
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `CarrierCapture`, and give some
-    examples.
+    examples. Add as optional dependencies.
+  - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
   - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no
     magnetic ordering!** – which you can check in the `OUTCAR` by looking at `magnetization (x)` `y`
     and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
@@ -115,6 +116,7 @@
     this to their docs as example use cases as well. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
+  - Update `doped` links on `SnB`/`easyunfold` etc docs.
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
