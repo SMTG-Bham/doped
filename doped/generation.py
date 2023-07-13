@@ -29,6 +29,7 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
+from pymatgen.transformations.standard_transformations import SupercellTransformation
 from sympy import Eq, simplify, solve, symbols
 from tabulate import tabulate
 from tqdm import tqdm
@@ -39,6 +40,7 @@ from tqdm import tqdm
 #  that do some of this. This will be tricky (SSX trickay you might say) for relaxed interstitials ->
 #  get symmetry-equivalent positions of relaxed interstitial position in unrelaxed bulk (easy pal,
 #  tf you mean 'tricky'??)
+# TODO: Add multiprocessing for Wyckoff determination and interstitial split generation
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -369,11 +371,14 @@ def get_primitive_structure(sga):
     return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
 
 
-def get_conv_cell_site(defect_entry):
+def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
     """
     Get an equivalent site of the defect entry in the conventional structure of
     the host material.
     """
+    if lattice_vec_swap_array is None:
+        lattice_vec_swap_array = [0, 1, 2]
+
     sga = SpacegroupAnalyzer(defect_entry.defect.structure)
     conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
     prim_struct_with_X = defect_entry.defect.structure.copy()
@@ -397,9 +402,10 @@ def get_conv_cell_site(defect_entry):
         ]
     )
     regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
+    reorientated_regenerated_conv_structure = swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
 
     defect_conv_cell_sites = [
-        site for site in regenerated_conv_structure.sites if site.specie.symbol == "X"
+        site for site in reorientated_regenerated_conv_structure.sites if site.specie.symbol == "X"
     ]
 
     defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
@@ -409,16 +415,25 @@ def get_conv_cell_site(defect_entry):
     return conv_cell_site
 
 
-def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
+def get_wyckoff_label_and_equiv_coord_list(
+    defect_entry=None, conv_cell_site=None, wyckoff_dict=None, lattice_vec_swap_array=None
+):
     """
     Return the Wyckoff label and list of equivalent fractional coordinates
-    within the conventional cell for the defect_entry, given a dictionary of
-    Wyckoff labels and coordinates (`wyckoff_dict`).
+    within the conventional cell for the input defect_entry or conv_cell_site
+    (whichever is provided, defaults to defect_entry if both), given a
+    dictionary of Wyckoff labels and coordinates (`wyckoff_dict`).
 
     If `wyckoff_dict` is not provided, the spacegroup of the bulk structure is
     determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
     """
+    if lattice_vec_swap_array is None:
+        lattice_vec_swap_array = [0, 1, 2]
     if wyckoff_dict is None:
+        if defect_entry is None:
+            raise ValueError(
+                "Must provide a `defect_entry` (not `conv_cell_site`) if `wyckoff_dict` is not provided."
+            )
         sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
         wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
 
@@ -430,33 +445,12 @@ def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
         Returns the matching array from the list.
         """
         x, y, z = symbols("x y z")
-        variable_dict = {}  # dict for x,y,z
+        variable_dicts = [{}]  # list of dicts for x,y,z
 
         for sympy_array in coord_list:
-            variable_dict.clear()
-            match = True
-
-            for coord, sympy_expr in zip(coord_array, sympy_array):
-                # Evaluate the expression with the current variable_dict
-                expr_value = simplify(sympy_expr).subs(variable_dict)
-
-                # If the expression cannot be evaluated to a float
-                # it means that there is a new variable in the expression
-                try:
-                    expr_value = np.mod(float(expr_value), 1)  # wrap to 0-1 (i.e. to unit cell)
-
-                except TypeError:
-                    # Assign the expression the value of the corresponding coordinate, and solve
-                    # for the new variable
-                    equation = Eq(sympy_expr, coord)
-                    variable = list(sympy_expr.free_symbols)[0]
-                    variable_dict[variable] = solve(equation, variable)[0]
-                    expr_value = simplify(sympy_expr).subs(variable_dict)
-
-                # Check if the evaluated expression matches the corresponding coordinate
-                if not np.isclose(float(coord), float(expr_value), atol=0.003):
-                    match = False
-                    break
+            match, variable_dict = evaluate_expression_and_update_dict(
+                sympy_array, coord_array, variable_dicts
+            )
 
             if match:
                 # return coord list with sympy expressions subbed with variable_dict:
@@ -481,11 +475,156 @@ def get_wyckoff_label_and_equiv_coord_list(defect_entry, wyckoff_dict=None):
 
         return None  # No match found
 
-    defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
+    def evaluate_expression(sympy_expr, coord, variable_dict):
+        equation = Eq(sympy_expr, coord)
+        variable = list(sympy_expr.free_symbols)[0]
+        variable_dict[variable] = solve(equation, variable)[0]
 
-    # convert defect site to conventional unit cell for Wyckoff label matching:
-    conv_cell_defect_site = get_conv_cell_site(defect_entry)
-    return find_closest_match(conv_cell_defect_site, wyckoff_dict)
+        return simplify(sympy_expr).subs(variable_dict)
+
+    def add_new_variable_dict(
+        sympy_expr_prepend, sympy_expr, coord, current_variable_dict, variable_dicts
+    ):
+        new_sympy_expr = simplify(sympy_expr_prepend + str(sympy_expr))
+        new_dict = current_variable_dict.copy()
+        evaluate_expression(new_sympy_expr, coord, new_dict)  # solve for new variable
+        if new_dict not in variable_dicts:
+            variable_dicts.append(new_dict)
+
+    def evaluate_expression_and_update_dict(sympy_array, coord_array, variable_dicts):
+        match = False
+
+        for variable_dict in variable_dicts:
+            temp_dict = variable_dict.copy()
+            match = True
+
+            # sort zipped arrays by number of variables in sympy expression:
+            coord_array, sympy_array = zip(
+                *sorted(zip(coord_array, sympy_array), key=lambda x: len(x[1].free_symbols))
+            )
+
+            for coord, sympy_expr in zip(coord_array, sympy_array):
+                # Evaluate the expression with the current variable_dict
+                expr_value = simplify(sympy_expr).subs(temp_dict)
+
+                # If the expression cannot be evaluated to a float
+                # it means that there is a new variable in the expression
+                try:
+                    expr_value = np.mod(float(expr_value), 1)  # wrap to 0-1 (i.e. to unit cell)
+
+                except TypeError:
+                    # Assign the expression the value of the corresponding coordinate, and solve
+                    # for the new variable
+                    # first, special cases with two possible solutions due to PBC:
+                    if sympy_expr == simplify("-2*x"):
+                        add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
+                    elif sympy_expr == simplify("2*x"):
+                        add_new_variable_dict("-1+", sympy_expr, coord, temp_dict, variable_dicts)
+
+                    expr_value = evaluate_expression(
+                        sympy_expr, coord, temp_dict
+                    )  # solve for new variable
+
+                # Check if the evaluated expression matches the corresponding coordinate
+                if not np.isclose(
+                    np.mod(float(coord), 1),  # wrap to 0-1 (i.e. to unit cell)
+                    np.mod(float(expr_value), 1),
+                    atol=0.003,
+                ) and not np.isclose(
+                    np.mod(float(coord), 1) - 1,  # wrap to 0-1 (i.e. to unit cell)
+                    np.mod(float(expr_value), 1),
+                    atol=0.003,
+                ):
+                    match = False
+                    break
+
+            if match:
+                break
+
+        return match, temp_dict
+
+    if defect_entry is not None:
+        defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
+
+        # convert defect site to conventional unit cell for Wyckoff label matching:
+        conv_cell_site = get_conv_cell_site(defect_entry, lattice_vec_swap_array)
+
+    label, equiv_coord_list = find_closest_match(conv_cell_site, wyckoff_dict)
+
+    if defect_entry is not None:
+        # need to transform subbed_coord_list back to original (unswapped) cell:
+        reoriented_coord_list = []
+        for coords in equiv_coord_list:
+            reoriented_coord_list.append([coords[i] for i in lattice_vec_swap_array])
+
+    else:
+        reoriented_coord_list = equiv_coord_list
+
+    return label, reoriented_coord_list
+
+
+def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_swap_array):
+    """
+    Compare the Wyckoff labels of a conventional structure to a list of Wyckoff
+    labels.
+    """
+
+    def _multiply_wyckoffs(wyckoff_labels, n=2):
+        return [str(n * int(wyckoff[:-1])) + wyckoff[-1] for wyckoff in wyckoff_labels]
+
+    wyckoff_symbol_lists = [_multiply_wyckoffs(wyckoff_symbols, n=n) for n in range(1, 5)]  # up to 4x
+    doped_wyckoffs = []
+
+    for site in conv_struct:
+        wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
+            conv_cell_site=site, wyckoff_dict=wyckoff_dict, lattice_vec_swap_array=lattice_vec_swap_array
+        )
+        if not any(
+            # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
+            wyckoff_label in wyckoff_symbol_list
+            for wyckoff_symbol_list in wyckoff_symbol_lists
+        ) and not any(
+            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
+            multiplied_wyckoff_symbol in wyckoff_symbols
+            for multiplied_wyckoff_symbol in [
+                _multiply_wyckoffs([wyckoff_label], n=n)[0] for n in range(1, 5)  # up to 4x
+            ]
+        ):
+            return False  # break on first non-match
+        doped_wyckoffs.append(wyckoff_label)
+
+    if not any(
+        # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
+        set(i) == set(doped_wyckoffs)
+        for i in wyckoff_symbol_lists
+    ) and not any(
+        set(i) == set(wyckoff_symbols)
+        for i in [
+            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
+            _multiply_wyckoffs(doped_wyckoffs, n=n)
+            for n in range(1, 5)  # up to 4x
+        ]
+    ):
+        return False
+
+    return True
+
+
+def swap_axes(structure, axes):
+    """
+    Swap axes of the given structure.
+
+    The new order of the axes is given by the axes parameter. For example,
+    axes=(2, 1, 0) will swap the first and third axes.
+    """
+    transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+
+    for i, axis in enumerate(axes):
+        transformation_matrix[i][axis] = 1
+
+    transformation = SupercellTransformation(transformation_matrix)
+
+    return transformation.apply_transformation(structure)
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
@@ -1161,6 +1300,39 @@ class DefectsGenerator:
 
             defect_entry_list = []
             wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+            # determine cell orientation for Wyckoff site determination (needs to match the Bilbao
+            # Crystallographic Server's convention, which can differ from spglib (pymatgen) in some cases)
+
+            sga_wyckoffs = sga.get_symmetrized_structure().wyckoff_symbols
+
+            for trial_lattice_vec_swap_array in [  # 3C2 -> 6 possible combinations
+                # ordered according to frequency of occurrence in the Materials Project
+                [0, 1, 2],  # abc, ~95% of cases
+                [2, 1, 0],  # cba
+                [0, 2, 1],  # acb
+                [1, 0, 2],  # bac
+                [1, 2, 0],  # bca
+                [2, 0, 1],  # cab
+                None,  # no perfect match, default to original orientation
+            ]:
+                if trial_lattice_vec_swap_array is None:
+                    lattice_vec_swap_array = [0, 1, 2]
+                    break
+
+                reoriented_conv_structure = swap_axes(
+                    self.conventional_structure, trial_lattice_vec_swap_array
+                )
+                if _compare_wyckoffs(
+                    sga_wyckoffs,
+                    reoriented_conv_structure,
+                    wyckoff_label_dict,
+                    trial_lattice_vec_swap_array,
+                ):
+                    lattice_vec_swap_array = trial_lattice_vec_swap_array
+                    break
+
+            self._BilbaoCS_conv_cell_vector_mapping = lattice_vec_swap_array
+
             for _defect_type, defect_list in self.defects.items():
                 for defect in defect_list:
                     defect_supercell, defect_supercell_site = defect.get_supercell_structure(
@@ -1180,14 +1352,27 @@ class DefectsGenerator:
                     neutral_defect_entry.conventional_structure = self.conventional_structure
                     neutral_defect_entry.defect.conventional_structure = self.conventional_structure
                     wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
-                        neutral_defect_entry, wyckoff_label_dict
+                        defect_entry=neutral_defect_entry,
+                        wyckoff_dict=wyckoff_label_dict,
+                        lattice_vec_swap_array=self._BilbaoCS_conv_cell_vector_mapping,
                     )
                     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
-                    ideal_conv_cell_coords = np.round(conv_cell_coord_list[0], 5)
+                    conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
                     neutral_defect_entry.wyckoff = wyckoff_label
-                    neutral_defect_entry.defect.wyckoff = wyckoff_label
-                    neutral_defect_entry.conv_cell_frac_coords = ideal_conv_cell_coords
-                    neutral_defect_entry.defect.conv_cell_frac_coords = ideal_conv_cell_coords
+                    neutral_defect_entry.defect.wyckoff = neutral_defect_entry.wyckoff
+                    neutral_defect_entry.conv_cell_frac_coords = conv_cell_coord_list[
+                        0
+                    ]  # ideal/cleanest coords
+                    neutral_defect_entry.defect.conv_cell_frac_coords = (
+                        neutral_defect_entry.conv_cell_frac_coords
+                    )
+                    neutral_defect_entry.equiv_conv_cell_frac_coords = conv_cell_coord_list
+                    neutral_defect_entry.defect.equiv_conv_cell_frac_coords = (
+                        neutral_defect_entry.equiv_conv_cell_frac_coords
+                    )
+                    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
+                        self._BilbaoCS_conv_cell_vector_mapping
+                    )
                     defect_entry_list.append(neutral_defect_entry)
                     pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
 
