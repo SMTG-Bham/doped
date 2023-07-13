@@ -1308,11 +1308,11 @@ class DefectsGenerator:
             for trial_lattice_vec_swap_array in [  # 3C2 -> 6 possible combinations
                 # ordered according to frequency of occurrence in the Materials Project
                 [0, 1, 2],  # abc, ~95% of cases
-                [2, 1, 0],  # cba
                 [0, 2, 1],  # acb
+                [2, 1, 0],  # cba
                 [1, 0, 2],  # bac
-                [1, 2, 0],  # bca
                 [2, 0, 1],  # cab
+                [1, 2, 0],  # bca
                 None,  # no perfect match, default to original orientation
             ]:
                 if trial_lattice_vec_swap_array is None:
