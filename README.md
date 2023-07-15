@@ -1,7 +1,7 @@
 [![Build status](https://github.com/SMTG-UCL/doped/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/SMTG-UCL/doped/actions)
 [![PyPI](https://img.shields.io/pypi/v/doped)](https://pypi.org/project/doped)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
-[![Downloads](https://img.shields.io/pypi/dm/doped)](https://shakenbreak.readthedocs.io/en/latest/)
+[![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
 # **D**efect **O**riented **P**ython **E**nvironment **D**istribution (`doped`)
 <img align="right" width="400" src="docs/logo.png">`doped` is a python package for
