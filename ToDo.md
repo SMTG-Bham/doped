@@ -96,7 +96,14 @@
   - Run `pre-commit run --all-files` to check all files.
 - Generate docs.
   - Add note about `NUPDOWN` for triplet states (bipolarons).
-  - Add our recommended  workflow (gam, NKRED, std, ncl). Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation approach for interstitials, but note user can use charge-density based approach if needing to be super-lean for some reason.
+  - Add our recommended  workflow (gam, NKRED, std, ncl). Cite
+  - https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
+    approach for interstitials, but note user can use charge-density based approach if needing to be
+    super-lean for some reason.
+  - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
+    in a warning when many entries for the same composition, say which have database IDs, warn the user
+    and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
+    with these cases.
   - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
