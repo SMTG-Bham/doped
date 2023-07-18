@@ -294,10 +294,10 @@ class CompetingPhases:
         self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
 
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
-        #  lot of unnecessary polymorphs on MP
-        # P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo
-        # stable at RT), so only need to generate these. Same for Li, Na and K (ask the battery
-        # boyos), TiO2, SnO2, WO3 (particularly bad cases).
+        #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
+        #  any particularly bad cases. E.g. P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037
+        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for Li,
+        #  Na and K (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad cases).
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
         # Will mention some good practice in the docs anyway. Could have an in-built warning when many
         # entries for the same composition, say which have database IDs, warn the user and direct to
