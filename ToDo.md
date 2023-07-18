@@ -7,9 +7,6 @@
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
   and give example(s) of how to manually generate a `DefectPhaseDiagram` and chempots from the parsed
   energies of these calculations, so the `doped` analysis tools can then be used.
-- **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
-  plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Integrate with
-  Joe's `config-coord-plots`? (also see `CarrierCapture` functionalities)
 - Add defect expansion code functionality to regenerate defect structures from a smaller supercell in a
   larger one. Useful for supercell size convergence tests, and accelerating `ShakeNBreak` etc. If/when
   adding, make sure to link in `SnB` docs as well.
@@ -60,6 +57,11 @@
 - Add LDOS plotting, big selling point for defects and disorder!
 - Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
 - `transition_levels_table()`. Also ensure we have functionality to print all single-electron TLs (useful to know when deciding what TLs to do carrier capture for. @SeánK has code for this in jupyter notebooks)
+- **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
+  plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Needs to be at
+  this point because we need relaxed structures. Sensible naming scheme. Would be useful as this is a
+  workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
+  scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
 - Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 - Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
