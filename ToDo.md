@@ -35,7 +35,17 @@
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
 - Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
   relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
-  - See `pydefect` for tools for this. Should be doable with current point symmetry tools, especially when both the defect and bulk structures are available. Also add consideration of odd/even number of electrons to account for spin degeneracy.
+  - Should be doable with current point symmetry tools, especially when both the defect and bulk
+    structures are available. The configurational degeneracy should be just the final site degeneracy
+    (i.e. Wyckoff number) divided by the initial, or equivalently the initial number of symmetry
+    operations divided by the final, so we can just use this to determine the final site degeneracies.
+    For interstitials, should be based off just the Wyckoff number of the final relaxed site.
+    Should make this a parsed defect property, defined relative to the conventional cell (so they
+    actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
+    and have this automatically plug-and-play with `py-sc-fermi`. Already have the site analysis /
+    Wyckoff matching code for this.
+  - See `pydefect` for tools for this.
+  - Also add consideration of odd/even number of electrons to account for spin degeneracy.
 - Previous `pymatgen` issues, fixed?
   - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?
   - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
@@ -71,7 +81,14 @@
     workflow in the docs etc.
   - `py-sc-fermi` may have functionality for dealing with complex defect concentrations in the future
     (see Slack with Alex; 07/06/23)
-- Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on formation energy diagrams.
+- Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on
+  formation energy diagrams. Main things for this are:
+  - Input file generation
+  - Parsing to determine polaron site (so we can then use charge corrections). Use the site of max
+    displacement / bond length difference for this, and future work could be parsing of charge densities
+    to get the maximum position. (Note in docs that the user can do this if they want it).
+  - General plotting (in transition level diagrams) and analysis (e.g. our site displacement/strain
+    functions).
 - `pydefect` integration, so we can use:
   - Handling of shallow defects
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
@@ -97,6 +114,7 @@
     ones.
   - Run `pre-commit run --all-files` to check all files.
 - Generate docs.
+  - Need a `docs_requirements.txt` file like `SnB`.
   - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite
   - https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
@@ -126,6 +144,10 @@
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Update `doped` links on `SnB`/`easyunfold` etc docs.
+  - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
+    automatically in `doped`, excited-state degeneracy (e.g. with bipolarons with single and triplet
+    states) are not, so the user should manually account for this if present. Also note that
+    temperature effects can be important in certain cases so see this review if that's the case.
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
