@@ -32,7 +32,9 @@
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
   settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
-- Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge states as a check.
+- Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge
+  states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge
+  states as a check.
 - Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
   relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
   - Should be doable with current point symmetry tools, especially when both the defect and bulk
@@ -45,6 +47,17 @@
     and have this automatically plug-and-play with `py-sc-fermi`. Already have the site analysis /
     Wyckoff matching code for this.
   - See `pydefect` for tools for this.
+  - For complex defects, this is future work, and should be done manually (note in docs and give
+    warning when parsing).
+    - For split-interstitials and split-vacancies however, should be relatively straightforward?
+      Firstly check that the standard approach described above doesn't happen to work (can test with
+      CdTe `Te_i` structures (split-interstitial dimer, oriented along <110> and twisted in different
+      charge states; https://doi.org/10.1039/D2FD00043A)). Could determine the centre-of-mass (CoM),
+      remove the two split-interstitial atoms, add a dummy species at CoM, get the symm-ops / point
+      symmetry of this supercell structure (i.e. with the defect periodic images), then do the same
+      with the original structure and get the difference (-> configurational degeneracy) from this. Not
+      sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
+      getting the difference in symm-ops according to `spglib`?
   - Also add consideration of odd/even number of electrons to account for spin degeneracy.
 - Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
   also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
