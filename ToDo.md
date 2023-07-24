@@ -46,6 +46,33 @@
     Wyckoff matching code for this.
   - See `pydefect` for tools for this.
   - Also add consideration of odd/even number of electrons to account for spin degeneracy.
+- Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
+  also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
+  effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in
+  Xinwei's https://arxiv.org/abs/2302.04901), so it would be really nice to have this automatic parsing
+  built-in, and can either use in SnB or recommend SnB users to check with this.
+  - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
+    more common than thought.
+  - Could do by using the site displacements, with atoms moving outside their vdW radius being flagged
+    as (possibly) defective? And see if their stoichiometric sum matches the expected point defect
+    stoichiometry. Expected to match one of these transformation motifs:
+    - Substitutions:
+      - `A_B` -> `A_C` + `C_B`
+      - `A_B` -> `A_i` + `V_B`
+      - `A_B` -> `A_i` + `C_B` + `V_C`
+      - `A_B` -> `C_i` + `A_B` + `V_C` (same defect but inducing a neighbouring Frenkel pair)
+    - Vacancies:
+      - `V_B` -> `A_B` + `V_A`
+      - `A_B` -> 2`V_A` + `A_i` (split-vacancy)
+      - `V_B` -> `A_i` + `V_B` + `V_A` (same defect but inducing a neighbouring Frenkel pair)
+    - Interstitials:
+      - `A_i` -> `A_B` + `B_i`
+      - `A_i` -> 2`A_i` + `V_A` (split-interstitial)
+      - `A_i` -> `B_i` + `A_i` + `V_B` (same defect but inducing a neighbouring Frenkel pair)
+  - How does this change the thermodynamics (i.e. entropic cost to clustering)?
+  - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
+    Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
+    colour just different linestyles? (or something similar)
 - Previous `pymatgen` issues, fixed?
   - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?
   - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
@@ -123,7 +150,8 @@
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
-    with these cases.
+    with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
+    and/or if it's known from other work for your chosen functional etc.)
   - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
