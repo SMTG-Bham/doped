@@ -299,8 +299,9 @@ class CompetingPhases:
         #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for Li,
         #  Na and K (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad cases).
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
-        # Will mention some good practice in the docs anyway. Could have an in-built warning when many
-        # entries for the same composition, say which have database IDs, warn the user and direct to
+        # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
+        # entries for the same composition, say which have database IDs, warn the user (that it would
+        # be prudent to manually confirm which are actually the groundstate, ICSD best bet) and direct to
         # relevant section on the docs.
 
         # all data collected from materials project
