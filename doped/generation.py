@@ -163,7 +163,7 @@ def closest_site_info(defect_entry, n=1, r=5):
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return closest_site.specie.symbol + f"{min_distance:.2f}"
+    return f"{closest_site.specie.symbol}{min_distance:.2f}"
 
 
 def get_defect_name_from_entry(defect_entry):
@@ -245,11 +245,12 @@ def name_defect_entries(defect_entries):
             n += 1
 
     def handle_repeated_name(defect_naming_dict, full_defect_name):
+        defect_name = None
         for name in list(defect_naming_dict.keys()):
             if full_defect_name == name:
                 prev_defect_entry = defect_naming_dict.pop(name)
-                defect_naming_dict[name + "a"] = prev_defect_entry
-                defect_name = full_defect_name + "b"
+                defect_naming_dict[f"{name}a"] = prev_defect_entry
+                defect_name = f"{full_defect_name}b"
                 break
             if full_defect_name == name[:-1]:
                 last_letters = [name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name]
@@ -257,6 +258,13 @@ def name_defect_entries(defect_entries):
                 new_letter = chr(ord(last_letters[-1]) + 1)
                 defect_name = full_defect_name + new_letter
                 break
+
+        if defect_name is None:
+            raise ValueError(
+                f"Multiple defect names found for {full_defect_name}, and couldn't be "
+                f"renamed properly. Please report this issue to the developers."
+            )
+
         return defect_naming_dict, defect_name
 
     defect_naming_dict = {}
@@ -579,13 +587,13 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_sw
         wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
             conv_cell_site=site, wyckoff_dict=wyckoff_dict, lattice_vec_swap_array=lattice_vec_swap_array
         )
-        if not any(
+        if all(
             # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
-            wyckoff_label in wyckoff_symbol_list
+            wyckoff_label not in wyckoff_symbol_list
             for wyckoff_symbol_list in wyckoff_symbol_lists
-        ) and not any(
+        ) and all(
             # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
-            multiplied_wyckoff_symbol in wyckoff_symbols
+            multiplied_wyckoff_symbol not in wyckoff_symbols
             for multiplied_wyckoff_symbol in [
                 _multiply_wyckoffs([wyckoff_label], n=n)[0] for n in range(1, 5)  # up to 4x
             ]
@@ -593,21 +601,18 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_sw
             return False  # break on first non-match
         doped_wyckoffs.append(wyckoff_label)
 
-    if not any(
+    return any(
         # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
         set(i) == set(doped_wyckoffs)
         for i in wyckoff_symbol_lists
-    ) and not any(
+    ) or any(
         set(i) == set(wyckoff_symbols)
         for i in [
             # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
             _multiply_wyckoffs(doped_wyckoffs, n=n)
             for n in range(1, 5)  # up to 4x
         ]
-    ):
-        return False
-
-    return True
+    )  # False if no complete match, True otherwise
 
 
 def swap_axes(structure, axes):
@@ -801,14 +806,12 @@ def guess_defect_charge_states(
         return _get_vacancy_charge_states(defect, padding=padding)
 
     possible_oxi_states = _get_possible_oxi_states(defect)
-    max_host_oxi_magnitude = max([abs(site.specie.oxi_state) for site in defect.structure])
+    max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
     if defect.defect_type == DefectType.Substitution:
         orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
-        possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
     else:  # interstitial
         orig_oxi = 0
-        possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
-
+    possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
     charge_state_list = [k for k, v in possible_charge_states.items() if v > probability_threshold]
     if charge_state_list:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
@@ -1296,7 +1299,7 @@ class DefectsGenerator:
 
             # Generate DefectEntry objects:
             pbar.set_description("Determining Wyckoff sites")
-            num_defects = sum([len(defect_list) for defect_list in self.defects.values()])
+            num_defects = sum(len(defect_list) for defect_list in self.defects.values())
 
             defect_entry_list = []
             wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
@@ -1388,7 +1391,7 @@ class DefectsGenerator:
                 for charge in charge_states:
                     defect_entry = copy.deepcopy(neutral_defect_entry)
                     defect_entry.charge_state = charge
-                    defect_name = defect_name_wout_charge + f"_{'+' if charge > 0 else ''}{charge}"
+                    defect_name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
                     defect_entry.name = defect_name  # set name attribute
                     self.defect_entries[defect_name] = defect_entry
                     pbar.update((1 / num_defects) * (pbar.total - pbar.n))  # 100% of progress bar
@@ -1523,13 +1526,11 @@ class DefectsGenerator:
                     charges = [
                         name.rsplit("_", 1)[1]
                         for name in self.defect_entries
-                        if name.startswith(defect_name + "_")
+                        if name.startswith(f"{defect_name}_")
                     ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
                     # convert list of strings to one string with comma-separated charges
                     charges = "[" + ",".join(charges) + "]"
-                    neutral_defect_entry = self.defect_entries[
-                        defect_name + "_0"
-                    ]  # neutral has no +/- sign
+                    neutral_defect_entry = self.defect_entries[f"{defect_name}_0"]  # neutral, no +/- sign
                     frac_coords_string = ",".join(
                         f"{x:.3f}" for x in neutral_defect_entry.conv_cell_frac_coords
                     )
