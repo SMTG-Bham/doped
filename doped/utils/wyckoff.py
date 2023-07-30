@@ -1,12 +1,10 @@
 """
-Code to analyse the Wyckoff positions of a crystal spacegroup.
+Code to analyse the Wyckoff positions of defects.
 
-Database for Wyckoff analysis obtained from the following reference:
-Avery, Patrick, and Eva Zurek.
-“RandSpg: An Open-Source Program for Generating Atomistic Crystal Structures
-with Specific Spacegroups.”
-Computer Physics Communications 213 (2017): 208-16.
-https://doi.org/10.1016/j.cpc.2016.12.005
+The database for Wyckoff analysis (`wyckpos.dat`) was obtained from code written by JaeHwan Shim
+@schinavro (ORCID: 0000-0001-7575-4788)(https://gitlab.com/ase/ase/-/merge_requests/1035) based on the
+tabulated datasets in https://github.com/xtalopt/randSpg (also found at
+https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
 """
 
 import os
@@ -57,7 +55,7 @@ def get_wyckoff_dict_from_sgn(sgn):
 
 
 def get_wyckoff_label_and_equiv_coord_list(
-    defect_entry=None, conv_cell_site=None, wyckoff_dict=None, lattice_vec_swap_array=None
+    defect_entry=None, conv_cell_site=None, sgn=None, wyckoff_dict=None, lattice_vec_swap_array=None
 ):
     """
     Return the Wyckoff label and list of equivalent fractional coordinates
@@ -65,18 +63,24 @@ def get_wyckoff_label_and_equiv_coord_list(
     (whichever is provided, defaults to defect_entry if both), given a
     dictionary of Wyckoff labels and coordinates (`wyckoff_dict`).
 
-    If `wyckoff_dict` is not provided, the spacegroup of the bulk structure is
-    determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
+    If `wyckoff_dict` is not provided, it is generated from the spacegroup
+    number (sgn) using `get_wyckoff_dict_from_sgn(sgn)`. If `sgn` is not
+    provided, it is obtained from the bulk structure of the `defect_entry` if
+    provided.
     """
     if lattice_vec_swap_array is None:
         lattice_vec_swap_array = [0, 1, 2]
     if wyckoff_dict is None:
-        if defect_entry is None:
-            raise ValueError(
-                "Must provide a `defect_entry` (not `conv_cell_site`) if `wyckoff_dict` is not provided."
-            )
-        sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
-        wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+        if sgn is None:
+            if defect_entry is None:
+                raise ValueError(
+                    "If inputting `conv_cell_site` and not `defect_entry`, either `sgn` or `wyckoff_dict` "
+                    "must be provided."
+                )
+            # get sgn from primitive unit cell of bulk structure:
+            sgn = SpacegroupAnalyzer(defect_entry.defect.structure).get_space_group_number()
+
+        wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
 
     def _compare_arrays(coord_list, coord_array):
         """
