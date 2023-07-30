@@ -17,7 +17,7 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.generation import DefectsGenerator, get_wyckoff_dict_from_sgn
+from doped.generation import DefectsGenerator
 
 
 class DefectsGeneratorTest(unittest.TestCase):
@@ -416,6 +416,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
+        # TODO: Test equiv coords list (both conv cell and supercell) and BCS_cell_swap_matrix attributes
+        # test: assert that the sum of multiplicities of the vacancy wyckoffs matches len(
+        # conventional_structure)
+        # test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff handling
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
@@ -2156,12 +2160,3 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
-
-
-class WyckoffTest(unittest.TestCase):
-    def test_wyckoff_dict_from_sgn(self):
-        for sgn in range(1, 231):
-            wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
-            assert isinstance(wyckoff_dict, dict)
-            assert all(isinstance(k, str) for k in wyckoff_dict)
-            assert all(isinstance(v, list) for v in wyckoff_dict.values())
