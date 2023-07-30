@@ -189,6 +189,10 @@
     automatically in `doped`, excited-state degeneracy (e.g. with bipolarons with single and triplet
     states) are not, so the user should manually account for this if present. Also note that
     temperature effects can be important in certain cases so see this review if that's the case.
+  - The Wyckoff analysis code is very useful and no other package can do this afaik. See
+    https://github.com/spglib/spglib/issues/135. Should describe and exemplify this in the docs (i.e. the
+    `get_wyckoff_label_and_equiv_coord_list()` from just a `pymatgen` site and spacegroup 🔥) and JOSS
+    paper.
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
