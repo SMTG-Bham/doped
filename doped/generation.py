@@ -8,7 +8,6 @@ from itertools import chain
 from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
-from ase.spacegroup.wyckoff import Wyckoff
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import Defect, DefectType
@@ -30,9 +29,14 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from sympy import Eq, simplify, solve, symbols
 from tabulate import tabulate
 from tqdm import tqdm
+
+from doped.utils.wyckoff import (
+    _compare_wyckoffs,
+    get_wyckoff_dict_from_sgn,
+    get_wyckoff_label_and_equiv_coord_list,
+)
 
 # TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
 #  supercell coords in this case, so will need functions for transforming between primitive and
@@ -306,42 +310,6 @@ def herm2sch(herm_symbol):
     return _HERM2SCH.get(herm_symbol, None)
 
 
-def get_wyckoff_dict_from_sgn(sgn):
-    """
-    Get dictionary of {Wyckoff label: coordinates} for a given space group
-    number.
-    """
-    wyckoff = Wyckoff(sgn).wyckoff
-    wyckoff_label_coords_dict = {}
-
-    def _coord_string_to_array(coord_string):
-        # Split string into substrings, parse each as a sympy expression,
-        # then convert to list of sympy expressions
-        return [simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
-
-    for element in wyckoff["letters"]:
-        label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
-        wyckoff_coords = [_coord_string_to_array(coords) for coords in wyckoff[element]["coordinates"]]
-        wyckoff_label_coords_dict[label] = wyckoff_coords
-
-        equivalent_sites = [
-            _coord_string_to_array(coords) for coords in wyckoff.get("equivalent_sites", [])
-        ]
-
-        new_coords = []  # new list for equivalent coordinates
-
-        for coord_array in wyckoff_coords:
-            for equivalent_site in equivalent_sites:
-                # add coord_array and equivalent_site element-wise
-                equiv_coord_array = coord_array.copy()
-                equiv_coord_array = equiv_coord_array + np.array(equivalent_site)
-                new_coords.append(equiv_coord_array)
-
-        # add new_coords to wyckoff_label_coords:
-        wyckoff_label_coords_dict[label].extend(new_coords)
-    return wyckoff_label_coords_dict
-
-
 def _frac_coords_sort_func(coords):
     """
     Sorting function to apply on an iterable of fractional coordinates, where
@@ -421,198 +389,6 @@ def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
     conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
 
     return conv_cell_site
-
-
-def get_wyckoff_label_and_equiv_coord_list(
-    defect_entry=None, conv_cell_site=None, wyckoff_dict=None, lattice_vec_swap_array=None
-):
-    """
-    Return the Wyckoff label and list of equivalent fractional coordinates
-    within the conventional cell for the input defect_entry or conv_cell_site
-    (whichever is provided, defaults to defect_entry if both), given a
-    dictionary of Wyckoff labels and coordinates (`wyckoff_dict`).
-
-    If `wyckoff_dict` is not provided, the spacegroup of the bulk structure is
-    determined and used to generate it with `get_wyckoff_dict_from_sgn()`.
-    """
-    if lattice_vec_swap_array is None:
-        lattice_vec_swap_array = [0, 1, 2]
-    if wyckoff_dict is None:
-        if defect_entry is None:
-            raise ValueError(
-                "Must provide a `defect_entry` (not `conv_cell_site`) if `wyckoff_dict` is not provided."
-            )
-        sga = SpacegroupAnalyzer(defect_entry.defect.structure)  # primitive unit cell
-        wyckoff_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
-
-    def _compare_arrays(coord_list, coord_array):
-        """
-        Compare a list of arrays of sympy expressions (`coord_list`) with an
-        array of coordinates (`coord_array`).
-
-        Returns the matching array from the list.
-        """
-        x, y, z = symbols("x y z")
-        variable_dicts = [{}]  # list of dicts for x,y,z
-
-        for sympy_array in coord_list:
-            match, variable_dict = evaluate_expression_and_update_dict(
-                sympy_array, coord_array, variable_dicts
-            )
-
-            if match:
-                # return coord list with sympy expressions subbed with variable_dict:
-                return [
-                    np.array(
-                        [
-                            np.mod(float(simplify(sympy_expr).subs(variable_dict)), 1)
-                            for sympy_expr in sympy_array
-                        ]
-                    )
-                    for sympy_array in coord_list
-                ]
-
-        return None  # No match found
-
-    # get match of coords in wyckoff_label_coords to defect site coords:
-    def find_closest_match(defect_site, wyckoff_label_coords_dict):
-        for label, coord_list in wyckoff_label_coords_dict.items():
-            subbed_coord_list = _compare_arrays(coord_list, np.array(defect_site.frac_coords))
-            if subbed_coord_list is not None:
-                return label, subbed_coord_list
-
-        return None  # No match found
-
-    def evaluate_expression(sympy_expr, coord, variable_dict):
-        equation = Eq(sympy_expr, coord)
-        variable = list(sympy_expr.free_symbols)[0]
-        variable_dict[variable] = solve(equation, variable)[0]
-
-        return simplify(sympy_expr).subs(variable_dict)
-
-    def add_new_variable_dict(
-        sympy_expr_prepend, sympy_expr, coord, current_variable_dict, variable_dicts
-    ):
-        new_sympy_expr = simplify(sympy_expr_prepend + str(sympy_expr))
-        new_dict = current_variable_dict.copy()
-        evaluate_expression(new_sympy_expr, coord, new_dict)  # solve for new variable
-        if new_dict not in variable_dicts:
-            variable_dicts.append(new_dict)
-
-    def evaluate_expression_and_update_dict(sympy_array, coord_array, variable_dicts):
-        match = False
-
-        for variable_dict in variable_dicts:
-            temp_dict = variable_dict.copy()
-            match = True
-
-            # sort zipped arrays by number of variables in sympy expression:
-            coord_array, sympy_array = zip(
-                *sorted(zip(coord_array, sympy_array), key=lambda x: len(x[1].free_symbols))
-            )
-
-            for coord, sympy_expr in zip(coord_array, sympy_array):
-                # Evaluate the expression with the current variable_dict
-                expr_value = simplify(sympy_expr).subs(temp_dict)
-
-                # If the expression cannot be evaluated to a float
-                # it means that there is a new variable in the expression
-                try:
-                    expr_value = np.mod(float(expr_value), 1)  # wrap to 0-1 (i.e. to unit cell)
-
-                except TypeError:
-                    # Assign the expression the value of the corresponding coordinate, and solve
-                    # for the new variable
-                    # first, special cases with two possible solutions due to PBC:
-                    if sympy_expr == simplify("-2*x"):
-                        add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
-                    elif sympy_expr == simplify("2*x"):
-                        add_new_variable_dict("-1+", sympy_expr, coord, temp_dict, variable_dicts)
-
-                    expr_value = evaluate_expression(
-                        sympy_expr, coord, temp_dict
-                    )  # solve for new variable
-
-                # Check if the evaluated expression matches the corresponding coordinate
-                if not np.isclose(
-                    np.mod(float(coord), 1),  # wrap to 0-1 (i.e. to unit cell)
-                    np.mod(float(expr_value), 1),
-                    atol=0.003,
-                ) and not np.isclose(
-                    np.mod(float(coord), 1) - 1,  # wrap to 0-1 (i.e. to unit cell)
-                    np.mod(float(expr_value), 1),
-                    atol=0.003,
-                ):
-                    match = False
-                    break
-
-            if match:
-                break
-
-        return match, temp_dict
-
-    if defect_entry is not None:
-        defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
-
-        # convert defect site to conventional unit cell for Wyckoff label matching:
-        conv_cell_site = get_conv_cell_site(defect_entry, lattice_vec_swap_array)
-
-    label, equiv_coord_list = find_closest_match(conv_cell_site, wyckoff_dict)
-
-    if defect_entry is not None:
-        # need to transform subbed_coord_list back to original (unswapped) cell:
-        reoriented_coord_list = []
-        for coords in equiv_coord_list:
-            reoriented_coord_list.append([coords[i] for i in lattice_vec_swap_array])
-
-    else:
-        reoriented_coord_list = equiv_coord_list
-
-    return label, reoriented_coord_list
-
-
-def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_swap_array):
-    """
-    Compare the Wyckoff labels of a conventional structure to a list of Wyckoff
-    labels.
-    """
-
-    def _multiply_wyckoffs(wyckoff_labels, n=2):
-        return [str(n * int(wyckoff[:-1])) + wyckoff[-1] for wyckoff in wyckoff_labels]
-
-    wyckoff_symbol_lists = [_multiply_wyckoffs(wyckoff_symbols, n=n) for n in range(1, 5)]  # up to 4x
-    doped_wyckoffs = []
-
-    for site in conv_struct:
-        wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
-            conv_cell_site=site, wyckoff_dict=wyckoff_dict, lattice_vec_swap_array=lattice_vec_swap_array
-        )
-        if all(
-            # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
-            wyckoff_label not in wyckoff_symbol_list
-            for wyckoff_symbol_list in wyckoff_symbol_lists
-        ) and all(
-            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
-            multiplied_wyckoff_symbol not in wyckoff_symbols
-            for multiplied_wyckoff_symbol in [
-                _multiply_wyckoffs([wyckoff_label], n=n)[0] for n in range(1, 5)  # up to 4x
-            ]
-        ):
-            return False  # break on first non-match
-        doped_wyckoffs.append(wyckoff_label)
-
-    return any(
-        # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
-        set(i) == set(doped_wyckoffs)
-        for i in wyckoff_symbol_lists
-    ) or any(
-        set(i) == set(wyckoff_symbols)
-        for i in [
-            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
-            _multiply_wyckoffs(doped_wyckoffs, n=n)
-            for n in range(1, 5)  # up to 4x
-        ]
-    )  # False if no complete match, True otherwise
 
 
 def swap_axes(structure, axes):
