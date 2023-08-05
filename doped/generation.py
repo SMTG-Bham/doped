@@ -1146,12 +1146,21 @@ class DefectsGenerator:
                             if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
                                 matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
 
-                    # take the site and multiplicity with the lower multiplicity
+                    # take the site with the lower multiplicity (higher symmetry):
                     output_sites_mul_and_equiv_fpos.append(
                         min(
                             [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
                             key=lambda cand_site_mul_and_equiv_fpos: cand_site_mul_and_equiv_fpos[1],
                         )
+                    )
+
+                sorted_sites_mul_and_equiv_fpos = []
+                for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
+                    # take site with equiv_fpos sorted by _frac_coords_sort_func:
+                    sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
+                    ideal_cand_site = equiv_fpos[0]
+                    sorted_sites_mul_and_equiv_fpos.append(
+                        (ideal_cand_site, multiplicity, sorted_equiv_fpos)
                     )
 
                 self.defects["interstitials"] = []
@@ -1161,7 +1170,7 @@ class DefectsGenerator:
                 for species in [
                     el.symbol for el in self.primitive_structure.composition.elements
                 ] + extrinsic_elements:
-                    cand_sites, multiplicity, equiv_fpos = zip(*output_sites_mul_and_equiv_fpos)
+                    cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
 
                     self.defects["interstitials"].extend(
                         ig.generate(
