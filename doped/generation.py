@@ -1003,10 +1003,24 @@ class DefectsGenerator:
                 vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
                 tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
                 # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
-                cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
-                tight_cand_sites_mul_and_equiv_fpos = [
-                    *tight_vig._get_candidate_sites(self.primitive_structure)
-                ]
+
+                # parallelize Voronoi interstitial site generation:
+                if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
+                    # communication overhead / process initialisation outweighs speedup
+                    with Pool(2) as p:
+                        interstitial_gen_mp_results = p.map(
+                            _get_interstitial_candidate_sites,
+                            [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
+                        )
+
+                    cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
+                    tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
+
+                else:
+                    cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
+                    tight_cand_sites_mul_and_equiv_fpos = [
+                        *tight_vig._get_candidate_sites(self.primitive_structure)
+                    ]
 
                 structure_matcher = StructureMatcher(
                     self.interstitial_gen_kwargs.get("ltol", 0.2),
@@ -1124,10 +1138,17 @@ class DefectsGenerator:
                 processes = cpu_count() - 1
 
             _pbar_increment_per_defect = (1 / num_defects) * ((pbar.total * 0.9) - pbar.n)
-            with Pool(processes) as pool:
-                results = pool.imap_unordered(partial_func, defect_list)
-                for result in results:
-                    defect_entry_list.append(result)
+            if len(self.primitive_structure) > 8:  # skip for small systems as communication overhead /
+                # process initialisation outweighs speedup
+                with Pool(processes) as pool:
+                    results = pool.imap_unordered(partial_func, defect_list)
+                    for result in results:
+                        defect_entry_list.append(result)
+                        pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
+
+            else:
+                for defect in defect_list:
+                    defect_entry_list.append(partial_func(defect))
                     pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
 
             pbar.set_description("Generating DefectEntry objects")
@@ -1425,6 +1446,21 @@ class DefectsGenerator:
         prints the DefectsGenerator info.
         """
         return self.__str__() + "\n" + self._defect_generator_info()
+
+
+def _get_interstitial_candidate_sites(args):
+    """
+    Return a list of cand_sites_mul_and_equiv_fpos for interstitials in the
+    structure. Defined separately here to allow for multiprocessing.
+
+    Args:
+        args: tuple of arguments (to work with multiprocessing.pool)
+            to be passed to the function, in the form:
+                interstitial_generator: InterstitialGenerator object
+                structure: Structure object
+    """
+    interstitial_generator, structure = args
+    return [*interstitial_generator._get_candidate_sites(structure)]
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
