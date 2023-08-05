@@ -577,6 +577,8 @@ def guess_defect_charge_states(
     Returns:
         list: List of defect charge states.
     """
+    # TODO: Should consider bandgap magnitude as well? If available from Materials Project. Smaller gaps
+    #  mean extreme charge states less likely.
     if defect.defect_type == DefectType.Vacancy:
         # Set defect charge state: from +/-1 to defect oxi state
         return _get_vacancy_charge_states(defect, padding=padding)
@@ -794,7 +796,10 @@ class DefectsGenerator:
                 "with generate_supercell=False)! Vacancy defect will give empty cell!"
             )
 
-        pbar = tqdm(total=100)  # tqdm progress bar. 100% is completion
+        pbar = tqdm(
+            total=100, bar_format="{desc}: {percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
+        )  # tqdm progress
+        # bar. 100% is completion
         pbar.set_description("Getting primitive structure")
 
         try:  # put code in try/except block so progress bar always closed if interrupted
@@ -1171,6 +1176,8 @@ class DefectsGenerator:
                     defect_entry.name = defect_name  # set name attribute
                     self.defect_entries[defect_name] = defect_entry
                     pbar.update((1 / num_defects) * (pbar.total - pbar.n))  # 100% of progress bar
+
+            pbar.update(pbar.total - pbar.n)
 
         except Exception as e:
             pbar.close()
