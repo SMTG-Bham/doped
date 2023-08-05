@@ -20,15 +20,14 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.defects.thermo import DefectEntry
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
-from pymatgen.transformations.standard_transformations import SupercellTransformation
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -36,6 +35,7 @@ from doped.utils.wyckoff import (
     _compare_wyckoffs,
     get_wyckoff_dict_from_sgn,
     get_wyckoff_label_and_equiv_coord_list,
+    swap_axes,
 )
 
 # TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
@@ -345,67 +345,6 @@ def get_primitive_structure(sga):
 
     possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
     return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
-
-
-def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
-    """
-    Get an equivalent site of the defect entry in the conventional structure of
-    the host material.
-    """
-    if lattice_vec_swap_array is None:
-        lattice_vec_swap_array = [0, 1, 2]
-
-    sga = SpacegroupAnalyzer(defect_entry.defect.structure)
-    conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
-    prim_struct_with_X = defect_entry.defect.structure.copy()
-    prim_struct_with_X.remove_oxidation_states()
-    prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
-
-    # convert to sga prim structure:
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
-    s2_like_s1 = sm.get_s2_like_s1(get_primitive_structure(sga), prim_struct_with_X)
-    # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
-    # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
-    s2_really_like_s1 = Structure.from_sites(
-        [
-            PeriodicSite(
-                site.specie,
-                site.frac_coords,
-                sga.get_primitive_standard_structure().lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
-    )
-    regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
-    reorientated_regenerated_conv_structure = swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
-
-    defect_conv_cell_sites = [
-        site for site in reorientated_regenerated_conv_structure.sites if site.specie.symbol == "X"
-    ]
-
-    defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
-    conv_cell_site = defect_conv_cell_sites[0].to_unit_cell()
-    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
-
-    return conv_cell_site
-
-
-def swap_axes(structure, axes):
-    """
-    Swap axes of the given structure.
-
-    The new order of the axes is given by the axes parameter. For example,
-    axes=(2, 1, 0) will swap the first and third axes.
-    """
-    transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-
-    for i, axis in enumerate(axes):
-        transformation_matrix[i][axis] = 1
-
-    transformation = SupercellTransformation(transformation_matrix)
-
-    return transformation.apply_transformation(structure)
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
