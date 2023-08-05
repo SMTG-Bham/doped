@@ -251,6 +251,9 @@ def name_defect_entries(defect_entries):
 
     For interstitials, the same naming scheme is used, but the point group is
     always appended to the pymatgen defect name.
+
+    If still not unique after the 3rd nearest neighbour info, then "a, b, c"
+    etc is appended to the name of different defects to distinguish.
     """
 
     def get_shorter_name(full_defect_name, split_number):
@@ -328,14 +331,14 @@ def name_defect_entries(defect_entries):
         full_defect_name = get_defect_name_from_entry(defect_entry)
         split_number = 1 if defect_entry.defect.defect_type == DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
-        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
         matching_shorter_names = get_matching_names(defect_naming_dict, shorter_defect_name)
         defect_naming_dict = handle_unique_match(defect_naming_dict, matching_shorter_names, split_number)
         shorter_defect_name = get_shorter_name(full_defect_name, split_number - 1)
-        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
@@ -344,7 +347,7 @@ def name_defect_entries(defect_entries):
             defect_naming_dict, matching_shorter_names, split_number - 1
         )
         shorter_defect_name = get_shorter_name(full_defect_name, split_number - 2)
-        if not any(name for name in defect_naming_dict if shorter_defect_name in name):
+        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
@@ -1254,6 +1257,10 @@ class DefectsGenerator:
                     pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
 
             pbar.set_description("Generating DefectEntry objects")
+            # sort defect_entry_list by _frac_coords_sort_func applied to the conv_cell_frac_coords,
+            # in order for naming and defect generation output info to be deterministic
+            defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+
             named_defect_dict = name_defect_entries(defect_entry_list)
             pbar.update(5)  # 95% of progress bar
             _pbar_increment_per_defect = (1 / num_defects) * (pbar.total - pbar.n)
