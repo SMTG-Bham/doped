@@ -81,6 +81,7 @@ def get_defect_entry_from_defect(
     defect_entry_structure = (
         defect_supercell.copy()
     )  # duplicate the structure so we don't edit the input Structure
+
     # Dummy species (used to keep track of the defect coords in the supercell)
     # Find its fractional coordinates & remove it from the supercell
     dummy_site = [
@@ -197,19 +198,25 @@ def _get_neutral_defect_entry(
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
 ):
-    defect_supercell, defect_supercell_site = defect.get_supercell_structure(
+    (
+        dummy_defect_supercell,
+        defect_supercell_site,
+        equivalent_supercell_sites,
+    ) = defect.get_supercell_structure(
         sc_mat=supercell_matrix,
         dummy_species="X",  # keep track of the defect frac coords in the supercell
         target_frac_coords=target_frac_coords,
-        return_site=True,
+        return_sites=True,
     )
     neutral_defect_entry = get_defect_entry_from_defect(
         defect,
-        defect_supercell,
+        dummy_defect_supercell,
         0,
         dummy_species=_dummy_species,
     )
+    neutral_defect_entry.defect_supercell = neutral_defect_entry.sc_entry.structure
     neutral_defect_entry.defect_supercell_site = defect_supercell_site
+    neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
     neutral_defect_entry.bulk_supercell = bulk_supercell
     neutral_defect_entry.conventional_structure = conventional_structure
     neutral_defect_entry.defect.conventional_structure = conventional_structure
