@@ -7,17 +7,17 @@ https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
 import warnings
-from datetime import date
 from importlib.metadata import PackageNotFoundError, version
 
 from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
-if date.today().weekday() in [5, 6]:
-    print("""Working on the weekend, like usual...\n""")
-if date.today().weekday() == 5:
-    print("Seriously though, everyone knows Saturday's for the boys/girls...\n")
+# if date.today().weekday() in [5, 6]:
+#     print("""Working on the weekend, like usual...\n""")
+# if date.today().weekday() == 5:
+#     print("Seriously though, everyone knows Saturday's for the boys/girls...\n")
+# Killed by multiprocessing, # never forget
 
 
 def _check_pmg_compatibility():
