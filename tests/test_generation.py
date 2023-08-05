@@ -241,17 +241,17 @@ v_Ag         [-1,0,+1]        [0.000,0.000,0.500]  3b
 
 Substitutions    Charge States    Conv. Cell Coords    Wyckoff
 ---------------  ---------------  -------------------  ---------
-Cu_Ag            [-1,0,+1]        [0.000,0.000,0.500]  3b
+Cu_Ag            [-1,0,+1,+2]     [0.000,0.000,0.500]  3b
 Ag_Cu            [-1,0,+1]        [0.000,0.000,0.000]  3a
 
 Interstitials                 Charge States    Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------  -------------------  ---------
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99a  [-1,0,+1,+2]     [0.000,0.000,0.125]  6c
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99b  [-1,0,+1,+2]     [0.000,0.000,0.375]  6c
-Cu_i_C3v_Ag1.80               [-1,0,+1,+2]     [0.000,0.000,0.250]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99a  [-1,0,+1,+2]     [0.000,0.000,0.125]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99b  [-1,0,+1,+2]     [0.000,0.000,0.375]  6c
-Ag_i_C3v_Ag1.80               [-1,0,+1,+2]     [0.000,0.000,0.250]  6c
+Cu_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1,+2]        [0.000,0.000,0.125]  6c
+Cu_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1,+2]        [0.000,0.000,0.375]  6c
+Cu_i_C3v_Ag1.80               [0,+1,+2]        [0.000,0.000,0.250]  6c
+Ag_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1]           [0.000,0.000,0.125]  6c
+Ag_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1]           [0.000,0.000,0.375]  6c
+Ag_i_C3v_Ag1.80               [0,+1]           [0.000,0.000,0.250]  6c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of AgCu.\n"
@@ -416,7 +416,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
-        # TODO: Test equiv coords list (both conv cell and supercell) and BCS_cell_swap_matrix attributes
+        # TODO: Test equiv coords list (both conv cell and supercell), BCS_cell_swap_matrix,
+        #  defect_supercell, charge_state_guessing_log attributes (check all attributes tested)
         # test: assert that the sum of multiplicities of the vacancy wyckoffs matches len(
         # conventional_structure)
         # test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff handling
@@ -598,7 +599,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 cdte_defect_gen = DefectsGenerator(self.prim_cdte)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -615,7 +620,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -631,7 +640,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell, generate_supercell=False)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -913,7 +926,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell)  # Y2Ti2S2O5 supercell
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -932,7 +949,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell, generate_supercell=False)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -1170,7 +1191,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value
@@ -1425,7 +1450,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 zns_defect_gen = DefectsGenerator(self.non_diagonal_ZnS)  # ZnS non-diagonal supercell
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -1641,7 +1670,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 cu_defect_gen = DefectsGenerator(self.prim_cu)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -1731,8 +1764,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
         )
 
         # test defect entries
-        assert len(agcu_defect_gen.defect_entries) == 36
-        assert len(agcu_defect_gen) == 36
+        assert len(agcu_defect_gen.defect_entries) == 28
+        assert len(agcu_defect_gen) == 28
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in agcu_defect_gen.defect_entries.values()
@@ -1895,7 +1928,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 agcu_defect_gen = DefectsGenerator(self.agcu)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -2131,7 +2168,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 cd_i_defect_gen = DefectsGenerator(cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure)
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -2152,7 +2193,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
                 cd_i_defect_gen = DefectsGenerator(
                     cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure, generate_supercell=False
                 )
-                assert len(w) == 0
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                # warnings.simplefilter("always")
+                assert len(non_ignored_warnings) == 0
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
