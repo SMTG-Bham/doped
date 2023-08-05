@@ -11,8 +11,77 @@ import os
 
 import numpy as np
 from ase.utils import basestring
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.transformations.standard_transformations import SupercellTransformation
 from sympy import Eq, simplify, solve, symbols
+
+
+def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
+    """
+    Get an equivalent site of the defect entry in the conventional structure of
+    the host material.
+    """
+    from doped.generation import _frac_coords_sort_func, get_primitive_structure
+
+    if lattice_vec_swap_array is None:
+        lattice_vec_swap_array = [0, 1, 2]
+
+    bulk_prim_structure = defect_entry.defect.structure.copy()
+    bulk_prim_structure.remove_oxidation_states()  # adding oxidation states adds the
+    # deprecated 'properties' attribute with -> {"spin": None}, giving a deprecation warning
+    sga = SpacegroupAnalyzer(bulk_prim_structure)
+    conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
+    prim_struct_with_X = defect_entry.defect.structure.copy()
+    prim_struct_with_X.remove_oxidation_states()
+    prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
+
+    # convert to sga prim structure:
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    s2_like_s1 = sm.get_s2_like_s1(get_primitive_structure(sga), prim_struct_with_X)
+    # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
+    # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
+    s2_really_like_s1 = Structure.from_sites(
+        [
+            PeriodicSite(
+                site.specie,
+                site.frac_coords,
+                sga.get_primitive_standard_structure().lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+    regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
+    reorientated_regenerated_conv_structure = swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
+
+    defect_conv_cell_sites = [
+        site for site in reorientated_regenerated_conv_structure.sites if site.specie.symbol == "X"
+    ]
+
+    defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
+    conv_cell_site = defect_conv_cell_sites[0].to_unit_cell()
+    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
+
+    return conv_cell_site
+
+
+def swap_axes(structure, axes):
+    """
+    Swap axes of the given structure.
+
+    The new order of the axes is given by the axes parameter. For example,
+    axes=(2, 1, 0) will swap the first and third axes.
+    """
+    transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+
+    for i, axis in enumerate(axes):
+        transformation_matrix[i][axis] = 1
+
+    transformation = SupercellTransformation(transformation_matrix)
+
+    return transformation.apply_transformation(structure)
 
 
 def get_wyckoff_dict_from_sgn(sgn):
@@ -193,8 +262,6 @@ def get_wyckoff_label_and_equiv_coord_list(
         defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
 
         # convert defect site to conventional unit cell for Wyckoff label matching:
-        from doped.generation import get_conv_cell_site
-
         conv_cell_site = get_conv_cell_site(defect_entry, lattice_vec_swap_array)
 
     label, equiv_coord_list = find_closest_match(conv_cell_site, wyckoff_dict)
