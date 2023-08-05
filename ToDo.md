@@ -193,6 +193,9 @@
     https://github.com/spglib/spglib/issues/135. Should describe and exemplify this in the docs (i.e. the
     `get_wyckoff_label_and_equiv_coord_list()` from just a `pymatgen` site and spacegroup 🔥) and JOSS
     paper.
+  - Note that charge states are guessed based on different factors, but these rely on auto-determined
+    oxidation states and can fail in weird cases. As always please consider if these charge states are
+    reasonable for the defects in your system.
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!

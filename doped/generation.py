@@ -7,7 +7,7 @@ import warnings
 from functools import partial
 from itertools import chain
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Optional, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union, cast
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -46,7 +46,6 @@ from doped.utils.wyckoff import (
 #  that do some of this. This will be tricky (SSX trickay you might say) for relaxed interstitials ->
 #  get symmetry-equivalent positions of relaxed interstitial position in unrelaxed bulk (easy pal,
 #  tf you mean 'tricky'??)
-# TODO: Add multiprocessing for Wyckoff determination and interstitial split generation
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -448,8 +447,12 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
 
 
 def _charge_state_probability(
-    charge_state: int, oxi_state: int, oxi_probability: float, max_host_oxi_magnitude: int
-) -> float:
+    charge_state: int,
+    defect_elt_oxi_state: int,
+    defect_elt_oxi_probability: float,
+    max_host_oxi_magnitude: int,
+    return_log: bool = False,
+) -> Union[float, dict]:
     """
     Function to estimate the probability of a given defect charge state, using
     the probability of the corresponding defect element oxidation state, the
@@ -461,12 +464,18 @@ def _charge_state_probability(
 
     Args:
         charge_state (int): Charge state of defect.
-        oxi_state (int): Oxidation state of defect element.
-        oxi_probability (float): Probability of oxidation state of defect element.
+        defect_elt_oxi_state (int): Oxidation state of defect element.
+        defect_elt_oxi_probability (float):
+            Probability of oxidation state of defect element.
         max_host_oxi_magnitude (int): Maximum host oxidation state magnitude.
+        return_log (bool):
+            If true, returns a dictionary of input & computed values
+            used to determine charge state probability. Default is False.
 
     Returns:
-        float: Probability of the defect charge state (between 0 and 1).
+        Probability of the defect charge state (between 0 and 1) if return_log
+        is False, otherwise a dictionary of input & computed values used to
+        determine charge state probability.
     """
     # for defect charge states; 0 to +/-2 likely, 3-4 less likely, 5-6 v unlikely, >=7 unheard of
 
@@ -476,21 +485,41 @@ def _charge_state_probability(
     # of the neighbouring elements to this (particularly for vacancies), but no clear-cut
     # cases where this would actually improve performance
 
-    if charge_state == 0:
-        return 1
-
     def _defect_vs_host_charge(charge_state: int, host_charge: int) -> float:
         if abs(charge_state) <= abs(host_charge):
             return 1
 
         return 1 / (2 * (abs(charge_state) - abs(host_charge)))
 
-    return oxi_probability * (
-        1
-        / abs(charge_state)
-        * _defect_vs_host_charge(charge_state, max_host_oxi_magnitude)
-        * _defect_vs_host_charge(oxi_state, max_host_oxi_magnitude)
-    ) ** (2 / 3)
+    charge_state_guessing_log = {
+        "input_parameters": {
+            "charge_state": charge_state,
+            "oxi_state": defect_elt_oxi_state,
+            "oxi_probability": defect_elt_oxi_probability,
+            "max_host_oxi_magnitude": max_host_oxi_magnitude,
+        },
+        "probability_factors": {
+            "oxi_probability": defect_elt_oxi_probability,
+            "charge_state_magnitude": (1 / abs(charge_state)) ** (2 / 3) if charge_state != 0 else 1,
+            "charge_state_vs_max_host_charge": _defect_vs_host_charge(charge_state, max_host_oxi_magnitude)
+            ** (2 / 3),
+            "oxi_state_vs_max_host_charge": _defect_vs_host_charge(
+                defect_elt_oxi_state, max_host_oxi_magnitude
+            )
+            ** (2 / 3),
+        },
+    }
+    # product of charge_state_guessing_log["probability_factors"].values()
+    charge_state_guessing_log["probability"] = (
+        np.product(list(charge_state_guessing_log["probability_factors"].values()))
+        if charge_state != 0
+        else 1
+    )  # always include neutral charge state
+
+    if return_log:
+        return charge_state_guessing_log
+
+    return charge_state_guessing_log["probability"]
 
 
 def _get_vacancy_charge_states(defect: Defect, padding: int = 1) -> List[int]:
@@ -541,16 +570,20 @@ def _get_charge_states(
     possible_oxi_states: Dict,
     orig_oxi: int,
     max_host_oxi_magnitude: int,
+    return_log: bool = False,
 ) -> Dict:
     return {
-        oxi - orig_oxi: _charge_state_probability(oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude)
+        oxi
+        - orig_oxi: _charge_state_probability(
+            oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude, return_log=return_log
+        )
         for oxi, oxi_prob in possible_oxi_states.items()
     }
 
 
 def guess_defect_charge_states(
-    defect: Defect, probability_threshold: float = 0.01, padding: int = 1
-) -> list:
+    defect: Defect, probability_threshold: float = 0.01, padding: int = 1, return_log: bool = False
+) -> Union[List[int], Tuple[List[int], List[Dict]]]:
     """
     Guess the possible charge states of a defect.
 
@@ -565,15 +598,39 @@ def guess_defect_charge_states(
             if vacancy oxidation state is negative, or to
             range(-padding, vacancy oxi state), if positive.
             Default is 1.
+        return_log (bool):
+            If true, returns a tuple of the defect charge states and
+            a list of dictionaries of input & computed values
+            used to determine charge state probability. Default is False.
 
     Returns:
-        list: List of defect charge states.
+        List of defect charge states (int) or a tuple of the defect
+        charge states (list) and a list of dictionaries of input &
+        computed values used to determine charge state probability.
     """
-    # TODO: Should consider bandgap magnitude as well? If available from Materials Project. Smaller gaps
-    #  mean extreme charge states less likely.
+    # Could consider bandgap magnitude as well, by pulling from Materials Project. Smaller gaps mean
+    # extreme charge states less likely. Would rather avoid having to query the database here though,
+    # as could give inconsistent results depending on whether the user generated defects with internet
+    # access or not (i.e. MP access or not). Will keep in mind.
     if defect.defect_type == DefectType.Vacancy:
         # Set defect charge state: from +/-1 to defect oxi state
-        return _get_vacancy_charge_states(defect, padding=padding)
+        vacancy_charge_states = _get_vacancy_charge_states(defect, padding=padding)
+        if return_log:
+            charge_state_guessing_log = [
+                {
+                    "input_parameters": {
+                        "charge_state": charge_state,
+                    },
+                    "probability_factors": {"oxi_probability": 1},
+                    "probability": 1,
+                    "probability_threshold": probability_threshold,
+                    "padding": padding,
+                }
+                for charge_state in vacancy_charge_states
+            ]
+            return (vacancy_charge_states, charge_state_guessing_log)
+
+        return vacancy_charge_states
 
     possible_oxi_states = _get_possible_oxi_states(defect)
     max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
@@ -581,8 +638,13 @@ def guess_defect_charge_states(
         orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
     else:  # interstitial
         orig_oxi = 0
-    possible_charge_states = _get_charge_states(possible_oxi_states, orig_oxi, max_host_oxi_magnitude)
-    charge_state_list = [k for k, v in possible_charge_states.items() if v > probability_threshold]
+    possible_charge_states = _get_charge_states(
+        possible_oxi_states, orig_oxi, max_host_oxi_magnitude, return_log=True
+    )
+
+    charge_state_list = [
+        k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
+    ]
     if charge_state_list:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
@@ -610,7 +672,11 @@ def guess_defect_charge_states(
         # should really be included unless it gives an absolute charge state >= 5, so set oxi_state
         # probability to 100%
         possible_charge_states[defect_elt_oxi_in_struct - orig_oxi] = _charge_state_probability(
-            defect_elt_oxi_in_struct - orig_oxi, defect_elt_oxi_in_struct, 1, max_host_oxi_magnitude
+            defect_elt_oxi_in_struct - orig_oxi,
+            defect_elt_oxi_in_struct,
+            1,
+            max_host_oxi_magnitude,
+            return_log=True,
         )
 
     if (
@@ -620,20 +686,28 @@ def guess_defect_charge_states(
     ):
         # if oxidation state of interstitial element in the host structure is not included, include it!
         possible_charge_states[defect_elt_oxi_in_struct] = _charge_state_probability(
-            defect_elt_oxi_in_struct - orig_oxi, defect_elt_oxi_in_struct, 1, max_host_oxi_magnitude
+            defect_elt_oxi_in_struct - orig_oxi,
+            defect_elt_oxi_in_struct,
+            1,
+            max_host_oxi_magnitude,
+            return_log=True,
         )
 
     sorted_charge_state_dict = dict(
-        sorted(possible_charge_states.items(), key=lambda x: x[1], reverse=True)
+        sorted(possible_charge_states.items(), key=lambda x: x[1]["probability"], reverse=True)
     )
 
-    charge_state_list = [k for k, v in sorted_charge_state_dict.items() if v > probability_threshold]
+    charge_state_list = [
+        k for k, v in sorted_charge_state_dict.items() if v["probability"] > probability_threshold
+    ]
     if charge_state_list:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
         # if no charge states are included, take most probable (if probability > 0.1*threshold)
         charge_state_list = [
-            k for k, v in sorted_charge_state_dict.items() if v > 0.1 * probability_threshold
+            k
+            for k, v in sorted_charge_state_dict.items()
+            if v["probability"] > 0.1 * probability_threshold
         ]
 
         most_likely_charge_state = charge_state_list[0] if charge_state_list else 0
@@ -645,16 +719,26 @@ def guess_defect_charge_states(
         and defect_elt_oxi_in_struct is not None
         and defect_elt_oxi_in_struct - orig_oxi == 0
         and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
-    ):
-        # if defect is an antisite of two equal oxi state elements, ensure at least (-1, 0, +1) included
+    ) or (charge_state_range[0] == 0 and charge_state_range[1] == 0):
+        # if defect is an antisite of two equal oxi state elements, or if range is 0, ensure at least
+        # (-1, 0, +1) included
         charge_state_range = (min(charge_state_range[0], -1), max(charge_state_range[1], 1))
+        for charge_state, probability_dict in sorted_charge_state_dict.items():
+            if charge_state in (-1, 0, 1):
+                probability_dict["probability"] = 1
 
     # set charge_state_range to min/max of range, ensuring range is extended to 0:
-    if charge_state_range[0] == 0 and charge_state_range[1] == 0:  # if range is 0
-        charge_state_range = (-1, 1)
-
     charge_state_range = (min(charge_state_range[0], 0), max(charge_state_range[1], 0))
-    return list(range(charge_state_range[0], charge_state_range[1] + 1))
+
+    guessed_charge_states = list(range(charge_state_range[0], charge_state_range[1] + 1))
+
+    for probability_dict in sorted_charge_state_dict.values():
+        probability_dict["probability_threshold"] = probability_threshold
+
+    if return_log:
+        return guessed_charge_states, list(sorted_charge_state_dict.values())
+
+    return guessed_charge_states
 
 
 class DefectsGenerator:
@@ -708,6 +792,8 @@ class DefectsGenerator:
         the host being disfavoured. This can be controlled using the
         `probability_threshold` or `padding` keys in the `charge_state_gen_kwargs`
         parameter, which are passed to the `_charge_state_probability()` function.
+        The input and computed values used to guess charge state probabilities are
+        provided in the `DefectEntry.charge_state_guessing_log` attributes.
         See docs for examples of modifying the generated charge states.
 
         Args:
@@ -1164,9 +1250,15 @@ class DefectsGenerator:
             _pbar_increment_per_defect = (1 / num_defects) * (pbar.total - pbar.n)
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                charge_states = guess_defect_charge_states(
-                    neutral_defect_entry.defect, **self.charge_state_gen_kwargs
+                charge_state_guessing_output = guess_defect_charge_states(
+                    neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
                 )
+                charge_state_guessing_output = cast(
+                    Tuple[List[int], List[Dict]], charge_state_guessing_output
+                )  # for correct type checking; guess_defect_charge_states can return different types
+                # depending on return_log
+                charge_states, charge_state_guessing_log = charge_state_guessing_output
+                neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
 
                 for charge in charge_states:
                     defect_entry = copy.deepcopy(neutral_defect_entry)
