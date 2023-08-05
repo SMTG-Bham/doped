@@ -500,11 +500,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
-            np.array([0.375, 0.375, 0.375]),
+            np.array([0.625, 0.625, 0.625]),
         )
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
-            np.array([0.375, 0.375, 0.375]),
+            np.array([0.625, 0.625, 0.625]),
         )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
@@ -518,7 +518,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
-            np.array([0.625, 0.625, 0.625]),
+            np.array([0.625, 0.125, 0.625]),
         )
 
         for defect_name, defect_entry in cdte_defect_gen.defect_entries.items():
@@ -541,13 +541,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                 defect_entry.defect.conventional_structure.lattice.matrix,
                 self.conv_cdte.lattice.matrix,
             )
-            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
-            # defect_entry.conventional_structure
-            distances = []
-            for site in defect_entry.conventional_structure:
-                distances.append(
-                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                )
+            distances = [
+                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+                for site in defect_entry.conventional_structure
+            ]
             assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cdte_defect_gen.bulk_supercell.lattice.matrix
@@ -603,7 +600,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -624,7 +621,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -644,7 +641,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -1931,7 +1928,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -2175,7 +2172,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -2200,7 +2197,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]           [0.500,0.250,0.250]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
