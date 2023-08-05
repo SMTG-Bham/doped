@@ -4,7 +4,9 @@ calculations.
 """
 import copy
 import warnings
+from functools import partial
 from itertools import chain
+from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -184,6 +186,50 @@ def get_defect_name_from_entry(defect_entry):
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
         f"_{closest_site_info(defect_entry)}"
     )
+
+
+def _get_neutral_defect_entry(
+    defect,
+    supercell_matrix,
+    target_frac_coords,
+    bulk_supercell,
+    conventional_structure,
+    _BilbaoCS_conv_cell_vector_mapping,
+    wyckoff_label_dict,
+):
+    defect_supercell, defect_supercell_site = defect.get_supercell_structure(
+        sc_mat=supercell_matrix,
+        dummy_species="X",  # keep track of the defect frac coords in the supercell
+        target_frac_coords=target_frac_coords,
+        return_site=True,
+    )
+    neutral_defect_entry = get_defect_entry_from_defect(
+        defect,
+        defect_supercell,
+        0,
+        dummy_species=_dummy_species,
+    )
+    neutral_defect_entry.defect_supercell_site = defect_supercell_site
+    neutral_defect_entry.bulk_supercell = bulk_supercell
+    neutral_defect_entry.conventional_structure = conventional_structure
+    neutral_defect_entry.defect.conventional_structure = conventional_structure
+    wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
+        defect_entry=neutral_defect_entry,
+        wyckoff_dict=wyckoff_label_dict,
+        lattice_vec_swap_array=_BilbaoCS_conv_cell_vector_mapping,
+    )
+    conv_cell_coord_list.sort(key=_frac_coords_sort_func)
+    conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
+    neutral_defect_entry.wyckoff = wyckoff_label
+    neutral_defect_entry.defect.wyckoff = neutral_defect_entry.wyckoff
+    neutral_defect_entry.conv_cell_frac_coords = conv_cell_coord_list[0]  # ideal/cleanest coords
+    neutral_defect_entry.defect.conv_cell_frac_coords = neutral_defect_entry.conv_cell_frac_coords
+    neutral_defect_entry.equiv_conv_cell_frac_coords = conv_cell_coord_list
+    neutral_defect_entry.defect.equiv_conv_cell_frac_coords = (
+        neutral_defect_entry.equiv_conv_cell_frac_coords
+    )
+    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = _BilbaoCS_conv_cell_vector_mapping
+    return neutral_defect_entry
 
 
 def name_defect_entries(defect_entries):
@@ -615,6 +661,7 @@ class DefectsGenerator:
         supercell_gen_kwargs: Optional[Dict] = None,
         interstitial_gen_kwargs: Optional[Dict] = None,
         target_frac_coords: Optional[List] = None,
+        processes: Optional[int] = None,
     ):
         """
         Generates pymatgen DefectEntry objects for defects in the input host
@@ -697,6 +744,9 @@ class DefectsGenerator:
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
                 if not set (i.e. the supercell centre, to aid visualisation).
+            processes (int):
+                Number of processes to use for multiprocessing. If not set, defaults to
+                one less than the number of CPUs available.
 
         Attributes:
             defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
@@ -736,7 +786,7 @@ class DefectsGenerator:
             )
 
         pbar = tqdm(
-            total=100, bar_format="{desc}: {percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
+            total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
         )  # tqdm progress
         # bar. 100% is completion
         pbar.set_description("Getting primitive structure")
@@ -1019,8 +1069,8 @@ class DefectsGenerator:
 
             # Generate DefectEntry objects:
             pbar.set_description("Determining Wyckoff sites")
-            num_defects = sum(len(defect_list) for defect_list in self.defects.values())
-
+            defect_list: List[int] = sum(self.defects.values(), [])
+            num_defects = len(defect_list)
             defect_entry_list = []
             wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
             # determine cell orientation for Wyckoff site determination (needs to match the Bilbao
@@ -1054,54 +1104,36 @@ class DefectsGenerator:
                     lattice_vec_swap_array = trial_lattice_vec_swap_array
                     break
 
+                pbar.update(1 / 6 * 10)
+                # 55% of progress bar. This part can take a little while for low-symmetry structures
+
             self._BilbaoCS_conv_cell_vector_mapping = lattice_vec_swap_array
 
-            for _defect_type, defect_list in self.defects.items():
-                for defect in defect_list:
-                    defect_supercell, defect_supercell_site = defect.get_supercell_structure(
-                        sc_mat=self.supercell_matrix,
-                        dummy_species="X",  # keep track of the defect frac coords in the supercell
-                        target_frac_coords=self.target_frac_coords,
-                        return_site=True,
-                    )
-                    neutral_defect_entry = get_defect_entry_from_defect(
-                        defect,
-                        defect_supercell,
-                        0,
-                        dummy_species=_dummy_species,
-                    )
-                    neutral_defect_entry.defect_supercell_site = defect_supercell_site
-                    neutral_defect_entry.bulk_supercell = self.bulk_supercell
-                    neutral_defect_entry.conventional_structure = self.conventional_structure
-                    neutral_defect_entry.defect.conventional_structure = self.conventional_structure
-                    wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
-                        defect_entry=neutral_defect_entry,
-                        wyckoff_dict=wyckoff_label_dict,
-                        lattice_vec_swap_array=self._BilbaoCS_conv_cell_vector_mapping,
-                    )
-                    conv_cell_coord_list.sort(key=_frac_coords_sort_func)
-                    conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
-                    neutral_defect_entry.wyckoff = wyckoff_label
-                    neutral_defect_entry.defect.wyckoff = neutral_defect_entry.wyckoff
-                    neutral_defect_entry.conv_cell_frac_coords = conv_cell_coord_list[
-                        0
-                    ]  # ideal/cleanest coords
-                    neutral_defect_entry.defect.conv_cell_frac_coords = (
-                        neutral_defect_entry.conv_cell_frac_coords
-                    )
-                    neutral_defect_entry.equiv_conv_cell_frac_coords = conv_cell_coord_list
-                    neutral_defect_entry.defect.equiv_conv_cell_frac_coords = (
-                        neutral_defect_entry.equiv_conv_cell_frac_coords
-                    )
-                    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
-                        self._BilbaoCS_conv_cell_vector_mapping
-                    )
-                    defect_entry_list.append(neutral_defect_entry)
-                    pbar.update((1 / num_defects) * ((pbar.total * 0.9) - pbar.n))  # 90% of progress bar
+            # process defects into defect entries:
+            partial_func = partial(
+                _get_neutral_defect_entry,
+                supercell_matrix=self.supercell_matrix,
+                target_frac_coords=self.target_frac_coords,
+                bulk_supercell=self.bulk_supercell,
+                conventional_structure=self.conventional_structure,
+                _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
+                wyckoff_label_dict=wyckoff_label_dict,
+            )
+
+            if processes is None:
+                processes = cpu_count() - 1
+
+            _pbar_increment_per_defect = (1 / num_defects) * ((pbar.total * 0.9) - pbar.n)
+            with Pool(processes) as pool:
+                results = pool.imap_unordered(partial_func, defect_list)
+                for result in results:
+                    defect_entry_list.append(result)
+                    pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
 
             pbar.set_description("Generating DefectEntry objects")
             named_defect_dict = name_defect_entries(defect_entry_list)
             pbar.update(5)  # 95% of progress bar
+            _pbar_increment_per_defect = (1 / num_defects) * (pbar.total - pbar.n)
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
                 charge_states = guess_defect_charge_states(
@@ -1114,7 +1146,8 @@ class DefectsGenerator:
                     defect_name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
                     defect_entry.name = defect_name  # set name attribute
                     self.defect_entries[defect_name] = defect_entry
-                    pbar.update((1 / num_defects) * (pbar.total - pbar.n))  # 100% of progress bar
+
+                pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
             pbar.update(pbar.total - pbar.n)
 
