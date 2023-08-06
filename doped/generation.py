@@ -235,6 +235,7 @@ def _get_neutral_defect_entry(
         neutral_defect_entry.equiv_conv_cell_frac_coords
     )
     neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = _BilbaoCS_conv_cell_vector_mapping
+    neutral_defect_entry.defect._BilbaoCS_conv_cell_vector_mapping = _BilbaoCS_conv_cell_vector_mapping
     return neutral_defect_entry
 
 
@@ -1260,6 +1261,25 @@ class DefectsGenerator:
             # in order for naming and defect generation output info to be deterministic
             defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
 
+            # redefine defects dict with DefectEntry.defect objects:
+            self.defects = {
+                "vacancies": [
+                    defect_entry.defect
+                    for defect_entry in defect_entry_list
+                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "vacancies"
+                ],
+                "substitutions": [
+                    defect_entry.defect
+                    for defect_entry in defect_entry_list
+                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "substitutions"
+                ],
+                "interstitials": [
+                    defect_entry.defect
+                    for defect_entry in defect_entry_list
+                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "interstitials"
+                ],
+            }
+
             named_defect_dict = name_defect_entries(defect_entry_list)
             pbar.update(5)  # 95% of progress bar
             _pbar_increment_per_defect = (1 / num_defects) * (pbar.total - pbar.n)
@@ -1299,10 +1319,28 @@ class DefectsGenerator:
         """
         JSON-serializable dict representation of DefectsGenerator.
         """
+        serialized_defect_entries = {
+            key: {
+                **defect_entry.__dict__,
+                **defect_entry.as_dict(),
+                "defect": {
+                    **defect_entry.defect.__dict__,
+                    **defect_entry.defect.as_dict(),
+                },
+            }
+            for key, defect_entry in self.defect_entries.items()
+        }
+        serialized_defects = {
+            defect_type: [{**defect.__dict__, **defect.as_dict()} for defect in defect_list]
+            for defect_type, defect_list in self.defects.items()
+        }
+
         return {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
             **self.__dict__,
+            "defect_entries": serialized_defect_entries,
+            "defects": serialized_defects,
         }
 
     @classmethod
@@ -1320,21 +1358,108 @@ class DefectsGenerator:
         # TODO: Saving and reloading removes the name attribute from defect entries (and wyckoff and
         #  others?), need to fix this!
         # All other attributes correctly regenerated here, or need to be modified? Check!!
-        d_decoded = MontyDecoder().process_decoded(d)  # decode dict
-        print("post decoding: ", d_decoded)
+
+        # Manually set object attributes
+        # recursively decode nested dicts (in dicts or lists) with @module key
+        def decode_dict(iterable):
+            if isinstance(iterable, dict):
+                if "@module" in iterable:
+                    if iterable["@class"] in [
+                        "Interstitial",
+                        "Substitution",
+                        "Vacancy",
+                        "Defect",
+                        "DefectComplex",
+                        "Adsorbate",
+                    ]:
+                        # pull attributes not in __init__ signature and define after object creation
+                        conventional_structure = MontyDecoder().process_decoded(
+                            iterable.pop("conventional_structure")
+                        )
+                        conv_cell_frac_coords = MontyDecoder().process_decoded(
+                            iterable.pop("conv_cell_frac_coords")
+                        )
+                        equiv_conv_cell_frac_coords = MontyDecoder().process_decoded(
+                            iterable.pop("equiv_conv_cell_frac_coords")
+                        )
+                        _BilbaoCS_conv_cell_vector_mapping = MontyDecoder().process_decoded(
+                            iterable.pop("_BilbaoCS_conv_cell_vector_mapping")
+                        )
+                        wyckoff = MontyDecoder().process_decoded(iterable.pop("wyckoff"))
+                        decoded_defect = MontyDecoder().process_decoded(iterable)
+                        decoded_defect.conventional_structure = conventional_structure
+                        decoded_defect.conv_cell_frac_coords = conv_cell_frac_coords
+                        decoded_defect.equiv_conv_cell_frac_coords = equiv_conv_cell_frac_coords
+                        decoded_defect._BilbaoCS_conv_cell_vector_mapping = (
+                            _BilbaoCS_conv_cell_vector_mapping
+                        )
+                        decoded_defect.wyckoff = wyckoff
+                        return decoded_defect
+
+                    if iterable["@class"] == "DefectEntry":
+                        # pull attributes not in __init__ signature and define after object creation
+                        conventional_structure = MontyDecoder().process_decoded(
+                            iterable.pop("conventional_structure")
+                        )
+                        conv_cell_frac_coords = MontyDecoder().process_decoded(
+                            iterable.pop("conv_cell_frac_coords")
+                        )
+                        equiv_conv_cell_frac_coords = MontyDecoder().process_decoded(
+                            iterable.pop("equiv_conv_cell_frac_coords")
+                        )
+                        _BilbaoCS_conv_cell_vector_mapping = MontyDecoder().process_decoded(
+                            iterable.pop("_BilbaoCS_conv_cell_vector_mapping")
+                        )
+                        wyckoff = MontyDecoder().process_decoded(iterable.pop("wyckoff"))
+                        charge_state_guessing_log = MontyDecoder().process_decoded(
+                            iterable.pop("charge_state_guessing_log")
+                        )
+                        defect_supercell = MontyDecoder().process_decoded(iterable.pop("defect_supercell"))
+                        defect_supercell_site = MontyDecoder().process_decoded(
+                            iterable.pop("defect_supercell_site")
+                        )
+                        equivalent_supercell_sites = MontyDecoder().process_decoded(
+                            iterable.pop("equivalent_supercell_sites")
+                        )
+                        bulk_supercell = MontyDecoder().process_decoded(iterable.pop("bulk_supercell"))
+                        name = MontyDecoder().process_decoded(iterable.pop("name"))
+                        defect = copy.deepcopy(decode_dict(iterable["defect"]))
+                        decoded_defect_entry = MontyDecoder().process_decoded(iterable)
+                        decoded_defect_entry.conventional_structure = conventional_structure
+                        decoded_defect_entry.conv_cell_frac_coords = conv_cell_frac_coords
+                        decoded_defect_entry.equiv_conv_cell_frac_coords = equiv_conv_cell_frac_coords
+                        decoded_defect_entry.wyckoff = wyckoff
+                        decoded_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
+                            _BilbaoCS_conv_cell_vector_mapping
+                        )
+                        decoded_defect_entry.charge_state_guessing_log = charge_state_guessing_log
+                        decoded_defect_entry.defect_supercell = defect_supercell
+                        decoded_defect_entry.defect_supercell_site = defect_supercell_site
+                        decoded_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
+                        decoded_defect_entry.bulk_supercell = bulk_supercell
+                        decoded_defect_entry.name = name
+                        decoded_defect_entry.defect = defect
+                        return decoded_defect_entry
+
+                    return MontyDecoder().process_decoded(iterable)
+
+                return {k: decode_dict(v) for k, v in iterable.items()}
+
+            if isinstance(iterable, list):
+                return [decode_dict(v) for v in iterable]
+
+            return iterable
+
+        d_decoded = {k: decode_dict(v) for k, v in d.items()}
         defects_generator = cls.__new__(
             cls
         )  # Create new DefectsGenerator object without invoking __init__
 
-        # Manually set object attributes
+        # set the instance variables directly from the dictionary
         for key, value in d_decoded.items():
-            if hasattr(defects_generator, key):
-                setattr(defects_generator, key, value)
-            else:
-                warnings.warn(
-                    f"Attribute {key} found in dict but not a valid attribute for "
-                    f"DefectsGenerator object!"
-                )
+            if key in ["@module", "@class", "@version"]:
+                continue
+            setattr(defects_generator, key, value)
 
         return defects_generator
 
@@ -1458,9 +1583,19 @@ class DefectsGenerator:
         dictionary attribute, if the attribute doesn't exist in
         DefectsGenerator.
         """
+        # Return the attribute if it exists in self.__dict__
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+
+        # If trying to access defect_entries and it doesn't exist, raise an error
+        if attr == "defect_entries" or "defect_entries" not in self.__dict__:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+
+        # Check if the attribute exists in defect_entries
         if hasattr(self.defect_entries, attr):
             return getattr(self.defect_entries, attr)
 
+        # If all else fails, raise an AttributeError
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __getitem__(self, key):
@@ -1548,10 +1683,12 @@ class DefectsGenerator:
         """
         Returns a string representation of the DefectsGenerator object.
         """
+        struc_wout_oxi = self.primitive_structure.copy()
+        struc_wout_oxi.remove_oxidation_states()
         return (
             f"DefectsGenerator for input composition "
-            f"{self.primitive_structure.composition.to_pretty_string()}, space group "
-            f"{self.primitive_structure.get_space_group_info()[0]} with {len(self)} defect entries "
+            f"{struc_wout_oxi.composition.to_pretty_string()}, space group "
+            f"{struc_wout_oxi.get_space_group_info()[0]} with {len(self)} defect entries "
             f"created."
         )
 
