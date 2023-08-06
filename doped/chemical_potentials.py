@@ -373,6 +373,7 @@ class CompetingPhases:
 
         pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
         phase_diagram = PhaseDiagram(pd_entries)
+        # TODO: This breaks if bulk composition not on MP, need to fix!
         bulk_entries = [
             entry
             for entry in pd_entries
@@ -468,14 +469,13 @@ class CompetingPhases:
         self.nonmetals = []
         self.metals = []
         for e in self.entries:
-            if not e.data["molecule"]:
-                if e.data["band_gap"] > 0:
-                    self.nonmetals.append(e)
-                else:
-                    self.metals.append(e)
-            else:
+            if e.data["molecule"]:
                 print(f"{e.name} is a molecule in a box, does not need convergence testing")
 
+            elif e.data["band_gap"] > 0:
+                self.nonmetals.append(e)
+            else:
+                self.metals.append(e)
         for e in self.nonmetals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
@@ -498,6 +498,8 @@ class CompetingPhases:
                     f"competing_phases/{e.name}_EaH"
                     f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 )  # TODO: competing_phases folder name should be an optional parameter
+                # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
+                #  out for cases where rounding can give same name (e.g. Te!)
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
