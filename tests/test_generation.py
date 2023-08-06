@@ -61,7 +61,10 @@ Te_i_Td_Te2.83   [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
         )
 
         self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
-
+        self.ytos_defect_gen_string = (
+            "DefectsGenerator for input composition Y2Ti2S2O5, space group I4/mmm with 221 defect "
+            "entries created."
+        )
         self.ytos_defect_gen_info = (
             """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
@@ -123,6 +126,10 @@ O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
         )
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
+        self.lmno_defect_gen_string = (
+            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 197 defect "
+            "entries created."
+        )
         self.lmno_defect_gen_info = (
             """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
@@ -188,6 +195,10 @@ O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
         )
 
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
+        self.zns_defect_gen_string = (
+            "DefectsGenerator for input composition ZnS, space group F-43m with 36 defect entries "
+            "created."
+        )
         self.zns_defect_gen_info = (
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
@@ -215,6 +226,9 @@ S_i_Td_Zn2.35    [-2,-1,0]        [0.750,0.750,0.750]  4d
         )
 
         self.prim_cu = Structure.from_file(f"{self.data_dir}/Cu_prim_POSCAR")
+        self.cu_defect_gen_string = (
+            "DefectsGenerator for input composition Cu, space group Fm-3m with 9 defect entries created."
+        )
         self.cu_defect_gen_info = (
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
@@ -237,7 +251,9 @@ Cu_i_Td          [0,+1,+2]        [0.250,0.250,0.250]  8c
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
         aaa = AseAtomsAdaptor()
         self.agcu = aaa.get_structure(atoms)
-
+        self.agcu_defect_gen_string = (
+            "DefectsGenerator for input composition CuAg, space group R-3m with 28 defect entries created."
+        )
         self.agcu_defect_gen_info = (
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
@@ -807,11 +823,48 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(ytos_defect_gen.defect_entries) == 221
-        assert len(ytos_defect_gen) == 221
+        assert len(ytos_defect_gen) == 221  # __len__()
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in ytos_defect_gen.defect_entries.values()
         )
+        assert dict(ytos_defect_gen.items()) == ytos_defect_gen.defect_entries  # __iter__()
+        assert str(ytos_defect_gen) == self.ytos_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(ytos_defect_gen)
+            == self.ytos_defect_gen_string
+            + "\n---------------------------------------------------------\n"
+            + self.ytos_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in ytos_defect_gen
+            for defect_entry_name in ytos_defect_gen.defect_entries  # __contains__()
+        )
+        assert (
+            ytos_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+            == ytos_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+        )  # __getitem__()
+        assert ytos_defect_gen.get("O_i_D2d_-1") == ytos_defect_gen.defect_entries["O_i_D2d_-1"]  # get()
+        defect_entry = ytos_defect_gen.defect_entries["O_i_D2d_-1"]
+        del ytos_defect_gen["O_i_D2d_-1"]  # __delitem__()
+        assert "O_i_D2d_-1" not in ytos_defect_gen
+        ytos_defect_gen["O_i_D2d_-1"] = defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            ytos_defect_gen["O_i_D2d_-1"] = defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(ytos_defect_gen.defect_entries["O_i_D2d_-1"])
+            fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
+            ytos_defect_gen["O_i_D2d_-1"] = fd_up_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(ytos_defect_gen.defect_entries["O_i_D2d_-1"])
+            fd_up_defect_entry.sc_entry = copy.deepcopy(ytos_defect_gen.defect_entries["v_Y_0"])
+            ytos_defect_gen["O_i_D2d_-1"] = fd_up_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
         # test defect entry attributes
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].name == "O_i_D2d_-1"
@@ -883,11 +936,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            distances = []
-            for site in defect_entry.conventional_structure:
-                distances.append(
-                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                )
+            distances = [
+                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+                for site in defect_entry.conventional_structure
+            ]
             assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, ytos_defect_gen.bulk_supercell.lattice.matrix
@@ -1078,11 +1130,51 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(lmno_defect_gen.defect_entries) == 197
-        assert len(lmno_defect_gen) == 197
+        assert len(lmno_defect_gen) == 197  # __len__()
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in lmno_defect_gen.defect_entries.values()
         )
+        assert dict(lmno_defect_gen.items()) == lmno_defect_gen.defect_entries  # __iter__()
+        assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(lmno_defect_gen)
+            == self.lmno_defect_gen_string
+            + "\n---------------------------------------------------------\n"
+            + self.lmno_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in lmno_defect_gen
+            for defect_entry_name in lmno_defect_gen.defect_entries  # __contains__()
+        )
+        assert (
+            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"]
+            == lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
+        )  # __getitem__()
+        assert (
+            lmno_defect_gen.get("Ni_i_C2_Li1.84O1.94_+2")
+            == lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
+        )  # get()
+        defect_entry = lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
+        del lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"]  # __delitem__()
+        assert "Ni_i_C2_Li1.84O1.94_+2" not in lmno_defect_gen
+        lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"])
+            fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
+            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = fd_up_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"])
+            fd_up_defect_entry.sc_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Li_O_C3_+3"])
+            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = fd_up_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
         # test defect entry attributes
         assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].name == "Ni_i_C2_Li1.84O1.94_+2"
@@ -1345,11 +1437,49 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(zns_defect_gen.defect_entries) == 36
-        assert len(zns_defect_gen) == 36
+        assert len(zns_defect_gen) == 36  # __len__()
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in zns_defect_gen.defect_entries.values()
         )
+        assert dict(zns_defect_gen.items()) == zns_defect_gen.defect_entries  # __iter__()
+        assert str(zns_defect_gen) == self.zns_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(zns_defect_gen)
+            == self.zns_defect_gen_string
+            + "\n---------------------------------------------------------\n"
+            + self.zns_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in zns_defect_gen
+            for defect_entry_name in zns_defect_gen.defect_entries  # __contains__()
+        )
+        assert (
+            zns_defect_gen["S_i_Td_S2.35_-2"] == zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"]
+        )  # __getitem__()
+        assert (
+            zns_defect_gen.get("S_i_Td_S2.35_-2") == zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"]
+        )  # get()
+        defect_entry = zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"]
+        del zns_defect_gen["S_i_Td_S2.35_-2"]  # __delitem__()
+        assert "S_i_Td_S2.35_-2" not in zns_defect_gen
+        zns_defect_gen["S_i_Td_S2.35_-2"] = defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            zns_defect_gen["S_i_Td_S2.35_-2"] = defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"])
+            fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
+            zns_defect_gen["S_i_Td_S2.35_-2"] = fd_up_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"])
+            fd_up_defect_entry.sc_entry = copy.deepcopy(zns_defect_gen.defect_entries["v_Zn_0"])
+            zns_defect_gen["S_i_Td_S2.35_-2"] = fd_up_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
         # test defect entry attributes
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].name == "S_i_Td_S2.35_-2"
@@ -1598,10 +1728,44 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(cu_defect_gen.defect_entries) == 9
-        assert len(cu_defect_gen) == 9
+        assert len(cu_defect_gen) == 9  # __len__()
         assert all(
             isinstance(defect_entry, DefectEntry) for defect_entry in cu_defect_gen.defect_entries.values()
         )
+        assert dict(cu_defect_gen.items()) == cu_defect_gen.defect_entries  # __iter__()
+        assert str(cu_defect_gen) == self.cu_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(cu_defect_gen)
+            == self.cu_defect_gen_string
+            + "\n---------------------------------------------------------\n"
+            + self.cu_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in cu_defect_gen
+            for defect_entry_name in cu_defect_gen.defect_entries  # __contains__()
+        )
+        assert cu_defect_gen["Cu_i_Oh_+1"] == cu_defect_gen.defect_entries["Cu_i_Oh_+1"]  # __getitem__()
+        assert cu_defect_gen.get("Cu_i_Oh_+1") == cu_defect_gen.defect_entries["Cu_i_Oh_+1"]  # get()
+        defect_entry = cu_defect_gen.defect_entries["Cu_i_Oh_+1"]
+        del cu_defect_gen["Cu_i_Oh_+1"]  # __delitem__()
+        assert "Cu_i_Oh_+1" not in cu_defect_gen
+        cu_defect_gen["Cu_i_Oh_+1"] = defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            cu_defect_gen["Cu_i_Oh_+1"] = defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(cu_defect_gen.defect_entries["Cu_i_Oh_+1"])
+            fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
+            cu_defect_gen["Cu_i_Oh_+1"] = fd_up_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(cu_defect_gen.defect_entries["Cu_i_Oh_+1"])
+            fd_up_defect_entry.sc_entry = copy.deepcopy(cu_defect_gen.defect_entries["v_Cu_0"])
+            cu_defect_gen["Cu_i_Oh_+1"] = fd_up_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
         # test defect entry attributes
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].name == "Cu_i_Oh_+1"
@@ -1810,11 +1974,55 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(agcu_defect_gen.defect_entries) == 28
-        assert len(agcu_defect_gen) == 28
+        assert len(agcu_defect_gen) == 28  # __len__()
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in agcu_defect_gen.defect_entries.values()
         )
+        assert dict(agcu_defect_gen.items()) == agcu_defect_gen.defect_entries  # __iter__()
+        assert str(agcu_defect_gen) == self.agcu_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(agcu_defect_gen)
+            == self.agcu_defect_gen_string
+            + "\n---------------------------------------------------------\n"
+            + self.agcu_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in agcu_defect_gen
+            for defect_entry_name in agcu_defect_gen.defect_entries  # __contains__()
+        )
+        assert (
+            agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+            == agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+        )  # __getitem__()
+        assert (
+            agcu_defect_gen.get("Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1")
+            == agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+        )  # get()
+        defect_entry = agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+        del agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]  # __delitem__()
+        assert "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1" not in agcu_defect_gen
+        agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"] = defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"] = defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(
+                agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+            )
+            fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
+            agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"] = fd_up_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_defect_entry = copy.deepcopy(
+                agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+            )
+            fd_up_defect_entry.sc_entry = copy.deepcopy(agcu_defect_gen.defect_entries["Ag_Cu_-1"])
+            agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"] = fd_up_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
         # test defect entry attributes
         assert (
