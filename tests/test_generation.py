@@ -1,6 +1,7 @@
 """
 Tests for the `doped.generation` module.
 """
+import copy
 import os
 import sys
 import unittest
@@ -504,6 +505,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             defect_entry_name in cdte_defect_gen
             for defect_entry_name in cdte_defect_gen.defect_entries  # __contains__()
         )
+        assert (
+            cdte_defect_gen["Cd_i_C3v_0"] == cdte_defect_gen.defect_entries["Cd_i_C3v_0"]
+        )  # __getitem__()
+        assert cdte_defect_gen.get("Cd_i_C3v_0") == cdte_defect_gen.defect_entries["Cd_i_C3v_0"]  # get()
+        cd_i_defect_entry = cdte_defect_gen.defect_entries["Cd_i_C3v_0"]
+        del cdte_defect_gen["Cd_i_C3v_0"]  # __delitem__()
+        assert "Cd_i_C3v_0" not in cdte_defect_gen
+        cdte_defect_gen["Cd_i_C3v_0"] = cd_i_defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            cdte_defect_gen["Cd_i_C3v_0"] = cd_i_defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        with self.assertRaises(ValueError) as e:
+            fd_up_cd_i_defect_entry = copy.deepcopy(cdte_defect_gen.defect_entries["Cd_i_C3v_0"])
+            fd_up_cd_i_defect_entry.defect.structure = self.cdte_bulk_supercell
+            cdte_defect_gen["Cd_i_C3v_0"] = fd_up_cd_i_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+        with self.assertRaises(ValueError) as e:
+            fd_up_cd_i_defect_entry = copy.deepcopy(cdte_defect_gen.defect_entries["Cd_i_C3v_0"])
+            fd_up_cd_i_defect_entry.sc_entry = copy.deepcopy(
+                cdte_defect_gen.defect_entries["Cd_i_Td_Cd2.83_0"]
+            )
+            cdte_defect_gen["Cd_i_C3v_0"] = fd_up_cd_i_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in cdte_defect_gen.defect_entries.values()
