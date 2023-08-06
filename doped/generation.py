@@ -1449,7 +1449,13 @@ class DefectsGenerator:
                 is the chemical formula of the host material.
         """
         if filename is None:
-            filename = f"{self.primitive_structure.composition.to_pretty_string()}_defects_generator.json"
+            struc_wout_oxi = self.primitive_structure.copy()
+            struc_wout_oxi.remove_oxidation_states()
+            comp_string = struc_wout_oxi.composition.reduced_composition.to_pretty_string()
+            # remove any single digit "1"s, or "{letter}1" at end of comp_string, for extra sexy output:
+            comp_string = re.sub(r"([^\d])1([^\d])", r"\1\2", comp_string)
+            comp_string = re.sub(r"([^\d])1$", r"\1", comp_string)
+            filename = f"{comp_string}_defects_generator.json"
 
         dumpfn(self, filename)
 
