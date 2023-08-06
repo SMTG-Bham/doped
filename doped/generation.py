@@ -262,7 +262,7 @@ def name_defect_entries(defect_entries):
         return full_defect_name.rsplit("_", split_number)[0]
 
     def get_matching_names(defect_naming_dict, defect_name):
-        return [name for name in defect_naming_dict if defect_name in name]
+        return [name for name in defect_naming_dict if defect_name.startswith(name)]
 
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
@@ -296,7 +296,7 @@ def name_defect_entries(defect_entries):
             except IndexError:
                 return handle_repeated_name(defect_naming_dict, full_defect_name)
 
-            if not any(name for name in defect_naming_dict if full_defect_name in name):
+            if not any(name.startswith(full_defect_name) for name in defect_naming_dict):
                 return defect_naming_dict, full_defect_name
 
             if n == 3:  # if still not unique after 3rd nearest neighbour, just use alphabetical indexing
@@ -899,8 +899,7 @@ class DefectsGenerator:
             if prim_struct.num_sites < self.structure.num_sites:
                 primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
 
-            else:  # primitive cell is the same as input structure, so use input structure to avoid
-                # rotations
+            else:  # primitive cell is the same as input structure, use input structure to avoid rotations
                 # wrap to unit cell:
                 primitive_structure = Structure.from_sites(
                     [site.to_unit_cell() for site in self.structure]
@@ -1322,6 +1321,7 @@ class DefectsGenerator:
         #  others?), need to fix this!
         # All other attributes correctly regenerated here, or need to be modified? Check!!
         d_decoded = MontyDecoder().process_decoded(d)  # decode dict
+        print("post decoding: ", d_decoded)
         defects_generator = cls.__new__(
             cls
         )  # Create new DefectsGenerator object without invoking __init__
