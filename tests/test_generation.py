@@ -29,6 +29,10 @@ class DefectsGeneratorTest(unittest.TestCase):
         sga = SpacegroupAnalyzer(self.prim_cdte)
         self.conv_cdte = sga.get_conventional_standard_structure()
         self.cdte_bulk_supercell = self.conv_cdte * 2 * np.eye(3)
+        self.cdte_defect_gen_string = (
+            "DefectsGenerator for input composition CdTe, space group F-43m with 50 defect entries "
+            "created."
+        )
         self.cdte_defect_gen_info = (
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
@@ -262,17 +266,17 @@ Ag_i_C3v_Ag1.80               [0,+1]           [0.000,0.000,0.250]  6c
         self.cd_i_cdte_supercell_defect_gen_info = (
             """Vacancies                    Charge States    Conv. Cell Coords    Wyckoff
 ---------------------------  ---------------  -------------------  ---------
-v_Cd_C1_Te2.83Cd4.62Te5.42a  [-1,0,+1]        [0.250,0.250,0.500]  18c
-v_Cd_C1_Te2.83Cd4.62Te5.42b  [-1,0,+1]        [0.000,0.250,0.000]  18c
+v_Cd_C1_Te2.83Cd4.62Te5.42a  [-1,0,+1]        [0.000,0.250,0.000]  18c
+v_Cd_C1_Te2.83Cd4.62Te5.42b  [-1,0,+1]        [0.250,0.250,0.500]  18c
 v_Cd_C3v_Cd2.71              [-1,0,+1]        [0.000,0.000,0.688]  3a
 v_Cd_C3v_Te2.83Cd4.25        [-1,0,+1]        [0.000,0.000,0.500]  3a
 v_Cd_C3v_Te2.83Cd4.62        [-1,0,+1]        [0.000,0.000,0.000]  3a
 v_Cd_Cs_Cd2.71               [-1,0,+1]        [0.500,0.250,0.000]  9b
 v_Cd_Cs_Te2.83Cd4.25         [-1,0,+1]        [0.583,0.167,0.167]  9b
 v_Cd_Cs_Te2.83Cd4.62Cd5.36   [-1,0,+1]        [0.000,0.500,0.000]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42a  [-1,0,+1]        [0.167,0.083,0.333]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42b  [-1,0,+1]        [0.500,0.500,0.500]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42c  [-1,0,+1]        [0.083,0.167,0.167]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42a  [-1,0,+1]        [0.500,0.500,0.500]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42b  [-1,0,+1]        [0.083,0.167,0.167]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42c  [-1,0,+1]        [0.167,0.083,0.333]  9b
 v_Te_C1_Cd2.83Te4.62Cd5.42a  [-1,0,+1]        [0.250,0.250,0.375]  18c
 v_Te_C1_Cd2.83Te4.62Cd5.42b  [-1,0,+1]        [0.250,0.250,0.875]  18c
 v_Te_C3v_Cd2.83Cd4.25        [-1,0,+1]        [0.000,0.000,0.875]  3a
@@ -281,72 +285,8 @@ v_Te_Cs_Cd2.71               [-1,0,+1]        [0.583,0.167,0.042]  9b
 v_Te_Cs_Cd2.83Cd4.25         [-1,0,+1]        [0.083,0.167,0.542]  9b
 v_Te_Cs_Cd2.83Te4.62Cd5.36   [-1,0,+1]        [0.500,0.500,0.375]  9b
 v_Te_Cs_Cd2.83Te4.62Cd5.42a  [-1,0,+1]        [0.500,0.500,0.875]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42b  [-1,0,+1]        [0.167,0.083,0.208]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42c  [-1,0,+1]        [0.083,0.167,0.042]  9b
-
-'v_Cd_C1_Te2.83Cd4.62Te5.42a  '
- '[-1,0,+1]                                                                          '
- '[0.000,0.250,0.000]  18c\n'
- 'v_Cd_C1_Te2.83Cd4.62Te5.42b  '
- '[-1,0,+1]                                                                          '
- '[0.250,0.250,0.500]  18c\n'
- 'v_Cd_C3v_Cd2.71              '
- '[-1,0,+1]                                                                          '
- '[0.000,0.000,0.688]  3a\n'
- 'v_Cd_C3v_Te2.83Cd4.25        '
- '[-1,0,+1]                                                                          '
- '[0.000,0.000,0.500]  3a\n'
- 'v_Cd_C3v_Te2.83Cd4.62        '
- '[-1,0,+1]                                                                          '
- '[0.000,0.000,0.000]  3a\n'
- 'v_Cd_Cs_Cd2.71               '
- '[-1,0,+1]                                                                          '
- '[0.500,0.250,0.000]  9b\n'
- 'v_Cd_Cs_Te2.83Cd4.25         '
- '[-1,0,+1]                                                                          '
- '[0.583,0.167,0.167]  9b\n'
- 'v_Cd_Cs_Te2.83Cd4.62Cd5.36   '
- '[-1,0,+1]                                                                          '
- '[0.000,0.500,0.000]  9b\n'
- 'v_Cd_Cs_Te2.83Cd4.62Te5.42a  '
- '[-1,0,+1]                                                                          '
- '[0.500,0.500,0.500]  9b\n'
- 'v_Cd_Cs_Te2.83Cd4.62Te5.42b  '
- '[-1,0,+1]                                                                          '
- '[0.083,0.167,0.167]  9b\n'
- 'v_Cd_Cs_Te2.83Cd4.62Te5.42c  '
- '[-1,0,+1]                                                                          '
- '[0.167,0.083,0.333]  9b\n'
- 'v_Te                         '
- '[-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1,-1,0,+1]  '
- '[0.000,0.000,0.375]  3a\n'
- 'v_Te_C1_Cd2.83Te4.62Cd5.42a  '
- '[-1,0,+1]                                                                          '
- '[0.250,0.250,0.375]  18c\n'
- 'v_Te_C1_Cd2.83Te4.62Cd5.42b  '
- '[-1,0,+1]                                                                          '
- '[0.250,0.250,0.875]  18c\n'
- 'v_Te_C3v                     '
- '[-1,0,+1]                                                                          '
- '[0.000,0.000,0.875]  3a\n'
- 'v_Te_Cs_Cd2.71               '
- '[-1,0,+1]                                                                          '
- '[0.583,0.167,0.042]  9b\n'
- 'v_Te_Cs_Cd2.83Cd4.25         '
- '[-1,0,+1]                                                                          '
- '[0.083,0.167,0.542]  9b\n'
- 'v_Te_Cs_Cd2.83Te4.62Cd5.36   '
- '[-1,0,+1]                                                                          '
- '[0.500,0.500,0.375]  9b\n'
- 'v_Te_Cs_Cd2.83Te4.62Cd5.42a  '
- '[-1,0,+1]                                                                          '
- '[0.500,0.500,0.875]  9b\n'
- 'v_Te_Cs_Cd2.83Te4.62Cd5.42b  '
- '[-1,0,+1]                                                                          '
- '[0.083,0.167,0.042]  9b\n'
- 'v_Te_Cs_Cd2.83Te4.62Cd5.42c  '
- '[-1,0,+1]                                                                          '
- '[0.167,0.083,0.208]  9b\n'
+v_Te_Cs_Cd2.83Te4.62Cd5.42b  [-1,0,+1]        [0.083,0.167,0.042]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42c  [-1,0,+1]        [0.167,0.083,0.208]  9b
 
 Substitutions                 Charge States    Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------  -------------------  ---------
@@ -475,7 +415,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: test as_dict etc methods
+        # TODO: test as_dict/from_dict (via to/from json), __X__ etc methods
         # test saving to and loading from json (and that _all_ attributes remain)
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords, charge_state_gen_kwargs setting...
@@ -551,6 +491,19 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # test defect entries
         assert len(cdte_defect_gen.defect_entries) == 50
+        assert len(cdte_defect_gen) == 50  # __len__()
+        assert dict(cdte_defect_gen.items()) == cdte_defect_gen.defect_entries  # __iter__()
+        assert str(cdte_defect_gen) == self.cdte_defect_gen_string  # __str__()
+        assert (  # __repr__()
+            repr(cdte_defect_gen)
+            == self.cdte_defect_gen_string
+            + "\n---------------------------------------------------------"
+            + self.cdte_defect_gen_info
+        )
+        assert all(
+            defect_entry_name in cdte_defect_gen
+            for defect_entry_name in cdte_defect_gen.defect_entries  # __contains__()
+        )
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in cdte_defect_gen.defect_entries.values()
@@ -1016,7 +969,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -1272,11 +1225,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 lmno_defect_gen = DefectsGenerator(self.lmno_primitive, generate_supercell=False)
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
                 assert len(non_ignored_warnings) == 1
                 assert issubclass(non_ignored_warnings[-1].category, UserWarning)
                 assert (
@@ -1739,7 +1692,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
@@ -2095,12 +2048,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             cd_i_defect_gen.primitive_structure.lattice.matrix,
         )
         assert np.allclose(
-            cd_i_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.5, 0.0, 0.0])
+            cd_i_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.0, 0.75, 0.25])
         )
 
         # test defect entries
-        assert len(cd_i_defect_gen.defect_entries) == 596
-        assert len(cd_i_defect_gen) == 596
+        assert len(cd_i_defect_gen.defect_entries) == 429
+        assert len(cd_i_defect_gen) == 429
         assert all(
             isinstance(defect_entry, DefectEntry)
             for defect_entry in cd_i_defect_gen.defect_entries.values()
@@ -2121,14 +2074,14 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.multiplicity == 3
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].sc_defect_frac_coords,
-            np.array([0.375, 0.375, 0.875]),  # closest to [0.5, 0.5, 0.5]
+            np.array([0.875, 0.625, 0.625]),  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries[
                 "Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"
             ].defect_supercell_site.frac_coords,
-            np.array([0.375, 0.375, 0.875]),  # closest to [0.5, 0.5, 0.5]
+            np.array([0.875, 0.625, 0.625]),  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         assert (
@@ -2139,17 +2092,17 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].conv_cell_frac_coords,
-            np.array([0.5, 0.5, 0.125]),
+            np.array([0.583, 0.167, 0.292]),
             rtol=1e-2,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.conv_cell_frac_coords,
-            np.array([0.5, 0.5, 0.125]),
+            np.array([0.583, 0.167, 0.292]),
             rtol=1e-2,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
-            np.array([0.375, 0.875, 0.375]),
+            np.array([0.875, 0.625, 0.625]),
             rtol=1e-2,
         )
 
@@ -2246,12 +2199,14 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
+
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
+        print(output)  # TODO: Fix???
+        print([str(warning.message) for warning in non_ignored_warnings])
+        assert not non_ignored_warnings
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
@@ -2271,7 +2226,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
                 assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
