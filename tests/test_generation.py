@@ -497,7 +497,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert (  # __repr__()
             repr(cdte_defect_gen)
             == self.cdte_defect_gen_string
-            + "\n---------------------------------------------------------"
+            + "\n---------------------------------------------------------\n"
             + self.cdte_defect_gen_info
         )
         assert all(
