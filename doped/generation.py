@@ -1359,89 +1359,65 @@ class DefectsGenerator:
             DefectsGenerator object
         """
 
-        # recursively decode nested dicts (in dicts or lists) with @module key
+        def process_attributes(class_name, attributes, iterable):
+            result = {}
+            for attr in attributes:
+                result[attr] = MontyDecoder().process_decoded(iterable.pop(attr))
+            return result
+
         def decode_dict(iterable):
+            if isinstance(iterable, dict) and "@module" in iterable:
+                class_name = iterable["@class"]
+                decoded_obj = None
+
+                defect_additional_attributes = [
+                    "conventional_structure",
+                    "conv_cell_frac_coords",
+                    "equiv_conv_cell_frac_coords",
+                    "_BilbaoCS_conv_cell_vector_mapping",
+                    "wyckoff",
+                ]
+                attribute_groups = {
+                    "DefectEntry": [
+                        "conventional_structure",
+                        "conv_cell_frac_coords",
+                        "equiv_conv_cell_frac_coords",
+                        "_BilbaoCS_conv_cell_vector_mapping",
+                        "wyckoff",
+                        "charge_state_guessing_log",
+                        "defect_supercell",
+                        "defect_supercell_site",
+                        "equivalent_supercell_sites",
+                        "bulk_supercell",
+                        "name",
+                    ],
+                    **{
+                        k: defect_additional_attributes
+                        for k in [
+                            "Interstitial",
+                            "Substitution",
+                            "Vacancy",
+                            "Defect",
+                            "DefectComplex",
+                            "Adsorbate",
+                        ]
+                    },
+                }
+
+                if class_name in attribute_groups:
+                    # pull attributes not in __init__ signature and define after object creation
+                    attributes = process_attributes(class_name, attribute_groups[class_name], iterable)
+                    if class_name == "DefectEntry":
+                        attributes["defect"] = copy.deepcopy(decode_dict(iterable["defect"]))
+                    decoded_obj = MontyDecoder().process_decoded(iterable)
+                    for attr, value in attributes.items():
+                        setattr(decoded_obj, attr, value)
+
+                    return decoded_obj
+
+                return MontyDecoder().process_decoded(iterable)
+
             if isinstance(iterable, dict):
-                if "@module" in iterable:
-                    if iterable["@class"] in [
-                        "Interstitial",
-                        "Substitution",
-                        "Vacancy",
-                        "Defect",
-                        "DefectComplex",
-                        "Adsorbate",
-                    ]:
-                        # pull attributes not in __init__ signature and define after object creation
-                        conventional_structure = MontyDecoder().process_decoded(
-                            iterable.pop("conventional_structure")
-                        )
-                        conv_cell_frac_coords = MontyDecoder().process_decoded(
-                            iterable.pop("conv_cell_frac_coords")
-                        )
-                        equiv_conv_cell_frac_coords = MontyDecoder().process_decoded(
-                            iterable.pop("equiv_conv_cell_frac_coords")
-                        )
-                        _BilbaoCS_conv_cell_vector_mapping = MontyDecoder().process_decoded(
-                            iterable.pop("_BilbaoCS_conv_cell_vector_mapping")
-                        )
-                        wyckoff = MontyDecoder().process_decoded(iterable.pop("wyckoff"))
-                        decoded_defect = MontyDecoder().process_decoded(iterable)
-                        decoded_defect.conventional_structure = conventional_structure
-                        decoded_defect.conv_cell_frac_coords = conv_cell_frac_coords
-                        decoded_defect.equiv_conv_cell_frac_coords = equiv_conv_cell_frac_coords
-                        decoded_defect._BilbaoCS_conv_cell_vector_mapping = (
-                            _BilbaoCS_conv_cell_vector_mapping
-                        )
-                        decoded_defect.wyckoff = wyckoff
-                        return decoded_defect
-
-                    if iterable["@class"] == "DefectEntry":
-                        # pull attributes not in __init__ signature and define after object creation
-                        conventional_structure = MontyDecoder().process_decoded(
-                            iterable.pop("conventional_structure")
-                        )
-                        conv_cell_frac_coords = MontyDecoder().process_decoded(
-                            iterable.pop("conv_cell_frac_coords")
-                        )
-                        equiv_conv_cell_frac_coords = MontyDecoder().process_decoded(
-                            iterable.pop("equiv_conv_cell_frac_coords")
-                        )
-                        _BilbaoCS_conv_cell_vector_mapping = MontyDecoder().process_decoded(
-                            iterable.pop("_BilbaoCS_conv_cell_vector_mapping")
-                        )
-                        wyckoff = MontyDecoder().process_decoded(iterable.pop("wyckoff"))
-                        charge_state_guessing_log = MontyDecoder().process_decoded(
-                            iterable.pop("charge_state_guessing_log")
-                        )
-                        defect_supercell = MontyDecoder().process_decoded(iterable.pop("defect_supercell"))
-                        defect_supercell_site = MontyDecoder().process_decoded(
-                            iterable.pop("defect_supercell_site")
-                        )
-                        equivalent_supercell_sites = MontyDecoder().process_decoded(
-                            iterable.pop("equivalent_supercell_sites")
-                        )
-                        bulk_supercell = MontyDecoder().process_decoded(iterable.pop("bulk_supercell"))
-                        name = MontyDecoder().process_decoded(iterable.pop("name"))
-                        defect = copy.deepcopy(decode_dict(iterable["defect"]))
-                        decoded_defect_entry = MontyDecoder().process_decoded(iterable)
-                        decoded_defect_entry.conventional_structure = conventional_structure
-                        decoded_defect_entry.conv_cell_frac_coords = conv_cell_frac_coords
-                        decoded_defect_entry.equiv_conv_cell_frac_coords = equiv_conv_cell_frac_coords
-                        decoded_defect_entry.wyckoff = wyckoff
-                        decoded_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
-                            _BilbaoCS_conv_cell_vector_mapping
-                        )
-                        decoded_defect_entry.charge_state_guessing_log = charge_state_guessing_log
-                        decoded_defect_entry.defect_supercell = defect_supercell
-                        decoded_defect_entry.defect_supercell_site = defect_supercell_site
-                        decoded_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
-                        decoded_defect_entry.bulk_supercell = bulk_supercell
-                        decoded_defect_entry.name = name
-                        decoded_defect_entry.defect = defect
-                        return decoded_defect_entry
-
-                    return MontyDecoder().process_decoded(iterable)
-
                 return {k: decode_dict(v) for k, v in iterable.items()}
 
             if isinstance(iterable, list):
@@ -1449,6 +1425,7 @@ class DefectsGenerator:
 
             return iterable
 
+        # recursively decode nested dicts (in dicts or lists) with @module key
         d_decoded = {k: decode_dict(v) for k, v in d.items()}
         defects_generator = cls.__new__(
             cls
@@ -1456,9 +1433,8 @@ class DefectsGenerator:
 
         # set the instance variables directly from the dictionary
         for key, value in d_decoded.items():
-            if key in ["@module", "@class", "@version"]:
-                continue
-            setattr(defects_generator, key, value)
+            if key not in ["@module", "@class", "@version"]:
+                setattr(defects_generator, key, value)
 
         return defects_generator
 
@@ -1701,7 +1677,7 @@ class DefectsGenerator:
         """
         return (
             self.__str__()
-            + "\n---------------------------------------------------------"
+            + "\n---------------------------------------------------------\n"
             + self._defect_generator_info()
         )
 
