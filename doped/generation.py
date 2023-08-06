@@ -3,6 +3,7 @@ Code to generate Defect objects and supercell structures for ab-initio
 calculations.
 """
 import copy
+import re
 import warnings
 from functools import partial
 from itertools import chain
@@ -1279,6 +1280,8 @@ class DefectsGenerator:
                     if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "interstitials"
                 ],
             }
+            # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
+            self.defects = {k: v for k, v in self.defects.items() if v}
 
             named_defect_dict = name_defect_entries(defect_entry_list)
             pbar.update(5)  # 95% of progress bar
@@ -1355,11 +1358,7 @@ class DefectsGenerator:
         Returns:
             DefectsGenerator object
         """
-        # TODO: Saving and reloading removes the name attribute from defect entries (and wyckoff and
-        #  others?), need to fix this!
-        # All other attributes correctly regenerated here, or need to be modified? Check!!
 
-        # Manually set object attributes
         # recursively decode nested dicts (in dicts or lists) with @module key
         def decode_dict(iterable):
             if isinstance(iterable, dict):
@@ -1685,11 +1684,14 @@ class DefectsGenerator:
         """
         struc_wout_oxi = self.primitive_structure.copy()
         struc_wout_oxi.remove_oxidation_states()
+        comp_string = struc_wout_oxi.composition.reduced_composition.to_pretty_string()
+        # remove any single digit "1"s, or "{letter}1" at end of comp_string, for extra sexy output:
+        comp_string = re.sub(r"([^\d])1([^\d])", r"\1\2", comp_string)
+        comp_string = re.sub(r"([^\d])1$", r"\1", comp_string)
+
         return (
-            f"DefectsGenerator for input composition "
-            f"{struc_wout_oxi.composition.to_pretty_string()}, space group "
-            f"{struc_wout_oxi.get_space_group_info()[0]} with {len(self)} defect entries "
-            f"created."
+            f"DefectsGenerator for input composition {comp_string}, space group "
+            f"{struc_wout_oxi.get_space_group_info()[0]} with {len(self)} defect entries created."
         )
 
     def __repr__(self):
@@ -1697,7 +1699,11 @@ class DefectsGenerator:
         Returns a string representation of the DefectsGenerator object, and
         prints the DefectsGenerator info.
         """
-        return self.__str__() + "\n" + self._defect_generator_info()
+        return (
+            self.__str__()
+            + "\n---------------------------------------------------------"
+            + self._defect_generator_info()
+        )
 
 
 def _get_interstitial_candidate_sites(args):
