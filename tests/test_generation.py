@@ -2,6 +2,8 @@
 Tests for the `doped.generation` module.
 """
 import copy
+import filecmp
+import json
 import os
 import shutil
 import sys
@@ -12,6 +14,7 @@ from unittest.mock import patch
 
 import numpy as np
 from ase.build import bulk, make_supercell
+from monty.json import MontyEncoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
@@ -445,7 +448,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: test as_dict/from_dict (via to/from json) etc methods
+        # TODO: Test defect generator info
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
@@ -466,8 +469,49 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             ):
                 if_present_rm(i)
 
+    def _save_defect_gen_jsons(self, defect_gen):
+        defect_gen.to_json("test.json")
+        dumpfn(defect_gen, "test_defect_gen.json")
+        defect_gen.to_json()  # test default
+
+        formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
+            iupac_ordering=True
+        )
+        default_json_filename = f"{formula}_defects_generator.json"
+
+        # assert these saved files are the exact same:
+        assert filecmp.cmp("test.json", "test_defect_gen.json")
+        assert filecmp.cmp("test.json", default_json_filename)
+        if_present_rm("test.json")
+        if_present_rm("test_defect_gen.json")
+
+    def _load_and_test_defect_gen_jsons(self, defect_gen):  # , gen_check): - shouldn't need this as we
+        # test that the jsons are identical (except for ordering)
+        formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
+            iupac_ordering=True
+        )
+        default_json_filename = f"{formula}_defects_generator.json"
+        defect_gen_from_json = DefectsGenerator.from_json(default_json_filename)
+        defect_gen_from_json_loadfn = loadfn(default_json_filename)
+
+        # gen_check(defect_gen_from_json)
+
+        # test saving to json again gives same object:
+        defect_gen_from_json.to_json("test.json")
+        defect_gen_from_json_loadfn.to_json("test_loadfn.json")
+        assert filecmp.cmp("test.json", "test_loadfn.json")
+
+        # test it's the same as the original:
+        # here we compare using json dumps because the ordering can change slightly when saving to json
+        assert json.dumps(defect_gen_from_json, sort_keys=True, cls=MontyEncoder) == json.dumps(
+            defect_gen, sort_keys=True, cls=MontyEncoder
+        )
+        if_present_rm("test.json")
+        if_present_rm("test_loadfn.json")
+
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
+        assert self.cdte_defect_gen_info in cdte_defect_gen._defect_generator_info()
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
         assert np.allclose(
@@ -523,7 +567,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             cdte_defect_gen.primitive_structure.lattice.matrix,
         )
         assert cdte_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
-            "Cd2+", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
         )
         assert cdte_defect_gen.defects["vacancies"][0].site == PeriodicSite(
             "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
@@ -649,7 +693,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             cdte_defect_gen.primitive_structure.lattice.matrix,
         )
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
-            "Cd2+", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
         )
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
             "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
@@ -691,24 +735,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
         # interstitials (https://doi.org/10.1016/j.solener.2013.12.017)
 
-        cdte_defect_gen.to_json("test.json")  # defect_gen_check changes defect_entries ordering,
-        # so save to json/yaml first
-        dumpfn(cdte_defect_gen, "test_cdte_defect_gen.json")
-        cdte_defect_gen.to_json()  # test default
+        # defect_gen_check changes defect_entries ordering, so save to json first:
+        self._save_defect_gen_jsons(cdte_defect_gen)
         self.cdte_defect_gen_check(cdte_defect_gen)
-
-        cdte_defect_gen_from_json = DefectsGenerator.from_json("test.json")
-        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
-
-        cdte_defect_gen_from_json = loadfn("test_cdte_defect_gen.json")
-        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
-
-        # default:
-        cdte_defect_gen_from_json = DefectsGenerator.from_json("CdTe_defects_generator.json")
-        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
-
-        cdte_defect_gen_from_json = loadfn("CdTe_defects_generator.json")
-        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -728,7 +758,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.cdte_defect_gen_info in output
 
+        self._save_defect_gen_jsons(cdte_defect_gen)
         self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
     def test_cdte_no_generate_supercell_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -742,13 +774,13 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
                 assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
+            sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
-        assert self.cdte_defect_gen_info in output
-
+        self._save_defect_gen_jsons(cdte_defect_gen)
         self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_generator_tqdm(self, mock_stdout):
@@ -1064,14 +1096,16 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 0
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
         assert self.ytos_defect_gen_info in output
 
+        self._save_defect_gen_jsons(ytos_defect_gen)
         self.ytos_defect_gen_check(ytos_defect_gen)
+        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
     def test_ytos_no_generate_supercell(self):
         # tests the case of an input structure which is >10 Å in each direction, has
@@ -1094,7 +1128,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.ytos_defect_gen_info in output
 
+        self._save_defect_gen_jsons(ytos_defect_gen)
         self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
+        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
         # test attributes:
@@ -1363,18 +1399,19 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
-                [
+                non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                # assert not non_ignored_warnings
+                assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value
 
         assert self.lmno_defect_gen_info in output
 
+        self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen)
+        self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
     def test_lmno_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
