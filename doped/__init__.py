@@ -62,6 +62,7 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+    warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
 
 
 _ignore_pmg_warnings()
