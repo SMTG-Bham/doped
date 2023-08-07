@@ -3,6 +3,7 @@ Tests for the `doped.generation` module.
 """
 import copy
 import os
+import shutil
 import sys
 import unittest
 import warnings
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 import numpy as np
 from ase.build import bulk, make_supercell
+from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
@@ -19,6 +21,17 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.generation import DefectsGenerator
+
+
+def if_present_rm(path):
+    """
+    Remove the file/folder if it exists.
+    """
+    if os.path.exists(path):
+        if os.path.isfile(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
 
 
 class DefectsGeneratorTest(unittest.TestCase):
@@ -432,8 +445,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: test as_dict/from_dict (via to/from json), __X__ etc methods
-        # test saving to and loading from json (and that _all_ attributes remain)
+        # TODO: test as_dict/from_dict (via to/from json) etc methods
         # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
         # target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
@@ -441,7 +453,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         #  defect_supercell, charge_state_guessing_log attributes (check all attributes tested)
         # test: assert that the sum of multiplicities of the vacancy wyckoffs matches len(
         # conventional_structure)
-        # test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff handling
+        # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
+        #  handling (once charge state setting algorithm finalised a bit more)
+
+    def tearDown(self) -> None:
+        for i in os.listdir():
+            if i.endswith(".json") and (
+                "test" in i or x in i
+                for x in [
+                    "CdTe",
+                ]
+            ):
+                if_present_rm(i)
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
@@ -668,7 +691,24 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
         # interstitials (https://doi.org/10.1016/j.solener.2013.12.017)
 
+        cdte_defect_gen.to_json("test.json")  # defect_gen_check changes defect_entries ordering,
+        # so save to json/yaml first
+        dumpfn(cdte_defect_gen, "test_cdte_defect_gen.json")
+        cdte_defect_gen.to_json()  # test default
         self.cdte_defect_gen_check(cdte_defect_gen)
+
+        cdte_defect_gen_from_json = DefectsGenerator.from_json("test.json")
+        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
+
+        cdte_defect_gen_from_json = loadfn("test_cdte_defect_gen.json")
+        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
+
+        # default:
+        cdte_defect_gen_from_json = DefectsGenerator.from_json("CdTe_defects_generator.json")
+        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
+
+        cdte_defect_gen_from_json = loadfn("CdTe_defects_generator.json")
+        self.cdte_defect_gen_check(cdte_defect_gen_from_json)
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -841,8 +881,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_entry_name in ytos_defect_gen.defect_entries  # __contains__()
         )
         assert (
-            ytos_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
-            == ytos_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"]
+            ytos_defect_gen["O_i_D2d_-1"] == ytos_defect_gen.defect_entries["O_i_D2d_-1"]
         )  # __getitem__()
         assert ytos_defect_gen.get("O_i_D2d_-1") == ytos_defect_gen.defect_entries["O_i_D2d_-1"]  # get()
         defect_entry = ytos_defect_gen.defect_entries["O_i_D2d_-1"]
@@ -2439,8 +2478,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
-        print(output)  # TODO: Fix???
-        print([str(warning.message) for warning in non_ignored_warnings])
         assert not non_ignored_warnings
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
