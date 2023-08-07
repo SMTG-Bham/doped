@@ -1335,6 +1335,19 @@ class DefectsGenerator:
                     ),
                 )
             )
+            # sort defects in the same way:
+            self.defects = {
+                defect_type: sorted(
+                    defect_list,
+                    key=lambda d: (
+                        element_list.index(_first_and_second_element(d.name)[0]),
+                        element_list.index(_first_and_second_element(d.name)[1]),
+                        d.name,  # bare name without charge
+                        _frac_coords_sort_func(d.conv_cell_frac_coords),
+                    ),
+                )
+                for defect_type, defect_list in self.defects.items()
+            }
             pbar.update(pbar.total - pbar.n)
 
         except Exception as e:
@@ -1344,7 +1357,13 @@ class DefectsGenerator:
         finally:
             pbar.close()
 
-        print(self._defect_generator_info())
+        self.defect_generator_info()
+
+    def defect_generator_info(self):
+        """
+        Prints information about the defects that have been generated.
+        """
+        return print(self._defect_generator_info())
 
     def _defect_generator_info(self):
         """
@@ -1558,7 +1577,8 @@ class DefectsGenerator:
         Load a DefectsGenerator object from a json file.
 
         Args:
-            filename (str): Filename of json file to load DefectsGenerator object from.
+            filename (str): Filename of json file to load DefectsGenerator
+            object from.
 
         Returns:
             DefectsGenerator object
