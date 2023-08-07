@@ -3,7 +3,6 @@ Code to generate Defect objects and supercell structures for ab-initio
 calculations.
 """
 import copy
-import re
 import warnings
 from functools import partial
 from itertools import chain
@@ -11,7 +10,7 @@ from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Tuple, Type, Union, cast
 
 import numpy as np
-from monty.json import MontyDecoder
+from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import Defect, DefectType
 from pymatgen.analysis.defects.generators import (
@@ -746,7 +745,7 @@ def guess_defect_charge_states(
     return guessed_charge_states
 
 
-class DefectsGenerator:
+class DefectsGenerator(MSONable):
     def __init__(
         self,
         structure: Structure,
@@ -860,8 +859,8 @@ class DefectsGenerator:
 
             `DefectsGenerator` input parameters are also set as attributes.
         """
-        self.defects = {}  # {defect_type: [Defect, ...]}
-        self.defect_entries = {}  # {defect_name: DefectEntry}
+        self.defects: Dict[str, List[Defect]] = {}  # {defect_type: [Defect, ...]}
+        self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_name: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
@@ -1062,7 +1061,7 @@ class DefectsGenerator:
                     self.defects["substitutions"].extend(list(sub_generator))
                 else:
                     self.defects["substitutions"] = list(sub_generator)
-            if self.defects["substitutions"] == []:  # no substitutions, single-elt system, no extrinsic
+            if not self.defects["substitutions"]:  # no substitutions, single-elt system, no extrinsic
                 del self.defects["substitutions"]  # remove empty list
             pbar.update(5)  # 30% of progress bar
 
@@ -1189,7 +1188,7 @@ class DefectsGenerator:
 
             # Generate DefectEntry objects:
             pbar.set_description("Determining Wyckoff sites")
-            defect_list: List[int] = sum(self.defects.values(), [])
+            defect_list: List[Defect] = sum(self.defects.values(), [])
             num_defects = len(defect_list)
             defect_entry_list = []
             wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
@@ -1348,6 +1347,19 @@ class DefectsGenerator:
                 )
                 for defect_type, defect_list in self.defects.items()
             }
+
+            # remove oxidation states from structures (causes deprecation warnings and issues with
+            # comparison tests, also only added from oxi state guessing in defect generation so no extra
+            # info provided)
+            self.primitive_structure.remove_oxidation_states()
+
+            for defect_list in self.defects.values():
+                for defect_obj in defect_list:
+                    defect_obj.structure.remove_oxidation_states()
+
+            for defect_entry in self.defect_entries.values():
+                defect_entry.defect.structure.remove_oxidation_states()
+
             pbar.update(pbar.total - pbar.n)
 
         except Exception as e:
@@ -1561,13 +1573,10 @@ class DefectsGenerator:
                 is the chemical formula of the host material.
         """
         if filename is None:
-            struc_wout_oxi = self.primitive_structure.copy()
-            struc_wout_oxi.remove_oxidation_states()
-            comp_string = struc_wout_oxi.composition.reduced_composition.to_pretty_string()
-            # remove any single digit "1"s, or "{letter}1" at end of comp_string, for extra sexy output:
-            comp_string = re.sub(r"([^\d])1([^\d])", r"\1\2", comp_string)
-            comp_string = re.sub(r"([^\d])1$", r"\1", comp_string)
-            filename = f"{comp_string}_defects_generator.json"
+            formula, _fu = self.primitive_structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )
+            filename = f"{formula}_defects_generator.json"
 
         dumpfn(self, filename)
 
@@ -1625,7 +1634,10 @@ class DefectsGenerator:
         if not isinstance(value, DefectEntry):
             raise TypeError(f"Value must be a DefectEntry object, not {type(value).__name__}")
 
-        if value.defect.structure != self.primitive_structure:
+        defect_struc_wout_oxi = value.defect.structure.copy()
+        defect_struc_wout_oxi.remove_oxidation_states()
+
+        if defect_struc_wout_oxi != self.primitive_structure:
             raise ValueError(
                 f"Value must have the same primitive structure as the DefectsGenerator object, "
                 f"instead has: {value.defect.structure} while DefectsGenerator has: "
@@ -1691,16 +1703,14 @@ class DefectsGenerator:
         """
         Returns a string representation of the DefectsGenerator object.
         """
-        struc_wout_oxi = self.primitive_structure.copy()
-        struc_wout_oxi.remove_oxidation_states()
-        comp_string = struc_wout_oxi.composition.reduced_composition.to_pretty_string()
-        # remove any single digit "1"s, or "{letter}1" at end of comp_string, for extra sexy output:
-        comp_string = re.sub(r"([^\d])1([^\d])", r"\1\2", comp_string)
-        comp_string = re.sub(r"([^\d])1$", r"\1", comp_string)
+        formula, _fu = self.primitive_structure.composition.get_reduced_formula_and_factor(
+            iupac_ordering=True
+        )
 
         return (
-            f"DefectsGenerator for input composition {comp_string}, space group "
-            f"{struc_wout_oxi.get_space_group_info()[0]} with {len(self)} defect entries created."
+            f"DefectsGenerator for input composition {formula}, space group "
+            f"{self.primitive_structure.get_space_group_info()[0]} with {len(self)} defect entries "
+            f"created."
         )
 
     def __repr__(self):
