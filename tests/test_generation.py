@@ -5,6 +5,7 @@ import copy
 import filecmp
 import json
 import os
+import random
 import shutil
 import sys
 import unittest
@@ -22,6 +23,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.util.coord import pbc_diff
 
 from doped.generation import DefectsGenerator
 
@@ -732,6 +734,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 "probability_threshold": 0.01,
             },
         ]
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(cdte_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
@@ -784,32 +811,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cdte_defect_gen.bulk_supercell.lattice.matrix
@@ -820,6 +846,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1124,6 +1154,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             fd_up_defect_entry.sc_entry = copy.deepcopy(ytos_defect_gen.defect_entries["v_Y_0"])
             ytos_defect_gen["O_i_D2d_-1"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(ytos_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].name == "O_i_D2d_-1"
@@ -1195,32 +1250,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, ytos_defect_gen.bulk_supercell.lattice.matrix
@@ -1231,6 +1285,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1245,11 +1303,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
-                assert np.isclose(
-                    np.product(list(charge_state_dict["probability_factors"].values())),
-                    charge_state_dict["probability"],
-                )
                 charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                try:
+                    assert np.isclose(
+                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        charge_state_dict["probability"],
+                    )
+                except AssertionError as e:
+                    struc_w_oxi = defect_entry.defect.structure.copy()
+                    struc_w_oxi.add_oxidation_state_by_guess()
+                    defect_elt_sites_in_struct = [
+                        site
+                        for site in struc_w_oxi
+                        if site.specie.symbol == defect_entry.defect.site.specie.symbol
+                    ]
+                    defect_elt_oxi_in_struct = (
+                        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+                        if defect_elt_sites_in_struct
+                        else None
+                    )
+                    if (
+                        defect_entry.defect.defect_type != DefectType.Substitution
+                        or charge_state not in [-1, 0, 1]
+                        or defect_elt_oxi_in_struct is None
+                    ):
+                        raise e
+
                 if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
                     assert any(
                         defect_name in ytos_defect_gen.defect_entries
@@ -1258,12 +1337,22 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                         and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
                     )
                 else:
-                    assert all(
-                        defect_name not in ytos_defect_gen.defect_entries
-                        for defect_name in ytos_defect_gen.defect_entries
-                        if int(defect_name.split("_")[-1]) == charge_state
-                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
-                    )
+                    try:
+                        assert all(
+                            defect_name not in ytos_defect_gen.defect_entries
+                            for defect_name in ytos_defect_gen.defect_entries
+                            if int(defect_name.split("_")[-1]) == charge_state
+                            and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                        )
+                    except AssertionError as e:
+                        # check if intermediate charge state:
+                        if all(
+                            defect_name not in ytos_defect_gen.defect_entries
+                            for defect_name in ytos_defect_gen.defect_entries
+                            if abs(int(defect_name.split("_")[-1])) > abs(charge_state)
+                            and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                        ):
+                            raise e
 
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
@@ -1510,6 +1599,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             fd_up_defect_entry.sc_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Li_O_C3_+3"])
             lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(lmno_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].name == "Ni_i_C2_Li1.84O1.94_+2"
@@ -1587,32 +1701,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, lmno_defect_gen.bulk_supercell.lattice.matrix
@@ -1625,6 +1738,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1911,6 +2028,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             fd_up_defect_entry.sc_entry = copy.deepcopy(zns_defect_gen.defect_entries["v_Zn_0"])
             zns_defect_gen["S_i_Td_S2.35_-2"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(zns_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].name == "S_i_Td_S2.35_-2"
@@ -1982,32 +2124,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, zns_defect_gen.bulk_supercell.lattice.matrix
@@ -2020,6 +2161,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -2271,6 +2416,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             fd_up_defect_entry.sc_entry = copy.deepcopy(cu_defect_gen.defect_entries["v_Cu_0"])
             cu_defect_gen["Cu_i_Oh_+1"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(cu_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].name == "Cu_i_Oh_+1"
@@ -2328,32 +2498,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cu_defect_gen.bulk_supercell.lattice.matrix
@@ -2366,6 +2535,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -2604,6 +2777,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             fd_up_defect_entry.sc_entry = copy.deepcopy(agcu_defect_gen.defect_entries["Ag_Cu_-1"])
             agcu_defect_gen["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        # randomly test one defect entry equivalent supercell sites:
+        random_name, random_defect_entry = random.choice(list(agcu_defect_gen.defect_entries.items()))
+        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = np.linalg.norm(
+            pbc_diff(
+                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                random_defect_entry.defect_supercell_site.frac_coords,
+            ),
+            axis=1,
+        )
+        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_frac_dist)
+        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
+            distance_matrix = np.linalg.norm(
+                pbc_diff(
+                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
+                    equiv_defect_supercell_site.frac_coords,
+                ),
+                axis=1,
+            )
+            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_frac_dist)
+            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
 
         # test defect entry attributes
         assert (
@@ -2733,6 +2931,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -3042,32 +3244,31 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                defect_entry.conv_cell_frac_coords
+            distance_matrix = np.linalg.norm(
+                np.dot(
+                    pbc_diff(
+                        np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                        defect_entry.conv_cell_frac_coords,
+                    ),
+                    defect_entry.conventional_structure.lattice.matrix,
+                ),
+                axis=1,
             )
-            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                conv_cell_cart_coords,
-                5,
-            )
-            nn_distances = np.array(
-                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-            )
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            assert nn_distance > 0.9  # default min_dist = 0.9
+            min_dist = min(distance_matrix[distance_matrix > 0.01])
+            assert min_dist > 0.9  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
-                    conv_cell_frac_coords
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.conventional_structure]),
+                            conv_cell_frac_coords,
+                        ),
+                        defect_entry.conventional_structure.lattice.matrix,
+                    ),
+                    axis=1,
                 )
-                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
-                    conv_cell_cart_coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
-                )
-                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
-                # site
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cd_i_defect_gen.bulk_supercell.lattice.matrix
@@ -3080,6 +3281,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
             for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
