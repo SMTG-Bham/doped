@@ -1043,14 +1043,35 @@ class DefectsGenerator(MSONable):
             pbar.update(5)  # 25% of progress bar
 
             # Substitutions:
+            # determine which, if any, extrinsic elements are present:
+            if isinstance(self.extrinsic, str):
+                extrinsic_elements = [self.extrinsic]
+            elif isinstance(self.extrinsic, list):
+                extrinsic_elements = self.extrinsic
+            elif isinstance(self.extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
+                # convert to flattened list of extrinsic elements:
+                extrinsic_elements = list(
+                    chain(*[i if isinstance(i, list) else [i] for i in self.extrinsic.values()])
+                )
+                extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
+            else:
+                extrinsic_elements = []
+            host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
+            # if any "extrinsic" elements are actually host elements, remove them from the list and warn
+            # user:
+            if any(el in host_element_list for el in extrinsic_elements):
+                warnings.warn(
+                    f"\nSpecified 'extrinsic' elements "
+                    f"{[el for el in extrinsic_elements if el in host_element_list]} are present in "
+                    f"the host structure, so do not need to be specified as 'extrinsic' in "
+                    f"DefectsGenerator(). These will be ignored."
+                )
+            extrinsic_elements = [el for el in extrinsic_elements if el not in host_element_list]
+
             substitution_generator_obj = SubstitutionGenerator()
-            if isinstance(self.extrinsic, str):  # substitute all host elements
+            if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
                 substitutions = {
-                    el.symbol: [self.extrinsic] for el in self.primitive_structure.composition.elements
-                }
-            elif isinstance(self.extrinsic, list):  # substitute all host elements
-                substitutions = {
-                    el.symbol: self.extrinsic for el in self.primitive_structure.composition.elements
+                    el.symbol: extrinsic_elements for el in self.primitive_structure.composition.elements
                 }
             elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
                 substitutions = self.extrinsic
@@ -1075,27 +1096,10 @@ class DefectsGenerator(MSONable):
 
             # Interstitials:
             pbar.set_description("Generating interstitials")
-            # determine which, if any, extrinsic elements are present:
-            if isinstance(self.extrinsic, str):
-                extrinsic_elements = [self.extrinsic]
-            elif isinstance(self.extrinsic, list):
-                extrinsic_elements = self.extrinsic
-            elif isinstance(self.extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
-                # convert to flattened list of extrinsic elements:
-                extrinsic_elements = list(
-                    chain(*[i if isinstance(i, list) else [i] for i in self.extrinsic.values()])
-                )
-                extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
-            else:
-                extrinsic_elements = []
-
+            element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
                 # For the moment, this assumes interstitial_sites
-                insertions = {
-                    el.symbol: self.interstitial_coords
-                    for el in self.primitive_structure.composition.elements
-                }
-                insertions.update({el: self.interstitial_coords for el in extrinsic_elements})
+                insertions = {el: self.interstitial_coords for el in element_list}
                 interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
                 interstitial_generator = interstitial_generator_obj.generate(
                     self.primitive_structure, insertions=insertions
@@ -1178,17 +1182,15 @@ class DefectsGenerator(MSONable):
                 ig = InterstitialGenerator(
                     self.interstitial_gen_kwargs.get("min_dist", 0.9),
                 )  # pmg defects default
-                for species in [
-                    el.symbol for el in self.primitive_structure.composition.elements
-                ] + extrinsic_elements:
+                for el in element_list:
                     cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
 
                     self.defects["interstitials"].extend(
                         ig.generate(
                             self.primitive_structure,
-                            insertions={species: cand_sites},
-                            multiplicities={species: multiplicity},
-                            equivalent_positions={species: equiv_fpos},
+                            insertions={el: cand_sites},
+                            multiplicities={el: multiplicity},
+                            equivalent_positions={el: equiv_fpos},
                         )
                     )
 
@@ -1339,7 +1341,6 @@ class DefectsGenerator(MSONable):
             # sort defect entries by defect type (vacancies, substitutions, interstitials),
             # then by order of appearance of elements in the primitive structure composition,
             # then alphabetically, then (for defect entries of the same type) sort by charge state:
-            element_list = [el.symbol for el in self.primitive_structure.composition.elements]
             self.defect_entries = dict(
                 sorted(
                     self.defect_entries.items(),
