@@ -8,6 +8,7 @@ from functools import partial
 from itertools import chain
 from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Tuple, Type, Union, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 from monty.json import MontyDecoder, MSONable
@@ -356,6 +357,13 @@ def name_defect_entries(defect_entries):
             defect_naming_dict, full_defect_name, defect_entry
         )
         defect_naming_dict[full_defect_name] = defect_entry
+
+    if len(defect_entries) != len(defect_naming_dict):
+        raise ValueError(
+            f"Number of defect entries ({len(defect_entries)}) does not match "
+            f"number of unique defect names ({len(defect_naming_dict)}). "
+            f"Please report this issue to the developers."
+        )
     return defect_naming_dict
 
 
@@ -1242,7 +1250,13 @@ class DefectsGenerator(MSONable):
             if processes is None:
                 processes = cpu_count() - 1
 
-            _pbar_increment_per_defect = (1 / num_defects) * ((pbar.total * 0.9) - pbar.n)
+            if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
+                _pbar_increment_per_defect = max(
+                    0, min((1 / num_defects) * ((pbar.total * 0.9) - pbar.n), pbar.total - pbar.n)
+                )
+            else:
+                _pbar_increment_per_defect = 0
+
             if len(self.primitive_structure) > 8:  # skip for small systems as communication overhead /
                 # process initialisation outweighs speedup
                 with Pool(processes) as pool:
@@ -1284,7 +1298,11 @@ class DefectsGenerator(MSONable):
 
             named_defect_dict = name_defect_entries(defect_entry_list)
             pbar.update(5)  # 95% of progress bar
-            _pbar_increment_per_defect = (1 / num_defects) * (pbar.total - pbar.n)
+            if not isinstance(pbar, MagicMock):
+                _pbar_increment_per_defect = max(
+                    0, min((1 / num_defects) * (pbar.total - pbar.n) * 0.999, pbar.total - pbar.n)
+                )  # multiply by 0.999 to avoid rounding errors, overshooting the 100% limit and getting
+                # warnings from tqdm
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
                 charge_state_guessing_output = guess_defect_charge_states(
@@ -1360,7 +1378,8 @@ class DefectsGenerator(MSONable):
             for defect_entry in self.defect_entries.values():
                 defect_entry.defect.structure.remove_oxidation_states()
 
-            pbar.update(pbar.total - pbar.n)
+            if not isinstance(pbar, MagicMock) and pbar.total - pbar.n > 0:
+                pbar.update(pbar.total - pbar.n)  # 100%
 
         except Exception as e:
             pbar.close()
