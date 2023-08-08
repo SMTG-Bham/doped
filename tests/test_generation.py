@@ -56,20 +56,20 @@ class DefectsGeneratorTest(unittest.TestCase):
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
 -----------  ---------------  -------------------  ---------
 v_Cd         [-2,-1,0,+1]     [0.000,0.000,0.000]  4a
-v_Te         [-1,0,+1,+2]     [0.250,0.250,0.250]  4c
+v_Te         [-1,0,+1,+2]     [0.750,0.750,0.750]  4d
 
 Substitutions    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
-Cd_Te            [0,+1,+2,+3,+4]        [0.250,0.250,0.250]  4c
+Cd_Te            [0,+1,+2,+3,+4]        [0.750,0.750,0.750]  4d
 Te_Cd            [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.000]  4a
 
 Interstitials    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
-Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
-Cd_i_Td_Cd2.83   [0,+1,+2]              [0.750,0.750,0.750]  4d
+Cd_i_C3v         [0,+1,+2]              [0.375,0.375,0.375]  16e
+Cd_i_Td_Cd2.83   [0,+1,+2]              [0.250,0.250,0.250]  4c
 Cd_i_Td_Te2.83   [0,+1,+2]              [0.500,0.500,0.500]  4b
-Te_i_C3v         [-2,-1,0,+1,+2,+3,+4]  [0.625,0.625,0.625]  16e
-Te_i_Td_Cd2.83   [-2,-1,0,+1,+2,+3,+4]  [0.750,0.750,0.750]  4d
+Te_i_C3v         [-2,-1,0,+1,+2,+3,+4]  [0.375,0.375,0.375]  16e
+Te_i_Td_Cd2.83   [-2,-1,0,+1,+2,+3,+4]  [0.250,0.250,0.250]  4c
 Te_i_Td_Te2.83   [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -768,11 +768,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
-            np.array([0.625, 0.625, 0.625]),
+            np.array([0.375, 0.375, 0.375]),
         )
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
-            np.array([0.625, 0.625, 0.625]),
+            np.array([0.375, 0.375, 0.375]),
         )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
@@ -836,6 +836,22 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 )
                 equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
                 assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
+
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cdte_defect_gen.bulk_supercell.lattice.matrix
@@ -1276,6 +1292,21 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
                 assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, ytos_defect_gen.bulk_supercell.lattice.matrix
             )
@@ -1727,6 +1758,21 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
                 assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, lmno_defect_gen.bulk_supercell.lattice.matrix
             )
@@ -2524,6 +2570,21 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
                 assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
 
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cu_defect_gen.bulk_supercell.lattice.matrix
             )
@@ -3269,6 +3330,38 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 )
                 equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
                 assert np.isclose(min_dist, equiv_min_dist, atol=0.001)
+
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                distance_matrix = np.linalg.norm(
+                    np.dot(
+                        pbc_diff(
+                            np.array([site.frac_coords for site in defect_entry.defect.structure]),
+                            equiv_site.frac_coords,
+                        ),
+                        defect_entry.defect.structure.lattice.matrix,
+                    ),
+                    axis=1,
+                )
+                equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.001)  # same min_dist as from
+                # conv_cell_frac_coords testing above
 
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cd_i_defect_gen.bulk_supercell.lattice.matrix
