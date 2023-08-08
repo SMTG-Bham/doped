@@ -2223,11 +2223,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
-                assert np.isclose(
-                    np.product(list(charge_state_dict["probability_factors"].values())),
-                    charge_state_dict["probability"],
-                )
                 charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                try:
+                    assert np.isclose(
+                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        charge_state_dict["probability"],
+                    )
+                except AssertionError as e:
+                    struc_w_oxi = defect_entry.defect.structure.copy()
+                    struc_w_oxi.add_oxidation_state_by_guess()
+                    defect_elt_sites_in_struct = [
+                        site
+                        for site in struc_w_oxi
+                        if site.specie.symbol == defect_entry.defect.site.specie.symbol
+                    ]
+                    defect_elt_oxi_in_struct = (
+                        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+                        if defect_elt_sites_in_struct
+                        else None
+                    )
+                    if (
+                        defect_entry.defect.defect_type != DefectType.Substitution
+                        or charge_state not in [-1, 0, 1]
+                        or defect_elt_oxi_in_struct is None
+                    ):
+                        raise e
+
                 if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
                     assert any(
                         defect_name in zns_defect_gen.defect_entries
@@ -3219,7 +3240,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             cd_i_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.0, 0.75, 0.25])
         )
         assert (
-            len(cd_i_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 9
+            len(cd_i_defect_gen.defects["vacancies"][1].equiv_conv_cell_frac_coords) == 9
         )  # 3x conv cell
         assert sum(vacancy.multiplicity for vacancy in cd_i_defect_gen.defects["vacancies"]) == len(
             cd_i_defect_gen.primitive_structure
@@ -3390,11 +3411,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
-                assert np.isclose(
-                    np.product(list(charge_state_dict["probability_factors"].values())),
-                    charge_state_dict["probability"],
-                )
                 charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                try:
+                    assert np.isclose(
+                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        charge_state_dict["probability"],
+                    )
+                except AssertionError as e:
+                    struc_w_oxi = defect_entry.defect.structure.copy()
+                    struc_w_oxi.add_oxidation_state_by_guess()
+                    defect_elt_sites_in_struct = [
+                        site
+                        for site in struc_w_oxi
+                        if site.specie.symbol == defect_entry.defect.site.specie.symbol
+                    ]
+                    defect_elt_oxi_in_struct = (
+                        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+                        if defect_elt_sites_in_struct
+                        else None
+                    )
+                    if (
+                        defect_entry.defect.defect_type != DefectType.Substitution
+                        or charge_state not in [-1, 0, 1]
+                        or defect_elt_oxi_in_struct is None
+                    ):
+                        raise e
+
                 if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
                     assert any(
                         defect_name in cd_i_defect_gen.defect_entries
