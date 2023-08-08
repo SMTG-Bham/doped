@@ -451,9 +451,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
 
         # TODO: test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen
-        #  kwargs, target_frac_coords, charge_state_gen_kwargs setting...
-        # test input parameters used as attributes
-        # TODO: Test equiv coords list (supercell) for defect_entries, defects)
+        #  kwargs, target_frac_coords, charge_state_gen_kwargs setting... test all set as attributes
         # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
         #  handling (once charge state setting algorithm finalised a bit more)
 
