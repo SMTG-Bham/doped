@@ -610,6 +610,121 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             isinstance(defect_entry, DefectEntry)
             for defect_entry in cdte_defect_gen.defect_entries.values()
         )
+        # test defect entry charge state log:
+        assert cdte_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
+            {
+                "input_parameters": {"charge_state": -2},
+                "probability_factors": {"oxi_probability": 1},
+                "probability": 1,
+                "probability_threshold": 0.01,
+                "padding": 1,
+            },
+            {
+                "input_parameters": {"charge_state": -1},
+                "probability_factors": {"oxi_probability": 1},
+                "probability": 1,
+                "probability_threshold": 0.01,
+                "padding": 1,
+            },
+            {
+                "input_parameters": {"charge_state": 0},
+                "probability_factors": {"oxi_probability": 1},
+                "probability": 1,
+                "probability_threshold": 0.01,
+                "padding": 1,
+            },
+            {
+                "input_parameters": {"charge_state": 1},
+                "probability_factors": {"oxi_probability": 1},
+                "probability": 1,
+                "probability_threshold": 0.01,
+                "padding": 1,
+            },
+        ]
+        assert cdte_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
+            {
+                "input_parameters": {
+                    "charge_state": 4.0,
+                    "oxi_state": 2.0,
+                    "oxi_probability": 1.0,
+                    "max_host_oxi_magnitude": 2.0,
+                },
+                "probability_factors": {
+                    "oxi_probability": 1.0,
+                    "charge_state_magnitude": 0.3968502629920499,
+                    "charge_state_vs_max_host_charge": 0.3968502629920499,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability": 0.15749013123685918,
+                "probability_threshold": 0.01,
+            }
+        ]
+        assert cdte_defect_gen.defect_entries["Te_i_C3v_-1"].charge_state_guessing_log == [
+            {
+                "input_parameters": {
+                    "charge_state": -2.0,
+                    "oxi_state": -2.0,
+                    "oxi_probability": 0.446,
+                    "max_host_oxi_magnitude": 2.0,
+                },
+                "probability_factors": {
+                    "oxi_probability": 0.446,
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability": 0.2809623941265567,
+                "probability_threshold": 0.01,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": -1,
+                    "oxi_state": -1,
+                    "oxi_probability": 0.082,
+                    "max_host_oxi_magnitude": 2.0,
+                },
+                "probability_factors": {
+                    "oxi_probability": 0.082,
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability": 0.082,
+                "probability_threshold": 0.01,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 4.0,
+                    "oxi_state": 4.0,
+                    "oxi_probability": 0.347,
+                    "max_host_oxi_magnitude": 2.0,
+                },
+                "probability_factors": {
+                    "oxi_probability": 0.347,
+                    "charge_state_magnitude": 0.3968502629920499,
+                    "charge_state_vs_max_host_charge": 0.3968502629920499,
+                    "oxi_state_vs_max_host_charge": 0.3968502629920499,
+                },
+                "probability": 0.021687500000000002,
+                "probability_threshold": 0.01,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 6.0,
+                    "oxi_state": 6.0,
+                    "oxi_probability": 0.111,
+                    "max_host_oxi_magnitude": 2.0,
+                },
+                "probability_factors": {
+                    "oxi_probability": 0.111,
+                    "charge_state_magnitude": 0.3028534321386899,
+                    "charge_state_vs_max_host_charge": 0.25,
+                    "oxi_state_vs_max_host_charge": 0.25,
+                },
+                "probability": 0.0021010456854621616,
+                "probability_threshold": 0.01,
+            },
+        ]
 
         # test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
@@ -672,10 +787,36 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                assert np.isclose(
+                    np.product(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in cdte_defect_gen.defect_entries
+                        for defect_name in cdte_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in cdte_defect_gen.defect_entries
+                        for defect_name in cdte_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
@@ -1019,10 +1160,36 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                assert np.isclose(
+                    np.product(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in ytos_defect_gen.defect_entries
+                        for defect_name in ytos_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in ytos_defect_gen.defect_entries
+                        for defect_name in ytos_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
@@ -1347,10 +1514,57 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                try:
+                    assert np.isclose(
+                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        charge_state_dict["probability"],
+                    )
+                except AssertionError as e:
+                    struc_w_oxi = defect_entry.defect.structure.copy()
+                    struc_w_oxi.add_oxidation_state_by_guess()
+                    defect_elt_sites_in_struct = [
+                        site
+                        for site in struc_w_oxi
+                        if site.specie.symbol == defect_entry.defect.site.specie.symbol
+                    ]
+                    defect_elt_oxi_in_struct = (
+                        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+                        if defect_elt_sites_in_struct
+                        else None
+                    )
+                    if not (
+                        defect_entry.defect.defect_type == DefectType.Substitution
+                        and charge_state in [-1, 0, 1]
+                        and defect_elt_oxi_in_struct is not None
+                    ):
+                        raise e
+
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in lmno_defect_gen.defect_entries
+                        for defect_name in lmno_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in lmno_defect_gen.defect_entries
+                        for defect_name in lmno_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.name == "Li_O"
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.oxi_state == +3
@@ -1659,10 +1873,36 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                assert np.isclose(
+                    np.product(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in zns_defect_gen.defect_entries
+                        for defect_name in zns_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in zns_defect_gen.defect_entries
+                        for defect_name in zns_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.name == "Zn_S"
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.oxi_state == +4
@@ -1941,10 +2181,36 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                assert np.isclose(
+                    np.product(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in cu_defect_gen.defect_entries
+                        for defect_name in cu_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in cu_defect_gen.defect_entries
+                        for defect_name in cu_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.name == "v_Cu"
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.oxi_state == 0
@@ -2244,10 +2510,57 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                try:
+                    assert np.isclose(
+                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        charge_state_dict["probability"],
+                    )
+                except AssertionError as e:
+                    struc_w_oxi = defect_entry.defect.structure.copy()
+                    struc_w_oxi.add_oxidation_state_by_guess()
+                    defect_elt_sites_in_struct = [
+                        site
+                        for site in struc_w_oxi
+                        if site.specie.symbol == defect_entry.defect.site.specie.symbol
+                    ]
+                    defect_elt_oxi_in_struct = (
+                        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
+                        if defect_elt_sites_in_struct
+                        else None
+                    )
+                    if not (
+                        defect_entry.defect.defect_type == DefectType.Substitution
+                        and charge_state in [-1, 0, 1]
+                        and defect_elt_oxi_in_struct is not None
+                    ):
+                        raise e
+
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in agcu_defect_gen.defect_entries
+                        for defect_name in agcu_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in agcu_defect_gen.defect_entries
+                        for defect_name in agcu_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.name == "Ag_Cu"
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.oxi_state == 0
@@ -2507,10 +2820,36 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert (
+                defect_entry._BilbaoCS_conv_cell_vector_mapping
+                == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+            )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
             with self.assertRaises(KeyError):
                 print(defect_entry.corrected_energy)
+
+            # test charge state guessing:
+            for charge_state_dict in defect_entry.charge_state_guessing_log:
+                assert np.isclose(
+                    np.product(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+                charge_state = charge_state_dict["input_parameters"]["charge_state"]
+                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                    assert any(
+                        defect_name in cd_i_defect_gen.defect_entries
+                        for defect_name in cd_i_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                else:
+                    assert all(
+                        defect_name not in cd_i_defect_gen.defect_entries
+                        for defect_name in cd_i_defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
 
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.name == "Cd_Te"
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.oxi_state == 0
