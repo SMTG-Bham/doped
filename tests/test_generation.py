@@ -453,7 +453,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # test input parameters used as attributes
         # TODO: Test equiv coords list (both conv cell and supercell), BCS_cell_swap_matrix,
         #  defect_supercell, charge_state_guessing_log attributes (check all attributes tested,
-        #  for defect_gen, defect_entries, defects)
+        #  for defect_entries, defects)
         # test: assert that the sum of multiplicities of the vacancy wyckoffs matches len(
         # conventional_structure)
         # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
@@ -670,6 +670,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect.multiplicity * 4 == int(defect_entry.wyckoff[:-1])
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
@@ -1011,6 +1017,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect.multiplicity * 2 == int(defect_entry.wyckoff[:-1])
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
@@ -1333,6 +1345,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.wyckoff[:-1]
             )  # prim = conv in LMNO
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.name == "Li_O"
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.oxi_state == +3
@@ -1639,6 +1657,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.wyckoff[:-1]
             )  # 4 prim cells in conv cell in Zinc Blende (ZnS, CdTe)
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.name == "Zn_S"
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.oxi_state == +4
@@ -1915,6 +1939,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.wyckoff[:-1]
             )  # 4 prim cells in conv cell in Cu
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.name == "v_Cu"
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.oxi_state == 0
@@ -2212,6 +2242,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.wyckoff[:-1]
             )  # 3 prim cells in conv cell
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.name == "Ag_Cu"
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.oxi_state == 0
@@ -2469,6 +2505,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.wyckoff[:-1]
             )  # 3 prim cells in conv cell
             assert defect_entry.defect_supercell_site
+            assert defect_entry.bulk_entry is None
+            assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+            assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+            assert not defect_entry.corrections
+            with self.assertRaises(KeyError):
+                print(defect_entry.corrected_energy)
 
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.name == "Cd_Te"
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.oxi_state == 0
