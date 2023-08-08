@@ -268,7 +268,7 @@ Cu_i_Td          [0,+1,+2]        [0.250,0.250,0.250]  8c
         aaa = AseAtomsAdaptor()
         self.agcu = aaa.get_structure(atoms)
         self.agcu_defect_gen_string = (
-            "DefectsGenerator for input composition CuAg, space group R-3m with 28 defect entries created."
+            "DefectsGenerator for input composition AgCu, space group R-3m with 28 defect entries created."
         )
         self.agcu_defect_gen_info = (
             """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
@@ -448,9 +448,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: Test defect generator info
-        # test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen kwargs,
-        # target_frac_coords, charge_state_gen_kwargs setting...
+        # TODO: test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen
+        #  kwargs, target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
         # TODO: Test equiv coords list (both conv cell and supercell), BCS_cell_swap_matrix,
         #  defect_supercell, charge_state_guessing_log attributes (check all attributes tested)
@@ -458,16 +457,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # conventional_structure)
         # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
         #  handling (once charge state setting algorithm finalised a bit more)
-
-    def tearDown(self) -> None:
-        for i in os.listdir():
-            if i.endswith(".json") and (
-                "test" in i or x in i
-                for x in [
-                    "CdTe",
-                ]
-            ):
-                if_present_rm(i)
 
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
@@ -508,6 +497,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         if_present_rm("test.json")
         if_present_rm("test_loadfn.json")
+        if_present_rm(default_json_filename)
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         # test attributes:
@@ -800,6 +790,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             mocked_instance.set_description.assert_any_call("Generating DefectEntry objects")
 
     def ytos_defect_gen_check(self, ytos_defect_gen, generate_supercell=True):
+        assert self.ytos_defect_gen_info in ytos_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -1133,6 +1124,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
+        assert self.lmno_defect_gen_info in lmno_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -1402,6 +1394,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                if non_ignored_warnings:
+                    raise AssertionError(
+                        f"Warnings were raised during defect generation: {non_ignored_warnings[0]}"
+                    )  # TODO: Wtf?
                 assert not non_ignored_warnings
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
@@ -1439,9 +1435,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.lmno_defect_gen_info in output
 
+        self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
+        self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
     def zns_defect_gen_check(self, zns_defect_gen, generate_supercell=True):
+        assert self.zns_defect_gen_info in zns_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(zns_defect_gen.primitive_structure, self.non_diagonal_ZnS)
@@ -1711,7 +1710,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.zns_defect_gen_info in output
 
+        self._save_defect_gen_jsons(zns_defect_gen)
         self.zns_defect_gen_check(zns_defect_gen)
+        self._load_and_test_defect_gen_jsons(zns_defect_gen)
 
     def test_zns_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
@@ -1741,9 +1742,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.zns_defect_gen_info in output
 
+        self._save_defect_gen_jsons(zns_defect_gen)
         self.zns_defect_gen_check(zns_defect_gen, generate_supercell=False)
+        self._load_and_test_defect_gen_jsons(zns_defect_gen)
 
     def cu_defect_gen_check(self, cu_defect_gen):
+        assert self.cu_defect_gen_info in cu_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(cu_defect_gen.primitive_structure, self.prim_cu)
@@ -1966,7 +1970,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.cu_defect_gen_info in output
 
+        self._save_defect_gen_jsons(cu_defect_gen)
         self.cu_defect_gen_check(cu_defect_gen)
+        self._load_and_test_defect_gen_jsons(cu_defect_gen)
 
     def test_cu_no_generate_supercell(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
@@ -1979,6 +1985,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             assert single_site_no_supercell_error in e.exception
 
     def agcu_defect_gen_check(self, agcu_defect_gen, generate_supercell=True):
+        assert self.agcu_defect_gen_info in agcu_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
@@ -2274,7 +2281,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.agcu_defect_gen_info in output
 
+        self._save_defect_gen_jsons(agcu_defect_gen)
         self.agcu_defect_gen_check(agcu_defect_gen)
+        self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
@@ -2301,9 +2310,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.agcu_defect_gen_info in output
 
+        self._save_defect_gen_jsons(agcu_defect_gen)
         self.agcu_defect_gen_check(agcu_defect_gen, generate_supercell=False)
+        self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
     def cd_i_cdte_supercell_defect_gen_check(self, cd_i_defect_gen, generate_supercell=True):
+        assert self.cd_i_cdte_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
         assert structure_matcher.fit(
@@ -2518,7 +2530,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert not non_ignored_warnings
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
+        self._save_defect_gen_jsons(cd_i_defect_gen)
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
+        self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
     def test_supercell_w_defect_cd_i_cdte_no_generate_supercell(self):
         # test inputting a defective supercell; input supercell is good here so same output
@@ -2542,4 +2556,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
+        self._save_defect_gen_jsons(cd_i_defect_gen)
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
+        self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
