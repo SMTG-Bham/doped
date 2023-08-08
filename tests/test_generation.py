@@ -451,11 +451,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # TODO: test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen
         #  kwargs, target_frac_coords, charge_state_gen_kwargs setting...
         # test input parameters used as attributes
-        # TODO: Test equiv coords list (both conv cell and supercell), BCS_cell_swap_matrix,
-        #  defect_supercell, charge_state_guessing_log attributes (check all attributes tested,
-        #  for defect_entries, defects)
-        # test: assert that the sum of multiplicities of the vacancy wyckoffs matches len(
-        # conventional_structure)
+        # TODO: Test equiv coords list (supercell) for defect_entries, defects)
         # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
         #  handling (once charge state setting algorithm finalised a bit more)
 
@@ -547,6 +543,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in cdte_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in cdte_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert cdte_defect_gen.defects["vacancies"][0].name == "v_Cd"
@@ -563,6 +564,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert cdte_defect_gen.defects["vacancies"][0].site == PeriodicSite(
             "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        )
+        assert (
+            len(cdte_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
+        )  # 4x conv cell
+        assert sum(vacancy.multiplicity for vacancy in cdte_defect_gen.defects["vacancies"]) == len(
+            cdte_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -775,15 +782,44 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.defect.conventional_structure.lattice.matrix,
                 self.conv_cdte.lattice.matrix,
             )
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cdte_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 4 == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1017,6 +1053,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in ytos_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in ytos_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert ytos_defect_gen.defects["vacancies"][0].name == "v_Y"
@@ -1032,6 +1073,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             ytos_defect_gen.defects["vacancies"][0].site.frac_coords,
             np.array([0.6661, 0.6661, 0.0]),
             atol=1e-3,
+        )
+        assert (
+            len(ytos_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
+        )  # 2x conv cell
+        assert sum(vacancy.multiplicity for vacancy in ytos_defect_gen.defects["vacancies"]) == len(
+            ytos_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -1148,15 +1195,42 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, ytos_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 2 == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1361,6 +1435,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in lmno_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in lmno_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
@@ -1376,6 +1455,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             lmno_defect_gen.defects["vacancies"][0].site.frac_coords,
             np.array([0.0037, 0.0037, 0.0037]),
             atol=1e-4,
+        )
+        assert (
+            len(lmno_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 8
+        )  # prim = conv cell in LMNO
+        assert sum(vacancy.multiplicity for vacancy in lmno_defect_gen.defects["vacancies"]) == len(
+            lmno_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -1500,17 +1585,46 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.defect.conventional_structure.lattice.matrix,
                 sga.get_conventional_standard_structure().lattice.matrix,
             )
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, lmno_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity == int(
                 defect_entry.wyckoff[:-1]
             )  # prim = conv in LMNO
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -1544,10 +1658,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                         if defect_elt_sites_in_struct
                         else None
                     )
-                    if not (
-                        defect_entry.defect.defect_type == DefectType.Substitution
-                        and charge_state in [-1, 0, 1]
-                        and defect_elt_oxi_in_struct is not None
+                    if (
+                        defect_entry.defect.defect_type != DefectType.Substitution
+                        or charge_state not in [-1, 0, 1]
+                        or defect_elt_oxi_in_struct is None
                     ):
                         raise e
 
@@ -1728,6 +1842,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in zns_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in zns_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert zns_defect_gen.defects["vacancies"][1].name == "v_S"
@@ -1741,6 +1860,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert np.allclose(
             zns_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.25, 0.25, 0.25])
+        )
+        assert len(zns_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4  # 4x conv cell
+        assert sum(vacancy.multiplicity for vacancy in zns_defect_gen.defects["vacancies"]) == len(
+            zns_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -1859,17 +1982,44 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, zns_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 4 == int(
                 defect_entry.wyckoff[:-1]
             )  # 4 prim cells in conv cell in Zinc Blende (ZnS, CdTe)
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -2057,6 +2207,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in cu_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in cu_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert cu_defect_gen.defects["vacancies"][0].name == "v_Cu"
@@ -2070,6 +2225,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert np.allclose(
             cu_defect_gen.defects["vacancies"][0].site.frac_coords, np.array([0.0, 0.0, 0.0])
+        )
+        assert len(cu_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4  # 4x conv cell
+        assert sum(vacancy.multiplicity for vacancy in cu_defect_gen.defects["vacancies"]) == len(
+            cu_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -2167,17 +2326,46 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 defect_entry.defect.conventional_structure.lattice.matrix,
                 sga.get_conventional_standard_structure().lattice.matrix,
             )
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cu_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 4 == int(
                 defect_entry.wyckoff[:-1]
             )  # 4 prim cells in conv cell in Cu
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -2339,6 +2527,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in agcu_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in agcu_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert agcu_defect_gen.defects["vacancies"][1].name == "v_Ag"
@@ -2352,6 +2545,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert np.allclose(
             agcu_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.5, 0.5, 0.5])
+        )
+        assert (
+            len(agcu_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 3
+        )  # 3x conv cell
+        assert sum(vacancy.multiplicity for vacancy in agcu_defect_gen.defects["vacancies"]) == len(
+            agcu_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -2496,17 +2695,44 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            distances = [
-                site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
-                for site in defect_entry.conventional_structure
-            ]
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
+                )
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance, atol=0.01)  # nn_distance the same for
+                # each equiv site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, agcu_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 3 == int(
                 defect_entry.wyckoff[:-1]
             )  # 3 prim cells in conv cell
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
@@ -2540,10 +2766,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                         if defect_elt_sites_in_struct
                         else None
                     )
-                    if not (
-                        defect_entry.defect.defect_type == DefectType.Substitution
-                        and charge_state in [-1, 0, 1]
-                        and defect_elt_oxi_in_struct is not None
+                    if (
+                        defect_entry.defect.defect_type != DefectType.Substitution
+                        or charge_state not in [-1, 0, 1]
+                        or defect_elt_oxi_in_struct is None
                     ):
                         raise e
 
@@ -2711,6 +2937,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             for defect_list in cd_i_defect_gen.defects.values()
             for defect in defect_list
         )
+        assert all(
+            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+            for defect_list in cd_i_defect_gen.defects.values()
+            for defect in defect_list
+        )
 
         # test some relevant defect attributes
         assert cd_i_defect_gen.defects["vacancies"][1].name == "v_Cd"
@@ -2725,6 +2956,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert np.allclose(
             cd_i_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.0, 0.75, 0.25])
+        )
+        assert (
+            len(cd_i_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 9
+        )  # 3x conv cell
+        assert sum(vacancy.multiplicity for vacancy in cd_i_defect_gen.defects["vacancies"]) == len(
+            cd_i_defect_gen.primitive_structure
         )
 
         # test defect entries
@@ -2805,18 +3042,44 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
             # defect_entry.conventional_structure
-            distances = []
-            for site in defect_entry.conventional_structure:
-                distances.append(
-                    site.distance_and_image_from_frac_coords(defect_entry.conv_cell_frac_coords)[0]
+            conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                defect_entry.conv_cell_frac_coords
+            )
+            nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                conv_cell_cart_coords,
+                5,
+            )
+            nn_distances = np.array(
+                [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+            )
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            assert nn_distance > 0.9  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                conv_cell_cart_coords = defect_entry.conventional_structure.lattice.get_cartesian_coords(
+                    conv_cell_frac_coords
                 )
-            assert min(np.array(distances)[np.array(distances) > 0.001]) > 0.9  # default min_dist = 0.9
+                nearest_atoms = defect_entry.conventional_structure.get_sites_in_sphere(
+                    conv_cell_cart_coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(conv_cell_cart_coords) for nn in nearest_atoms]
+                )
+                equiv_nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                assert np.isclose(equiv_nn_distance, nn_distance)  # nn_distance the same for each equiv
+                # site
+
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, cd_i_defect_gen.bulk_supercell.lattice.matrix
             )
             assert defect_entry.defect.multiplicity * 3 == int(
                 defect_entry.wyckoff[:-1]
             )  # 3 prim cells in conv cell
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
             assert defect_entry.defect_supercell_site
             assert defect_entry.bulk_entry is None
             assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
