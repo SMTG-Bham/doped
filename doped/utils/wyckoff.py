@@ -54,11 +54,23 @@ def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
         ]
     )
     regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
-    reorientated_regenerated_conv_structure = swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
+    swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
 
-    defect_conv_cell_sites = [
-        site for site in reorientated_regenerated_conv_structure.sites if site.specie.symbol == "X"
-    ]
+    # convert to match the defect entry's conventional structure:
+    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, regenerated_conv_structure)
+    s2_really_like_s1 = Structure.from_sites(
+        [
+            PeriodicSite(
+                site.specie,
+                site.frac_coords,
+                defect_entry.conventional_structure.lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+
+    defect_conv_cell_sites = [site for site in s2_really_like_s1.sites if site.specie.symbol == "X"]
 
     defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
     conv_cell_site = defect_conv_cell_sites[0].to_unit_cell()
