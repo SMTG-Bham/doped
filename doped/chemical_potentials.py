@@ -1033,7 +1033,9 @@ class CompetingPhasesAnalyzer:
         Returns:
             None, sets self.data and self.elemental_energies
         """
-        # TODO: Change this to just recursively search for vaspruns within the specified path
+        # TODO: Change this to just recursively search for vaspruns within the specified path (also
+        #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
+        #  subfolders are found).
         # TODO: Add check for matching INCAR and POTCARs from these calcs, as we also want with
         #  defect parsing
         self.vasprun_paths = []
@@ -1087,6 +1089,9 @@ class CompetingPhasesAnalyzer:
                             continue
 
                 else:
+                    # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
+                    #  only if there's no *EaH* folders at all.
+                    #  Seemed to be causing problems with .DS_Store files on Macs as well
                     raise FileNotFoundError(
                         "Folders are not in the correct structure, provide them as a list of "
                         "paths (or strings). Competing phase folders should have `EaH` in the "
@@ -1103,6 +1108,8 @@ class CompetingPhasesAnalyzer:
 
         num = len(self.vasprun_paths)
         print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
+        # TODO: Make this a try/except loop to print which vasprun.xml files fail parsing (i.e. are
+        #  corrupted)
         self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
         self.data = []
 
