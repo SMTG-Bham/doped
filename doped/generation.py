@@ -35,10 +35,10 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from doped.utils.wyckoff import (
-    _compare_wyckoffs,
-    get_wyckoff_dict_from_sgn,
+    _round_floats,
+    get_BCS_conventional_structure,
+    get_primitive_structure,
     get_wyckoff_label_and_equiv_coord_list,
-    swap_axes,
 )
 
 # TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
@@ -100,19 +100,6 @@ def get_defect_entry_from_defect(
         sc_entry=computed_structure_entry,
         sc_defect_frac_coords=sc_defect_frac_coords,
     )
-
-
-def _round_floats(obj):
-    """
-    Recursively round floats in a dictionary to 5 decimal places.
-    """
-    if isinstance(obj, float):
-        return round(obj, 5) + 0.0
-    if isinstance(obj, dict):
-        return {k: _round_floats(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_round_floats(x) for x in obj]
-    return obj
 
 
 def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
@@ -223,7 +210,6 @@ def _get_neutral_defect_entry(
     wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
         defect_entry=neutral_defect_entry,
         wyckoff_dict=wyckoff_label_dict,
-        lattice_vec_swap_array=_BilbaoCS_conv_cell_vector_mapping,
     )
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
     conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
@@ -388,27 +374,6 @@ def _frac_coords_sort_func(coords):
     )
     magnitude = round(sum(np.abs(coords)), 4)
     return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
-
-
-def get_primitive_structure(sga):
-    """
-    Get a consistent/deterministic primitive structure from a
-    SpacegroupAnalyzer object.
-
-    For some materials (e.g. zinc blende), there are multiple equivalent
-    primitive cells, so for reproducibility and in line with most structure
-    conventions/definitions, take the one with the lowest summed norm of the
-    fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
-    (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
-    """
-    possible_prim_structs = []
-    for _i in range(10):
-        struct = sga.get_primitive_standard_structure()
-        possible_prim_structs.append(struct)
-        sga = SpacegroupAnalyzer(struct, symprec=1e-2)
-
-    possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
-    return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
@@ -864,6 +829,9 @@ class DefectsGenerator(MSONable):
                 the primitive cell structure.
             bulk_supercell (Structure): Supercell structure of the host
                 (equal to primitive_structure * supercell_matrix).
+            conventional_structure (Structure): Conventional cell structure of the
+                host according to the Bilbao Crystallographic Server (BCS) definition,
+                used to determine defect site Wyckoff labels and multiplicities.
 
             `DefectsGenerator` input parameters are also set as attributes.
         """
@@ -902,9 +870,6 @@ class DefectsGenerator(MSONable):
             sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
 
             prim_struct = get_primitive_structure(sga)
-            self.conventional_structure = Structure.from_dict(
-                _round_floats(sga.get_conventional_standard_structure().as_dict())
-            )
             if prim_struct.num_sites < self.structure.num_sites:
                 primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
 
@@ -1201,42 +1166,15 @@ class DefectsGenerator(MSONable):
             defect_list: List[Defect] = sum(self.defects.values(), [])
             num_defects = len(defect_list)
             defect_entry_list = []
-            wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
-            # determine cell orientation for Wyckoff site determination (needs to match the Bilbao
-            # Crystallographic Server's convention, which can differ from spglib (pymatgen) in some cases)
 
-            sga_wyckoffs = sga.get_symmetrized_structure().wyckoff_symbols
-
-            for trial_lattice_vec_swap_array in [  # 3C2 -> 6 possible combinations
-                # ordered according to frequency of occurrence in the Materials Project
-                [0, 1, 2],  # abc, ~95% of cases
-                [0, 2, 1],  # acb
-                [2, 1, 0],  # cba
-                [1, 0, 2],  # bac
-                [2, 0, 1],  # cab
-                [1, 2, 0],  # bca
-                None,  # no perfect match, default to original orientation
-            ]:
-                if trial_lattice_vec_swap_array is None:
-                    lattice_vec_swap_array = [0, 1, 2]
-                    break
-
-                reoriented_conv_structure = swap_axes(
-                    self.conventional_structure, trial_lattice_vec_swap_array
-                )
-                if _compare_wyckoffs(
-                    sga_wyckoffs,
-                    reoriented_conv_structure,
-                    wyckoff_label_dict,
-                    trial_lattice_vec_swap_array,
-                ):
-                    lattice_vec_swap_array = trial_lattice_vec_swap_array
-                    break
-
-                pbar.update(1 / 6 * 10)
-                # 55% of progress bar. This part can take a little while for low-symmetry structures
-
-            self._BilbaoCS_conv_cell_vector_mapping = lattice_vec_swap_array
+            # get BCS conventional structure and lattice vector swap array:
+            (
+                self.conventional_structure,
+                self._BilbaoCS_conv_cell_vector_mapping,
+                wyckoff_label_dict,
+            ) = get_BCS_conventional_structure(
+                self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
+            )
 
             # process defects into defect entries:
             partial_func = partial(
@@ -1255,7 +1193,7 @@ class DefectsGenerator(MSONable):
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
                 _pbar_increment_per_defect = max(
                     0, min((1 / num_defects) * ((pbar.total * 0.9) - pbar.n), pbar.total - pbar.n)
-                )
+                )  # up to 90% of progress bar
             else:
                 _pbar_increment_per_defect = 0
 

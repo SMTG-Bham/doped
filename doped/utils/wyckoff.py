@@ -18,46 +18,140 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from sympy import Eq, simplify, solve, symbols
 
 
-def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
+def get_primitive_structure(sga):
     """
-    Get an equivalent site of the defect entry in the conventional structure of
-    the host material.
+    Get a consistent/deterministic primitive structure from a
+    SpacegroupAnalyzer object.
+
+    For some materials (e.g. zinc blende), there are multiple equivalent
+    primitive cells, so for reproducibility and in line with most structure
+    conventions/definitions, take the one with the lowest summed norm of the
+    fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
+    (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
     """
-    from doped.generation import _frac_coords_sort_func, get_primitive_structure
+    possible_prim_structs = []
+    for _i in range(10):
+        struct = sga.get_primitive_standard_structure()
+        possible_prim_structs.append(struct)
+        sga = SpacegroupAnalyzer(struct, symprec=1e-2)
 
-    if lattice_vec_swap_array is None:
-        lattice_vec_swap_array = [0, 1, 2]
+    possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
+    return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
 
+
+def _round_floats(obj):
+    """
+    Recursively round floats in a dictionary to 5 decimal places.
+    """
+    if isinstance(obj, float):
+        return round(obj, 5) + 0.0
+    if isinstance(obj, dict):
+        return {k: _round_floats(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_round_floats(x) for x in obj]
+    return obj
+
+
+def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=False):
+    """
+    Get the conventional crystal structure of the input structure, according to
+    the Bilbao Crystallographic Server (BCS) definition. Also returns the
+    transformation matrix from the spglib (SpaceGroupAnalyzer) conventional
+    structure definition to the BCS definition.
+
+    Args:
+        structure (Structure): pymatgen Structure object for this to
+            get the corresponding BCS conventional crystal structure
+        pbar (ProgressBar): tqdm progress bar object, to update progress.
+        return_wyckoff_dict (bool): whether to return the Wyckoff label
+            dict ({Wyckoff label: coordinates})
+    number.
+
+    Returns:
+        pymatgen Structure object and spglib -> BCS conv cell transformation matrix.
+    """
+    struc_wout_oxi = structure.copy()
+    struc_wout_oxi.remove_oxidation_states()
+    sga = SpacegroupAnalyzer(struc_wout_oxi, symprec=1e-2)
+    conventional_structure = Structure.from_dict(
+        _round_floats(sga.get_conventional_standard_structure().as_dict())
+    )
+
+    wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+    # determine cell orientation for Wyckoff site determination (needs to match the Bilbao
+    # Crystallographic Server's convention, which can differ from spglib (pymatgen) in some cases)
+
+    sga_wyckoffs = sga.get_symmetrized_structure().wyckoff_symbols
+
+    for trial_lattice_vec_swap_array in [  # 3C2 -> 6 possible combinations
+        # ordered according to frequency of occurrence in the Materials Project
+        [0, 1, 2],  # abc, ~95% of cases
+        [0, 2, 1],  # acb
+        [2, 1, 0],  # cba
+        [1, 0, 2],  # bac
+        [2, 0, 1],  # cab
+        [1, 2, 0],  # bca
+        None,  # no perfect match, default to original orientation
+    ]:
+        if trial_lattice_vec_swap_array is None:
+            lattice_vec_swap_array = [0, 1, 2]
+            break
+
+        reoriented_conv_structure = swap_axes(conventional_structure, trial_lattice_vec_swap_array)
+        if _compare_wyckoffs(
+            sga_wyckoffs,
+            reoriented_conv_structure,
+            wyckoff_label_dict,
+        ):
+            lattice_vec_swap_array = trial_lattice_vec_swap_array
+            break
+
+        if pbar is not None:
+            pbar.update(1 / 6 * 10)  # 45 up to 55% of progress bar in DefectsGenerator. This part can
+            # take a little while for low-symmetry structures
+
+    if return_wyckoff_dict:
+        return (
+            swap_axes(conventional_structure, lattice_vec_swap_array),
+            lattice_vec_swap_array,
+            wyckoff_label_dict,
+        )
+
+    return (
+        swap_axes(conventional_structure, lattice_vec_swap_array),
+        lattice_vec_swap_array,
+    )
+
+
+def get_conv_cell_site(defect_entry):
+    """
+    Gets an equivalent site of the defect entry in the conventional structure
+    of the host material. If the conventional_structure attribute is not
+    defined for defect_entry, then it is generated using SpaceGroupAnalyzer and
+    then reoriented to match the Bilbao Crystallographic Server's conventional
+    structure definition.
+
+    Args:
+        defect_entry: DefectEntry object.
+    """
     bulk_prim_structure = defect_entry.defect.structure.copy()
     bulk_prim_structure.remove_oxidation_states()  # adding oxidation states adds the
-    # deprecated 'properties' attribute with -> {"spin": None}, giving a deprecation warning
-    sga = SpacegroupAnalyzer(bulk_prim_structure)
-    conv_to_prim_transf_matrix = sga.get_conventional_to_primitive_transformation_matrix()
+    # # deprecated 'properties' attribute with -> {"spin": None}, giving a deprecation warning
+
     prim_struct_with_X = defect_entry.defect.structure.copy()
     prim_struct_with_X.remove_oxidation_states()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
-    # convert to sga prim structure:
+    sga = SpacegroupAnalyzer(bulk_prim_structure)
+    conv_struct_with_X = prim_struct_with_X * np.linalg.inv(
+        sga.get_conventional_to_primitive_transformation_matrix()
+    )
+
+    # convert to conv structure:
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
-    s2_like_s1 = sm.get_s2_like_s1(get_primitive_structure(sga), prim_struct_with_X)
+    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, conv_struct_with_X)
     # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
     # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
-    s2_really_like_s1 = Structure.from_sites(
-        [
-            PeriodicSite(
-                site.specie,
-                site.frac_coords,
-                sga.get_primitive_standard_structure().lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
-    )
-    regenerated_conv_structure = s2_really_like_s1 * np.linalg.inv(conv_to_prim_transf_matrix)
-    swap_axes(regenerated_conv_structure, lattice_vec_swap_array)
-
-    # convert to match the defect entry's conventional structure:
-    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, regenerated_conv_structure)
     s2_really_like_s1 = Structure.from_sites(
         [
             PeriodicSite(
@@ -70,10 +164,11 @@ def get_conv_cell_site(defect_entry, lattice_vec_swap_array=None):
         ]
     )
 
-    defect_conv_cell_sites = [site for site in s2_really_like_s1.sites if site.specie.symbol == "X"]
-
-    defect_conv_cell_sites.sort(key=lambda site: _frac_coords_sort_func(site.frac_coords))
-    conv_cell_site = defect_conv_cell_sites[0].to_unit_cell()
+    conv_cell_site = [site for site in s2_really_like_s1.sites if site.specie.symbol == "X"][0]
+    # site choice doesn't matter so much here, as we later get the equivalent coordinates using the
+    # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
+    # initialisation)
+    conv_cell_site.to_unit_cell()
     conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
 
     return conv_cell_site
@@ -136,7 +231,7 @@ def get_wyckoff_dict_from_sgn(sgn):
 
 
 def get_wyckoff_label_and_equiv_coord_list(
-    defect_entry=None, conv_cell_site=None, sgn=None, wyckoff_dict=None, lattice_vec_swap_array=None
+    defect_entry=None, conv_cell_site=None, sgn=None, wyckoff_dict=None
 ):
     """
     Return the Wyckoff label and list of equivalent fractional coordinates
@@ -149,8 +244,6 @@ def get_wyckoff_label_and_equiv_coord_list(
     provided, it is obtained from the bulk structure of the `defect_entry` if
     provided.
     """
-    if lattice_vec_swap_array is None:
-        lattice_vec_swap_array = [0, 1, 2]
     if wyckoff_dict is None:
         if sgn is None:
             if defect_entry is None:
@@ -274,23 +367,12 @@ def get_wyckoff_label_and_equiv_coord_list(
         defect_entry.defect.site.to_unit_cell()  # ensure wrapped to unit cell
 
         # convert defect site to conventional unit cell for Wyckoff label matching:
-        conv_cell_site = get_conv_cell_site(defect_entry, lattice_vec_swap_array)
+        conv_cell_site = get_conv_cell_site(defect_entry)
 
-    label, equiv_coord_list = find_closest_match(conv_cell_site, wyckoff_dict)
-
-    if defect_entry is not None:
-        # need to transform subbed_coord_list back to original (unswapped) cell:
-        reoriented_coord_list = []
-        for coords in equiv_coord_list:
-            reoriented_coord_list.append([coords[i] for i in lattice_vec_swap_array])
-
-    else:
-        reoriented_coord_list = equiv_coord_list
-
-    return label, reoriented_coord_list
+    return find_closest_match(conv_cell_site, wyckoff_dict)
 
 
-def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_swap_array):
+def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
     """
     Compare the Wyckoff labels of a conventional structure to a list of Wyckoff
     labels.
@@ -304,7 +386,7 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict, lattice_vec_sw
 
     for site in conv_struct:
         wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
-            conv_cell_site=site, wyckoff_dict=wyckoff_dict, lattice_vec_swap_array=lattice_vec_swap_array
+            conv_cell_site=site, wyckoff_dict=wyckoff_dict
         )
         if all(
             # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
