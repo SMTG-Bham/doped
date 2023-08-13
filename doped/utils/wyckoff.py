@@ -18,6 +18,51 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from sympy import Eq, simplify, solve, symbols
 
 
+def _round_floats(obj):
+    """
+    Recursively round floats in a dictionary to 5 decimal places.
+    """
+    if isinstance(obj, float):
+        return round(obj, 5) + 0.0
+    if isinstance(obj, dict):
+        return {k: _round_floats(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_round_floats(x) for x in obj]
+    return obj
+
+
+def _struc_sorting_func(struct):
+    """
+    Sort by the sum of the fractional coordinates, then by the magnitudes of
+    high-symmetry coordinates (x=y=z, then 2 equal coordinates), then by the
+    summed magnitude of all x coordinates, then y coordinates, then z
+    coordinates.
+    """
+    # get summed magnitudes of x=y=z coords:
+    matching_coords = struct.frac_coords[  # Find the coordinates where x = y = z:
+        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
+        & (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
+    ]
+    xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+
+    # get summed magnitudes of x=y / y=z / x=z coords:
+    matching_coords = struct.frac_coords[
+        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
+        | (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
+        | (struct.frac_coords[:, 0] == struct.frac_coords[:, 2])
+    ]
+    xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+
+    return (
+        np.sum(struct.frac_coords),
+        xyz_sum_magnitudes,
+        xy_sum_magnitudes,
+        np.sum(struct.frac_coords[:, 0]),
+        np.sum(struct.frac_coords[:, 1]),
+        np.sum(struct.frac_coords[:, 2]),
+    )
+
+
 def get_primitive_structure(sga):
     """
     Get a consistent/deterministic primitive structure from a
@@ -30,26 +75,42 @@ def get_primitive_structure(sga):
     (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
     """
     possible_prim_structs = []
-    for _i in range(10):
+    for _i in range(4):
         struct = sga.get_primitive_standard_structure()
         possible_prim_structs.append(struct)
         sga = SpacegroupAnalyzer(struct, symprec=1e-2)
 
-    possible_prim_structs = sorted(possible_prim_structs, key=lambda x: np.sum(x.frac_coords))
+    possible_prim_structs = sorted(possible_prim_structs, key=_struc_sorting_func)
     return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
 
 
-def _round_floats(obj):
+def get_spglib_conv_structure(sga):
     """
-    Recursively round floats in a dictionary to 5 decimal places.
+    Get a consistent/deterministic conventional structure from a
+    SpacegroupAnalyzer object. Also returns the corresponding
+    SpacegroupAnalyzer (for getting Wyckoff symbols corresponding to this
+    conventional structure definition).
+
+    For some materials (e.g. zinc blende), there are multiple equivalent
+    primitive/conventional cells, so for reproducibility and in line with most
+    structure conventions/definitions, take the one with the lowest summed norm
+    of the fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
+    (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe;
+    SGN 216).
     """
-    if isinstance(obj, float):
-        return round(obj, 5) + 0.0
-    if isinstance(obj, dict):
-        return {k: _round_floats(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_round_floats(x) for x in obj]
-    return obj
+    possible_conv_structs_and_sgas = []
+    for _i in range(4):
+        struct = sga.get_conventional_standard_structure()
+        possible_conv_structs_and_sgas.append((struct, sga))
+        sga = SpacegroupAnalyzer(sga.get_primitive_standard_structure(), symprec=1e-2)
+
+    possible_conv_structs_and_sgas = sorted(
+        possible_conv_structs_and_sgas, key=lambda x: _struc_sorting_func(x[0])
+    )
+    return (
+        Structure.from_dict(_round_floats(possible_conv_structs_and_sgas[0][0].as_dict())),
+        possible_conv_structs_and_sgas[0][1],
+    )
 
 
 def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=False):
@@ -73,15 +134,13 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
     sga = SpacegroupAnalyzer(struc_wout_oxi, symprec=1e-2)
-    conventional_structure = Structure.from_dict(
-        _round_floats(sga.get_conventional_standard_structure().as_dict())
-    )
+    conventional_structure, conv_sga = get_spglib_conv_structure(sga)
 
-    wyckoff_label_dict = get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+    wyckoff_label_dict = get_wyckoff_dict_from_sgn(conv_sga.get_space_group_number())
     # determine cell orientation for Wyckoff site determination (needs to match the Bilbao
     # Crystallographic Server's convention, which can differ from spglib (pymatgen) in some cases)
 
-    sga_wyckoffs = sga.get_symmetrized_structure().wyckoff_symbols
+    sga_wyckoffs = conv_sga.get_symmetrized_structure().wyckoff_symbols
 
     for trial_lattice_vec_swap_array in [  # 3C2 -> 6 possible combinations
         # ordered according to frequency of occurrence in the Materials Project
@@ -182,6 +241,9 @@ def swap_axes(structure, axes):
     axes=(2, 1, 0) will swap the first and third axes.
     """
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+
+    if axes != [0, 1, 2]:
+        raise ValueError(f"Caught one!: {structure}")  # TODO: Remove!
 
     for i, axis in enumerate(axes):
         transformation_matrix[i][axis] = 1
