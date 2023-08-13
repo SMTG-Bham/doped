@@ -205,24 +205,32 @@ def _get_neutral_defect_entry(
     neutral_defect_entry.defect_supercell_site = defect_supercell_site
     neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
     neutral_defect_entry.bulk_supercell = bulk_supercell
-    neutral_defect_entry.conventional_structure = conventional_structure
-    neutral_defect_entry.defect.conventional_structure = conventional_structure
+
+    neutral_defect_entry.conventional_structure = (
+        neutral_defect_entry.defect.conventional_structure
+    ) = conventional_structure
+
     wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
         defect_entry=neutral_defect_entry,
         wyckoff_dict=wyckoff_label_dict,
     )
+    print(neutral_defect_entry.defect.name, wyckoff_label, conv_cell_coord_list)
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
     conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
-    neutral_defect_entry.wyckoff = wyckoff_label
-    neutral_defect_entry.defect.wyckoff = neutral_defect_entry.wyckoff
-    neutral_defect_entry.conv_cell_frac_coords = conv_cell_coord_list[0]  # ideal/cleanest coords
-    neutral_defect_entry.defect.conv_cell_frac_coords = neutral_defect_entry.conv_cell_frac_coords
-    neutral_defect_entry.equiv_conv_cell_frac_coords = conv_cell_coord_list
-    neutral_defect_entry.defect.equiv_conv_cell_frac_coords = (
-        neutral_defect_entry.equiv_conv_cell_frac_coords
-    )
-    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = _BilbaoCS_conv_cell_vector_mapping
-    neutral_defect_entry.defect._BilbaoCS_conv_cell_vector_mapping = _BilbaoCS_conv_cell_vector_mapping
+
+    neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
+    neutral_defect_entry.conv_cell_frac_coords = (
+        neutral_defect_entry.defect.conv_cell_frac_coords
+    ) = conv_cell_coord_list[
+        0
+    ]  # ideal/cleanest coords
+    neutral_defect_entry.equiv_conv_cell_frac_coords = (
+        neutral_defect_entry.defect.equiv_conv_cell_frac_coords
+    ) = conv_cell_coord_list
+    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
+        neutral_defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+    ) = _BilbaoCS_conv_cell_vector_mapping
+
     return neutral_defect_entry
 
 
@@ -819,10 +827,10 @@ class DefectsGenerator(MSONable):
                 one less than the number of CPUs available.
 
         Attributes:
+            defect_entries (Dict): Dictionary of {defect_species: DefectEntry} for all
+                defect entries (with charge state and supercell properties) generated.
             defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
                 objects generated.
-            defect_entries (Dict): Dictionary of {defect_name: DefectEntry} for all
-                defect entries (with charge state and supercell properties) generated.
             primitive_structure (Structure): Primitive cell structure of the host
                 used to generate defects.
             supercell_matrix (Matrix): Matrix to generate defect/bulk supercells from
@@ -836,7 +844,7 @@ class DefectsGenerator(MSONable):
             `DefectsGenerator` input parameters are also set as attributes.
         """
         self.defects: Dict[str, List[Defect]] = {}  # {defect_type: [Defect, ...]}
-        self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_name: DefectEntry}
+        self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
@@ -1165,7 +1173,6 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Determining Wyckoff sites")
             defect_list: List[Defect] = sum(self.defects.values(), [])
             num_defects = len(defect_list)
-            defect_entry_list = []
 
             # get BCS conventional structure and lattice vector swap array:
             (
@@ -1197,6 +1204,7 @@ class DefectsGenerator(MSONable):
             else:
                 _pbar_increment_per_defect = 0
 
+            defect_entry_list = []
             if len(self.primitive_structure) > 8:  # skip for small systems as communication overhead /
                 # process initialisation outweighs speedup
                 with Pool(processes) as pool:
@@ -1215,7 +1223,8 @@ class DefectsGenerator(MSONable):
             # in order for naming and defect generation output info to be deterministic
             defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
 
-            # redefine defects dict with DefectEntry.defect objects:
+            # redefine defects dict with DefectEntry.defect objects (as attributes have been updated in
+            # _get_neutral_defect_entry):
             self.defects = {
                 "vacancies": [
                     defect_entry.defect
