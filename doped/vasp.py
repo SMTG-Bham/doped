@@ -57,11 +57,12 @@ class DefectDictSet(DictSet):
     def __init__(
         self,
         structure: Structure,
-        charge: int = 0,
+        charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
         user_potcar_functional: str = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
+        poscar_comment: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -69,7 +70,7 @@ class DefectDictSet(DictSet):
 
         Args:
             structure (Structure): pymatgen Structure object of the defect supercell
-            charge (int): Charge of the defect structure
+            charge_state (int): Charge of the defect structure
             user_incar_settings (dict):
                 Dictionary of user INCAR settings (AEXX, NCORE etc.) to override
                 default settings. Highly recommended to look at output INCARs
@@ -88,9 +89,17 @@ class DefectDictSet(DictSet):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
+            poscar_comment (str):
+                Comment line to use for POSCAR files. Default is defect name,
+                fractional coordinates of initial site and charge state.
             **kwargs: Additional kwargs to pass to DictSet
         """
-        self.charge = charge
+        self.charge_state = charge_state
+        self.poscar_comment = (
+            poscar_comment
+            if poscar_comment is not None
+            else f"{structure.formula} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
+        )
 
         # get base config and set EDIFF
         relax_set = copy.deepcopy(default_defect_relax_set)
@@ -150,7 +159,7 @@ class DefectDictSet(DictSet):
         incar_obj = super(self.__class__, self).incar
 
         try:
-            incar_obj["NELECT"] = self.nelect - self.charge
+            incar_obj["NELECT"] = self.nelect - self.charge_state
             if incar_obj["NELECT"] % 2 != 0:  # odd number of electrons
                 incar_obj["NUPDOWN"] = 1
             else:
@@ -163,7 +172,7 @@ class DefectDictSet(DictSet):
         except Exception as e:
             warnings.warn(
                 f"NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; "
-                f"got error {e}"
+                f"got error: {e}"
             )
 
         if "KPAR" in incar_obj:
@@ -214,7 +223,10 @@ class DefectDictSet(DictSet):
         """
         pmg_kpoints = super().kpoints
         kpt_density = self.config_dict.get("KPOINTS", {}).get("reciprocal_density", False)
-        if self.user_kpoints_settings is not None and "reciprocal_density" in self.user_kpoints_settings:
+        if (
+            isinstance(self.user_kpoints_settings, dict)
+            and "reciprocal_density" in self.user_kpoints_settings
+        ):
             kpt_density = self.user_kpoints_settings.get("reciprocal_density", False)
 
         if kpt_density and "doped" not in pmg_kpoints.comment:
@@ -222,7 +234,7 @@ class DefectDictSet(DictSet):
                 assert np.prod(self.kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
                 pmg_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
-        elif "doped" not in self.kpoints.comment:
+        elif "doped" not in pmg_kpoints.comment:
             pmg_kpoints.comment = "KPOINTS from doped"
 
         return pmg_kpoints
@@ -361,7 +373,7 @@ class DefectRelaxSet(MSONable):
             approx_coords = f"~[{sc_frac_coords[0]:.4f},{sc_frac_coords[1]:.4f},{sc_frac_coords[2]:.4f}]"
             # Gets truncated to 40 characters in the CONTCAR (so kept to less than 40 chars here)
             if hasattr(self.defect_entry, "name"):
-                name = self.defect_entry.name
+                name = self.defect_entry.name.rsplit("_", 1)[0]  # remove charge state from name
             else:
                 name = self.defect_supercell.formula
 
@@ -414,7 +426,7 @@ class DefectRelaxSet(MSONable):
         """
         return DefectDictSet(
             self.defect_supercell,
-            charge=self.defect_entry.charge_state,
+            charge_state=self.defect_entry.charge_state,
             user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=Kpoints().from_dict(
                 {
@@ -424,6 +436,7 @@ class DefectRelaxSet(MSONable):
             ),
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=self.poscar_comment,
             **self.dict_set_kwargs,
         )
 
@@ -453,11 +466,12 @@ class DefectRelaxSet(MSONable):
         # determine if vasp_std required or only vasp_gam:
         std_defect_set = DefectDictSet(
             self.defect_supercell,
-            charge=self.defect_entry.charge_state,
+            charge_state=self.defect_entry.charge_state,
             user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=self.poscar_comment,
             **self.dict_set_kwargs,
         )
 
@@ -512,7 +526,7 @@ class DefectRelaxSet(MSONable):
             return None
 
         vasp_ncl_incar_settings = {
-            "EDIFF": "1e-6  # tight EDIFF for final energy and converged DOS",
+            "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
             "LSORBIT": True,
             "NSW": 0,  # no ionic relaxation"
             "IBRION": -1,  # no ionic relaxation"
@@ -527,11 +541,12 @@ class DefectRelaxSet(MSONable):
             warnings.filterwarnings("ignore", "KPAR")
             return DefectDictSet(
                 self.defect_supercell,
-                charge=self.defect_entry.charge_state,
+                charge_state=self.defect_entry.charge_state,
                 user_incar_settings=self.user_incar_settings,
                 user_kpoints_settings=self.user_kpoints_settings,
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
+                poscar_comment=self.poscar_comment,
                 **self.dict_set_kwargs,
             )
 
