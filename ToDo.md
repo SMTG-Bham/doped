@@ -66,6 +66,8 @@
   built-in, and can either use in SnB or recommend SnB users to check with this.
   - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
     more common than thought.
+  - Kumagai's atom-pairing defect analysis code for identifying 'non-trivial' defects is essentially
+    this, could be used here?
   - Could do by using the site displacements, with atoms moving outside their vdW radius being flagged
     as (possibly) defective? And see if their stoichiometric sum matches the expected point defect
     stoichiometry. Expected to match one of these transformation motifs:
