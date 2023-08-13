@@ -22,7 +22,7 @@ from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 from doped.pycdt.utils.parse_calculations import _get_output_files_and_check_if_multiple
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "PotcarSet.yaml"))
+default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))
 
 # globally ignore:
 warnings.filterwarnings("ignore", category=BadInputSetWarning)
@@ -444,15 +444,15 @@ class CompetingPhases:
                 (min, max, step) format for nonmetals
             user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
             user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                `doped/PotcarSet.yaml` for the default `POTCAR` set.
+                `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
             user_incar_settings (dict): Override the default INCAR settings
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
-                `doped/PBEsol_ConvergenceSet.yaml` for the default settings.
+                `doped/VASP_sets/PBEsol_ConvergenceSet.yaml` for the default settings.
             **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
-        pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "PBEsol_ConvergenceSet.yaml"))
+        pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
 
         # kpoints should be set as (min, max, step)
         min_nm, max_nm, step_nm = kpoints_nonmetals
@@ -552,17 +552,17 @@ class CompetingPhases:
             kpoints_nonmetals (int): Kpoint density per inverse volume (Å^-3) for nonmetals
             user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
             user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                `doped/PotcarSet.yaml` for the default `POTCAR` set.
+                `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
             user_incar_settings (dict): Override the default INCAR settings
                 e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
                 non-True/False flags need to be input as strings with quotation marks. See
-                `doped/HSE06_RelaxSet.yaml` for the default settings.
+                `doped/VASP_sets/RelaxSet.yaml` for the default settings.
             **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
         #  struct = sym.get_primitive_standard_structure() -> output this structure
-        hse06_relax_set = loadfn(os.path.join(MODULE_DIR, "HSE06_RelaxSet.yaml"))
+        hse06_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
 
         potcar_dict = copy.deepcopy(default_potcar_dict)
         if user_potcar_settings:
