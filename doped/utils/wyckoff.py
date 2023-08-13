@@ -202,18 +202,31 @@ def get_conv_cell_site(defect_entry):
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
     sga = SpacegroupAnalyzer(bulk_prim_structure)
-    conv_struct_with_X = prim_struct_with_X * np.linalg.inv(
+    # convert to match sga primitive structure first:
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    sga_prim_struct = sga.get_primitive_standard_structure()
+    s2_like_s1 = sm.get_s2_like_s1(sga_prim_struct, prim_struct_with_X)
+    s2_really_like_s1 = Structure.from_sites(
+        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
+            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
+                site.specie,
+                site.frac_coords,
+                sga_prim_struct.lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+
+    conv_struct_with_X = s2_really_like_s1 * np.linalg.inv(
         sga.get_conventional_to_primitive_transformation_matrix()
     )
 
-    # convert to conv structure:
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    # convert to match defect_entry conventional structure definition
     s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, conv_struct_with_X)
-    # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice vectors
-    # (e.g. a=(010) instead of (100) etc.), so do this to be sure:
     s2_really_like_s1 = Structure.from_sites(
-        [
-            PeriodicSite(
+        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
+            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
                 site.specie,
                 site.frac_coords,
                 defect_entry.conventional_structure.lattice,
