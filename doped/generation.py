@@ -214,7 +214,6 @@ def _get_neutral_defect_entry(
         defect_entry=neutral_defect_entry,
         wyckoff_dict=wyckoff_label_dict,
     )
-    print(neutral_defect_entry.defect.name, wyckoff_label, conv_cell_coord_list)
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
     conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
 
