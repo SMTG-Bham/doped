@@ -7,8 +7,6 @@ INCAR:
   NSW: 200  # increase NSW for defect calculations
 
 # Notes:
-# EDIFF is scaled according to the number of atoms in the supercell (1e-5 per 50 atoms,
-# with a max EDIFF of 1e-4).
 # KPAR is set to 2 for `vasp_std` calculations (multiple kpoints)
 # NUPDOWN is set to 0 (singlet) or 1 (doublet) depending on the number of electrons
 # (even or odd, respectively).
