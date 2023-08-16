@@ -379,7 +379,7 @@ def _frac_coords_sort_func(coords):
         for i in range(len(coords))
         for j in range(i + 1, len(coords))
     )
-    magnitude = round(sum(np.abs(coords)), 4)
+    magnitude = round(np.linalg.norm(coords), 4)
     return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
 
 
@@ -1145,7 +1145,7 @@ class DefectsGenerator(MSONable):
                 for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
                     # take site with equiv_fpos sorted by _frac_coords_sort_func:
                     sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
-                    ideal_cand_site = equiv_fpos[0]
+                    ideal_cand_site = sorted_equiv_fpos[0]
                     sorted_sites_mul_and_equiv_fpos.append(
                         (ideal_cand_site, multiplicity, sorted_equiv_fpos)
                     )
