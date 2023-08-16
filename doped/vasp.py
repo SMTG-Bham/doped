@@ -336,7 +336,7 @@ class DefectRelaxSet(MSONable):
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
-                `vasp_std`, `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for
+                `vasp_std`, `vasp_nkred_std` and `vasp_ncl` DefectDictSets (Γ-only for
                 `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE_54" and if this fails,
@@ -350,7 +350,7 @@ class DefectRelaxSet(MSONable):
             vasp_gam (DefectDictSet):
                 DefectDictSet for Gamma-point only relaxation. Not needed if
                 ShakeNBreak structure searching has been performed (recommended).
-            vasp_NKRED_std (DefectDictSet):
+            vasp_nkred_std (DefectDictSet):
                 DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
                 `NKRED`. Not generated for GGA calculations (if `LHFCALC` is set to
                 `False` in user_incar_settings) or if only Gamma kpoint sampling is
@@ -417,7 +417,6 @@ class DefectRelaxSet(MSONable):
             # than defect.defect_structure because could be e.g. a vacancy in a 2-atom primitive
             # structure where the atom being removed is the heavy (Z>=31) one
 
-        # TODO: Write the full DefectsGenerator.json info to file
         # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
         #  and the structures don't match (otherwise overwrite)
         # TODO: Output bulk folder as well? As singleshot calc in each case.
@@ -1000,8 +999,24 @@ class DefectRelaxSet(MSONable):
         **kwargs,
     ):
         """
-        Write all VASP input files to subfolders in the `defect_dir` folder. By
-        default, does not generate a `vasp_gam` folder unless `self.vasp_std`
+        Write all VASP input files to subfolders in the `defect_dir` folder.
+
+        The following subfolders are generated:
+        - vasp_nkred_std -> Defect relaxation with a kpoint mesh and using `NKRED`.
+            Not generated for GGA calculations (if `LHFCALC` is set to `False` in
+            user_incar_settings) or if only Γ-point sampling required.
+        - vasp_std -> Defect relaxation with a kpoint mesh, not using `NKRED`. Not
+            generated if only Γ-point sampling required.
+        - vasp_ncl -> Singlepoint (static) energy calculation with SOC included.
+            Generated if `soc=True`. If `soc` is not set, then by default is only
+            generated for systems with a max atomic number (Z) >= 31 (i.e. further
+            down the periodic table than Zn).
+
+        If vasp_gam=True (not recommended):
+        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
+            structure searching has been performed (recommended).
+
+        By default, does not generate a `vasp_gam` folder unless `self.vasp_std`
         is None (i.e. only Γ-point sampling required for this system), as
         `vasp_gam` calculations should be performed using `ShakeNBreak` for
         defect structure-searching and initial relaxations. If `vasp_gam` files
@@ -1016,6 +1031,21 @@ class DefectRelaxSet(MSONable):
         should be used as the `vasp_ncl` `POSCAR`s. If unperturbed
         `POSCAR` files are desired for the `vasp_(nkred_)std` (and `vasp_ncl`)
         folders, set `unperturbed_poscar=True`.
+
+        See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
+        `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
+        and `PotcarSet.yaml` for the default `POTCAR` settings. **These are
+        reasonable defaults that _roughly_ match the typical values needed for
+        accurate defect calculations, but usually will need to be modified for
+        your specific system, such as converged ENCUT and KPOINTS, and NCORE /
+        KPAR matching your HPC setup.**
+
+        Note that any changes to the default `INCAR`/`POTCAR` settings should
+        be consistent with those used for all defect and competing phase (
+        chemical potential) calculations.
+
+        The `DefectEntry` object is also written to a `json` file in
+        `defect_dir` to aid calculation provenance.
 
         Args:
             defect_dir (str):
@@ -1048,7 +1078,7 @@ class DefectRelaxSet(MSONable):
                 `vasp_ncl` singlepoint calculations.
                 (default: False)
             **kwargs:
-                Keyword arguments to pass to `self.vasp_gam.write_input()`.
+                Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
         # check if vasp_std is None, and if so, set vasp_gam to True:
         with warnings.catch_warnings():
@@ -1085,7 +1115,7 @@ class DefectsSet(MSONable):
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
             relaxation. Not needed if ShakeNBreak structure searching has been
             performed (recommended).
-        - `DefectRelaxSet.vasp_NKRED_std` -> `DefectDictSet` for relaxation with a
+        - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
             kpoint mesh and using `NKRED`. Not generated for GGA calculations (if
             `LHFCALC` is set to `False` in user_incar_settings) or if only Gamma
             kpoint sampling is required.
@@ -1136,7 +1166,7 @@ class DefectsSet(MSONable):
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
-                `vasp_std`, `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for
+                `vasp_std`, `vasp_nkred_std` and `vasp_ncl` DefectDictSets (Γ-only for
                 `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE_54" and if this fails, tries
@@ -1152,6 +1182,13 @@ class DefectsSet(MSONable):
             defect_entries (Dict):
                 Dictionary of {defect_species: DefectEntry} for the input defect
                 species, for which to generate VASP input files.
+            json_obj (Union[Dict, DefectsGenerator]):
+                Either the DefectsGenerator object if input `defect_entries` is a
+                `DefectsGenerator` object, otherwise the `defect_entries` dictionary,
+                which will be written to file when `write_files()` is called, to
+                aid calculation provenance.
+            json_name (str):
+                Name of the JSON file to save the `json_obj` to.
 
             Input parameters are also set as attributes.
         """
@@ -1160,7 +1197,9 @@ class DefectsSet(MSONable):
         self.user_potcar_functional = user_potcar_functional
         self.user_potcar_settings = user_potcar_settings
         self.kwargs = kwargs
-        self.defect_entries = self._format_defect_entries_input(defect_entries)
+        self.defect_entries, self.json_name, self.json_obj = self._format_defect_entries_input(
+            defect_entries
+        )
 
         if soc is not None:
             self.soc = soc
@@ -1201,10 +1240,14 @@ class DefectsSet(MSONable):
     def _format_defect_entries_input(
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
-    ) -> Dict[str, DefectEntry]:
+    ) -> tuple[Dict[str, DefectEntry], str, Union[Dict[str, DefectEntry], DefectsGenerator]]:
         """
         Helper function to format input `defect_entries` into a named
-        dictionary of `DefectEntry` objects.
+        dictionary of `DefectEntry` objects. Also returns the name of the JSON
+        file and object to serialise when writing the VASP input to files. This
+        is the DefectsGenerator object if `defect_entries` is a
+        `DefectsGenerator` object, otherwise the dictionary of `DefectEntry`
+        objects.
 
         Args:
             defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
@@ -1218,8 +1261,16 @@ class DefectsSet(MSONable):
                 `DefectEntry.name` if the `name` attribute is set, otherwise
                 generated according to the `doped` convention (see doped.generation).
         """
+        json_filename = "defect_entries.json"  # global statement in case, but should be skipped
+        json_obj = defect_entries
         if isinstance(defect_entries, DefectsGenerator):
+            formula, _fu = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )
+            json_filename = f"{formula}_defects_generator.json"
+            json_obj = defect_entries
             defect_entries = defect_entries.defect_entries
+
         elif isinstance(defect_entries, DefectEntry):
             defect_entries = [defect_entries]
         if isinstance(
@@ -1252,6 +1303,11 @@ class DefectsSet(MSONable):
                 )
 
             defect_entries = {defect_entry.name: defect_entry for defect_entry in defect_entry_list}
+            formula, _fu = defect_entry_list[
+                0
+            ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)
+            json_filename = f"{formula}_defect_entries.json"
+            json_obj = defect_entries
 
         # check correct format:
         if isinstance(defect_entries, dict) and not all(
@@ -1262,7 +1318,115 @@ class DefectsSet(MSONable):
                 f"with values of type {[type(value) for value in defect_entries.values()]} instead"
             )
 
-        return defect_entries
+        if not isinstance(defect_entries, dict):
+            raise TypeError(
+                f"Input defect_entries must be of type DefectsGenerator, dict, list or DefectEntry, got "
+                f"type {type(defect_entries)} instead."
+            )
+
+        return defect_entries, json_filename, json_obj  # type: ignore
+
+    def write_files(
+        self,
+        output_dir: str = ".",
+        unperturbed_poscar: bool = False,
+        vasp_gam: bool = False,
+        **kwargs,
+    ):
+        """
+        Write VASP input files to folders for all defects in
+        `self.defect_entries`. Folder names are set to the key of the
+        DefectRelaxSet in `self.defect_sets` (same as self.defect_entries keys,
+        see `DefectsSet` docstring).
+
+        For each defect folder, the following subfolders are generated:
+        - vasp_nkred_std -> Defect relaxation with a kpoint mesh and using `NKRED`.
+            Not generated for GGA calculations (if `LHFCALC` is set to `False` in
+            user_incar_settings) or if only Γ-point sampling required.
+        - vasp_std -> Defect relaxation with a kpoint mesh, not using `NKRED`. Not
+            generated if only Γ-point sampling required.
+        - vasp_ncl -> Singlepoint (static) energy calculation with SOC included.
+            Generated if `soc=True`. If `soc` is not set, then by default is only
+            generated for systems with a max atomic number (Z) >= 31 (i.e. further
+            down the periodic table than Zn).
+
+        If vasp_gam=True (not recommended):
+        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
+            structure searching has been performed (recommended).
+
+        By default, does not generate a `vasp_gam` folder unless
+        `DefectRelaxSet.vasp_std` is None (i.e. only Γ-point sampling required
+        for this system), as `vasp_gam` calculations should be performed using
+        `ShakeNBreak` for defect structure-searching and initial relaxations.
+        If `vasp_gam` files are desired, set `vasp_gam=True`.
+
+        By default, `POSCAR` files are not generated for the `vasp_(nkred_)std`
+        (and `vasp_ncl` if `self.soc` is True) folders, as these should
+        be taken from `ShakeNBreak` calculations (via `snb-groundstate`)
+        or, if not following the recommended structure-searching workflow,
+        from the `CONTCAR`s of `vasp_gam` calculations. If including SOC
+        effects (`self.soc = True`), then the `vasp_std` `CONTCAR`s
+        should be used as the `vasp_ncl` `POSCAR`s. If unperturbed
+        `POSCAR` files are desired for the `vasp_(nkred_)std` (and `vasp_ncl`)
+        folders, set `unperturbed_poscar=True`.
+
+        The `DefectEntry` objects are also written to `json` files in the defect
+        folders, to aid calculation provenance.
+
+        See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
+        `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
+        and `PotcarSet.yaml` for the default `POTCAR` settings. **These are
+        reasonable defaults that _roughly_ match the typical values needed for
+        accurate defect calculations, but usually will need to be modified for
+        your specific system, such as converged ENCUT and KPOINTS, and NCORE /
+        KPAR matching your HPC setup.**
+
+        Note that any changes to the default `INCAR`/`POTCAR` settings should
+        be consistent with those used for all defect and competing phase (
+        chemical potential) calculations.
+
+        Args:
+            output_dir (str):
+                Folder in which to create the VASP defect calculation folders.
+                Default is the current directory ("."). Output folder structure
+                is `<output_dir>/<defect_species>/<subfolder>` where
+                `defect_species` is the key of the DefectRelaxSet in
+                `self.defect_sets` (same as `self.defect_entries` keys, see
+                `DefectsSet` docstring) and `subfolder` is the name of the
+                corresponding VASP program to run (e.g. `vasp_std`).
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCARs to the generated
+                folders as well. Not recommended, as the recommended workflow is
+                to initially perform `vasp_gam` ground-state structure searching
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
+                continue the `vasp_std` relaxations from the 'Groundstate'
+                `CONTCAR`s (first with NKRED if using hybrid DFT, then without),
+                then use the `vasp_std` `CONTCAR`s as the input structures for
+                the final `vasp_ncl` singlepoint calculations.
+                (default: False)
+            vasp_gam (bool):
+                If True, write the `vasp_gam` input files, with unperturbed defect
+                POSCARs. Not recommended, as the recommended workflow is to initially
+                perform `vasp_gam` ground-state structure searching using ShakeNBreak
+                (https://shakenbreak.readthedocs.io), then continue the `vasp_std`
+                relaxations from the 'Groundstate' `CONTCAR`s (first with NKRED if
+                using hybrid DFT, then without), then if including SOC effects, use
+                the `vasp_std` `CONTCAR`s as the input structures for the final
+                `vasp_ncl` singlepoint calculations.
+                (default: False)
+            **kwargs:
+                Keyword arguments to pass to `DefectDictSet.write_input()`.
+        """
+        for defect_species, defect_entry in self.defect_sets.items():
+            defect_dir = os.path.join(output_dir, defect_species)
+            defect_entry.write_all(
+                defect_dir=defect_dir,
+                unperturbed_poscar=unperturbed_poscar,
+                vasp_gam=vasp_gam,
+                **kwargs,
+            )
+
+        dumpfn(self.json_obj, self.json_name)
 
 
 # TODO: Remove these functions once confirmed all functionality is in `chemical_potentials.py`;
