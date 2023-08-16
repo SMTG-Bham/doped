@@ -5,15 +5,15 @@ import contextlib
 import copy
 import os
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 
 import numpy as np
 from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core.structure import Structure
-from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, incar_params
-from pymatgen.io.vasp.sets import DictSet
+from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
+from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
 
 from doped import _ignore_pmg_warnings
 from doped.generation import (
@@ -60,7 +60,7 @@ class DefectDictSet(DictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: str = "PBE_54",
+        user_potcar_functional: UserPotcarFunctional = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -85,7 +85,7 @@ class DefectDictSet(DictSet):
                 reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE". # TODO: Implement this!
+                tries "PBE_52", then "PBE".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
@@ -182,6 +182,26 @@ class DefectDictSet(DictSet):
                     warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
                     incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
         return incar_obj
+
+    @property
+    def potcar(self) -> Potcar:
+        """
+        Potcar object.
+
+        Redefined to intelligently handle pymatgen POTCAR issues.
+        """
+        try:
+            potcar = super(self.__class__, self).potcar
+        except OSError:
+            # try other functional choices:
+            user_potcar_functional_str = cast(str, self.user_potcar_functional)
+            if user_potcar_functional_str.startswith("PBE"):
+                for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
+                    with contextlib.suppress(OSError):
+                        self.user_potcar_functional: UserPotcarFunctional = pbe_potcar_string
+                        potcar = super(self.__class__, self).potcar
+                        break
+        return potcar
 
     @property
     def poscar(self) -> Poscar:
@@ -768,8 +788,6 @@ class DefectsSet(MSONable):
             Input parameters are also set as attributes. # TODO
         """
         # TODO: Ensure json serializability!
-        # TODO: Check that the Defect Set generation is quick, otherwise the DefectRelaxSet generation
-        #  can be moved to separate (post init) functions
         self.user_incar_settings = user_incar_settings
         self.user_kpoints_settings = user_kpoints_settings
         self.user_potcar_functional = user_potcar_functional
