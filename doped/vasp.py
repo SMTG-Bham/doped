@@ -710,8 +710,21 @@ class DefectRelaxSet(MSONable):
                 **self.dict_set_kwargs,
             )
 
+    def _check_bulk_supercell_and_warn(self):
+        if self.bulk_supercell is None:
+            warnings.warn(
+                "DefectRelaxSet.bulk_supercell is None because a Structure object rather than "
+                "DefectEntry was provided (see docstring), and so bulk supercell files cannot "
+                "be generated this way. Either provide a DefectEntry or manually copy and edit "
+                "the input files from defect calculations to use for the bulk supercell "
+                "reference calculation."
+            )
+            return None
+
+        return self.bulk_supercell
+
     @property
-    def bulk_vasp_gam(self) -> DefectDictSet:
+    def bulk_vasp_gam(self) -> Optional[DefectDictSet]:
         """
         Returns a DefectDictSet object for a VASP _bulk_ Γ-point-only
         (`vasp_gam`) singlepoint (static) supercell calculation. Often not
@@ -739,11 +752,15 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
+        bulk_supercell = self._check_bulk_supercell_and_warn()
+        if bulk_supercell is None:
+            return None
+
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
         user_incar_settings.update(singleshot_incar_settings)
 
         return DefectDictSet(
-            self.bulk_supercell,
+            bulk_supercell,
             charge_state=0,
             user_incar_settings=user_incar_settings,
             user_kpoints_settings=Kpoints().from_dict(
@@ -792,6 +809,10 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
+        bulk_supercell = self._check_bulk_supercell_and_warn()
+        if bulk_supercell is None:
+            return None
+
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
         user_incar_settings.update(singleshot_incar_settings)
 
@@ -800,7 +821,7 @@ class DefectRelaxSet(MSONable):
 
         return self._check_vstd_kpoints(
             DefectDictSet(
-                self.bulk_supercell,
+                bulk_supercell,
                 charge_state=0,
                 user_incar_settings=user_incar_settings,
                 user_kpoints_settings=self.user_kpoints_settings,
@@ -851,6 +872,10 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
+        bulk_supercell = self._check_bulk_supercell_and_warn()
+        if bulk_supercell is None:
+            return None
+
         # check NKRED by running through `vasp_nkred_std`:
         nkred_defect_dict_set = self.vasp_nkred_std
 
@@ -866,7 +891,7 @@ class DefectRelaxSet(MSONable):
         )
 
         return DefectDictSet(
-            self.bulk_supercell,
+            bulk_supercell,
             charge_state=0,
             user_incar_settings=user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
@@ -899,6 +924,10 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
+        bulk_supercell = self._check_bulk_supercell_and_warn()
+        if bulk_supercell is None:
+            return None
+
         if not self.soc:
             warnings.warn(
                 "DefectRelaxSet.soc is False, so bulk_vasp_ncl is None (i.e. no `vasp_ncl` input files "
@@ -919,7 +948,7 @@ class DefectRelaxSet(MSONable):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "KPAR")
             return DefectDictSet(
-                self.bulk_supercell,
+                bulk_supercell,
                 charge_state=0,
                 user_incar_settings=user_incar_settings,
                 user_kpoints_settings=self.user_kpoints_settings,
@@ -987,6 +1016,7 @@ class DefectRelaxSet(MSONable):
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_gam",
+        bulk: bool = False,
         **kwargs,
     ):
         """
@@ -994,6 +1024,8 @@ class DefectRelaxSet(MSONable):
         supercell relaxation. Typically not recommended for use, as the
         recommended workflow is to perform `vasp_gam` calculations using
         `ShakeNBreak` for defect structure-searching and initial relaxations.
+        If bulk is True, the input files for a singlepoint calculation of the
+        bulk supercell are also written to "{formula}_bulk/{subfolder}".
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -1022,6 +1054,10 @@ class DefectRelaxSet(MSONable):
                 `subfolder` = 'vasp_gam' by default. Setting `subfolder` to
                 `None` will write the `vasp_gam` input files directly to the
                 `<defect_dir>` folder, with no subfolders created.
+            bulk (bool):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}".
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
@@ -1033,12 +1069,27 @@ class DefectRelaxSet(MSONable):
             vasp_type="gam",
             **kwargs,
         )
+        if bulk:
+            bulk_supercell = self._check_bulk_supercell_and_warn()
+            if bulk_supercell is None:
+                return
+
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            self._check_potcars_and_write_vasp_xxx_files(
+                f"{formula}_bulk",
+                subfolder,
+                unperturbed_poscar=True,
+                vasp_xxx_attribute=self.bulk_vasp_gam,
+                vasp_type="gam",
+                **kwargs,
+            )
 
     def write_std(
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_std",
         unperturbed_poscar: bool = False,
+        bulk: bool = False,
         **kwargs,
     ):
         """
@@ -1050,7 +1101,9 @@ class DefectRelaxSet(MSONable):
         from `ShakeNBreak` calculations (via `snb-groundstate`) if using GGA,
         or, if not following the recommended structure-searching workflow, from
         the `CONTCAR`s of `vasp_gam` calculations. If unperturbed `POSCAR`
-        files are desired, set `unperturbed_poscar=True`.
+        files are desired, set `unperturbed_poscar=True`. If bulk is True, the
+        input files for a singlepoint calculation of the bulk supercell are
+        also written to "{formula}_bulk/{subfolder}".
 
         Returns None and a warning if the input kpoint settings correspond to
         a Γ-only kpoint mesh (in which case `vasp_gam` should be used).
@@ -1091,6 +1144,10 @@ class DefectRelaxSet(MSONable):
                 `CONTCAR`s (first with NKRED if using hybrid DFT, with the
                 `write_nkred_std()` method, then without NKRED).
                 (default: False)
+            bulk (bool):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}".
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
@@ -1105,12 +1162,27 @@ class DefectRelaxSet(MSONable):
             vasp_type="std",
             **kwargs,
         )
+        if bulk:
+            bulk_supercell = self._check_bulk_supercell_and_warn()
+            if bulk_supercell is None:
+                return
+
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            self._check_potcars_and_write_vasp_xxx_files(
+                f"{formula}_bulk",
+                subfolder,
+                unperturbed_poscar=True,
+                vasp_xxx_attribute=self.bulk_vasp_std,
+                vasp_type="std",
+                **kwargs,
+            )
 
     def write_nkred_std(
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_nkred_std",
         unperturbed_poscar: bool = False,
+        bulk: bool = False,
         **kwargs,
     ):
         """
@@ -1127,6 +1199,8 @@ class DefectRelaxSet(MSONable):
         structure-searching workflow, from the `CONTCAR`s of `vasp_gam`
         calculations. If unperturbed `POSCAR` files are desired, set
         `unperturbed_poscar=True`.
+        If bulk is True, the input files for a singlepoint calculation of the
+        bulk supercell are also written to "{formula}_bulk/{subfolder}".
 
         Returns None and a warning if the input kpoint settings correspond to
         a Γ-only kpoint mesh (in which case `vasp_gam` should be used) or for
@@ -1167,6 +1241,10 @@ class DefectRelaxSet(MSONable):
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the `vasp_std` relaxations from the 'Groundstate` `CONTCAR`s.
                 (default: False)
+            bulk (bool):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}".
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
@@ -1181,12 +1259,27 @@ class DefectRelaxSet(MSONable):
             vasp_type="nkred_std",
             **kwargs,
         )
+        if bulk:
+            bulk_supercell = self._check_bulk_supercell_and_warn()
+            if bulk_supercell is None:
+                return
+
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            self._check_potcars_and_write_vasp_xxx_files(
+                f"{formula}_bulk",
+                subfolder,
+                unperturbed_poscar=True,
+                vasp_xxx_attribute=self.bulk_vasp_nkred_std,
+                vasp_type="nkred_std",
+                **kwargs,
+            )
 
     def write_ncl(
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_ncl",
         unperturbed_poscar: bool = False,
+        bulk: bool = False,
         **kwargs,
     ):
         """
@@ -1204,6 +1297,8 @@ class DefectRelaxSet(MSONable):
         If the `soc` parameter is not set when initializing `DefectRelaxSet`,
         then it is set to True for systems with a max atomic number (Z) >= 31
         (i.e. further down the periodic table than Zn), otherwise False.
+        If bulk is True, the input files for a singlepoint calculation of the
+        bulk supercell are also written to "{formula}_bulk/{subfolder}".
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -1242,6 +1337,10 @@ class DefectRelaxSet(MSONable):
                 then use the `vasp_std` `CONTCAR`s as the input structures for
                 the final `vasp_ncl` singlepoint calculations.
                 (default: False)
+            bulk (bool):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}".
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
@@ -1256,6 +1355,20 @@ class DefectRelaxSet(MSONable):
             vasp_type="ncl",
             **kwargs,
         )
+        if bulk:
+            bulk_supercell = self._check_bulk_supercell_and_warn()
+            if bulk_supercell is None:
+                return
+
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            self._check_potcars_and_write_vasp_xxx_files(
+                f"{formula}_bulk",
+                subfolder,
+                unperturbed_poscar=True,
+                vasp_xxx_attribute=self.bulk_vasp_ncl,
+                vasp_type="ncl",
+                **kwargs,
+            )
 
     def write_all(
         self,
@@ -1530,9 +1643,9 @@ class DefectsSet(MSONable):
         json_filename = "defect_entries.json"  # global statement in case, but should be skipped
         json_obj = defect_entries
         if isinstance(defect_entries, DefectsGenerator):
-            formula, _fu = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
+            formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
-            )
+            )[0]
             json_filename = f"{formula}_defects_generator.json"
             json_obj = defect_entries
             defect_entries = defect_entries.defect_entries
@@ -1569,9 +1682,9 @@ class DefectsSet(MSONable):
                 )
 
             defect_entries = {defect_entry.name: defect_entry for defect_entry in defect_entry_list}
-            formula, _fu = defect_entry_list[
-                0
-            ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)
+            formula = defect_entry_list[0].defect.structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )[0]
             json_filename = f"{formula}_defect_entries.json"
             json_obj = defect_entries
 
