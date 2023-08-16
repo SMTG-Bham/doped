@@ -1,5 +1,9 @@
 # `doped` WishList
 ## Defect calculations set up
+- CLI Functionality for core functions.
+  - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
+    POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
+    to next VASP folder when converged and submits job.
 - Defect complexes: Functionality to setup and parse calculations – can do this with new `pymatgen`
   code? Note that our defect-centring code is currently not implemented for this!
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
@@ -19,13 +23,9 @@
 ## Chemical potential
 - Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
-- Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`, possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
-- Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
-- Add `chempot_std_to_ncl.sh` bash script to auto-generate symmetrised `KPOINTS` for SOC `vasp_ncl` run from `vasp_std` IBZKPT, and copy `vasp_std/CONTCAR` to `vasp_ncl/POSCAR`, copy `CHGCAR`, `POTCAR` over etc. (Make note about symmetrised k-points required for accurate SOC bandstructures, VASP wizardry with Chris, but not an issue for ground state energies).
-- Note about SOC for chemical potential calculations (Lany says: to ‘a good approximation’, the SOC contributions to total energy can be separated into purely atomic contributions, Lany, Stevanovic and Zunger show in their [FERE paper](https://doi.org/10.1103/PhysRevB.85.115104) that the SOC effects on total energy cancel out for chemical potential calculations) - But only for easy systems - better to do consistently
-- Publication ready chemical potential diagram plotting tool (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
+- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
+  - Also see `Cs2SnTiI6` notebooks for template code for this.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
-- Functionality to generate chemical potential limit plots from parsed chempot calculations (phase diagram objects), as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D). – See `Cs2SnTiI6` notebooks for template code for this.
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Post-processing / analysis / plotting
@@ -138,7 +138,6 @@
   - GKFO correction
 
 ## Housekeeping
-- Logo!
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - Update to be compatible with new `pymatgen`
   - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
@@ -146,7 +145,6 @@
     isn't available in current `pymatgen`.
   - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
     functions (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
-- Create GGA practice workflow, for people to learn how to work with doped and defect calculations
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
@@ -158,6 +156,7 @@
   - Run `pre-commit run --all-files` to check all files.
 - Generate docs.
   - Need a `docs_requirements.txt` file like `SnB`.
+  - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite
   - https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
@@ -171,6 +170,9 @@
   - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
+  - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
+    possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
+  - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `CarrierCapture`, and give some
     examples. Add as optional dependencies.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
@@ -188,6 +190,10 @@
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Update `doped` links on `SnB`/`easyunfold` etc docs.
+  - Note about SOC for chemical potential calculations ([FERE paper](https://doi.org/10.1103/PhysRevB.
+    85.115104) suggests that the SOC effects on total energy cancel out for chemical potential
+    calculations, but only the case when the occupation of the SOC-affected orbitals is constant
+    (typically not the case)) Better to do consistently (link Emily SOC work and/or thesis).
   - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
     automatically in `doped`, excited-state degeneracy (e.g. with bipolarons with single and triplet
     states) are not, so the user should manually account for this if present. Also note that

@@ -1368,7 +1368,9 @@ class DefectRelaxSet(MSONable):
                 **kwargs,
             )
 
-    def write_all(  # TODO: Default bulk writing behaviour? For this and DefectsSet?
+    def write_all(  # TODO: Default bulk writing behaviour? For this and DefectsSet? Yeah just write for
+        # top-level (ncl > std > gam) vasp, but have "all_bulk" option to write to each. Same for
+        # DefectsSet
         self,
         defect_dir: Optional[str] = None,
         unperturbed_poscar: bool = False,
