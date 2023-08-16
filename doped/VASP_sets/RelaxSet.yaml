@@ -1,5 +1,5 @@
 INCAR:
-  '# May want to change NCORE, KPAR, AEXX, ENCUT, NUPDOWN, ISPIN, POTIM': ''
+  '# May want to change NCORE, KPAR, AEXX, ENCUT, NUPDOWN, ISPIN, POTIM': 'typical variable parameters'
   ALGO: "Normal  # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered"
   EDIFF_PER_ATOM: 2e-07  # capped at a max EDIFF of 1e-4 for large supercells (N(atoms) > 500)
   EDIFFG: -0.01
