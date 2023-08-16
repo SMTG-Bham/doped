@@ -1538,9 +1538,9 @@ class DefectsGenerator(MSONable):
                 is the chemical formula of the host material.
         """
         if filename is None:
-            formula, _fu = self.primitive_structure.composition.get_reduced_formula_and_factor(
+            formula = self.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
-            )
+            )[0]
             filename = f"{formula}_defects_generator.json"
 
         dumpfn(self, filename)
@@ -1668,9 +1668,9 @@ class DefectsGenerator(MSONable):
         """
         Returns a string representation of the DefectsGenerator object.
         """
-        formula, _fu = self.primitive_structure.composition.get_reduced_formula_and_factor(
-            iupac_ordering=True
-        )
+        formula = self.primitive_structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[
+            0
+        ]
 
         return (
             f"DefectsGenerator for input composition {formula}, space group "
