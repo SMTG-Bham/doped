@@ -4,7 +4,7 @@
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
 # **D**efect **O**riented **P**ython **E**nvironment **D**istribution (`doped`)
-<img align="right" width="400" src="docs/doped_v2_logo.png">`doped` is a python package for
+<img align="right" width="300" src="docs/doped_v2_logo.png">`doped` is a python package for
 managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
 [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for
