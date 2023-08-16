@@ -11,6 +11,7 @@ import numpy as np
 from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.thermo import DefectEntry
+from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
 from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
@@ -20,6 +21,7 @@ from doped.generation import (
     DefectsGenerator,
     _custom_formatwarning,
     _frac_coords_sort_func,
+    get_defect_name_from_entry,
     name_defect_entries,
 )
 
@@ -214,25 +216,6 @@ class DefectDictSet(DictSet):
         return Poscar(self.structure, comment=self.poscar_comment)
 
     @property
-    def all_input(self):
-        """
-        Returns all input files as a dict of {filename: vasp object}.
-
-        Returns:
-            dict of {filename: object}, e.g., {'INCAR': Incar object, ...}
-        """
-        try:
-            return super().all_input
-
-        except Exception:
-            kpoints = self.kpoints
-            incar = self.incar
-            if np.product(kpoints.kpts) < 4 and incar.get("ISMEAR", 0) == -5:
-                incar["ISMEAR"] = 0
-
-            return {"INCAR": incar, "KPOINTS": kpoints, "POSCAR": self.poscar}
-
-    @property
     def structure(self):
         """
         :return: pymatgen Structure.
@@ -283,7 +266,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: str = "PBE_54",
+        user_potcar_functional: UserPotcarFunctional = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -311,8 +294,8 @@ class DefectRelaxSet(MSONable):
         calculations (see docstring).
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
-        `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings, and
-        `PotcarSet.yaml` for the default `POTCAR` settings.
+        `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
+        and `PotcarSet.yaml` for the default `POTCAR` settings.
         **These are reasonable defaults that _roughly_ match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -418,10 +401,7 @@ class DefectRelaxSet(MSONable):
         # TODO: If LHFCALC = False then non NKRED
         # transformation_dict = _get_transformation_info(defect_species, single_defect_entry)
         # TODO: Write DefectEntry json files instead (has all this info), and the full
-        #  DefectsGenerator.json info to folders by default, but can be specified otherwise. What about
-        #  the DefectRelaxSets?
-        # write_transformation_info (bool): Whether to write the transformation.json file (with info
-        #                 about generated defect supercell, mainly for logging purposes). Default is False.
+        #  DefectsGenerator.json info to folders by default, but can be specified otherwise.
         # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
         #  and the structures don't match (otherwise overwrite)
         # TODO: Output bulk folder as well? As singleshot calc in each case.
@@ -544,9 +524,9 @@ class DefectRelaxSet(MSONable):
         """
         if not self.soc:
             warnings.warn(
-                "DefectRelaxSet.soc is False, so vasp_ncl is None. If SOC calculations are "
-                "desired, set soc=True when initializing DefectRelaxSet. Otherwise, use "
-                "vasp_std or vasp_gam instead."
+                "DefectRelaxSet.soc is False, so vasp_ncl is None (i.e. no `vasp_ncl` input files have "
+                "been generated). If SOC calculations are desired, set soc=True when initializing "
+                "DefectRelaxSet. Otherwise, use vasp_std or vasp_gam instead."
             )
             return None
 
@@ -575,135 +555,262 @@ class DefectRelaxSet(MSONable):
                 **self.dict_set_kwargs,
             )
 
+    def _check_user_potcars(self, unperturbed_poscar: bool = False, vasp_type: str = "gam") -> bool:
+        """
+        Check and warn the user if POTCARs are not set up with pymatgen.
+        """
+        potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
+        if not potcars:
+            potcar_warning_string = (
+                "POTCAR directory not set up with pymatgen (see the doped homepage: "
+                "https://github.com/SMTG-UCL/doped for instructions on setting this up). This is "
+                "required to generate `POTCAR` and `INCAR` files (to set `NELECT` and `NUPDOWN`)"
+            )
+            if vasp_type == "gam" or unperturbed_poscar:
+                warnings.warn(
+                    f"{potcar_warning_string}, so only "
+                    f"{'unperturbed ' if unperturbed_poscar else ''}`POSCAR` and `KPOINTS` files "
+                    f"will be generated."
+                )
+            else:
+                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+            return False
 
-#     def write_all_files(self):
-#         """
-#         TODO:
-#         defect_dir: str = ".",
-#         subfolder: str = "vasp_gam",
-#
-#         unperturbed_poscar here?
-#
-#         defect_dir (str):
-#                 Folder in which to create the VASP defect calculation inputs.
-#                 Default is the current directory.
-#
-#         subfolder (str):
-#             Output folder structure is `<defect_dir>/<subfolder>` where
-#             `subfolder` = 'vasp_gam' by default. Setting `subfolder` to `None` will write
-#             the `vasp_gam` input files directly to the `<defect_dir>` folder,
-#             with no subfolders created.
-#
-#             unperturbed_poscar (bool):
-#                 If True, write the unperturbed defect POSCARs to the generated folders as well. Not
-#                 recommended, as the recommended workflow is to initially perform vasp_gam
-#                 ground-state structure searching using ShakeNBreak (see example notebook;
-#                 https://shakenbreak.readthedocs.io), then continue the vasp_std relaxations from the
-#                 'Groundstate' CONTCARs.
-#                 (default: False)
-#         """
-#
-#         # TODO: Put in a separate function and call in the writing functions:
-#         if user_potcar_functional is not None:
-#             potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
-#             if not potcars:
-#                 if vasp_type == "gam":
-#                     warnings.warn(
-#                         "POTCAR directory not set up with pymatgen (see the doped homepage: "
-#                         "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
-#                         "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
-#                         "and `NUPDOWN`), so only `POSCAR` files will be generated."
-#                     )
-#                 elif unperturbed_poscar:  # vasp_std, vasp_ncl
-#                     warnings.warn(
-#                         "POTCAR directory not set up with pymatgen, so only unperturbed POSCAR files "
-#                         "will be generated (POTCARs also needed to determine appropriate NELECT "
-#                         "setting in INCAR files)"
-#                     )
-#                 else:
-#                     raise ValueError(
-#                         "POTCAR directory not set up with pymatgen (see the doped homepage: "
-#                         "https://github.com/SMTG-UCL/doped for instructions on setting this up). "
-#                         "This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` "
-#                         "and `NUPDOWN`), so no input files will be generated here."
-#                     )
-#                 return None
-#
-#             defect_relax_set.output_dir = vaspinputdir  # assign attribute to later use in write_input()
-#             if write_files:
-#                 if not os.path.exists(defect_relax_set.output_dir):
-#                     os.makedirs(defect_relax_set.output_dir)
-#
-#                 if unperturbed_poscar:
-#                     defect_relax_set.poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
-#
-#                 if write_transformation_info:  # write transformation.json file
-#                     dumpfn(
-#                         transformation_dict,
-#                         f"{defect_relax_set.output_dir}/transformation.json",
-#                     )
-#
-#     def write_gam_files(self):
-#         """
-#         TODO: etc
-#         defect_dir: str = ".",
-#         subfolder: str = "vasp_gam",
-#         defect_dir (str):
-#                 Folder in which to create the VASP defect calculation inputs.
-#                 Default is the current directory.
-#         subfolder (str):
-#             Output folder structure is `<defect_dir>/<subfolder>` where
-#             `subfolder` = 'vasp_gam' by default. Setting `subfolder` to `None` will write
-#             the `vasp_gam` input files directly to the `<defect_dir>` folder,
-#             with no subfolders created.
-#         """
-#         defect_dir = f"{output_dir}/{defect_species}",
-#         subfolder = subfolder,
-#         vasp_type = "gam",
-#
-#     unperturbed_poscar = True,  # write POSCAR for vasp_gam_files()
-#     write_files = write_files,
-#     write_transformation_info = write_transformation_info,
-#
-# )
-#
-# if write_files and defect_relax_set is not None:
-#                 defect_relax_set.write_input(
-#                     defect_relax_set.output_dir,
-#                     **kwargs,  # kwargs to allow POTCAR testing on GH Actions
-#                 )
-#
-#             defect_relax_set_dict[defect_species] = defect_relax_set
-#
-#         return defect_relax_set_dict
-#
-# def write_std_files():
-#     """By default does not generate POSCAR (input structure) files,
-#         as these should be taken from `ShakeNBreak` calculations (via `snb-
-#         groundstate`) or `vasp_gam` calculations (using
-#         `vasp_input.vasp_gam_files()`, and `cp vasp_gam/CONTCAR vasp_std/POSCAR`). # TODO:??
-#
-#                 unperturbed_poscar (bool):
-#                 If True, write the unperturbed defect POSCARs to the generated folders as well. Not
-#                 recommended, as the recommended workflow is to initially perform vasp_gam
-#                 ground-state structure searching using ShakeNBreak (see example notebook;
-#                 https://shakenbreak.readthedocs.io), then continue the vasp_std relaxations from the
-#                 'Groundstate' CONTCARs.
-#                 (default: False)
-#
-#         """
-#
-#     if write_files and defect_relax_set is not None:  # write INCAR, KPOINTS and POTCAR files
-#         # then use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-#         defect_relax_set.incar.write_file(defect_relax_set.output_dir + "/INCAR")
-#         defect_relax_set.kpoints.write_file(defect_relax_set.output_dir + "/KPOINTS")
-#         if user_potcar_functional is not None:  # for GH Actions testing
-#             defect_relax_set.potcar.write_file(defect_relax_set.output_dir + "/POTCAR")
-#
-#     defect_relax_set_dict[defect_species] = defect_relax_set
-#
-#
-# return defect_relax_set_dict
+        return True
+
+    def _get_output_dir(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
+        if defect_dir is None:
+            if self.defect_entry.name is None:
+                self.defect_entry.name = get_defect_name_from_entry(self.defect_entry)
+
+            defect_dir = self.defect_entry.name
+
+        return f"{defect_dir}/{subfolder}" if subfolder is not None else defect_dir
+
+    def write_gam(
+        self,
+        defect_dir: Optional[str] = None,
+        subfolder: Optional[str] = "vasp_gam",
+        **kwargs,
+    ):
+        """
+        Write the vasp_gam input files for the defect calculation.
+
+        Args:
+            defect_dir (str):
+                Folder in which to create the VASP defect calculation inputs.
+                Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
+                etc.), from `self.defect_entry.name`. If this attribute is not
+                set, it is automatically generated according to the doped
+                convention (using `get_defect_name_from_entry()`).
+            subfolder (str):
+                Output folder structure is `<defect_dir>/<subfolder>` where
+                `subfolder` = 'vasp_gam' by default. Setting `subfolder` to
+                `None` will write the `vasp_gam` input files directly to the
+                `<defect_dir>` folder, with no subfolders created.
+            **kwargs:
+                Keyword arguments to pass to `DefectDictSet.write_input()`.
+        """
+        output_dir = self._get_output_dir(defect_dir, subfolder)
+        self._check_user_potcars(vasp_type="gam")
+
+        self.vasp_gam.write_input(
+            output_dir,
+            **kwargs,  # kwargs to allow POTCAR testing on GH Actions
+        )
+
+    def write_std(
+        self,
+        defect_dir: Optional[str] = None,
+        subfolder: Optional[str] = "vasp_std",
+        unperturbed_poscar: bool = False,
+        **kwargs,
+    ):
+        """
+        Write the vasp_std input files for the defect calculation. By default,
+        does not generate `POSCAR` (input structure) files, as these should be
+        taken from `ShakeNBreak` calculations (via `snb-groundstate`) or, if
+        not following the recommended structure-searching workflow, from the
+        `CONTCAR`s of `vasp_gam` calculations.
+
+        If unperturbed `POSCAR` files are desired, set `unperturbed_poscar=True`.
+
+        Args:
+            defect_dir (str):
+                Folder in which to create the VASP defect calculation inputs.
+                Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
+                etc.), from `self.defect_entry.name`. If this attribute is not
+                set, it is automatically generated according to the doped
+                convention (using `get_defect_name_from_entry()`).
+            subfolder (str):
+                Output folder structure is `<defect_dir>/<subfolder>` where
+                `subfolder` = 'vasp_std' by default. Setting `subfolder` to
+                `None` will write the `vasp_std` input files directly to the
+                `<defect_dir>` folder, with no subfolders created.
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCARs to the generated
+                folder as well. Not recommended, as the recommended workflow is
+                to initially perform vasp_gam ground-state structure searching
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
+                continue the `vasp_std` relaxations from the 'Groundstate' `CONTCAR`s.
+                (default: False)
+            **kwargs:
+                Keyword arguments to pass to `DefectDictSet.write_input()`.
+        """
+        if self.vasp_std is None:  # warns user if vasp_std is None
+            return
+
+        output_dir = self._get_output_dir(defect_dir, subfolder)
+        self._check_user_potcars(vasp_type="std", unperturbed_poscar=unperturbed_poscar)
+
+        if unperturbed_poscar:
+            self.vasp_std.write_input(
+                output_dir,
+                **kwargs,  # kwargs to allow POTCAR testing on GH Actions
+            )
+
+        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
+            self.vasp_std.incar.write_file(f"{output_dir}/INCAR")
+            self.vasp_std.kpoints.write_file(f"{output_dir}/KPOINTS")
+            if self.user_potcar_functional is not None:  # for GH Actions testing
+                self.vasp_std.potcar.write_file(f"{output_dir}/POTCAR")
+
+    def write_ncl(
+        self,
+        defect_dir: Optional[str] = None,
+        subfolder: Optional[str] = "vasp_ncl",
+        unperturbed_poscar: bool = False,
+        **kwargs,
+    ):
+        """
+        Write the `vasp_ncl` input files for the defect calculation. By
+        default, does not generate `POSCAR` (input structure) files, as these
+        should be taken from the `CONTCAR`s of `vasp_std` relaxations
+        (originally from `ShakeNBreak` structure-searching relaxations), or
+        directly from `ShakeNBreak` calculations (via `snb-groundstate`) if
+        only Γ-point reciprocal space sampling is required.
+
+        If unperturbed `POSCAR` files are desired, set `unperturbed_poscar=True`.
+
+        Args:
+            defect_dir (str):
+                Folder in which to create the VASP defect calculation inputs.
+                Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
+                etc.), from `self.defect_entry.name`. If this attribute is not
+                set, it is automatically generated according to the doped
+                convention (using `get_defect_name_from_entry()`).
+            subfolder (str):
+                Output folder structure is `<defect_dir>/<subfolder>` where
+                `subfolder` = 'vasp_ncl' by default. Setting `subfolder` to
+                `None` will write the `vasp_ncl` input files directly to the
+                `<defect_dir>` folder, with no subfolders created.
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCARs to the generated
+                folder as well. Not recommended, as the recommended workflow is
+                to initially perform `vasp_gam` ground-state structure searching
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
+                continue the `vasp_std` relaxations from the 'Groundstate' `CONTCAR`s,
+                then use the `vasp_std` `CONTCAR`s as the input structures for
+                the final `vasp_ncl` singlepoint calculations.
+                (default: False)
+            **kwargs:
+                Keyword arguments to pass to `DefectDictSet.write_input()`.
+        """
+        if self.vasp_ncl is None:
+            return
+
+        output_dir = self._get_output_dir(defect_dir, subfolder)
+        self._check_user_potcars(vasp_type="ncl", unperturbed_poscar=unperturbed_poscar)
+
+        if unperturbed_poscar:
+            self.vasp_ncl.write_input(
+                output_dir,
+                **kwargs,  # kwargs to allow POTCAR testing on GH Actions
+            )
+
+        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
+            self.vasp_ncl.incar.write_file(f"{output_dir}/INCAR")
+            self.vasp_ncl.kpoints.write_file(f"{output_dir}/KPOINTS")
+            if self.user_potcar_functional is not None:  # for GH Actions testing
+                self.vasp_ncl.potcar.write_file(f"{output_dir}/POTCAR")
+
+    def write_all(
+        self,
+        defect_dir: Optional[str] = None,
+        unperturbed_poscar: bool = False,
+        vasp_gam: bool = False,
+        **kwargs,
+    ):
+        """
+        Write all VASP input files to subfolders in the `defect_dir` folder. By
+        default, does not generate a `vasp_gam` folder unless `self.vasp_std`
+        is None (i.e. only Γ-point sampling required for this system), as
+        `vasp_gam` calculations should be performed using `ShakeNBreak` for
+        defect structure-searching and initial relaxations. If `vasp_gam` files
+        are desired, set `vasp_gam=True`.
+
+        By default, `POSCAR` files are not generated for the `vasp_std`
+        (and `vasp_ncl` if `self.soc` is True) folders, as these should
+        be taken from `ShakeNBreak` calculations (via `snb-groundstate`)
+        or, if not following the recommended structure-searching workflow,
+        from the `CONTCAR`s of `vasp_gam` calculations. If including SOC
+        effects (`self.soc = True`), then the `vasp_std` `CONTCAR`s
+        should be used as the `vasp_ncl` `POSCAR`s. If unperturbed
+        `POSCAR` files are desired for the `vasp_std` (and `vasp_ncl`)
+        folders, set `unperturbed_poscar=True`.
+
+        Args:
+            defect_dir (str):
+                Folder in which to create the VASP defect calculation inputs.
+                Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
+                etc.), from `self.defect_entry.name`. If this attribute is not
+                set, it is automatically generated according to the doped
+                convention (using `get_defect_name_from_entry()`).
+                Output folder structure is `<defect_dir>/<subfolder>` where
+                `subfolder` is the name of the corresponding VASP program to run
+                (e.g. `vasp_std`).
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCARs to the generated
+                folders as well. Not recommended, as the recommended workflow is
+                to initially perform `vasp_gam` ground-state structure searching
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
+                continue the `vasp_std` relaxations from the 'Groundstate' `CONTCAR`s,
+                then use the `vasp_std` `CONTCAR`s as the input structures for
+                the final `vasp_ncl` singlepoint calculations.
+                (default: False)
+            vasp_gam (bool):
+                If True, write the `vasp_gam` input files, with unperturbed defect
+                POSCAR. Not recommended, as the recommended workflow is to initially
+                perform `vasp_gam` ground-state structure searching using ShakeNBreak
+                (https://shakenbreak.readthedocs.io), then continue the `vasp_std`
+                relaxations from the 'Groundstate' `CONTCAR`s, then, if including SOC
+                effects, use the `vasp_std` `CONTCAR`s as the input structures for the
+                final `vasp_ncl` singlepoint calculations.
+                (default: False)
+            **kwargs:
+                Keyword arguments to pass to `self.vasp_gam.write_input()`.
+        """
+        # check if vasp_std is None, and if so, set vasp_gam to True:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if vasp_gam or self.vasp_std is None:
+                self.write_gam(defect_dir=defect_dir, **kwargs)
+
+            if self.vasp_std is not None:
+                self.write_std(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
+
+        if self.soc:
+            self.write_ncl(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
+
+    #                 if unperturbed_poscar:
+    #                     defect_relax_set.poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
+    #
+    #                 if write_transformation_info:  # write transformation.json file
+    #                     dumpfn(
+    #                         transformation_dict,
+    #                         f"{defect_relax_set.output_dir}/transformation.json",
+    #                     )
+    #
 
 
 class DefectsSet(MSONable):
@@ -792,7 +899,8 @@ class DefectsSet(MSONable):
 
             Input parameters are also set as attributes. # TODO
         """
-        # TODO: Ensure json serializability!
+        # TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons
+        #  to written folders as well (but off by default)
         self.user_incar_settings = user_incar_settings
         self.user_kpoints_settings = user_kpoints_settings
         self.user_potcar_functional = user_potcar_functional
