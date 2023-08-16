@@ -175,12 +175,11 @@ class DefectDictSet(DictSet):
                 f"got error: {e}"
             )
 
-        if "KPAR" in incar_obj:
+        if "KPAR" in incar_obj and self.user_kpoints_settings.get("comment", "").startswith("Γ-only"):
             # check KPAR setting is reasonable for number of KPOINTS
-            with contextlib.suppress(Exception):  # excepts for non-Γ-only kpt generation schemes
-                if np.prod(self.kpoints.kpts[0]) == 1:
-                    warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
-                    incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
+            warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
+            incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
+
         return incar_obj
 
     @property
@@ -190,9 +189,10 @@ class DefectDictSet(DictSet):
 
         Redefined to intelligently handle pymatgen POTCAR issues.
         """
+        potcar = None
         try:
             potcar = super(self.__class__, self).potcar
-        except OSError:
+        except OSError as e:
             # try other functional choices:
             if self.user_potcar_functional.startswith("PBE"):
                 for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
@@ -200,6 +200,10 @@ class DefectDictSet(DictSet):
                         self.user_potcar_functional: UserPotcarFunctional = pbe_potcar_string
                         potcar = super(self.__class__, self).potcar
                         break
+
+            if potcar is None:
+                raise e
+
         return potcar
 
     @property
@@ -421,6 +425,8 @@ class DefectRelaxSet(MSONable):
         # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
         #  and the structures don't match (otherwise overwrite)
         # TODO: Output bulk folder as well? As singleshot calc in each case.
+        # TODO: May want to implement multiprocessing for file generation/writing as well, as pymatgen
+        #  incar functions can be a bit slow to run! Especially for SOC calcs
 
     @property
     def vasp_gam(
