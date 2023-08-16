@@ -5,7 +5,7 @@ import contextlib
 import copy
 import os
 import warnings
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 from monty.json import MSONable
@@ -194,8 +194,7 @@ class DefectDictSet(DictSet):
             potcar = super(self.__class__, self).potcar
         except OSError:
             # try other functional choices:
-            user_potcar_functional_str = cast(str, self.user_potcar_functional)
-            if user_potcar_functional_str.startswith("PBE"):
+            if self.user_potcar_functional.startswith("PBE"):
                 for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
                     with contextlib.suppress(OSError):
                         self.user_potcar_functional: UserPotcarFunctional = pbe_potcar_string
