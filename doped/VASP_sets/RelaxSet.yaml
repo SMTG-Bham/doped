@@ -4,7 +4,7 @@ INCAR:
   EDIFF_PER_ATOM: 2e-07  # capped at a max EDIFF of 1e-4 for large supercells (N(atoms) > 500)
   EDIFFG: -0.01
   ENCUT: 300
-  GGA: PS  # switched to PE for hybrid DFT (HSE/PBE0) calculations
+  GGA: PS  # switched to PE (PBE) for hybrid DFT (HSE/PBE0) calculations
   IBRION: '2  # Typically more stable/reliable than "1" (RMM-DIIS), but change if ionic convergence is poor'
   ICHARG: 1
   ISIF: 3  # changed to 2 (fixed cell) for defect calculations, see DefectSet.yaml
