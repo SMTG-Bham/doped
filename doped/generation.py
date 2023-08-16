@@ -1449,7 +1449,7 @@ class DefectsGenerator(MSONable):
             DefectsGenerator object
         """
 
-        def process_attributes(class_name, attributes, iterable):
+        def process_attributes(attributes, iterable):
             result = {}
             for attr in attributes:
                 result[attr] = MontyDecoder().process_decoded(iterable.pop(attr))
@@ -1458,7 +1458,6 @@ class DefectsGenerator(MSONable):
         def decode_dict(iterable):
             if isinstance(iterable, dict) and "@module" in iterable:
                 class_name = iterable["@class"]
-                decoded_obj = None
 
                 defect_additional_attributes = [
                     "conventional_structure",
@@ -1496,7 +1495,7 @@ class DefectsGenerator(MSONable):
 
                 if class_name in attribute_groups:
                     # pull attributes not in __init__ signature and define after object creation
-                    attributes = process_attributes(class_name, attribute_groups[class_name], iterable)
+                    attributes = process_attributes(attribute_groups[class_name], iterable)
                     if class_name == "DefectEntry":
                         attributes["defect"] = copy.deepcopy(decode_dict(iterable["defect"]))
                     decoded_obj = MontyDecoder().process_decoded(iterable)
