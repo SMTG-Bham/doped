@@ -5,3 +5,4 @@ INCAR:
   # energy shifts in HSE supercell calculations.)
   LHFCALC: true
   PRECFOCK: Fast
+  GGA: PE  # underlying GGA functional for HSE/PBE0 is PBE

@@ -462,8 +462,6 @@ class DefectRelaxSet(MSONable):
             # than defect.defect_structure because could be e.g. a vacancy in a 2-atom primitive
             # structure where the atom being removed is the heavy (Z>=31) one
 
-        # TODO: Output bulk folder as well? As singleshot calc in each case.
-
     @property
     def vasp_gam(
         self,
@@ -1370,7 +1368,7 @@ class DefectRelaxSet(MSONable):
                 **kwargs,
             )
 
-    def write_all(
+    def write_all(  # TODO: Default bulk writing behaviour? For this and DefectsSet?
         self,
         defect_dir: Optional[str] = None,
         unperturbed_poscar: bool = False,
