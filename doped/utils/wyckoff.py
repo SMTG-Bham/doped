@@ -255,9 +255,6 @@ def swap_axes(structure, axes):
     """
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
-    if axes != [0, 1, 2]:
-        raise ValueError(f"Caught one!: {structure}")  # TODO: Remove!
-
     for i, axis in enumerate(axes):
         transformation_matrix[i][axis] = 1
 
@@ -365,6 +362,11 @@ def get_wyckoff_label_and_equiv_coord_list(
         for label, coord_list in wyckoff_label_coords_dict.items():
             subbed_coord_list = _compare_arrays(coord_list, np.array(defect_site.frac_coords))
             if subbed_coord_list is not None:
+                # convert coords in subbed_coord_list to unit cell, by rounding to 5 decimal places and
+                # then modding by 1:
+                subbed_coord_list = [
+                    np.mod(np.round(coord_array, 4), 1) for coord_array in subbed_coord_list
+                ]
                 return label, subbed_coord_list
 
         return None  # No match found
