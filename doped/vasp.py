@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 from monty.json import MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
@@ -278,20 +278,23 @@ class DefectRelaxSet(MSONable):
         the `defect_supercell` and `charge_state` input parameters.
 
         Creates attributes:
-        - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only relaxation. Typically
-            not needed if ShakeNBreak structure searching has been performed (recommended).
-        - `DefectRelaxSet.vasp_NKRED_std` -> `DefectDictSet` for relaxation with a kpoint mesh and
-            using `NKRED`. Not generated for GGA calculations (if `LHFCALC` is set to `False` in
-            user_incar_settings) or if only Gamma kpoint sampling is required.
-        - `DefectRelaxSet.vasp_std` -> `DefectDictSet` for relaxation with a kpoint mesh, not using
-            `NKRED`. Not generated if only Gamma kpoint sampling is required.
-        - `DefectRelaxSet.vasp_ncl` -> `DefectDictSet` for singlepoint (static) energy calculation
-            with SOC included. Generated if `soc=True`. If `soc` is not set, then by default is only
-            generated for systems with a max atomic number (Z) >= 31 (i.e. further down the periodic
-            table than Zn).
-        where `DefectDictSet` is an extension of `pymatgen`'s `DictSet` class for defect calculations,
-        with `incar`, `poscar`, `kpoints` and `potcar` attributes for the corresponding VASP defect
-        calculations (see docstring).
+        - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
+            relaxation. Not needed if ShakeNBreak structure searching has been
+            performed (recommended).
+        - `DefectRelaxSet.vasp_NKRED_std` -> `DefectDictSet` for relaxation with a
+            kpoint mesh and using `NKRED`. Not generated for GGA calculations (if
+            `LHFCALC` is set to `False` in user_incar_settings) or if only Gamma
+            kpoint sampling is required.
+        - `DefectRelaxSet.vasp_std` -> `DefectDictSet` for relaxation with a kpoint
+            mesh, not using `NKRED`. Not generated if only Gamma kpoint sampling is
+            required.
+        - `DefectRelaxSet.vasp_ncl` -> `DefectDictSet` for singlepoint (static)
+            energy calculation with SOC included. Generated if `soc=True`. If `soc`
+            is not set, then by default is only generated for systems with a max
+            atomic number (Z) >= 31 (i.e. further down the periodic table than Zn).
+        where `DefectDictSet` is an extension of `pymatgen`'s `DictSet` class for
+        defect calculations, with `incar`, `poscar`, `kpoints` and `potcar`
+        attributes for the corresponding VASP defect calculations (see docstring).
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -302,8 +305,8 @@ class DefectRelaxSet(MSONable):
         and NCORE / KPAR matching your HPC setup.**
 
         Note that any changes to the default `INCAR`/`POTCAR` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
         Args:
             defect_entry (DefectEntry, Structure):
@@ -313,10 +316,11 @@ class DefectRelaxSet(MSONable):
                 Charge state of the defect. Overrides `DefectEntry.charge_state` if
                 `DefectEntry` is input.
             soc (bool):
-                Whether to generate `vasp_ncl` DefectDictSet attribute for spin-orbit coupling
-                singlepoint (static) energy calculations. If not set, then by default is set to True if
-                the max atomic number (Z) in the structure is >= 31 (i.e. further down the periodic
-                table than Zn), otherwise False.
+                Whether to generate `vasp_ncl` DefectDictSet attribute for spin-orbit
+                coupling singlepoint (static) energy calculations. If not set, then
+                by default is set to True if the max atomic number (Z) in the
+                structure is >= 31 (i.e. further down the periodic table than Zn),
+                otherwise False.
             user_incar_settings (dict):
                 Dictionary of user INCAR settings (AEXX, NCORE etc.) to override
                 default settings. Highly recommended to look at output INCARs
@@ -326,32 +330,44 @@ class DefectRelaxSet(MSONable):
                 as strings with quotation marks (e.g. `{"ALGO": "All"}`).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet() format) e.g.,
-                {"reciprocal_density": 123}, or a Kpoints object, to use for the `vasp_std`,
-                `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for `vasp_gam`).
-                Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
+                Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
+                e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
+                `vasp_std`, `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for
+                `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE_54" and if this fails,
                 tries "PBE_52", then "PBE".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
-            **kwargs: Additional kwargs to pass to DictSet.
+            **kwargs: Additional kwargs to pass to DictSet().
 
-        Attributes:  # TODO: Note these in docstrings of writing functions too?
-            vasp_gam (DefectDictSet): DefectDictSet for Gamma-point only relaxation. Not needed
-                if ShakeNBreak structure searching has been performed (recommended).
-            vasp_NKRED_std (DefectDictSet): DefectDictSet for relaxation with a non-Γ-only kpoint mesh,
-                using `NKRED`. Not generated for GGA calculations (if `LHFCALC` is set to `False` in
-                user_incar_settings) or if only Gamma kpoint sampling is required.
-            vasp_std (DefectDictSet): DefectDictSet for relaxation with a non-Γ-only kpoint mesh, not using
+        Attributes:
+            vasp_gam (DefectDictSet):
+                DefectDictSet for Gamma-point only relaxation. Not needed if
+                ShakeNBreak structure searching has been performed (recommended).
+            vasp_NKRED_std (DefectDictSet):
+                DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
+                `NKRED`. Not generated for GGA calculations (if `LHFCALC` is set to
+                `False` in user_incar_settings) or if only Gamma kpoint sampling is
+                required.
+            vasp_std (DefectDictSet):
+                DefectDictSet for relaxation with a non-Γ-only kpoint mesh, not using
                 `NKRED`. Not generated if only Gamma kpoint sampling is required.
-            vasp_ncl (DefectDictSet): DefectDictSet for singlepoint (static) energy calculation
-                with SOC included. Generated if `soc=True`. If `soc` is not set, then by default is only
-                generated for systems with a max atomic number (Z) >= 31 (i.e. further down the periodic
-                table than Zn).
-            defect_supercell (Structure): Supercell structure for defect calculations, taken from
-                defect_entry.defect_supercell (if defined), otherwise defect_entry.sc_entry.structure.
+            vasp_ncl (DefectDictSet):
+                DefectDictSet for singlepoint (static) energy calculation with SOC
+                included. Generated if `soc=True`. If `soc` is not set, then by default
+                is only generated for systems with a max atomic number (Z) >= 31
+                (i.e. further down the periodic table than Zn).
+            defect_supercell (Structure):
+                Supercell structure for defect calculations, taken from
+                defect_entry.defect_supercell (if defined), otherwise from
+                defect_entry.sc_entry.structure.
+            poscar_comment (str):
+                Comment to write at the top of the POSCAR file. Default is the
+                defect entry name, defect frac coords and charge state (if
+                inputting a DefectEntry object), or the formula of the input
+                structure and charge state (if inputting a Structure object).
 
             Input parameters are also set as attributes.
         """
@@ -594,7 +610,13 @@ class DefectRelaxSet(MSONable):
         **kwargs,
     ):
         """
-        Write the vasp_gam input files for the defect calculation.
+        Write the vasp_gam input files for the defect calculation. Typically
+        not recommended for use, as the recommended workflow is to perform
+        `vasp_gam` calculations using `ShakeNBreak` for defect structure-
+        searching and initial relaxations.
+
+        The `DefectEntry` object is also written to a `json` file in
+        `defect_dir` to aid calculation provenance.
 
         Args:
             defect_dir (str):
@@ -619,6 +641,10 @@ class DefectRelaxSet(MSONable):
             **kwargs,  # kwargs to allow POTCAR testing on GH Actions
         )
 
+        dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
+        # Note: saving `DefectEntry`s (rather than `DefectsGenerator`) to `JSON` to file removes the
+        # `doped` attributes...
+
     def write_std(
         self,
         defect_dir: Optional[str] = None,
@@ -631,9 +657,14 @@ class DefectRelaxSet(MSONable):
         does not generate `POSCAR` (input structure) files, as these should be
         taken from `ShakeNBreak` calculations (via `snb-groundstate`) or, if
         not following the recommended structure-searching workflow, from the
-        `CONTCAR`s of `vasp_gam` calculations.
+        `CONTCAR`s of `vasp_gam` calculations. If unperturbed `POSCAR` files
+        are desired, set `unperturbed_poscar=True`.
 
-        If unperturbed `POSCAR` files are desired, set `unperturbed_poscar=True`.
+        Returns None and a warning if the input kpoint settings correspond to
+        a Γ-only kpoint mesh (in which case `vasp_gam` should be used).
+
+        The `DefectEntry` object is also written to a `json` file in
+        `defect_dir` to aid calculation provenance.
 
         Args:
             defect_dir (str):
@@ -675,6 +706,10 @@ class DefectRelaxSet(MSONable):
             if self.user_potcar_functional is not None:  # for GH Actions testing
                 self.vasp_std.potcar.write_file(f"{output_dir}/POTCAR")
 
+        dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
+        # Note: saving `DefectEntry`s (rather than `DefectsGenerator`) to `JSON` to file removes the
+        # `doped` attributes...
+
     def write_ncl(
         self,
         defect_dir: Optional[str] = None,
@@ -688,9 +723,16 @@ class DefectRelaxSet(MSONable):
         should be taken from the `CONTCAR`s of `vasp_std` relaxations
         (originally from `ShakeNBreak` structure-searching relaxations), or
         directly from `ShakeNBreak` calculations (via `snb-groundstate`) if
-        only Γ-point reciprocal space sampling is required.
+        only Γ-point reciprocal space sampling is required. If unperturbed
+        `POSCAR` files are desired, set `unperturbed_poscar=True`.
 
-        If unperturbed `POSCAR` files are desired, set `unperturbed_poscar=True`.
+        If `DefectRelaxSet.soc` is False, then this returns None and a warning.
+        If the `soc` parameter is not set when initializing `DefectRelaxSet`,
+        then it is set to True if for systems with a max atomic number (Z) >= 31
+        (i.e. further down the periodic table than Zn), otherwise False.
+
+        The `DefectEntry` object is also written to a `json` file in
+        `defect_dir` to aid calculation provenance.
 
         Args:
             defect_dir (str):
@@ -733,6 +775,10 @@ class DefectRelaxSet(MSONable):
             self.vasp_ncl.kpoints.write_file(f"{output_dir}/KPOINTS")
             if self.user_potcar_functional is not None:  # for GH Actions testing
                 self.vasp_ncl.potcar.write_file(f"{output_dir}/POTCAR")
+
+        dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
+        # Note: saving `DefectEntry`s (rather than `DefectsGenerator`) to `JSON` to file removes the
+        # `doped` attributes...
 
     def write_all(
         self,
@@ -802,16 +848,6 @@ class DefectRelaxSet(MSONable):
         if self.soc:
             self.write_ncl(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
 
-    #                 if unperturbed_poscar:
-    #                     defect_relax_set.poscar.write_file(defect_relax_set.output_dir + "/POSCAR")
-    #
-    #                 if write_transformation_info:  # write transformation.json file
-    #                     dumpfn(
-    #                         transformation_dict,
-    #                         f"{defect_relax_set.output_dir}/transformation.json",
-    #                     )
-    #
-
 
 class DefectsSet(MSONable):
     def __init__(
@@ -820,7 +856,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[dict] = None,
-        user_potcar_functional: str = "PBE_54",
+        user_potcar_functional: UserPotcarFunctional = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
@@ -829,28 +865,31 @@ class DefectsSet(MSONable):
         pymatgen `DefectEntry` objects. Creates a dictionary of.
 
         {defect_species: DefectRelaxSet}, where DefectRelaxSet has the attributes:
-        - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only relaxation. Not needed
-            if ShakeNBreak structure searching has been performed (recommended).
-        - `DefectRelaxSet.vasp_NKRED_std` -> `DefectDictSet` for relaxation with a kpoint mesh and
-            using `NKRED`. Not generated for GGA calculations (if `LHFCALC` is set to `False` in
-            user_incar_settings) or if only Gamma kpoint sampling is required.
-        - `DefectRelaxSet.vasp_std` -> `DefectDictSet` for relaxation with a kpoint mesh, not using
-            `NKRED`. Not generated if only Gamma kpoint sampling is required.
-        - `DefectRelaxSet.vasp_ncl` -> `DefectDictSet` for singlepoint (static) energy calculation
-            with SOC included. Generated if `soc=True`. If `soc` is not set, then by default is only
-            generated for systems with a max atomic number (Z) >= 31 (i.e. further down the periodic
-            table than Zn).
-        where `DefectDictSet` is an extension of `pymatgen`'s `DictSet` class for defect calculations,
-        with `incar`, `poscar`, `kpoints` and `potcar` attributes for the corresponding VASP defect
-        calculations (see docstring).
+        - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
+            relaxation. Not needed if ShakeNBreak structure searching has been
+            performed (recommended).
+        - `DefectRelaxSet.vasp_NKRED_std` -> `DefectDictSet` for relaxation with a
+            kpoint mesh and using `NKRED`. Not generated for GGA calculations (if
+            `LHFCALC` is set to `False` in user_incar_settings) or if only Gamma
+            kpoint sampling is required.
+        - `DefectRelaxSet.vasp_std` -> `DefectDictSet` for relaxation with a kpoint
+            mesh, not using `NKRED`. Not generated if only Gamma kpoint sampling is
+            required.
+        - `DefectRelaxSet.vasp_ncl` -> `DefectDictSet` for singlepoint (static)
+            energy calculation with SOC included. Generated if `soc=True`. If `soc`
+            is not set, then by default is only generated for systems with a max
+            atomic number (Z) >= 31 (i.e. further down the periodic table than Zn).
+        where `DefectDictSet` is an extension of `pymatgen`'s `DictSet` class for
+        defect calculations, with `incar`, `poscar`, `kpoints` and `potcar`
+        attributes for the corresponding VASP defect calculations (see docstring).
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
-        `doped/VASP_sets` folder for the default `INCAR` settings, and `PotcarSet.yaml`
-        for the default `POTCAR` settings.
+        `doped/VASP_sets` folder for the default `INCAR` settings, and
+        `PotcarSet.yaml` for the default `POTCAR` settings.
 
         Note that any changes to the default `INCAR`/`POTCAR` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase (chemical
+        potential) calculations.
 
         Args:
             defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
@@ -863,41 +902,41 @@ class DefectsSet(MSONable):
                 object is provided, the defect folder names will be set equal to
                 `DefectEntry.name` if the `name` attribute is set, otherwise
                 generated according to the `doped` convention (see doped.generation).
+                Defect charge states are taken from `DefectEntry.charge_state`.
             soc (bool):
-                Whether to generate `vasp_ncl` DefectDictSet attribute for spin-orbit coupling
-                singlepoint (static) energy calculations. If not set, then by default is set to True if
-                the max atomic number (Z) in the structure is >= 31 (i.e. further down the periodic
-                table than Zn).
+                Whether to generate `vasp_ncl` DefectDictSet attribute for spin-orbit
+                coupling singlepoint (static) energy calculations. If not set, then
+                by default is set to True if the max atomic number (Z) in the
+                structure is >= 31 (i.e. further down the periodic table than Zn).
             user_incar_settings (dict):
                 Dictionary of user INCAR settings (AEXX, NCORE etc.) to override
-                default settings. Highly recommended to look at output INCARs
-                or the `RelaxSet.yaml` and `DefectSet.yaml` files in the
-                `doped/VASP_sets` folder, to see what the default INCAR settings are. Note
-                that any flags that aren't numbers or True/False need to be input
-                as strings with quotation marks (e.g. `{"ALGO": "All"}`).
+                default settings. Highly recommended to look at output INCARs or the
+                `RelaxSet.yaml` and `DefectSet.yaml` files in the `doped/VASP_sets`
+                folder, to see what the default INCAR settings are. Note that any
+                flags that aren't numbers or True/False need to be input as strings
+                with quotation marks (e.g. `{"ALGO": "All"}`).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet() format) e.g.,
-                {"reciprocal_density": 123}, or a Kpoints object, to use for the `vasp_std`,
-                `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for `vasp_gam`).
-                Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
+                Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
+                e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
+                `vasp_std`, `vasp_NKRED_std` and `vasp_ncl` DefectDictSets (Γ-only for
+                `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE_54" and if this fails, tries
+                "PBE_52", then "PBE".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_setsPotcarSet.yaml` for the default `POTCAR` set.
-            **kwargs: Additional kwargs to pass to DictSet
+            **kwargs: Additional kwargs to pass to DictSet().
 
         Attributes:
-            defect_sets (Dict): Dictionary of {defect_species: `DefectRelaxSet`}
-                for each input defect species. `DefectRelaxSet` is a subclass of
-                `pymatgen`'s `DictSet` class, with `incar`, `poscar`, `kpoints` and
-                `potcar` attributes, containing information on the generated files.
-            defect_entries (Dict): Dictionary of {defect_species: DefectEntry} for
-                input defect species, for which to generate VASP input files.
+            defect_sets (Dict):
+                Dictionary of {defect_species: `DefectRelaxSet`}.
+            defect_entries (Dict):
+                Dictionary of {defect_species: DefectEntry} for the input defect
+                species, for which to generate VASP input files.
 
-            Input parameters are also set as attributes. # TODO
+            Input parameters are also set as attributes.
         """
         # TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons
         #  to written folders as well (but off by default)
@@ -931,12 +970,18 @@ class DefectsSet(MSONable):
                 )
 
         self.defect_sets: Dict[str, DefectRelaxSet] = {}
-        # generate defectrelaxsets here
-        # TODO: Should have a separate object for DefectRelaxSet, which has attributes for vasp_gam,
-        #  std etc, then DefectDictSet for a single defect calculation. Need to update docstring to
-        #  match this
-        # defect_relax_set_dict = {}
-        # for defect_species, single_defect_entry in defect_entries.items():
+
+        for defect_species, defect_entry in self.defect_entries.items():
+            self.defect_sets[defect_species] = DefectRelaxSet(
+                defect_entry=defect_entry,
+                charge_state=defect_entry.charge_state,
+                soc=self.soc,
+                user_incar_settings=self.user_incar_settings,
+                user_kpoints_settings=self.user_kpoints_settings,
+                user_potcar_functional=self.user_potcar_functional,
+                user_potcar_settings=self.user_potcar_settings,
+                **self.kwargs,
+            )
 
     def _format_defect_entries_input(
         self,
