@@ -5,11 +5,11 @@ later versions.
 This is a temporary measure while refactoring to use the new pymatgen-analysis-
 defects package takes place.
 """
+import copy
 from abc import abstractmethod
 
 from monty.json import MSONable
 from pymatgen.analysis.structure_matcher import StructureMatcher
-from pymatgen.core.structure import PeriodicSite
 
 
 class DefectCorrection(MSONable):
@@ -92,8 +92,6 @@ class PointDefectComparator(MSONable):
             return False
         if d1.site.specie != d2.site.specie:
             return False
-        if self.check_charge and (d1.charge != d2.charge):
-            return False
 
         sm = StructureMatcher(
             ltol=0.01,
@@ -101,35 +99,10 @@ class PointDefectComparator(MSONable):
             scale=self.check_lattice_scale,
         )
 
-        if not sm.fit(d1.bulk_structure, d2.bulk_structure):
+        if not sm.fit(d1.structure, d2.structure):
             return False
 
-        d1 = d1.copy()
-        d2 = d2.copy()
-        if self.check_primitive_cell or self.check_lattice_scale:
-            # if allowing for base structure volume or supercell modifications,
-            # then need to preprocess defect objects to allow for matching
-            d1_mod_bulk_structure, d2_mod_bulk_structure, _, _ = sm._preprocess(
-                d1.bulk_structure, d2.bulk_structure
-            )
-            d1_defect_site = PeriodicSite(
-                d1.site.specie,
-                d1.site.coords,
-                d1_mod_bulk_structure.lattice,
-                to_unit_cell=True,
-                coords_are_cartesian=True,
-            )
-            d2_defect_site = PeriodicSite(
-                d2.site.specie,
-                d2.site.coords,
-                d2_mod_bulk_structure.lattice,
-                to_unit_cell=True,
-                coords_are_cartesian=True,
-            )
+        d1 = copy.deepcopy(d1)
+        d2 = copy.deepcopy(d2)
 
-            d1._structure = d1_mod_bulk_structure
-            d2._structure = d2_mod_bulk_structure
-            d1._defect_site = d1_defect_site
-            d2._defect_site = d2_defect_site
-
-        return sm.fit(d1.get_supercell_structure(), d2.get_supercell_structure())
+        return sm.fit(d1.defect_structure, d2.defect_structure)  # edited by SK to work with new pmg
