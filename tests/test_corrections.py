@@ -80,7 +80,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         # load necessary parameters for defect_entry to make use
         # of Freysoldt and Kumagai corrections
         p = {}
-        ids = vac.generate_defect_structure(1)
+        ids = vac.get_supercell_structure(1)
         abc = struct.lattice.abc
         axisdata = [np.arange(0.0, lattval, 0.2) for lattval in abc]
         bldata = [np.array([1.0 for u in np.arange(0.0, lattval, 0.2)]) for lattval in abc]
