@@ -76,7 +76,7 @@ class DefectDictSet(DictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -280,7 +280,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -422,7 +422,7 @@ class DefectRelaxSet(MSONable):
         self.charge_state = charge_state or self.defect_entry.charge_state
         self.user_incar_settings = user_incar_settings or {}
         self.user_kpoints_settings = user_kpoints_settings or {}
-        self.user_potcar_functional = user_potcar_functional or "PBE_54"
+        self.user_potcar_functional = user_potcar_functional
         self.user_potcar_settings = user_potcar_settings or {}
         self.dict_set_kwargs = kwargs or {}
 
@@ -594,18 +594,7 @@ class DefectRelaxSet(MSONable):
             )
             return None
 
-        std_defect_set = self._check_vstd_kpoints(  # check non Γ-only kpoint mesh
-            DefectDictSet(
-                self.defect_supercell,
-                charge_state=self.defect_entry.charge_state,
-                user_incar_settings=self.user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=self.poscar_comment,
-                **self.dict_set_kwargs,
-            )
-        )
+        std_defect_set = self.vasp_std
 
         if std_defect_set is not None:  # non Γ-only kpoint mesh
             # determine appropriate NKRED:
@@ -628,7 +617,7 @@ class DefectRelaxSet(MSONable):
                             nkred_dict[nkred_key] = k
                             break
 
-                incar_settings = copy.deepcopy(self.user_incar_settings)
+                incar_settings = copy.deepcopy(std_defect_set.user_incar_settings)  # so KPAR also included
                 if nkred_dict["NKRED"] is not None:
                     incar_settings["NKRED"] = nkred_dict["NKRED"]
                 else:
@@ -752,7 +741,7 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        bulk_supercell = self._check_bulk_supercell_and_warn()
+        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
             return None
 
@@ -771,7 +760,7 @@ class DefectRelaxSet(MSONable):
             ),
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
-            poscar_comment=f"{self.bulk_supercell} - Bulk",
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
             **self.dict_set_kwargs,
         )
 
@@ -809,7 +798,7 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        bulk_supercell = self._check_bulk_supercell_and_warn()
+        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
             return None
 
@@ -827,7 +816,7 @@ class DefectRelaxSet(MSONable):
                 user_kpoints_settings=self.user_kpoints_settings,
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{self.bulk_supercell} - Bulk",
+                poscar_comment=f"{bulk_supercell.formula} - Bulk",
                 **self.dict_set_kwargs,
             )
         )
@@ -872,7 +861,7 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        bulk_supercell = self._check_bulk_supercell_and_warn()
+        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
             return None
 
@@ -897,7 +886,7 @@ class DefectRelaxSet(MSONable):
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
-            poscar_comment=f"{self.bulk_supercell} - Bulk",
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
             **self.dict_set_kwargs,
         )
 
@@ -924,7 +913,7 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        bulk_supercell = self._check_bulk_supercell_and_warn()
+        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
             return None
 
@@ -954,7 +943,7 @@ class DefectRelaxSet(MSONable):
                 user_kpoints_settings=self.user_kpoints_settings,
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{self.bulk_supercell} - Bulk",
+                poscar_comment=f"{bulk_supercell.formula} - Bulk",
                 **self.dict_set_kwargs,
             )
 
@@ -1010,7 +999,8 @@ class DefectRelaxSet(MSONable):
             if self.user_potcar_functional is not None:  # for GH Actions testing
                 vasp_xxx_attribute.potcar.write_file(f"{output_dir}/POTCAR")
 
-        dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
+        if "bulk" not in defect_dir:  # not a bulk supercell
+            dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
         # Note: saving `DefectEntry`s (rather than `DefectsGenerator`) to `JSON` to file removes the
         # `doped` attributes...
 
@@ -1063,6 +1053,9 @@ class DefectRelaxSet(MSONable):
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
+        if defect_dir is None:
+            defect_dir = self.defect_entry.name
+
         self._check_potcars_and_write_vasp_xxx_files(
             defect_dir,
             subfolder,
@@ -1077,8 +1070,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._check_potcars_and_write_vasp_xxx_files(
-                f"{formula}_bulk",
+                f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_gam,
@@ -1156,6 +1150,9 @@ class DefectRelaxSet(MSONable):
         if self.vasp_std is None:  # warns user if vasp_std is None
             return
 
+        if defect_dir is None:
+            defect_dir = self.defect_entry.name
+
         self._check_potcars_and_write_vasp_xxx_files(
             defect_dir,
             subfolder,
@@ -1170,8 +1167,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._check_potcars_and_write_vasp_xxx_files(
-                f"{formula}_bulk",
+                f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_std,
@@ -1253,6 +1251,9 @@ class DefectRelaxSet(MSONable):
         if self.vasp_nkred_std is None:  # warns user if vasp_nkred_std is None
             return
 
+        if defect_dir is None:
+            defect_dir = self.defect_entry.name
+
         self._check_potcars_and_write_vasp_xxx_files(
             defect_dir,
             subfolder,
@@ -1267,8 +1268,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._check_potcars_and_write_vasp_xxx_files(
-                f"{formula}_bulk",
+                f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_nkred_std,
@@ -1349,6 +1351,9 @@ class DefectRelaxSet(MSONable):
         if self.vasp_ncl is None:
             return
 
+        if defect_dir is None:
+            defect_dir = self.defect_entry.name
+
         self._check_potcars_and_write_vasp_xxx_files(
             defect_dir,
             subfolder,
@@ -1363,8 +1368,10 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            # get output dir: (folder above defect_dir if defect_dir is a subfolder)
+            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._check_potcars_and_write_vasp_xxx_files(
-                f"{formula}_bulk",
+                f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_ncl,
@@ -1483,6 +1490,7 @@ class DefectRelaxSet(MSONable):
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
         # check `bulk` input:
+        bulk_vasp = []
         if bulk and isinstance(bulk, str) and bulk.lower() == "all":
             bulk_vasp = ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]
         elif bulk and not isinstance(bulk, str) and bulk is not True:
@@ -1495,7 +1503,7 @@ class DefectRelaxSet(MSONable):
                 # get top-level VASP (ncl > std > gam): first self.vasp_xxx attribute that isn't None:
                 top_vasp = next(  # top boy
                     (
-                        getattr(self, vasp)
+                        vasp
                         for vasp in ["vasp_ncl", "vasp_std", "vasp_gam"]
                         if getattr(self, vasp) is not None
                     ),
@@ -1505,8 +1513,6 @@ class DefectRelaxSet(MSONable):
                     raise ValueError("No VASP input files to generate for the bulk supercell.")
 
                 bulk_vasp = [top_vasp]
-            else:
-                bulk_vasp = []
 
             if vasp_gam or self.vasp_std is None:
                 self.write_gam(
@@ -1524,7 +1530,7 @@ class DefectRelaxSet(MSONable):
                 )
 
             if self.vasp_nkred_std is not None:  # k-point mesh and not GGA
-                self.write_std(
+                self.write_nkred_std(
                     defect_dir=defect_dir,
                     unperturbed_poscar=unperturbed_poscar,
                     bulk=any("vasp_nkred_std" in vasp_type for vasp_type in bulk_vasp),
@@ -1547,7 +1553,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[dict] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
@@ -1792,7 +1798,7 @@ class DefectsSet(MSONable):
         output_dir: str = ".",
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
-        bulk: Union[bool, str] = False,
+        bulk: Union[bool, str] = True,
         processes: Optional[int] = None,
         **kwargs,
     ):
@@ -1835,12 +1841,13 @@ class DefectsSet(MSONable):
 
         Input files for the singlepoint (static) bulk supercell reference
         calculation are also written to "{formula}_bulk/{subfolder}" if `bulk`
-        is True (False by default), where `subfolder` corresponds to the final
-        (highest accuracy) VASP calculation in the workflow (i.e. `vasp_ncl` if
+        is True (default), where `subfolder` corresponds to the final (highest
+        accuracy) VASP calculation in the workflow (i.e. `vasp_ncl` if
         `self.soc=True`, otherwise `vasp_std` or `vasp_gam` if only Γ-point
         reciprocal space sampling is required). If `bulk = "all"`, then the
         input files for all VASP calculations in the workflow are written to
-        the bulk supercell folder.
+        the bulk supercell folder, or if `bulk = False`, then no bulk folder
+        is created.
 
         The `DefectEntry` objects are also written to `json` files in the defect
         folders, to aid calculation provenance.
@@ -1904,8 +1911,16 @@ class DefectsSet(MSONable):
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
         args_list = [
-            (defect_species, defect_entry, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs)
-            for defect_species, defect_entry in self.defect_sets.items()
+            (
+                defect_species,
+                defect_entry,
+                output_dir,
+                unperturbed_poscar,
+                vasp_gam,
+                bulk if i == 0 else False,  # only write bulk folder(s) for first defect
+                kwargs,
+            )
+            for i, (defect_species, defect_entry) in enumerate(self.defect_sets.items())
         ]
         with Pool(processes=processes or cpu_count() - 1) as pool:
             for _ in tqdm(
