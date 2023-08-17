@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "1.1.2"
+version = "2.0.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -16,16 +16,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
     "tabulate",
     "matplotlib",
     "numpy>=1.21.0",
-    "pymatgen>=2022.8.23",
+    "pymatgen>=2022.10.22",
     "pymatgen-analysis-defects>=2023.7.12",
-    "monty",
-    "shakenbreak",
-    "packaging",
+    "shakenbreak>=3.0.0",  # new pymatgen
     "pandas",
 ]
 
