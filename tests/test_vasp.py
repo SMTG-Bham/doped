@@ -10,7 +10,9 @@ from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
 
 from doped.generation import DefectsGenerator
-from doped.vasp import DefectDictSet, DefectRelaxSet
+from doped.vasp import DefectDictSet, default_defect_relax_set, default_potcar_dict, scaled_ediff
+
+# TODO: Flesh out these tests. Try test most possible combos, warnings and errors too
 
 
 class DefectDictSetTest(unittest.TestCase):
@@ -36,49 +38,110 @@ class DefectDictSetTest(unittest.TestCase):
         self.hse06_incar_min = {
             "LHFCALC": True,
             "PRECFOCK": "Fast",
-            "GGA": "PE",  # underlying GGA functional for HSE/PBE0 is PBE
+            "GGA": "Pe",  # gets changed from PE to Pe in DictSet initialisation
             "AEXX": 0.25,  # changed for HSE(a); HSE06 assumed by default
             "HFSCREEN": 0.208,  # # correct HSE screening parameter; changed for PBE0
         }
-        self.def_keys = ["EDIFF", "EDIFFG", "IBRION"]
+        self.doped_std_kpoint_comment = "KPOINTS from doped, with reciprocal_density = 100/Å⁻³"
+        self.doped_gam_kpoint_comment = "Γ-only KPOINTS from doped"
+
+    def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
+        dds = DefectDictSet(struct, **dds_kwargs)  # fine for a bulk primitive input as well
+        if incar_check:
+            assert self.neutral_def_incar_min.items() <= dds.incar.items()
+            assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
+            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+            for k, v in default_defect_relax_set["INCAR"].items():
+                if k in [
+                    "EDIFF_PER_ATOM",
+                    *list(self.neutral_def_incar_min.keys()),
+                    *list(self.hse06_incar_min.keys()),
+                ]:  # already tested
+                    continue
+
+                assert k in dds.incar
+                if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
+                    try:
+                        val = float(v[:2])
+                        assert val == dds.incar[k]
+                    except ValueError:
+                        assert v.lower().capitalize() == dds.incar[k]
+                else:
+                    assert v == dds.incar[k]
+
+        for potcar_functional in [
+            dds.potcar_functional,
+            dds.potcar.functional,
+            dds.potcar.as_dict()["functional"],
+        ]:
+            assert "PBE" in potcar_functional
+
+        assert set(dds.potcar.as_dict()["symbols"]) == {
+            default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
+        }
+        assert dds.structure == struct
+        if "charge_state" not in dds_kwargs:
+            assert dds.charge_state == 0
+        else:
+            assert dds.charge_state == dds_kwargs["charge_state"]
+        assert dds.kpoints.comment == self.doped_std_kpoint_comment
+        return dds
+
+    def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
+        assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
+        assert dds.incar["NELECT"] == nelect
+        assert dds.incar["NUPDOWN"] == nupdown
 
     def test_neutral_defect_incar(self):
-        dds = DefectDictSet(self.prim_cdte)  # fine for a bulk primitive input as well
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert set(self.def_keys).issubset(dds.incar)
-        assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
-        assert dds.structure == self.prim_cdte
-        assert dds.charge_state == 0
-        print(dds.kpoints.as_dict())
+        dds = self.defect_dict_set_defaults_check(self.prim_cdte.copy())
+        self.kpts_nelect_nupdown_check(dds, 7, 18, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
 
-        dds = DefectDictSet(self.cdte_defect_gen["Te_Cd_0"].defect_supercell)
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert set(self.def_keys).issubset(dds.incar)
-        assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
+        defect_entry = self.cdte_defect_gen["Te_Cd_0"]
+        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell)
+        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
     def test_charged_defect_incar(self):
-        dds = DefectDictSet(self.prim_cdte, charge_state=-2)  # fine for a bulk primitive input as well
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert set(self.def_keys).issubset(dds.incar)
+        dds = self.defect_dict_set_defaults_check(
+            self.prim_cdte.copy(), charge_state=-2
+        )  # also tests dds.charge_state
+        self.kpts_nelect_nupdown_check(dds, 7, 20, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
 
-        dds = DefectDictSet(self.cdte_defect_gen["Te_Cd_-2"].defect_supercell)  # default, charge state
-        # from
-        # DefectEntry
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert set(self.def_keys).issubset(dds.incar)
+        defect_entry = self.cdte_defect_gen["Te_Cd_0"]
+        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
-        dds = DefectDictSet(self.cdte_defect_gen["Te_Cd_-2"].defect_supercell, charge_state=-2)
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert set(self.def_keys).issubset(dds.incar)
+        defect_entry = self.cdte_defect_gen["Te_Cd_-2"]
+        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
     def test_user_settings_defect_incar(self):
-        user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720}
-        drs = DefectRelaxSet(self.structure, charge=1, user_incar_settings=user_incar_settings)
-        assert self.neutral_def_incar_min.items() <= drs.incar.items()
-        assert set(self.def_keys).issubset(drs.incar)
-        assert drs.incar["ENCUT"] == 720
-        assert drs.incar["EDIFF"] == 1e-08
-        assert drs.incar["EDIFFG"] == 0.1
+        user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
+        dds = self.defect_dict_set_defaults_check(
+            self.prim_cdte.copy(),
+            incar_check=False,
+            charge_state=1,
+            user_incar_settings=user_incar_settings,
+        )
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        assert self.neutral_def_incar_min.items() <= dds.incar.items()
+        assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
+        for k, v in user_incar_settings.items():
+            assert v == dds.incar[k]
+
+        # non-HSE settings:
+        gga_dds = self.defect_dict_set_defaults_check(
+            self.prim_cdte.copy(),
+            incar_check=False,
+            charge_state=10,
+            user_incar_settings={"LHFCALC": False},
+        )
+        self.kpts_nelect_nupdown_check(dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        assert gga_dds.incar["LHFCALC"] is False
+        for k in self.hse06_incar_min:
+            if k not in ["LHFCALC", "GGA"]:
+                assert k not in gga_dds.incar
+
+        assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
 
 
 class VaspInputTestCase(unittest.TestCase):
