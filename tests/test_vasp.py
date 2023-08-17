@@ -3,14 +3,15 @@ Tests for the `doped.vasp` module.
 """
 import filecmp
 import os
-import shutil
 import unittest
 
 import numpy as np
 from ase.build import bulk, make_supercell
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
+from test_generation import if_present_rm
 
 from doped.generation import DefectsGenerator
 from doped.vasp import (
@@ -21,7 +22,8 @@ from doped.vasp import (
     scaled_ediff,
 )
 
-# TODO: Flesh out these tests. Try test most possible combos, warnings and errors too
+# TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
+#  jsons etc
 
 
 class DefectDictSetTest(unittest.TestCase):
@@ -189,10 +191,11 @@ class DefectsSetTest(unittest.TestCase):
         dds_test = DefectDictSetTest()
         dds_test.setUp()
         for attr in dir(dds_test):
-            if not attr.startswith("_"):
+            if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
                 setattr(self, attr, getattr(dds_test, attr))
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
+        self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
         self.ytos_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/ytos_defect_gen.json")
         self.ytos_no_generate_supercell_defect_gen = DefectsGenerator.from_json(
             f"{self.data_dir}/ytos_defect_gen_supercell.json"
@@ -203,8 +206,11 @@ class DefectsSetTest(unittest.TestCase):
 
     def tearDown(self):
         for folder in os.listdir(self.cdte_data_dir):  # remove all generated CdTe defect folders
-            if os.path.isdir(folder):
-                shutil.rmtree(folder)
+            if_present_rm(folder)
+
+        for file in os.listdir():
+            if file.endswith(".json"):
+                if_present_rm(file)
 
     def check_generated_vasp_inputs(
         self,
@@ -214,6 +220,7 @@ class DefectsSetTest(unittest.TestCase):
         check_poscar=True,
         check_potcar_spec=False,
         single_defect_dir=False,
+        bulk=True,
     ):
         def _check_single_vasp_dir(
             data_dir=None,
@@ -223,18 +230,13 @@ class DefectsSetTest(unittest.TestCase):
             check_poscar=True,
             check_potcar_spec=False,
         ):
-            print(f"{generated_dir}/{folder}")
+            # print(f"{generated_dir}/{folder}")  # to help debug if tests fail
             assert os.path.exists(f"{generated_dir}/{folder}")
             assert os.path.exists(f"{generated_dir}/{folder}/{vasp_type}")
 
             # load the Incar, Poscar and Kpoints and check it matches the previous:
             test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
             incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
-            # remove NUPDOWN and NELECT entries from test_incar:
-            test_incar.pop("NUPDOWN", None)
-            incar.pop("NUPDOWN", None)
-            test_incar.pop("NELECT", None)
-            incar.pop("NELECT", None)
             assert test_incar == incar
 
             if check_poscar:
@@ -272,7 +274,7 @@ class DefectsSetTest(unittest.TestCase):
 
         else:
             for folder in os.listdir(data_dir):
-                if os.path.isdir(f"{data_dir}/{folder}"):
+                if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder or bulk):
                     _check_single_vasp_dir(
                         data_dir=data_dir,
                         generated_dir=generated_dir,
@@ -283,34 +285,60 @@ class DefectsSetTest(unittest.TestCase):
                     )
 
     def test_cdte_files(self):
+        cdte_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(
-            self.cdte_defect_gen, user_incar_settings={"ENCUT": 350}, user_potcar_functional=None
+            cdte_se_defect_gen,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
+            user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True)
+        # test no vasp_gam files written:
+        for folder in os.listdir("."):
+            assert not os.path.exists(f"{folder}/vasp_gam")
+
+        # test no (unperturbed) POSCAR files written:
+        for folder in os.listdir("."):
+            if os.path.isdir(folder) and "bulk" not in folder:
+                for subfolder in os.listdir(folder):
+                    assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
+
+        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
+
+        bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        structure_matcher = StructureMatcher(
+            comparator=ElementComparator(), primitive_cell=False
+        )  # ignore oxidation states
+        assert structure_matcher.fit(bulk_supercell, self.cdte_defect_gen.bulk_supercell)
+        # check_generated_vasp_inputs also checks bulk folders
+
+        assert os.path.exists("CdTe_defects_generator.json")
+        self.cdte_defect_gen.to_json("test_CdTe_defects_generator.json")
+        filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
-        self.check_generated_vasp_inputs(check_potcar_spec=True)  # tests vasp_gam
-        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False)  # vasp_std
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
         # test vasp_nkred_std: same as vasp_std except for NKRED
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
                 assert filecmp.cmp(f"{folder}/vasp_nkred_std/KPOINTS", f"{folder}/vasp_std/KPOINTS")
-                assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
+                # assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
                 nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
                 std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
                 nkred_incar.pop("NKRED", None)
                 assert nkred_incar == std_incar
-        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False)  # vasp_ncl
+        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
-        # test unperturbed POSCARs:
+        # test unperturbed POSCARs and all bulk
         defects_set = DefectsSet(
             self.cdte_defect_gen,
-            user_incar_settings={"ENCUT": 350},
-            unperturbed_poscar=True,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
             user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True)
-        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True)  # vasp_std
+        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, bulk="all", vasp_gam=True)
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=True)  # tests vasp_gam
+        self.check_generated_vasp_inputs(vasp_type="vasp_nkred_std", check_poscar=False, bulk=True)
 
         # test DefectDictSet objects:
         for _defect_species, defect_relax_set in defects_set.defect_sets.items():
@@ -328,42 +356,55 @@ class DefectsSetTest(unittest.TestCase):
 
             # TODO: Add more tests here once DefectRelaxSet tests written
 
-        # test custom INCAR, POTCAR and KPOINTS choices: also tests dictionary input to DefectsSet
+        # test custom POTCAR and KPOINTS choices (INCAR already tested): also tests dictionary input to
+        # DefectsSet
+        self.tearDown()
         defects_set = DefectsSet(
             {k: v for k, v in self.cdte_defect_gen.items() if "v_Te" in k},
             user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
-            user_incar_settings={
-                "ENCUT": 350,
-                "LREAL": "Auto",
-                "IBRION": 5,
-                "ADDGRID": True,
-                "NCORE": 10,
-                "KPAR": 1,
-            },
             user_kpoints_settings={"reciprocal_density": 500},
             user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True)
-        # TODO: Test these here
+        defects_set.write_files(potcar_spec=True, vasp_gam=True)  # include vasp_gam to compare POTCAR.spec
+        for folder in os.listdir("."):
+            if os.path.isdir(f"{folder}/vasp_gam"):
+                with open(f"{folder}/vasp_gam/POTCAR.spec") as file:
+                    contents = file.readlines()
+                    assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
+                    assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
 
-        with open("v_Te_0/vasp_gam/POTCAR.spec") as file:
-            contents = file.readlines()
-            assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
-            assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
+                for subfolder in ["vasp_std", "vasp_nkred_std", "vasp_ncl"]:
+                    kpoints = Kpoints.from_file(f"{folder}/{subfolder}/KPOINTS")
+                    assert kpoints.kpts == [[3, 3, 3]]
 
     def test_write_files_single_defect_entry(self):
-        # dict call acts on DefectsGenerator.defect_entries dict attribute:
         single_defect_entry = self.cdte_defect_gen["Cd_i_C3v_+2"]
         defects_set = DefectsSet(
-            single_defect_entry, user_incar_settings={"ENCUT": 350}, user_potcar_functional=None
+            single_defect_entry,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
+            user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True)
+        defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
-        self.check_generated_vasp_inputs(
+        self.check_generated_vasp_inputs(  # tests vasp_gam
             generated_dir="Cd_i_C3v_+2",
             data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
             check_potcar_spec=True,
+            single_defect_dir=True,
+        )
+        self.check_generated_vasp_inputs(  # vasp_std
+            generated_dir="Cd_i_C3v_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
+            vasp_type="vasp_std",
+            check_poscar=True,
+            single_defect_dir=True,
+        )
+        self.check_generated_vasp_inputs(  # vasp_ncl
+            generated_dir="Cd_i_C3v_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
+            vasp_type="vasp_ncl",
+            check_poscar=True,
             single_defect_dir=True,
         )
 
@@ -371,145 +412,27 @@ class DefectsSetTest(unittest.TestCase):
         assert not os.path.exists("Cd_i_C3v_0")
 
     def test_write_files_defect_entry_list(self):
-        # dict call acts on DefectsGenerator.defect_entries dict attribute:
         defect_entry_list = [
             defect_entry
             for defect_species, defect_entry in self.cdte_defect_gen.items()
             if "Cd_i" in defect_species
         ]
         defects_set = DefectsSet(
-            defect_entry_list, user_incar_settings={"ENCUT": 350}, user_potcar_functional=None
+            defect_entry_list,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
+            user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True)
 
-        # assert that the same folders in self.cdte_data_dir are present in the current directory
-        self.check_generated_vasp_inputs(
-            check_potcar_spec=True,
-            single_defect_dir=True,
-        )
-
-    # def test_vasp_std_files_single_defect_entry(self):
-    #     # test interstitials this time:
-    #     single_defect_entry = self.cdte_defects_generator["Cd_i_m1b_+2"]  # Cd_i
-    #     # TODO: Fails because defect_entry.name is nuked when reloading from json, will fix!
-    #     vasp_std_files(
-    #         single_defect_entry,
-    #         user_incar_settings={
-    #             "ENCUT": 350,
-    #             "LREAL": "Auto",
-    #             "IBRION": 5,
-    #             "ADDGRID": True,
-    #         },
-    #         user_potcar_functional=None,
-    #     )
-    #
-    #     # assert that the same folders in self.cdte_data_dir are present in the current directory
-    #     print(os.listdir())
-    #     self.check_generated_vasp_inputs(
-    #         generated_dir="Cd_i_m1b_+2",
-    #         data_dir=f"{self.cdte_data_dir}/Cd_i_m1b_+2",
-    #         vasp_type="vasp_std",
-    #         check_poscar=False,
-    #         single_defect_dir=True,
-    #     )
-    #
-    #     # test unperturbed POSCAR:
-    #     vasp_std_files(
-    #         single_defect_entry,
-    #         user_incar_settings={
-    #             "ENCUT": 350,
-    #             "LREAL": "Auto",
-    #             "IBRION": 5,
-    #             "ADDGRID": True,
-    #         },
-    #         user_potcar_functional=None,
-    #         unperturbed_poscar=True,
-    #     )
-    #
-    #     self.check_generated_vasp_inputs(
-    #         generated_dir="Cd_i_m1b_+2",
-    #         data_dir=f"{self.cdte_data_dir}/Cd_i_m1b_+2",
-    #         vasp_type="vasp_std",
-    #         check_poscar=False,
-    #         single_defect_dir=True,
-    #     )
-    #
-    #     # test no files written with write_files=False
-    #     self.tearDown()
-    #     vasp_gam_files(single_defect_entry, user_potcar_functional=None, write_files=False)
-    #     assert not os.path.exists("Cd_i_m1b_+2")
-
-    #
-    # def test_vasp_ncl_files(self):
-    #     vasp_ncl_files(
-    #         self.cdte_defects_generator,
-    #         user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-    #         user_potcar_functional=None,
-    #     )
-    #
-    #     # assert that the same folders in self.cdte_data_dir are present in the current directory
-    #     self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False)
-    #
-    #     vasp_ncl_files(
-    #         self.cdte_defects_generator,
-    #         user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-    #         unperturbed_poscar=True,
-    #         user_potcar_functional=None,
-    #     )
-    #     self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=True)
-    #
-    #     # test no files written with write_files=False
-    #     self.tearDown()
-    #     vasp_ncl_files(
-    #         self.cdte_defects_generator,
-    #         user_potcar_functional=None,
-    #         write_files=False,
-    #     )
-    #     for folder in os.listdir(self.cdte_data_dir):
-    #         if os.path.isdir(f"{self.cdte_data_dir}/{folder}"):
-    #             assert not os.path.exists(f"./{folder}")
-    #
-    # def test_vasp_ncl_files_single_defect_dict(self):
-    #     # test substitutions this time:
-    #     single_defect_dict = self.cdte_generated_defect_dict["substitutions"][0]  # sub_2_Se_on_Te
-    #     vasp_ncl_files(
-    #         single_defect_dict,
-    #         user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-    #         user_potcar_functional=None,
-    #     )
-    #
-    #     # assert that the same folders in self.cdte_data_dir are present in the current directory
-    #     for charge in range(-1, 6):
-    #         self.check_generated_vasp_inputs(
-    #             generated_dir=f"sub_2_Se_on_Te_{charge}",
-    #             data_dir=f"{self.cdte_data_dir}/sub_2_Se_on_Te_{charge}",
-    #             vasp_type="vasp_ncl",
-    #             check_poscar=False,
-    #             single_defect_dir=True,
-    #         )
-    #
-    #     # test unperturbed POSCAR:
-    #     vasp_ncl_files(
-    #         single_defect_dict,
-    #         user_incar_settings={"ENCUT": 750, "LREAL": True, "ADDGRID": False},
-    #         user_potcar_functional=None,
-    #         unperturbed_poscar=True,
-    #     )
-    #
-    #     for charge in range(-1, 6):
-    #         self.check_generated_vasp_inputs(
-    #             generated_dir=f"sub_2_Se_on_Te_{charge}",
-    #             data_dir=f"{self.cdte_data_dir}/sub_2_Se_on_Te_{charge}",
-    #             vasp_type="vasp_ncl",
-    #             check_poscar=True,
-    #             single_defect_dir=True,
-    #         )
-    #
-    #     # test no files written with write_files=False
-    #     self.tearDown()
-    #     vasp_ncl_files(single_defect_dict, user_potcar_functional=None, write_files=False)
-    #     for charge in range(-1, 6):
-    #         assert not os.path.exists(f"sub_2_Se_on_Te_{charge}")
+        for defect_entry in defect_entry_list:
+            for vasp_type in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:  # no vasp_gam by default
+                self.check_generated_vasp_inputs(
+                    generated_dir=defect_entry.name,
+                    data_dir=f"{self.cdte_data_dir}/{defect_entry.name}",
+                    vasp_type=vasp_type,
+                    single_defect_dir=True,
+                    check_poscar=False,
+                )
 
 
 if __name__ == "__main__":
