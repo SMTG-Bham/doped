@@ -28,10 +28,10 @@ from typing import Optional
 
 import numpy as np
 from monty.json import MontyDecoder
-from pymatgen.analysis.defects.corrections import FreysoldtCorrection, KumagaiCorrection
 
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.pycdt.utils.parse_calculations import SingleDefectParser
+from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
 
 warnings.simplefilter("default")
 warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
