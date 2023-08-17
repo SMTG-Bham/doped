@@ -39,7 +39,7 @@ _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
 
 
-def deep_dict_update(u: dict, d: dict) -> dict:
+def deep_dict_update(d: dict, u: dict) -> dict:
     """
     Recursively update nested dictionaries without overwriting existing keys.
     """
