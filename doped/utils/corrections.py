@@ -140,7 +140,7 @@ def get_correction_freysoldt(
     encut = defect_entry.parameters.get("encut", 520)
     madetol = defect_entry.parameters.get("madetol", 0.0001)
 
-    if not defect_entry.charge:
+    if not defect_entry.charge_state:
         print("Charge is zero so charge correction is zero.")
         return 0.0
 
@@ -240,7 +240,7 @@ def get_correction_kumagai(
     sampling_radius = defect_entry.parameters.get("sampling_radius", None)
     gamma = defect_entry.parameters.get("gamma", None)
 
-    if not defect_entry.charge:
+    if not defect_entry.charge_state:
         print("Charge is zero so charge correction is zero.")
         return 0.0
 
