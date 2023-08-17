@@ -1368,13 +1368,12 @@ class DefectRelaxSet(MSONable):
                 **kwargs,
             )
 
-    def write_all(  # TODO: Default bulk writing behaviour? For this and DefectsSet? Yeah just write for
-        # top-level (ncl > std > gam) vasp, but have "all_bulk" option to write to each. Same for
-        # DefectsSet
+    def write_all(
         self,
         defect_dir: Optional[str] = None,
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
+        bulk: Union[bool, str] = False,
         **kwargs,
     ):
         """
@@ -1410,6 +1409,15 @@ class DefectRelaxSet(MSONable):
         should be used as the `vasp_ncl` `POSCAR`s. If unperturbed
         `POSCAR` files are desired for the `vasp_(nkred_)std` (and `vasp_ncl`)
         folders, set `unperturbed_poscar=True`.
+
+        Input files for the singlepoint (static) bulk supercell reference
+        calculation are also written to "{formula}_bulk/{subfolder}" if `bulk`
+        is True (False by default), where `subfolder` corresponds to the final
+        (highest accuracy) VASP calculation in the workflow (i.e. `vasp_ncl` if
+        `self.soc=True`, otherwise `vasp_std` or `vasp_gam` if only Γ-point
+        reciprocal space sampling is required). If `bulk = "all"`, then the
+        input files for all VASP calculations in the workflow are written to
+        the bulk supercell folder.
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -1456,23 +1464,74 @@ class DefectRelaxSet(MSONable):
                 the `vasp_std` `CONTCAR`s as the input structures for the final
                 `vasp_ncl` singlepoint calculations.
                 (default: False)
+            bulk (bool, str):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}",
+                where `subfolder` corresponds to the final (highest accuracy)
+                VASP calculation in the workflow (i.e. `vasp_ncl` if `self.soc=True`,
+                otherwise `vasp_std` or `vasp_gam` if only Γ-point reciprocal space
+                sampling is required). If `bulk = "all"` then the input files for
+                all VASP calculations in the workflow (`vasp_gam`, `vasp_nkred_std`,
+                `vasp_std`, `vasp_ncl` (if applicable)) are written to the bulk
+                supercell folder.
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
+        # check `bulk` input:
+        if bulk and isinstance(bulk, str) and bulk.lower() == "all":
+            bulk_vasp = ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]
+        elif bulk and not isinstance(bulk, str) and bulk is not True:
+            raise ValueError("Unrecognised input for `bulk` argument. Must be True, False, or 'all'.")
+
         # check if vasp_std is None, and if so, set vasp_gam to True:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            if bulk is True:
+                # get top-level VASP (ncl > std > gam): first self.vasp_xxx attribute that isn't None:
+                top_vasp = next(  # top boy
+                    (
+                        getattr(self, vasp)
+                        for vasp in ["vasp_ncl", "vasp_std", "vasp_gam"]
+                        if getattr(self, vasp) is not None
+                    ),
+                    None,
+                )
+                if top_vasp is None:
+                    raise ValueError("No VASP input files to generate for the bulk supercell.")
+
+                bulk_vasp = [top_vasp]
+
             if vasp_gam or self.vasp_std is None:
-                self.write_gam(defect_dir=defect_dir, **kwargs)
+                self.write_gam(
+                    defect_dir=defect_dir,
+                    bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
+                    **kwargs,
+                )
 
             if self.vasp_std is not None:  # k-point mesh
-                self.write_std(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
+                self.write_std(
+                    defect_dir=defect_dir,
+                    unperturbed_poscar=unperturbed_poscar,
+                    bulk=any("vasp_std" in vasp_type for vasp_type in bulk_vasp),
+                    **kwargs,
+                )
 
             if self.vasp_nkred_std is not None:  # k-point mesh and not GGA
-                self.write_std(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
+                self.write_std(
+                    defect_dir=defect_dir,
+                    unperturbed_poscar=unperturbed_poscar,
+                    bulk=any("vasp_nkred_std" in vasp_type for vasp_type in bulk_vasp),
+                    **kwargs,
+                )
 
         if self.soc:  # SOC
-            self.write_ncl(defect_dir=defect_dir, unperturbed_poscar=unperturbed_poscar)
+            self.write_ncl(
+                defect_dir=defect_dir,
+                unperturbed_poscar=unperturbed_poscar,
+                bulk=any("vasp_ncl" in vasp_type for vasp_type in bulk_vasp),
+                **kwargs,
+            )
 
 
 class DefectsSet(MSONable):
@@ -1710,6 +1769,7 @@ class DefectsSet(MSONable):
         output_dir: str = ".",
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
+        bulk: Union[bool, str] = False,
         **kwargs,
     ):
         """
@@ -1748,6 +1808,15 @@ class DefectsSet(MSONable):
         should be used as the `vasp_ncl` `POSCAR`s. If unperturbed
         `POSCAR` files are desired for the `vasp_(nkred_)std` (and `vasp_ncl`)
         folders, set `unperturbed_poscar=True`.
+
+        Input files for the singlepoint (static) bulk supercell reference
+        calculation are also written to "{formula}_bulk/{subfolder}" if `bulk`
+        is True (False by default), where `subfolder` corresponds to the final
+        (highest accuracy) VASP calculation in the workflow (i.e. `vasp_ncl` if
+        `self.soc=True`, otherwise `vasp_std` or `vasp_gam` if only Γ-point
+        reciprocal space sampling is required). If `bulk = "all"`, then the
+        input files for all VASP calculations in the workflow are written to
+        the bulk supercell folder.
 
         The `DefectEntry` objects are also written to `json` files in the defect
         folders, to aid calculation provenance.
@@ -1793,6 +1862,17 @@ class DefectsSet(MSONable):
                 the `vasp_std` `CONTCAR`s as the input structures for the final
                 `vasp_ncl` singlepoint calculations.
                 (default: False)
+            bulk (bool, str):
+                If True, the input files for a singlepoint calculation of the
+                bulk supercell are also written to "{formula}_bulk/{subfolder}",
+                where `subfolder` corresponds to the final (highest accuracy)
+                VASP calculation in the workflow (i.e. `vasp_ncl` if `self.soc=True`,
+                otherwise `vasp_std` or `vasp_gam` if only Γ-point reciprocal space
+                sampling is required). If `bulk = "all"` then the input files for
+                all VASP calculations in the workflow (`vasp_gam`, `vasp_nkred_std`,
+                `vasp_std`, `vasp_ncl` (if applicable)) are written to the bulk
+                supercell folder.
+                (Default: False)
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
@@ -1802,6 +1882,7 @@ class DefectsSet(MSONable):
                 defect_dir=defect_dir,
                 unperturbed_poscar=unperturbed_poscar,
                 vasp_gam=vasp_gam,
+                bulk=bulk,
                 **kwargs,
             )
 
