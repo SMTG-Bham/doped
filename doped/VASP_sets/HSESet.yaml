@@ -1,4 +1,4 @@
-INCAR:
+INCAR:  # These settings are only added to the INCAR settings if LHFCALC is not set to False in user_incar_settings
   AEXX: 0.25  # HSE06 assumed by default. Set AEXX in INCAR config settings to tune alpha xc parameter.
   HFSCREEN: 0.208  # correct HSE screening parameter; see https://aip.scitation.org/doi/10.1063/1.2404663
   # Note this 👆 differs from the Materials Project MPHSERelaxSet default of 0.2! (Will cause systematic
