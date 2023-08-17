@@ -2,7 +2,7 @@ INCAR:
   AEXX: 0.25  # HSE06 assumed by default. Set AEXX in INCAR config settings to tune alpha xc parameter.
   HFSCREEN: 0.208  # correct HSE screening parameter; see https://aip.scitation.org/doi/10.1063/1.2404663
   # Note this 👆 differs from the Materials Project MPHSERelaxSet default of 0.2! (Will cause systematic
-  # energy shifts in HSE supercell calculations.)
+  # energy shifts in HSE supercell calculations). Change to 0 for PBE0.
   LHFCALC: true
   PRECFOCK: Fast
   GGA: PE  # underlying GGA functional for HSE/PBE0 is PBE
