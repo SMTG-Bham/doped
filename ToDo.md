@@ -29,6 +29,8 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Post-processing / analysis / plotting
+- Will need to subclass `DefectEntry` to have it working as desired (when it comes to parsing, plotting
+  etc.). Need parameter attributes which aren't removed when saving to json.
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
   settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!

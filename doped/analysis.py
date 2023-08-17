@@ -679,7 +679,7 @@ def single_formation_energy_table(
     Returns:
         pandas DataFrame sorted by formation energy
     """
-    header = ["Defect", "Charge", "Defect Path"]
+    header = ["Defect", "q", "Path"]
     table = []
     if hide_cols is None:
         hide_cols = []
@@ -688,18 +688,22 @@ def single_formation_energy_table(
         row = [
             defect_entry.name,
             defect_entry.charge_state,
-            defect_entry.parameters["defect_path"],
+            defect_entry.parameters.get("defect_path", "N/A"),
         ]
-        if "Uncorrected Energy" not in hide_cols:
-            header += ["Uncorrected Energy"]
-            row += [f"{defect_entry.uncorrected_energy:.2f} eV"]
-        if "Corrected Energy" not in hide_cols:
-            header += ["Corrected Energy"]
-            row += [f"{defect_entry.energy:.2f} eV"]  # With 0 chemical potentials, at the calculation
-            # fermi level
+        if "ΔE" not in hide_cols:
+            header += ["ΔE"]
+            row += [
+                f"{defect_entry.get_ediff() - sum(defect_entry.corrections.values()):.2f} eV"
+            ]  # With 0 chemical potentials, at the calculation fermi level
+        if "E_corr" not in hide_cols:
+            header += ["E_corr"]
+            row += [f"{sum(defect_entry.corrections.values()):.2f} eV"]
+        if "Σμ" not in hide_cols:
+            header += ["Σμ"]
+            row += [f"{defect_phase_diagram._get_chempot_term(defect_entry, chempot_limits):.2f} eV"]
         header += ["Formation Energy"]
-        formation_energy = defect_entry.formation_energy(
-            chemical_potentials=chempot_limits, fermi_level=fermi_level
+        formation_energy = defect_phase_diagram._formation_energy(
+            defect_entry, chemical_potentials=chempot_limits, fermi_level=fermi_level
         )
         row += [f"{formation_energy:.2f} eV"]
 
@@ -719,14 +723,14 @@ def single_formation_energy_table(
     if show_key:
         bold_print("Table Key:")
         print(
-            """'Defect' -> Defect Type and Multiplicity
-'Charge' -> Defect Charge State
-'Uncorrected Energy' -> Defect Energy from calculation, without corrections
-'Corrected Energy' -> Defect Energy from calculation (E_defect - E_host + corrections)
-(chemical potentials set to 0 and the fermi level at average electrostatic potential in the
-supercell)
-'Formation Energy' -> Final Defect Formation Energy, with the specified chemical potentials (
-chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM)
+            """'Defect' -> Defect type and multiplicity.
+'q' -> Defect charge state.
+'ΔE' -> Energy difference between defect and host supercell (E_defect - E_host).
+(chemical potentials set to 0 and the fermi level at average electrostatic potential in the supercell).
+'E_corr' -> Defect energy correction.
+'Σμ' -> Sum of chemical potential terms in the formation energy equation.
+'Formation Energy' -> Final defect formation energy, with the specified chemical potentials (
+chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM).
         """
         )
 
@@ -734,10 +738,11 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
         table,
         columns=[
             "Defect",
-            "Charge",
-            "Defect Path",
-            "Uncorrected Energy",
-            "Corrected Energy",
+            "q",
+            "Path",
+            "ΔE",
+            "E_corr",
+            "Σμ",
             "Formation Energy",
         ],
     )

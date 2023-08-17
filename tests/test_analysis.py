@@ -551,6 +551,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             else:
                 np.testing.assert_array_almost_equal(parsed_vac_Cd_dict[name].site.frac_coords, [0, 0, 0])
 
+            # test get_correction_freysoldt:
+            from doped.utils.corrections import get_correction_freysoldt
+
+            get_correction_freysoldt(parsed_vac_Cd_dict[name], 9.13, plot=True)
+
     def test_interstitial_parsing_and_kumagai(self):
         """
         Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
