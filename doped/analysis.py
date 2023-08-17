@@ -6,8 +6,6 @@ alongside substantial modification, in the efforts of making an efficient,
 user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
-
-import copy
 import os
 import warnings
 from operator import itemgetter
@@ -17,17 +15,18 @@ import numpy as np
 import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.core import DefectEntry
-from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
+from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.defects.utils import TopographyAnalyzer
-from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.util.string import unicodeify
 from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
+from doped.generation import get_defect_name_from_entry
 from doped.pycdt.utils import parse_calculations
-from doped.vasp import DefectRelaxSet
+from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
+from doped.vasp import DefectDictSet
 
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
@@ -81,7 +80,7 @@ def defect_entry_from_paths(
     defect_path,
     bulk_path,
     dielectric,
-    charge=None,
+    charge_state=None,
     initial_defect_structure=None,
     skip_corrections=False,
     bulk_bandgap_path=None,
@@ -96,7 +95,7 @@ def defect_entry_from_paths(
     bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
     dielectric (float or int or 3x1 matrix or 3x3 matrix):
         ionic + static contributions to dielectric constant
-    charge (int):
+    charge_state (int):
         charge of defect. If not provided, will be automatically determined
         from the defect calculation outputs (requires POTCARs to be set up
         with `pymatgen`).
@@ -133,7 +132,6 @@ def defect_entry_from_paths(
             f"{bulk_vr_path} to parse the calculation energy and metadata."
         )
     bulk_vr = parse_calculations.get_vasprun(bulk_vr_path)
-    bulk_energy = bulk_vr.final_energy
     bulk_sc_structure = bulk_vr.initial_structure.copy()
 
     # add defect simple properties
@@ -147,7 +145,6 @@ def defect_entry_from_paths(
             f" {defect_vr_path} to parse the calculation energy and metadata."
         )
     defect_vr = parse_calculations.get_vasprun(defect_vr_path)
-    defect_energy = defect_vr.final_energy
 
     # get defect charge
     try:
@@ -157,13 +154,13 @@ def defect_entry_from_paths(
         else:
             potcar_symbols = [titel.split()[1] for titel in defect_vr.potcar_symbols]
             potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
-            neutral_defect_relax_set = DefectRelaxSet(
+            neutral_defect_dict_set = DefectDictSet(
                 defect_vr.structures[-1],
-                charge=0,
+                charge_state=0,
                 user_potcar_settings=potcar_settings,
             )
             try:
-                auto_charge = -1 * (defect_nelect - neutral_defect_relax_set.nelect)
+                auto_charge = -1 * (defect_nelect - neutral_defect_dict_set.nelect)
 
             except Exception as e:
                 raise RuntimeError(
@@ -179,17 +176,17 @@ def defect_entry_from_paths(
                     f"Please specify defect charge manually using the `charge` argument."
                 )
 
-        if charge is not None and int(charge) != int(auto_charge) and abs(auto_charge) < 5:
+        if charge_state is not None and int(charge_state) != int(auto_charge) and abs(auto_charge) < 5:
             warnings.warn(
                 f"Auto-determined defect charge q={int(auto_charge):+} does not match "
-                f"specified charge q={int(charge):+}. Will continue with specified "
-                f"charge, but beware!"
+                f"specified charge q={int(charge_state):+}. Will continue with specified "
+                f"charge_state, but beware!"
             )
         else:
-            charge = auto_charge
+            charge_state = auto_charge
 
     except Exception as e:
-        if charge is None:
+        if charge_state is None:
             raise e
 
     # Can specify initial defect structure (to help PyCDT find the defect site if
@@ -214,9 +211,6 @@ def defect_entry_from_paths(
             f"{len(bulk_sc_structure)} in bulk vs. {len(initial_defect_structure)} in defect?"
         ) from exc
 
-    bulk_site_idx = None
-    defect_site_idx = None
-    unrelaxed_defect_structure = None
     # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
     try:
         (
@@ -226,64 +220,12 @@ def defect_entry_from_paths(
         ) = parse_calculations.get_defect_site_idxs_and_unrelaxed_structure(
             bulk_sc_structure, initial_defect_structure, def_type, comp_diff
         )
+
     except RuntimeError as exc:
-        # if auto site-matching failed, try use transformation.json
-        # The goal is to find the `defect_site_idx` or `defect_site_idx` based on the
-        # transformation.
-        transformation_path = os.path.join(defect_path, "transformation.json")
-        if not os.path.exists(transformation_path):  # try next folder up
-            orig_transformation_path = transformation_path
-            transformation_path = os.path.join(
-                os.path.dirname(os.path.normpath(defect_path)),
-                "transformation.json",
-            )
-            if os.path.exists(transformation_path):
-                print(
-                    f"No transformation file found at {orig_transformation_path}, but found "
-                    f"one at {transformation_path}. Using this for defect parsing."
-                )
-
-        if os.path.exists(transformation_path):
-            tf = loadfn(transformation_path)
-            site = tf["defect_supercell_site"]
-            if def_type == "vacancy":
-                poss_deflist = sorted(
-                    bulk_sc_structure.get_sites_in_sphere(site.coords, 0.2, include_index=True),
-                    key=lambda x: x[1],
-                )
-                searched = "bulk_supercell"
-                if poss_deflist:
-                    bulk_site_idx = poss_deflist[0][2]
-            else:
-                poss_deflist = sorted(
-                    initial_defect_structure.get_sites_in_sphere(site.coords, 2.5, include_index=True),
-                    key=lambda x: x[1],
-                )
-                searched = "initial_defect_structure"
-                if poss_deflist:
-                    defect_site_idx = poss_deflist[0][2]
-            if not poss_deflist:
-                raise ValueError(
-                    f"{transformation_path} specified defect site {site}, but could not find "
-                    f"it in {searched}. Abandoning parsing."
-                ) from exc
-            if poss_deflist[0][1] > 1:
-                site_matched_defect = poss_deflist[0]  # pymatgen Neighbor object
-                offsite_warning = (
-                    f"Site-matching has determined {site_matched_defect.species} at "
-                    f"{site_matched_defect.coords} as the defect site, located "
-                    f"{site_matched_defect.nn_distance:.2f} {_ANGSTROM} from "
-                    f"its initial position. This may incur small errors in the charge correction."
-                )
-                warnings.warn(message=offsite_warning)
-
-        else:
-            raise RuntimeError(
-                f"Could not identify {def_type} defect site in defect structure. "
-                f"Try supplying the initial defect structure to "
-                f"SingleDefectParser.from_paths(), or making sure the doped "
-                f"transformation.json files are in the defect directory."
-            ) from exc
+        raise RuntimeError(
+            f"Could not identify {def_type} defect site in defect structure. Try supplying the initial "
+            f"defect structure to SingleDefectParser.from_paths()."
+        ) from exc
 
     if def_type == "vacancy":
         defect_site = bulk_sc_structure[bulk_site_idx]
@@ -321,9 +263,10 @@ def defect_entry_from_paths(
                     [],
                     check_volume=False,
                 )
-                topography.cluster_nodes()
-                topography.remove_collisions()
-                voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
+                # topography.cluster_nodes()
+                # topography.remove_collisions()
+                # voronoi_frac_coords = [site.frac_coords for site in topography.vnodes]
+                voronoi_frac_coords = [voronoi_tuple[0] for voronoi_tuple in topography.labeled_sites]
                 struc_and_node_dict = {
                     "bulk_supercell": bulk_sc_structure,
                     "Voronoi nodes": voronoi_frac_coords,
@@ -365,31 +308,44 @@ def defect_entry_from_paths(
     for_monty_defect = {
         "@module": "pymatgen.analysis.defects.core",
         "@class": def_type.capitalize(),
-        "charge": charge,
         "structure": bulk_sc_structure,
-        "defect_site": defect_site,
+        "site": defect_site,
     }
     defect = MontyDecoder().process_decoded(for_monty_defect)
 
     if unrelaxed_defect_structure:
         # only do StructureMatcher test if unrelaxed structure exists
-        test_defect_structure = defect.generate_defect_structure()
+        test_defect_structure = defect.get_supercell_structure(
+            min_atoms=len(bulk_sc_structure), max_atoms=len(bulk_sc_structure)
+        )
         if not StructureMatcher(
-            stol=0.25,
-            primitive_cell=False,
-            scale=False,
-            attempt_supercell=False,
-            allow_subset=False,
+            stol=0.05,
+            comparator=ElementComparator(),
         ).fit(test_defect_structure, unrelaxed_defect_structure):
             # NOTE: this does not insure that cartesian coordinates or indexing are identical
-            raise ValueError(
-                "Error in defect object matching! Unrelaxed structure (1st below) "
-                "does not match pymatgen defect.generate_defect_structure() "
-                f"(2nd below):\n{unrelaxed_defect_structure}"
-                f"\n{test_defect_structure}"
+            warnings.warn(
+                f"Possible error in defect object matching. Determined defect: {defect.name} for defect "
+                f"at {defect_path} in bulk at {bulk_path} but unrelaxed structure (1st below) does not "
+                f"match pymatgen defect.generate_defect_structure() (2nd below):"
+                f"\n{unrelaxed_defect_structure}\n{test_defect_structure}"
             )
 
-    defect_entry = DefectEntry(defect, defect_energy - bulk_energy, corrections={}, parameters=parameters)
+    defect_entry = DefectEntry(
+        defect=defect,
+        charge_state=charge_state,
+        sc_entry=defect_vr.get_computed_entry(),
+        sc_defect_frac_coords=defect_site.frac_coords,
+        bulk_entry=bulk_vr.get_computed_entry(),
+        corrections={"freysoldt": 0},
+    )  # parameters=parameters
+    defect_name = os.path.basename(defect_path)  # set equal to folder name (TODO: update)
+    if "vasp" in defect_name:  # get parent directory name:
+        defect_name = os.path.basename(os.path.dirname(defect_path))
+
+    defect_entry.name = defect_name
+    defect_entry.doped_name = get_defect_name_from_entry(defect_entry)
+    defect_entry.parameters = parameters
+    defect_entry.site = defect_site
 
     return_sdp = kwargs.pop("return SingleDefectParser", False)  # internal use for tests/debugging
     sdp = parse_calculations.SingleDefectParser(
@@ -516,7 +472,7 @@ def defect_entry_from_paths(
                 skip_corrections = True
 
         else:
-            if int(sdp.defect_entry.charge) != 0:
+            if int(sdp.defect_entry.charge_state) != 0:
                 warnings.warn(
                     f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at "
                     f"{defect_path}) and bulk (at {bulk_path}) folders. These are needed to "
@@ -731,7 +687,7 @@ def single_formation_energy_table(
     for defect_entry in defect_phase_diagram.entries:
         row = [
             defect_entry.name,
-            defect_entry.charge,
+            defect_entry.charge_state,
             defect_entry.parameters["defect_path"],
         ]
         if "Uncorrected Energy" not in hide_cols:
@@ -789,102 +745,103 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
     return sorted_df
 
 
-def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
-    """
-    Convert input parsed defect dictionary (presumably created using
-    SingleDefectParser from doped.pycdt.utils.parse_calculations) with
-    Freysoldt charge corrections to.
-
-    the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
-    alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
-    Freysoldt scheme)).
-
-    Args:
-        defect_dict (dict):
-            Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-            from doped.pycdt.utils.parse_calculations) (see example notebook)
-            Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
-            SingleDefectParser.freysoldt_loader())
-
-    Returns:
-        Parsed defect dictionary with Lany-Zunger charge corrections.
-    """
-    from doped.utils.corrections import get_murphy_image_charge_correction
-
-    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
-    # defect_dict to get the lattice and dielectric matrix
-    lattice = random_defect_entry.bulk_structure.lattice.matrix
-    dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
-    lz_corrected_defect_dict = copy.deepcopy(defect_dict)
-    for defect_name, defect_entry in lz_corrected_defect_dict.items():
-        if defect_entry.charge != 0:
-            potalign = defect_entry.parameters["freysoldt_meta"][
-                "freysoldt_potential_alignment_correction"
-            ]
-            mp_pc_corr = lz_image_charge_corrections[abs(defect_entry.charge)]  # Makov-Payne PC correction
-            defect_entry.parameters.update(
-                {
-                    "Lany-Zunger_Corrections": {
-                        "(Freysoldt)_Potential_Alignment_Correction": potalign,
-                        "Makov-Payne_Image_Charge_Correction": mp_pc_corr,
-                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * mp_pc_corr,
-                        "Total_Lany-Zunger_Correction": potalign + 0.65 * mp_pc_corr,
-                    }
-                }
-            )
-            defect_entry.corrections["charge_correction"] = defect_entry.parameters[
-                "Lany-Zunger_Corrections"
-            ]["Total_Lany-Zunger_Correction"]
-
-        lz_corrected_defect_dict.update({defect_name: defect_entry})
-    return lz_corrected_defect_dict
-
-
-def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
-    """
-    Convert input parsed defect dictionary (presumably created using
-    SingleDefectParser from doped.pycdt.utils.parse_calculations) with Kumagai
-    charge corrections to.
-
-    the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
-    alignment plus 0.65 * image charge correction.
-
-    Args:
-        defect_dict (dict):
-            Dictionary of parsed defect calculations (presumably created using SingleDefectParser
-            from doped.pycdt.utils.parse_calculations) (see example notebook)
-            Must have 'kumagai_meta' in defect.parameters for each charged defect (from
-            SingleDefectParser.kumagai_loader())
-
-    Returns:
-        Parsed defect dictionary with Lany-Zunger charge corrections.
-    """
-    from doped.utils.corrections import get_murphy_image_charge_correction
-
-    random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
-    # defect_dict to get the lattice and dielectric matrix
-    lattice = random_defect_entry.bulk_structure.lattice.matrix
-    dielectric = random_defect_entry.parameters["dielectric"]
-    lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
-    lz_corrected_defect_dict = copy.deepcopy(defect_dict)
-    for defect_name, defect_entry in lz_corrected_defect_dict.items():
-        if defect_entry.charge != 0:
-            potalign = defect_entry.parameters["kumagai_meta"]["kumagai_potential_alignment_correction"]
-            makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge)]
-            defect_entry.parameters.update(
-                {
-                    "Lany-Zunger_Corrections": {
-                        "(Kumagai)_Potential_Alignment_Correction": potalign,
-                        "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
-                        "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * makove_payne_pc_correction,
-                        "Total_Lany-Zunger_Correction": potalign + 0.65 * makove_payne_pc_correction,
-                    }
-                }
-            )
-            defect_entry.corrections["charge_correction"] = defect_entry.parameters[
-                "Lany-Zunger_Corrections"
-            ]["Total_Lany-Zunger_Correction"]
-
-        lz_corrected_defect_dict.update({defect_name: defect_entry})
-    return lz_corrected_defect_dict
+# def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
+#     """
+#     Convert input parsed defect dictionary (presumably created using
+#     SingleDefectParser from doped.pycdt.utils.parse_calculations) with
+#     Freysoldt charge corrections to.
+#
+#     the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
+#     alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
+#     Freysoldt scheme)).
+#
+#     Args:
+#         defect_dict (dict):
+#             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
+#             from doped.pycdt.utils.parse_calculations) (see example notebook)
+#             Must have 'freysoldt_meta' in defect.parameters for each charged defect (from
+#             SingleDefectParser.freysoldt_loader())
+#
+#     Returns:
+#         Parsed defect dictionary with Lany-Zunger charge corrections.
+#     """
+#     from doped.utils.corrections import get_murphy_image_charge_correction
+#
+#     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
+#     # defect_dict to get the lattice and dielectric matrix
+#     lattice = random_defect_entry.bulk_structure.lattice.matrix
+#     dielectric = random_defect_entry.parameters["dielectric"]
+#     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
+#     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
+#     for defect_name, defect_entry in lz_corrected_defect_dict.items():
+#         if defect_entry.charge_state != 0:
+#             potalign = defect_entry.parameters["freysoldt_meta"][
+#                 "freysoldt_potential_alignment_correction"
+#             ]
+#             mp_pc_corr = lz_image_charge_corrections[abs(defect_entry.charge_state)]  # Makov-Payne PC
+#             correction
+#             defect_entry.parameters.update(
+#                 {
+#                     "Lany-Zunger_Corrections": {
+#                         "(Freysoldt)_Potential_Alignment_Correction": potalign,
+#                         "Makov-Payne_Image_Charge_Correction": mp_pc_corr,
+#                         "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * mp_pc_corr,
+#                         "Total_Lany-Zunger_Correction": potalign + 0.65 * mp_pc_corr,
+#                     }
+#                 }
+#             )
+#             defect_entry.corrections["charge_correction"] = defect_entry.parameters[
+#                 "Lany-Zunger_Corrections"
+#             ]["Total_Lany-Zunger_Correction"]
+#
+#         lz_corrected_defect_dict.update({defect_name: defect_entry})
+#     return lz_corrected_defect_dict
+#
+#
+# def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
+#     """
+#     Convert input parsed defect dictionary (presumably created using
+#     SingleDefectParser from doped.pycdt.utils.parse_calculations) with Kumagai
+#     charge corrections to.
+#
+#     the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
+#     alignment plus 0.65 * image charge correction.
+#
+#     Args:
+#         defect_dict (dict):
+#             Dictionary of parsed defect calculations (presumably created using SingleDefectParser
+#             from doped.pycdt.utils.parse_calculations) (see example notebook)
+#             Must have 'kumagai_meta' in defect.parameters for each charged defect (from
+#             SingleDefectParser.kumagai_loader())
+#
+#     Returns:
+#         Parsed defect dictionary with Lany-Zunger charge corrections.
+#     """
+#     from doped.utils.corrections import get_murphy_image_charge_correction
+#
+#     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
+#     # defect_dict to get the lattice and dielectric matrix
+#     lattice = random_defect_entry.bulk_structure.lattice.matrix
+#     dielectric = random_defect_entry.parameters["dielectric"]
+#     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
+#     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
+#     for defect_name, defect_entry in lz_corrected_defect_dict.items():
+#         if defect_entry.charge_state != 0:
+#             potalign = defect_entry.parameters["kumagai_meta"]["kumagai_potential_alignment_correction"]
+#             makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge_state)]
+#             defect_entry.parameters.update(
+#                 {
+#                     "Lany-Zunger_Corrections": {
+#                         "(Kumagai)_Potential_Alignment_Correction": potalign,
+#                         "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
+#                         "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * makove_payne_pc_correction,
+#                         "Total_Lany-Zunger_Correction": potalign + 0.65 * makove_payne_pc_correction,
+#                     }
+#                 }
+#             )
+#             defect_entry.corrections["charge_correction"] = defect_entry.parameters[
+#                 "Lany-Zunger_Corrections"
+#             ]["Total_Lany-Zunger_Correction"]
+#
+#         lz_corrected_defect_dict.update({defect_name: defect_entry})
+#     return lz_corrected_defect_dict
