@@ -5,7 +5,8 @@ import contextlib
 import copy
 import os
 import warnings
-from typing import Dict, List, Optional, Union
+from multiprocessing import Pool, cpu_count
+from typing import Dict, List, Optional, Union, cast
 
 import numpy as np
 from monty.json import MSONable
@@ -15,6 +16,7 @@ from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
 from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
+from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.generation import (
@@ -27,10 +29,10 @@ from doped.generation import (
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
 #  KPOINTS settings etc)
-# TODO: May want to implement multiprocessing for file generation/writing as well, as pymatgen incar
-#  functions can be a bit slow to run! Especially for SOC calcs
 # TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons to
 #  written folders as well (but off by default)
+# TODO: Likewise, add same to/from json, __repr__ etc. functions for DefectRelaxSet. Dict methods apply
+#  to `.defect_sets` etc
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
 #  and the structures don't match (otherwise overwrite)
 # TODO: Cleanup; look at refactoring these functions as much as possible to avoid code duplication
@@ -469,8 +471,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a DefectDictSet object for a VASP Γ-point-only (`vasp_gam`)
         defect supercell relaxation. Typically not needed if ShakeNBreak
-        structure searching has been performed (recommended), unless only
-        Γ-point k-point sampling is required.
+        structure searching has been performed (recommended), unless only Γ-
+        point k-point sampling is required.
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -733,7 +735,7 @@ class DefectRelaxSet(MSONable):
         `bulk_vasp_gam` should be used to calculate the singlepoint (static)
         bulk supercell reference energy. Can also sometimes be useful for the
         purpose of calculating defect formation energies at early stages of the
-        typical `vasp_gam` -> `vasp_nkred_std` (if hybrid & non-Γ-only
+        typical `vasp_gam` -> `vasp_nkred_std` (if hybrid & non- Γ-only
         k-points) -> `vasp_std` (if non-Γ-only k-points) -> `vasp_ncl` (if SOC
         included) workflow, to obtain rough formation energy estimates and flag
         any potential issues with defect calculations early on.
@@ -1001,6 +1003,8 @@ class DefectRelaxSet(MSONable):
             )
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
             vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
             vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
             if self.user_potcar_functional is not None:  # for GH Actions testing
@@ -1501,6 +1505,8 @@ class DefectRelaxSet(MSONable):
                     raise ValueError("No VASP input files to generate for the bulk supercell.")
 
                 bulk_vasp = [top_vasp]
+            else:
+                bulk_vasp = []
 
             if vasp_gam or self.vasp_std is None:
                 self.write_gam(
@@ -1577,7 +1583,7 @@ class DefectsSet(MSONable):
         potential) calculations.
 
         Args:
-            defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
+            defect_entries (`DefectsGenerator` or dict/list of `DefectEntry`s, or single `DefectEntry`):
                 Either a `DefectsGenerator` object, or a dictionary/list of
                 `DefectEntry`s, or a single `DefectEntry` object, for which
                 to generate VASP input files.
@@ -1644,9 +1650,11 @@ class DefectsSet(MSONable):
         else:
             try:
                 self.soc = (
-                    max(
-                        defect_entry.defect_supercell.atomic_numbers
-                        for defect_entry in self.defect_entries.values()
+                    np.max(
+                        [
+                            np.max(defect_entry.defect_supercell.atomic_numbers)
+                            for defect_entry in self.defect_entries.values()
+                        ]
                     )
                     >= 31
                 )  # use defect supercell rather than defect.defect_structure because could be e.g. a
@@ -1654,9 +1662,11 @@ class DefectsSet(MSONable):
                 # (Z>=31) one
             except AttributeError:
                 self.soc = (
-                    max(
-                        defect_entry.sc_entry.structure.atomic_numbers
-                        for defect_entry in self.defect_entries.values()
+                    np.max(
+                        [
+                            np.max(defect_entry.sc_entry.structure.atomic_numbers)
+                            for defect_entry in self.defect_entries.values()
+                        ]
                     )
                     >= 31
                 )
@@ -1688,7 +1698,7 @@ class DefectsSet(MSONable):
         objects.
 
         Args:
-            defect_entries (Union[DefectsGenerator, Dict[DefectEntry], List[DefectEntry], DefectEntry]):
+            defect_entries (`DefectsGenerator` or dict/list of `DefectEntry`s, or single `DefectEntry`):
                 Either a `DefectsGenerator` object, or a dictionary/list of
                 `DefectEntry`s, or a single `DefectEntry` object, for which
                 to generate VASP input files.
@@ -1701,7 +1711,8 @@ class DefectsSet(MSONable):
         """
         json_filename = "defect_entries.json"  # global statement in case, but should be skipped
         json_obj = defect_entries
-        if isinstance(defect_entries, DefectsGenerator):
+        if type(defect_entries).__name__ == "DefectsGenerator":
+            defect_entries = cast(DefectsGenerator, defect_entries)
             formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
@@ -1764,12 +1775,25 @@ class DefectsSet(MSONable):
 
         return defect_entries, json_filename, json_obj  # type: ignore
 
+    @staticmethod
+    def _write_defect(args):
+        defect_species, defect_entry, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
+        defect_dir = os.path.join(output_dir, defect_species)
+        defect_entry.write_all(
+            defect_dir=defect_dir,
+            unperturbed_poscar=unperturbed_poscar,
+            vasp_gam=vasp_gam,
+            bulk=bulk,
+            **kwargs,
+        )
+
     def write_files(
         self,
         output_dir: str = ".",
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
         bulk: Union[bool, str] = False,
+        processes: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -1873,18 +1897,23 @@ class DefectsSet(MSONable):
                 `vasp_std`, `vasp_ncl` (if applicable)) are written to the bulk
                 supercell folder.
                 (Default: False)
+            processes (int):
+                Number of processes to use for multiprocessing for file writing.
+                If not set, defaults to one less than the number of CPUs available.
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
-        for defect_species, defect_entry in self.defect_sets.items():
-            defect_dir = os.path.join(output_dir, defect_species)
-            defect_entry.write_all(
-                defect_dir=defect_dir,
-                unperturbed_poscar=unperturbed_poscar,
-                vasp_gam=vasp_gam,
-                bulk=bulk,
-                **kwargs,
-            )
+        args_list = [
+            (defect_species, defect_entry, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs)
+            for defect_species, defect_entry in self.defect_sets.items()
+        ]
+        with Pool(processes=processes or cpu_count() - 1) as pool:
+            for _ in tqdm(
+                pool.imap(self._write_defect, args_list),
+                total=len(args_list),
+                desc="Generating and writing input files",
+            ):
+                pass
 
         dumpfn(self.json_obj, self.json_name)
 
