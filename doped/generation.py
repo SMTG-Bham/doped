@@ -1193,9 +1193,6 @@ class DefectsGenerator(MSONable):
                 wyckoff_label_dict=wyckoff_label_dict,
             )
 
-            if processes is None:
-                processes = cpu_count() - 1
-
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
                 _pbar_increment_per_defect = max(
                     0, min((1 / num_defects) * ((pbar.total * 0.9) - pbar.n), pbar.total - pbar.n)
@@ -1206,7 +1203,7 @@ class DefectsGenerator(MSONable):
             defect_entry_list = []
             if len(self.primitive_structure) > 8:  # skip for small systems as communication overhead /
                 # process initialisation outweighs speedup
-                with Pool(processes) as pool:
+                with Pool(processes=processes or cpu_count() - 1) as pool:
                     results = pool.imap_unordered(partial_func, defect_list)
                     for result in results:
                         defect_entry_list.append(result)
