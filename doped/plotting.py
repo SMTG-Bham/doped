@@ -6,7 +6,6 @@ and AIDE (by Adam Jackson and Alex Ganose), alongside substantial modification,
 in the efforts of making an efficient, user-friendly package for managing and
 analysing defect calculations, with publication-quality outputs.
 """
-import copy
 import os
 import warnings
 from typing import Dict, List, Optional
@@ -97,7 +96,7 @@ def formation_energy_plot(
                 pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
                 # potentials, to calculate and plot formation energies
             for facet in pd_facets:
-                mu_elts = chempot_limits["facets"][facet]
+                dft_chempots = chempot_limits["facets"][facet]
                 elt_refs = chempot_limits["elemental_refs"]
                 plot_title = facet
                 plot_filename = (
@@ -106,9 +105,9 @@ def formation_energy_plot(
                     else None
                 )
 
-                plot = _aide_pmg_plot(
+                plot = _TLD_plot(
                     defect_phase_diagram,
-                    mu_elts=mu_elts,
+                    dft_chempots=dft_chempots,
                     elt_refs=elt_refs,
                     chempot_table=chempot_table,
                     emphasis=emphasis,
@@ -124,9 +123,9 @@ def formation_energy_plot(
             return plot
 
         # Else if you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
-        return _aide_pmg_plot(
+        return _TLD_plot(
             defect_phase_diagram,
-            mu_elts=chempot_limits,
+            dft_chempots=chempot_limits,
             elt_refs=elt_refs,
             chempot_table=chempot_table,
             emphasis=emphasis,
@@ -140,37 +139,8 @@ def formation_energy_plot(
         )
 
 
-def _aide_pmg_plot(
-    defect_phase_diagram,
-    mu_elts=None,
-    elt_refs=None,
-    chempot_table=True,
-    emphasis=False,
-    xlim=None,
-    ylim=None,
-    fermi_level=None,
-    title=None,
-    colormap="Dark2",
-    auto_labels=False,
-    filename=None,
-):
-    """
-    Produce defect Formation energy vs Fermi energy plot
-    Args:
-        mu_elts:
-            a dictionary of {Element:value} giving the chemical
-            potential of each element
-        xlim:
-            Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
-        ylim:
-            Tuple (min,max) giving the range for the formation energy axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
-
-    Returns:
-        a matplotlib object.
-    """
-    if mu_elts is None:
+def _chempot_warning(dft_chempots):
+    if dft_chempots is None:
         warnings.warn(
             "No chemical potentials specified, so chemical potentials are set to zero "
             "for each species. Note that this will give large errors in the absolute "
@@ -178,85 +148,8 @@ def _aide_pmg_plot(
             "unaffected."
         )
 
-    if xlim is None:
-        xlim = (-0.3, defect_phase_diagram.band_gap + 0.3)
-    xy = {}
-    all_lines_xy = {}  # For emphasis plots with faded grey E_form lines for all charge states
-    lower_cap = -100.0
-    upper_cap = 100.0
-    y_range_vals = []  # for finding max/min values on y-axis based on x-limits
 
-    for defnom, def_tl in defect_phase_diagram.transition_level_map.items():
-        xy[defnom] = [[], []]
-        if emphasis:
-            all_lines_xy[defnom] = [[], []]
-            for chg_ent in defect_phase_diagram.stable_entries[defnom]:
-                for x_extrem in [lower_cap, upper_cap]:
-                    all_lines_xy[defnom][0].append(x_extrem)
-                    all_lines_xy[defnom][1].append(
-                        defect_phase_diagram._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=x_extrem
-                        )
-                    )
-
-        if def_tl:
-            org_x = list(def_tl.keys())  # list of transition levels
-            org_x.sort()  # sort with lowest first
-
-            # establish lower x-bound
-            first_charge = max(def_tl[org_x[0]])
-            for chg_ent in defect_phase_diagram.stable_entries[defnom]:
-                if chg_ent.charge_state == first_charge:
-                    form_en = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=lower_cap
-                    )
-                    fe_left = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=xlim[0]
-                    )
-            xy[defnom][0].append(lower_cap)
-            xy[defnom][1].append(form_en)
-            y_range_vals.append(fe_left)
-            # iterate over stable charge state transitions
-            for fl in org_x:
-                charge = max(def_tl[fl])
-                for chg_ent in defect_phase_diagram.stable_entries[defnom]:
-                    if chg_ent.charge_state == charge:
-                        form_en = defect_phase_diagram._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=fl
-                        )
-                xy[defnom][0].append(fl)
-                xy[defnom][1].append(form_en)
-                y_range_vals.append(form_en)
-            # establish upper x-bound
-            last_charge = min(def_tl[org_x[-1]])
-            for chg_ent in defect_phase_diagram.stable_entries[defnom]:
-                if chg_ent.charge_state == last_charge:
-                    form_en = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=upper_cap
-                    )
-                    fe_right = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=xlim[1]
-                    )
-            xy[defnom][0].append(upper_cap)
-            xy[defnom][1].append(form_en)
-            y_range_vals.append(fe_right)
-        else:
-            # no transition - just one stable charge
-            chg_ent = defect_phase_diagram.stable_entries[defnom][0]
-            for x_extrem in [lower_cap, upper_cap]:
-                xy[defnom][0].append(x_extrem)
-                xy[defnom][1].append(
-                    defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=x_extrem
-                    )
-                )
-            for x_window in xlim:
-                y_range_vals.append(
-                    defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=x_window
-                    )
-                )
-
+def _get_plot_setup(colormap, xy):
     cmap = colormaps[colormap]
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
@@ -272,40 +165,236 @@ def _aide_pmg_plot(
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
 
-    for_legend = []
-    for cnt, defnom in enumerate(xy.keys()):  # plot formation energy lines
+    return cmap, colors, f, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
+
+
+def _plot_formation_energy_lines(
+    xy,
+    colors,
+    ax,
+    styled_linewidth,
+    styled_markersize,
+    for_legend=None,
+    alpha=1.0,
+):
+    for cnt, def_name in enumerate(xy.keys()):  # plot formation energy lines
         ax.plot(
-            xy[defnom][0],
-            xy[defnom][1],
+            xy[def_name][0],
+            xy[def_name][1],
             color=colors[cnt],
             markeredgecolor=colors[cnt],
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
+            alpha=alpha,
         )
-        for_legend.append(copy.deepcopy(defect_phase_diagram.stable_entries[defnom][0]))
-    # Redo for loop so grey 'all_lines_xy' not included in legend
-    for cnt, defnom in enumerate(xy.keys()):
-        if emphasis:
-            ax.plot(
-                all_lines_xy[defnom][0],
-                all_lines_xy[defnom][1],
-                color=(0.8, 0.8, 0.8),
-                markeredgecolor=colors[cnt],
-                lw=styled_linewidth * 1.2,
-                markersize=styled_markersize * (4 / 6),
-                alpha=0.5,
+        if for_legend is not None:
+            for_legend.append(def_name)
+
+    if for_legend is not None:
+        return for_legend
+    return None
+
+
+def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
+    ax.imshow(
+        [(0, 1), (0, 1)],
+        cmap=plt.cm.Blues,
+        extent=(xlim[0], 0, ylim[0], ylim[1]),
+        vmin=0,
+        vmax=3,
+        interpolation="bicubic",
+        rasterized=True,
+        aspect="auto",
+    )
+
+    ax.imshow(
+        [(1, 0), (1, 0)],
+        cmap=plt.cm.Oranges,
+        extent=(band_gap, xlim[1], ylim[0], ylim[1]),
+        vmin=0,
+        vmax=3,
+        interpolation="bicubic",
+        rasterized=True,
+        aspect="auto",
+    )
+
+    ax.set_xlim(xlim)
+    ax.plot([xlim[0], xlim[1]], [0, 0], "k-")  # black dashed line for E_formation = 0 in case ymin < 0
+    ax.set_ylim(ylim)
+
+    if fermi_level is not None:
+        ax.axvline(x=fermi_level, linestyle="-.", color="k")
+    ax.set_xlabel("Fermi Level (eV)")
+    ax.set_ylabel("Formation Energy (eV)")
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(2))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
+
+
+def _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size):
+    if title:
+        if chempot_table:
+            ax.set_title(
+                latexify(title),
+                size=1.2 * styled_font_size,
+                pad=28,
+                fontdict={"fontweight": "bold"},
             )
+        else:
+            ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
+    if filename is not None:
+        f.savefig(filename, bbox_inches="tight", dpi=600)
+
+
+def _TLD_plot(
+    defect_phase_diagram,
+    dft_chempots=None,
+    elt_refs=None,
+    chempot_table=True,
+    emphasis=False,
+    xlim=None,
+    ylim=None,
+    fermi_level=None,
+    title=None,
+    colormap="Dark2",
+    auto_labels=False,
+    filename=None,
+):
+    """
+    Produce defect Formation energy vs Fermi energy plot
+    Args:
+        dft_chempots:
+            a dictionary of {Element:value} giving the chemical
+            potential of each element
+        xlim:
+            Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
+            set manually when including transition level labels, so that they don't cross the axes.
+        ylim:
+            Tuple (min,max) giving the range for the formation energy axis. This may need to be
+            set manually when including transition level labels, so that they don't cross the axes.
+
+    Returns:
+        a matplotlib object.
+    """
+    if xlim is None:
+        xlim = (-0.3, defect_phase_diagram.band_gap + 0.3)
+    xy = {}
+    all_lines_xy = {}  # For emphasis plots with faded grey E_form lines for all charge states
+    lower_cap, upper_cap = -100.0, 100.0
+    y_range_vals = []  # for finding max/min values on y-axis based on x-limits
+
+    for def_name, def_tl in defect_phase_diagram.transition_level_map.items():
+        xy[def_name] = [[], []]
+        if emphasis:
+            all_lines_xy[def_name] = [[], []]
+            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
+                for x_extrem in [lower_cap, upper_cap]:
+                    all_lines_xy[def_name][0].append(x_extrem)
+                    all_lines_xy[def_name][1].append(
+                        defect_phase_diagram._formation_energy(
+                            chg_ent, chemical_potentials=dft_chempots, fermi_level=x_extrem
+                        )
+                    )
+
+        if def_tl:
+            org_x = sorted(def_tl.keys())
+            # establish lower x-bound
+            first_charge = max(def_tl[org_x[0]])
+            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
+                if chg_ent.charge_state == first_charge:
+                    form_en = defect_phase_diagram._formation_energy(
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=lower_cap
+                    )
+                    fe_left = defect_phase_diagram._formation_energy(
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=xlim[0]
+                    )
+            xy[def_name][0].append(lower_cap)
+            xy[def_name][1].append(form_en)
+            y_range_vals.append(fe_left)
+            # iterate over stable charge state transitions
+            for fl in org_x:
+                charge = max(def_tl[fl])
+                for chg_ent in defect_phase_diagram.stable_entries[def_name]:
+                    if chg_ent.charge_state == charge:
+                        form_en = defect_phase_diagram._formation_energy(
+                            chg_ent, chemical_potentials=dft_chempots, fermi_level=fl
+                        )
+                xy[def_name][0].append(fl)
+                xy[def_name][1].append(form_en)
+                y_range_vals.append(form_en)
+            # establish upper x-bound
+            last_charge = min(def_tl[org_x[-1]])
+            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
+                if chg_ent.charge_state == last_charge:
+                    form_en = defect_phase_diagram._formation_energy(
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=upper_cap
+                    )
+                    fe_right = defect_phase_diagram._formation_energy(
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=xlim[1]
+                    )
+            xy[def_name][0].append(upper_cap)
+            xy[def_name][1].append(form_en)
+            y_range_vals.append(fe_right)
+        else:
+            # no transition - just one stable charge
+            chg_ent = defect_phase_diagram.stable_entries[def_name][0]
+            for x_extrem in [lower_cap, upper_cap]:
+                xy[def_name][0].append(x_extrem)
+                xy[def_name][1].append(
+                    defect_phase_diagram._formation_energy(
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=x_extrem
+                    )
+                )
+            y_range_vals.extend(
+                defect_phase_diagram._formation_energy(
+                    chg_ent, chemical_potentials=dft_chempots, fermi_level=x_window
+                )
+                for x_window in xlim
+            )
+    (
+        cmap,
+        colors,
+        f,
+        ax,
+        styled_fig_size,
+        styled_font_size,
+        styled_linewidth,
+        styled_markersize,
+    ) = _get_plot_setup(colormap, xy)
+
+    for_legend = []
+    for_legend = _plot_formation_energy_lines(
+        xy,
+        colors=colors,
+        ax=ax,
+        styled_linewidth=styled_linewidth,
+        styled_markersize=styled_markersize,
+        for_legend=for_legend,
+    )  # plot formation energy lines
+
+    # Redo for loop so grey 'all_lines_xy' not included in legend
+    if emphasis:
+        _legend = _plot_formation_energy_lines(
+            all_lines_xy,
+            colors=[(0.8, 0.8, 0.8)] * len(all_lines_xy),
+            ax=ax,
+            styled_linewidth=styled_linewidth,
+            styled_markersize=styled_markersize,
+            alpha=0.5,
+        )
+
     # plot transition levels
-    for cnt, defnom in enumerate(xy.keys()):
+    for cnt, def_name in enumerate(xy.keys()):
         x_trans, y_trans = [], []
         tl_labels = []
         tl_label_type = []
-        for x_val, chargeset in defect_phase_diagram.transition_level_map[defnom].items():
+        for x_val, chargeset in defect_phase_diagram.transition_level_map[def_name].items():
             x_trans.append(x_val)
-            for chg_ent in defect_phase_diagram.stable_entries[defnom]:
+            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
                 if chg_ent.charge_state == chargeset[0]:
                     form_en = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=mu_elts, fermi_level=x_val
+                        chg_ent, chemical_potentials=dft_chempots, fermi_level=x_val
                     )
             y_trans.append(form_en)
             tl_labels.append(
@@ -339,23 +428,23 @@ def _aide_pmg_plot(
 
     # get latex-like legend titles
     legends_txt = []
-    for defect_entry in for_legend:
+    for defect_entry_name in for_legend:
         try:
             defect_name = (
                 _format_defect_name(
-                    defect_species=defect_entry.name,
+                    defect_species=defect_entry_name,
                     include_site_num_in_name=False,
                 ).rsplit("^", 1)[0]
                 + "$"
             )  # exclude charge  # Format defect name for title and axis labels
         except Exception:  # if formatting fails, just use the defect_species name
-            defect_name = defect_entry.name
+            defect_name = defect_entry_name
 
         # add subscript labels for different configurations of same defect species
         if defect_name in legends_txt:
             defect_name = (
                 _format_defect_name(
-                    defect_species=defect_entry.name,
+                    defect_species=defect_entry_name,
                     include_site_num_in_name=True,
                 ).rsplit("^", 1)[0]
                 + "$"
@@ -365,10 +454,7 @@ def _aide_pmg_plot(
             while defect_name in legends_txt:
                 i += 1
                 defect_name = f"{defect_name[:-3]}{chr(96+i)}{defect_name[-3:]}"  # a, b c etc
-            legends_txt.append(defect_name)
-        else:
-            legends_txt.append(defect_name)
-
+        legends_txt.append(defect_name)
     ax.legend(
         legends_txt,
         loc=2,
@@ -383,85 +469,40 @@ def _aide_pmg_plot(
             ylim = (0, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
             # Increase y_limit to give space for transition level labels
 
-    # Show colourful band edges
-    ax.imshow(
-        [(0, 1), (0, 1)],
-        cmap=plt.cm.Blues,
-        extent=(xlim[0], 0, ylim[0], ylim[1]),
-        vmin=0,
-        vmax=3,
-        interpolation="bicubic",
-        rasterized=True,
-        aspect="auto",
-    )
+    _add_band_edges_and_axis_limits(
+        ax, defect_phase_diagram.band_gap, xlim, ylim, fermi_level=fermi_level
+    )  # Show colourful band edges
+    if chempot_table and dft_chempots:
+        _plot_chemical_potential_table(ax, dft_chempots, loc="left", elt_refs=elt_refs)
 
-    ax.imshow(
-        [(1, 0), (1, 0)],
-        cmap=plt.cm.Oranges,
-        extent=(defect_phase_diagram.band_gap, xlim[1], ylim[0], ylim[1]),
-        vmin=0,
-        vmax=3,
-        interpolation="bicubic",
-        rasterized=True,
-        aspect="auto",
-    )
+    _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size)
 
-    ax.set_xlim(xlim)
-    ax.plot([xlim[0], xlim[1]], [0, 0], "k-")  # black dashed line for E_formation = 0 in case ymin < 0
-    ax.set_ylim(ylim)
-
-    if fermi_level is not None:
-        ax.axvline(x=fermi_level, linestyle="-.", color="k")
-    ax.set_xlabel("Fermi Level (eV)", size=styled_font_size)
-    ax.set_ylabel("Formation Energy (eV)", size=styled_font_size)
-    ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
-    ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(2))
-    ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
-    ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
-    if chempot_table and mu_elts:
-        _plot_chemical_potential_table(
-            ax,
-            {elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()}
-            if elt_refs is not None
-            else mu_elts,
-            wrt_elt_refs=elt_refs is not None,
-        )
-
-    if title and chempot_table:
-        ax.set_title(
-            latexify(title),
-            size=1.2 * styled_font_size,
-            pad=28,
-            fontdict={"fontweight": "bold"},
-        )
-    elif title:
-        ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
-    if filename is not None:
-        f.savefig(filename, bbox_inches="tight", dpi=600)
     return ax
 
 
 def _plot_chemical_potential_table(
     ax,
-    chemical_potentials,
+    dft_chempots,
     loc="left",
-    wrt_elt_refs=False,
+    elt_refs=None,
 ):
-    labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(chemical_potentials.keys())]
+    if elt_refs is not None:
+        dft_chempots = {elt: energy - elt_refs[elt] for elt, energy in dft_chempots.items()}
+    labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(dft_chempots.keys())]
     labels[0] = f"({labels[0]}"
     labels[-1] = f"{labels[-1]})"  # [:-1]?
     labels = ["Chemical Potentials", *labels, " Units:"]
 
-    text_list = [f"{chemical_potentials[el]:.2f}," for el in sorted(chemical_potentials.keys())]
+    text_list = [f"{dft_chempots[el]:.2f}," for el in sorted(dft_chempots.keys())]
 
     # add brackets to first and last entries:
     text_list[0] = f"({text_list[0]}"
     text_list[-1] = f"{text_list[-1]})"  # [:-1]?
-    if wrt_elt_refs:
+    if elt_refs is not None:
         text_list = ["(wrt Elemental refs)", *text_list, "  [eV]"]
     else:
         text_list = ["(from calculations)", *text_list, "  [eV]"]
-    widths = [0.1] + [0.9 / len(chemical_potentials)] * (len(chemical_potentials) + 2)
+    widths = [0.1] + [0.9 / len(dft_chempots)] * (len(dft_chempots) + 2)
     tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=loc)
     tab.auto_set_column_width(list(range(len(widths))))
 
@@ -536,9 +577,9 @@ def all_lines_formation_energy_plot(
     """
     if not chempot_limits or "facets" not in chempot_limits:
         # If you only want to give {Elt: Energy} dict for chempot_limits, or no chempot_limits
-        return _all_lines_aide_pmg_plot(
+        return _all_entries_TLD_plot(
             defect_phase_diagram,
-            mu_elts=chempot_limits,
+            dft_chempots=chempot_limits,
             elt_refs=elt_refs,
             xlim=xlim,
             ylim=ylim,
@@ -553,7 +594,7 @@ def all_lines_formation_energy_plot(
         pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
         # potentials, to calculate and plot formation energies
     for facet in pd_facets:
-        mu_elts = chempot_limits["facets"][facet]
+        dft_chempots = chempot_limits["facets"][facet]
         elt_refs = chempot_limits["elemental_refs"]
         if title:
             plot_title = title
@@ -562,9 +603,9 @@ def all_lines_formation_energy_plot(
         else:
             plot_title = facet
 
-        return _all_lines_aide_pmg_plot(
+        return _all_entries_TLD_plot(
             defect_phase_diagram,
-            mu_elts=mu_elts,
+            dft_chempots=dft_chempots,
             elt_refs=elt_refs,
             xlim=xlim,
             ylim=ylim,
@@ -578,9 +619,9 @@ def all_lines_formation_energy_plot(
     return None
 
 
-def _all_lines_aide_pmg_plot(
+def _all_entries_TLD_plot(
     defect_phase_diagram,
-    mu_elts=None,
+    dft_chempots=None,
     elt_refs=None,
     chempot_table=True,
     xlim=None,
@@ -594,7 +635,7 @@ def _all_lines_aide_pmg_plot(
     """
     Produce defect Formation energy vs Fermi energy plot
     Args:
-        mu_elts:
+        dft_chempots:
             a dictionary of {Element:value} giving the chemical potential of each element
         xlim:
             Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
@@ -606,13 +647,32 @@ def _all_lines_aide_pmg_plot(
     Returns:
         a matplotlib object.
     """
-    # TODO: Lot of code duplication here, refactor to functions and remove
     if xlim is None:
         xlim = (-0.3, defect_phase_diagram.band_gap + 0.3)
     xy = {}
-    lower_cap = -100.0
-    upper_cap = 100.0
+    lower_cap, upper_cap = -100.0, 100.0
     y_range_vals = []  # for finding max/min values on y-axis based on x-limits
+
+    (
+        cmap,
+        colors,
+        f,
+        ax,
+        styled_fig_size,
+        styled_font_size,
+        styled_linewidth,
+        styled_markersize,
+    ) = _get_plot_setup(colormap, xy)
+
+    for_legend = []
+    for_legend = _plot_formation_energy_lines(  # plot formation energy lines
+        xy,  # this needed??
+        colors=colors,
+        ax=ax,
+        styled_linewidth=styled_linewidth,
+        styled_markersize=styled_markersize,
+        for_legend=for_legend,
+    )  # plot formation energy lines
 
     legends_txt = []
     for defect_entry in defect_phase_diagram.entries:
@@ -641,40 +701,15 @@ def _all_lines_aide_pmg_plot(
             xy[defect_name][0].append(x_extrem)
             xy[defect_name][1].append(
                 defect_phase_diagram._formation_energy(
-                    defect_entry, chemical_potentials=mu_elts, fermi_level=x_extrem
+                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_extrem
                 )
             )
         y_range_vals.extend(
             defect_phase_diagram._formation_energy(
-                defect_entry, chemical_potentials=mu_elts, fermi_level=x_window
+                defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
             )
             for x_window in xlim
         )
-    cmap = colormaps[colormap]
-    colors = cmap(np.linspace(0, 1, len(xy)))
-    if colormap == "Dark2" and len(xy) >= 8:
-        warnings.warn(
-            f"The chosen colormap is Dark2, which only has 8 colours, yet you have {len(xy)} "
-            f"defect species (so some defects will have the same line colour). Recommended to "
-            f"change/set colormap to 'tab10' or 'tab20' (10 and 20 colours each)."
-        )
-    styled_fig_size = plt.rcParams["figure.figsize"]
-    f, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
-    # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
-    styled_font_size = plt.rcParams["font.size"]
-    styled_linewidth = plt.rcParams["lines.linewidth"]
-    styled_markersize = plt.rcParams["lines.markersize"]
-
-    for cnt, def_name in enumerate(xy.keys()):  # plot formation energy lines
-        ax.plot(
-            xy[def_name][0],
-            xy[def_name][1],
-            color=colors[cnt],
-            markeredgecolor=colors[cnt],
-            lw=styled_linewidth * 1.2,
-            markersize=styled_markersize * (4 / 6),
-        )
-
     ax.legend(
         legends_txt,
         loc=2,
@@ -689,62 +724,12 @@ def _all_lines_aide_pmg_plot(
             ylim = (0, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
             # Increase y_limit to give space for transition level labels
 
-    # Show colourful band edges
-    ax.imshow(
-        [(0, 1), (0, 1)],
-        cmap=plt.cm.Blues,
-        extent=(xlim[0], 0, ylim[0], ylim[1]),
-        vmin=0,
-        vmax=3,
-        interpolation="bicubic",
-        rasterized=True,
-        aspect="auto",
-    )
+    _add_band_edges_and_axis_limits(
+        ax, defect_phase_diagram.band_gap, xlim, ylim, fermi_level=fermi_level
+    )  # Show colourful band edges
+    if chempot_table and dft_chempots:
+        _plot_chemical_potential_table(ax, dft_chempots, loc="left", elt_refs=elt_refs)
 
-    ax.imshow(
-        [(1, 0), (1, 0)],
-        cmap=plt.cm.Oranges,
-        extent=(defect_phase_diagram.band_gap, xlim[1], ylim[0], ylim[1]),
-        vmin=0,
-        vmax=3,
-        interpolation="bicubic",
-        rasterized=True,
-        aspect="auto",
-    )
-
-    ax.set_xlim(xlim)
-    ax.plot([xlim[0], xlim[1]], [0, 0], "k-")  # black dashed line for E_formation = 0 in case ymin < 0
-    ax.set_ylim(ylim)
-
-    if fermi_level is not None:
-        ax.axvline(x=fermi_level, linestyle="-.", color="k")
-    ax.set_xlabel("Fermi Level (eV)", size=styled_font_size)
-    ax.set_ylabel("Formation Energy (eV)", size=styled_font_size)
-    ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
-    ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(2))
-    ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
-    ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
-    if chempot_table and mu_elts:
-        _plot_chemical_potential_table(
-            ax,
-            {elt: energy - elt_refs[elt] for elt, energy in mu_elts.items()}
-            if elt_refs is not None
-            else mu_elts,
-            wrt_elt_refs=elt_refs is not None,
-        )
-
-    if title:
-        if chempot_table:
-            ax.set_title(
-                latexify(title),
-                size=1.2 * styled_font_size,
-                pad=28,
-                fontdict={"fontweight": "bold"},
-            )
-        else:
-            ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
-
-    if filename:
-        f.savefig(filename, bbox_inches="tight", dpi=600)
+    _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size)
 
     return ax
