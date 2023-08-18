@@ -124,7 +124,7 @@ class DefectPhaseDiagram(MSONable):
         )
 
     def _get_chempot_term(self, defect_entry, chemical_potentials=None):
-        chemical_potentials = chemical_potentials if chemical_potentials else {}
+        chemical_potentials = chemical_potentials or {}
 
         return sum(
             chem_pot * -defect_entry.defect.element_changes[Element(el)]
@@ -358,21 +358,18 @@ class DefectPhaseDiagram(MSONable):
         returns:
             list of dictionaries of defect concentrations.
         """
-        concentrations = []
-        for dfct in self.all_stable_entries:
-            concentrations.append(
-                {
-                    "conc": dfct.defect_concentration(
-                        chemical_potentials=chemical_potentials,
-                        temperature=temperature,
-                        fermi_level=fermi_level,
-                    ),
-                    "name": dfct.name,
-                    "charge": dfct.charge_state,
-                }
-            )
-
-        return concentrations
+        return [
+            {
+                "conc": dfct.defect_concentration(
+                    chemical_potentials=chemical_potentials,
+                    temperature=temperature,
+                    fermi_level=fermi_level,
+                ),
+                "name": dfct.name,
+                "charge": dfct.charge_state,
+            }
+            for dfct in self.all_stable_entries
+        ]
 
     def suggest_charges(self, tolerance=0.1):
         """
@@ -687,11 +684,10 @@ class DefectPhaseDiagram(MSONable):
                     xy[defnom][1].append(
                         self._formation_energy(chg_ent, chemical_potentials=mu_elts, fermi_level=x_extrem)
                     )
-                for x_window in xlim:
-                    y_range_vals.append(
-                        self._formation_energy(chg_ent, chemical_potentials=mu_elts, fermi_level=x_window)
-                    )
-
+                y_range_vals.extend(
+                    self._formation_energy(chg_ent, chemical_potentials=mu_elts, fermi_level=x_window)
+                    for x_window in xlim
+                )
         if ylim is None:
             window = max(y_range_vals) - min(y_range_vals)
             spacer = 0.1 * window
@@ -722,7 +718,7 @@ class DefectPhaseDiagram(MSONable):
                             chg_ent, chemical_potentials=mu_elts, fermi_level=x_val
                         )
                 y_trans.append(form_en)
-            if len(x_trans) > 0:
+            if x_trans:
                 plt.plot(
                     x_trans,
                     y_trans,
@@ -741,10 +737,10 @@ class DefectPhaseDiagram(MSONable):
                 sub_str = "_{" + flds[1] + "}$"
             elif flds[0] == "Sub":
                 flds = dfct.name.split("_")
-                base = "$" + flds[1]
+                base = f"${flds[1]}"
                 sub_str = "_{" + flds[3] + "}$"
             elif flds[0] == "Int":
-                base = "$" + flds[1]
+                base = f"${flds[1]}"
                 sub_str = "_{inter}$"
             else:
                 base = dfct.name
@@ -781,7 +777,7 @@ class DefectPhaseDiagram(MSONable):
             plt.title(f"{title}", size=ax_fontsize * width)
 
         if saved:
-            plt.savefig(str(title) + "FreyplnravgPlot.pdf")
+            plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
         else:
             return plt
 
