@@ -248,6 +248,132 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         fig.savefig(filename, bbox_inches="tight", dpi=600)
 
 
+def _get_legends_txt(for_legend, all_entries=False):
+    # get latex-like legend titles
+    legends_txt = []
+    for defect_entry_name in for_legend:
+        try:  # Format defect name for title and axis labels
+            defect_name = _format_defect_name(
+                defect_species=defect_entry_name,
+                include_site_num_in_name=False,
+            )
+            if not all_entries:
+                defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
+
+        except Exception:  # if formatting fails, just use the defect_species name
+            defect_name = defect_entry_name
+
+        # add subscript labels for different configurations of same defect species
+        if defect_name in legends_txt:
+            defect_name = _format_defect_name(
+                defect_species=defect_entry_name,
+                include_site_num_in_name=True,
+            )
+            if not all_entries:
+                defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
+
+        if defect_name in legends_txt:
+            i = 1
+            while defect_name in legends_txt:
+                i += 1
+                defect_name = f"{defect_name[:-3]}{chr(96 + i)}{defect_name[-3:]}"  # a, b c etc
+        legends_txt.append(defect_name)
+
+    return legends_txt
+
+
+def _get_formation_energy_lines(defect_phase_diagram, dft_chempots, xlim):
+    xy, all_lines_xy = {}, {}  # dict of {defect_name: [[x_vals],[y_vals]]}
+    y_range_vals, all_lines_y_range_vals = [], []  # for finding max/min values on y-axis based on x-limits
+    lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
+
+    for defect_entry in defect_phase_diagram.entries:
+        defect_entry_name = f"{defect_entry.name}_{defect_entry.charge_state}"
+        all_lines_xy[defect_entry_name] = [[], []]
+        for x_extrem in [lower_cap, upper_cap]:
+            all_lines_xy[defect_entry_name][0].append(x_extrem)
+            all_lines_xy[defect_entry_name][1].append(
+                defect_phase_diagram._formation_energy(
+                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_extrem
+                )
+            )
+            all_lines_y_range_vals.extend(
+                defect_phase_diagram._formation_energy(
+                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
+                )
+                for x_window in xlim
+            )
+
+    for def_name, def_tl in defect_phase_diagram.transition_level_map.items():
+        xy[def_name] = [[], []]
+
+        if def_tl:
+            org_x = sorted(def_tl.keys())
+            # establish lower x-bound
+            first_charge = max(def_tl[org_x[0]])
+            for defect_entry in defect_phase_diagram.stable_entries[def_name]:
+                if defect_entry.charge_state == first_charge:
+                    form_en = defect_phase_diagram._formation_energy(
+                        defect_entry, chemical_potentials=dft_chempots, fermi_level=lower_cap
+                    )
+                    fe_left = defect_phase_diagram._formation_energy(
+                        defect_entry, chemical_potentials=dft_chempots, fermi_level=xlim[0]
+                    )
+            xy[def_name][0].append(lower_cap)
+            xy[def_name][1].append(form_en)
+            y_range_vals.append(fe_left)
+
+            # iterate over stable charge state transitions
+            for fl in org_x:
+                charge = max(def_tl[fl])
+                for defect_entry in defect_phase_diagram.stable_entries[def_name]:
+                    if defect_entry.charge_state == charge:
+                        form_en = defect_phase_diagram._formation_energy(
+                            defect_entry, chemical_potentials=dft_chempots, fermi_level=fl
+                        )
+                xy[def_name][0].append(fl)
+                xy[def_name][1].append(form_en)
+                y_range_vals.append(form_en)
+
+            # establish upper x-bound
+            last_charge = min(def_tl[org_x[-1]])
+            for defect_entry in defect_phase_diagram.stable_entries[def_name]:
+                if defect_entry.charge_state == last_charge:
+                    form_en = defect_phase_diagram._formation_energy(
+                        defect_entry, chemical_potentials=dft_chempots, fermi_level=upper_cap
+                    )
+                    fe_right = defect_phase_diagram._formation_energy(
+                        defect_entry, chemical_potentials=dft_chempots, fermi_level=xlim[1]
+                    )
+            xy[def_name][0].append(upper_cap)
+            xy[def_name][1].append(form_en)
+            y_range_vals.append(fe_right)
+
+        else:  # no transition level -> only one stable charge state, add all_line_xy and extend
+            # y_range_vals; means this is only a 1-pump (chmp) loop
+            xy[def_name] = all_lines_xy[def_name.rsplit("@", 1)[0]]  # get xy from all_lines_xy
+            defect_entry = defect_phase_diagram.stable_entries[def_name][0]
+            y_range_vals.extend(
+                defect_phase_diagram._formation_energy(
+                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
+                )
+                for x_window in xlim
+            )
+
+    return (xy, y_range_vals), (all_lines_xy, all_lines_y_range_vals)
+
+
+def _get_ylim_from_y_range_vals(y_range_vals, auto_labels=False):
+    window = max(y_range_vals) - min(y_range_vals)
+    spacer = 0.1 * window
+    ylim = (0, max(y_range_vals) + spacer)
+    if auto_labels:  # need to manually set xlim or ylim if labels cross axes!!
+        ylim = (0, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
+        # Increase y_limit to give space for transition level labels
+
+    return ylim
+
+
 def _TLD_plot(
     defect_phase_diagram,
     dft_chempots=None,
@@ -280,79 +406,11 @@ def _TLD_plot(
     """
     if xlim is None:
         xlim = (-0.3, defect_phase_diagram.band_gap + 0.3)
-    xy = {}
-    all_lines_xy = {}  # For emphasis plots with faded grey E_form lines for all charge states
-    lower_cap, upper_cap = -100.0, 100.0
-    y_range_vals = []  # for finding max/min values on y-axis based on x-limits
 
-    for def_name, def_tl in defect_phase_diagram.transition_level_map.items():
-        xy[def_name] = [[], []]
-        if emphasis:
-            all_lines_xy[def_name] = [[], []]
-            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
-                for x_extrem in [lower_cap, upper_cap]:
-                    all_lines_xy[def_name][0].append(x_extrem)
-                    all_lines_xy[def_name][1].append(
-                        defect_phase_diagram._formation_energy(
-                            chg_ent, chemical_potentials=dft_chempots, fermi_level=x_extrem
-                        )
-                    )
+    (xy, y_range_vals), (all_lines_xy, _all_lines_y_range_vals) = _get_formation_energy_lines(
+        defect_phase_diagram, dft_chempots, xlim
+    )
 
-        if def_tl:
-            org_x = sorted(def_tl.keys())
-            # establish lower x-bound
-            first_charge = max(def_tl[org_x[0]])
-            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
-                if chg_ent.charge_state == first_charge:
-                    form_en = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=dft_chempots, fermi_level=lower_cap
-                    )
-                    fe_left = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=dft_chempots, fermi_level=xlim[0]
-                    )
-            xy[def_name][0].append(lower_cap)
-            xy[def_name][1].append(form_en)
-            y_range_vals.append(fe_left)
-            # iterate over stable charge state transitions
-            for fl in org_x:
-                charge = max(def_tl[fl])
-                for chg_ent in defect_phase_diagram.stable_entries[def_name]:
-                    if chg_ent.charge_state == charge:
-                        form_en = defect_phase_diagram._formation_energy(
-                            chg_ent, chemical_potentials=dft_chempots, fermi_level=fl
-                        )
-                xy[def_name][0].append(fl)
-                xy[def_name][1].append(form_en)
-                y_range_vals.append(form_en)
-            # establish upper x-bound
-            last_charge = min(def_tl[org_x[-1]])
-            for chg_ent in defect_phase_diagram.stable_entries[def_name]:
-                if chg_ent.charge_state == last_charge:
-                    form_en = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=dft_chempots, fermi_level=upper_cap
-                    )
-                    fe_right = defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=dft_chempots, fermi_level=xlim[1]
-                    )
-            xy[def_name][0].append(upper_cap)
-            xy[def_name][1].append(form_en)
-            y_range_vals.append(fe_right)
-        else:
-            # no transition - just one stable charge
-            chg_ent = defect_phase_diagram.stable_entries[def_name][0]
-            for x_extrem in [lower_cap, upper_cap]:
-                xy[def_name][0].append(x_extrem)
-                xy[def_name][1].append(
-                    defect_phase_diagram._formation_energy(
-                        chg_ent, chemical_potentials=dft_chempots, fermi_level=x_extrem
-                    )
-                )
-            y_range_vals.extend(
-                defect_phase_diagram._formation_energy(
-                    chg_ent, chemical_potentials=dft_chempots, fermi_level=x_window
-                )
-                for x_window in xlim
-            )
     (
         cmap,
         colors,
@@ -427,35 +485,7 @@ def _TLD_plot(
                         annotation_clip=True,
                     )  # only show label if coords in current axes
 
-    # get latex-like legend titles
-    legends_txt = []
-    for defect_entry_name in for_legend:
-        try:
-            defect_name = (
-                _format_defect_name(
-                    defect_species=defect_entry_name,
-                    include_site_num_in_name=False,
-                ).rsplit("^", 1)[0]
-                + "$"
-            )  # exclude charge  # Format defect name for title and axis labels
-        except Exception:  # if formatting fails, just use the defect_species name
-            defect_name = defect_entry_name
-
-        # add subscript labels for different configurations of same defect species
-        if defect_name in legends_txt:
-            defect_name = (
-                _format_defect_name(
-                    defect_species=defect_entry_name,
-                    include_site_num_in_name=True,
-                ).rsplit("^", 1)[0]
-                + "$"
-            )  # exclude charge
-        if defect_name in legends_txt:
-            i = 1
-            while defect_name in legends_txt:
-                i += 1
-                defect_name = f"{defect_name[:-3]}{chr(96+i)}{defect_name[-3:]}"  # a, b c etc
-        legends_txt.append(defect_name)
+    legends_txt = _get_legends_txt(for_legend)
     ax.legend(
         legends_txt,
         loc=2,
@@ -463,12 +493,7 @@ def _TLD_plot(
     )
 
     if ylim is None:
-        window = max(y_range_vals) - min(y_range_vals)
-        spacer = 0.1 * window
-        ylim = (0, max(y_range_vals) + spacer)
-        if auto_labels:  # need to manually set xlim or ylim if labels cross axes!!
-            ylim = (0, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
-            # Increase y_limit to give space for transition level labels
+        ylim = _get_ylim_from_y_range_vals(y_range_vals, auto_labels=auto_labels)
 
     _add_band_edges_and_axis_limits(
         ax, defect_phase_diagram.band_gap, xlim, ylim, fermi_level=fermi_level
@@ -650,46 +675,10 @@ def _all_entries_TLD_plot(
     """
     if xlim is None:
         xlim = (-0.3, defect_phase_diagram.band_gap + 0.3)
-    xy = {}
-    lower_cap, upper_cap = -100.0, 100.0
-    y_range_vals = []  # for finding max/min values on y-axis based on x-limits
 
-    legends_txt = []
-    for defect_entry in defect_phase_diagram.entries:
-        try:
-            defect_name = _format_defect_name(
-                defect_species=defect_entry.name,
-                include_site_num_in_name=False,
-            )  # Format defect name for title and axis labels
-        except Exception:  # if formatting fails, just use the defect_species name
-            defect_name = defect_entry.name
-
-        # add subscript labels for different configurations of same defect species
-        if defect_name in legends_txt:
-            defect_name = _format_defect_name(
-                defect_species=defect_entry.name,
-                include_site_num_in_name=True,
-            )
-        if defect_name in legends_txt:
-            i = 1
-            while defect_name in legends_txt:
-                i += 1
-                defect_name = f"{defect_name[:-3]}{chr(96 + i)}{defect_name[-3:]}"
-        legends_txt.append(defect_name)
-        xy[defect_name] = [[], []]
-        for x_extrem in [lower_cap, upper_cap]:
-            xy[defect_name][0].append(x_extrem)
-            xy[defect_name][1].append(
-                defect_phase_diagram._formation_energy(
-                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_extrem
-                )
-            )
-        y_range_vals.extend(
-            defect_phase_diagram._formation_energy(
-                defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
-            )
-            for x_window in xlim
-        )
+    (xy, y_range_vals), (all_lines_xy, _all_lines_y_range_vals) = _get_formation_energy_lines(
+        defect_phase_diagram, dft_chempots, xlim
+    )
 
     (
         cmap,
@@ -700,29 +689,27 @@ def _all_entries_TLD_plot(
         styled_font_size,
         styled_linewidth,
         styled_markersize,
-    ) = _get_plot_setup(colormap, xy)
-
-    ax.legend(
-        legends_txt,
-        loc=2,
-        bbox_to_anchor=(1, 1),
-    )
+    ) = _get_plot_setup(colormap, all_lines_xy)
 
     _plot_formation_energy_lines(  # plot formation energy lines
-        xy,
+        all_lines_xy,
         colors=colors,
         ax=ax,
         styled_linewidth=styled_linewidth,
         styled_markersize=styled_markersize,
     )
 
+    legends_txt = _get_legends_txt(
+        [defect_entry.name for defect_entry in defect_phase_diagram.entries], all_entries=True
+    )
+    ax.legend(
+        legends_txt,
+        loc=2,
+        bbox_to_anchor=(1, 1),
+    )
+
     if ylim is None:
-        window = max(y_range_vals) - min(y_range_vals)
-        spacer = 0.1 * window
-        ylim = (0, max(y_range_vals) + spacer)
-        if auto_labels:  # need to manually set xlim or ylim if labels cross axes!!
-            ylim = (0, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
-            # Increase y_limit to give space for transition level labels
+        ylim = _get_ylim_from_y_range_vals(y_range_vals, auto_labels=auto_labels)
 
     _add_band_edges_and_axis_limits(
         ax, defect_phase_diagram.band_gap, xlim, ylim, fermi_level=fermi_level
