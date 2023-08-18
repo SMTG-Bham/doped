@@ -158,14 +158,17 @@ def _get_plot_setup(colormap, xy):
             f"defect species (so some defects will have the same line colour). Recommended to "
             f"change/set colormap to 'tab10' or 'tab20' (10 and 20 colours each)."
         )
+
+    # generate plot:
+    plt.clf()
     styled_fig_size = plt.rcParams["figure.figsize"]
-    f, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
+    fig, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
     # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
     styled_font_size = plt.rcParams["font.size"]
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
 
-    return cmap, colors, f, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
+    return cmap, colors, fig, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
 
 
 def _plot_formation_energy_lines(
@@ -188,11 +191,9 @@ def _plot_formation_energy_lines(
             alpha=alpha,
         )
         if for_legend is not None:
-            for_legend.append(def_name)
+            for_legend.append(def_name.split("@")[0])
 
-    if for_legend is not None:
-        return for_legend
-    return None
+    return for_legend if for_legend is not None else None
 
 
 def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
@@ -232,7 +233,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.yaxis.set_minor_locator(ticker.AutoMinorLocator(2))
 
 
-def _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size):
+def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_font_size):
     if title:
         if chempot_table:
             ax.set_title(
@@ -244,7 +245,7 @@ def _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_fon
         else:
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
     if filename is not None:
-        f.savefig(filename, bbox_inches="tight", dpi=600)
+        fig.savefig(filename, bbox_inches="tight", dpi=600)
 
 
 def _TLD_plot(
@@ -355,7 +356,7 @@ def _TLD_plot(
     (
         cmap,
         colors,
-        f,
+        fig,
         ax,
         styled_fig_size,
         styled_font_size,
@@ -475,9 +476,9 @@ def _TLD_plot(
     if chempot_table and dft_chempots:
         _plot_chemical_potential_table(ax, dft_chempots, loc="left", elt_refs=elt_refs)
 
-    _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size)
+    _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_font_size)
 
-    return ax
+    return fig
 
 
 def _plot_chemical_potential_table(
@@ -490,14 +491,14 @@ def _plot_chemical_potential_table(
         dft_chempots = {elt: energy - elt_refs[elt] for elt, energy in dft_chempots.items()}
     labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(dft_chempots.keys())]
     labels[0] = f"({labels[0]}"
-    labels[-1] = f"{labels[-1]})"  # [:-1]?
+    labels[-1] = f"{labels[-1][:-1]})"  # [:-1] removes trailing comma
     labels = ["Chemical Potentials", *labels, " Units:"]
 
     text_list = [f"{dft_chempots[el]:.2f}," for el in sorted(dft_chempots.keys())]
 
     # add brackets to first and last entries:
     text_list[0] = f"({text_list[0]}"
-    text_list[-1] = f"{text_list[-1]})"  # [:-1]?
+    text_list[-1] = f"{text_list[-1][:-1]})"  # [:-1] removes trailing comma
     if elt_refs is not None:
         text_list = ["(wrt Elemental refs)", *text_list, "  [eV]"]
     else:
@@ -512,7 +513,7 @@ def _plot_chemical_potential_table(
     return tab
 
 
-def all_lines_formation_energy_plot(
+def all_lines_formation_energy_plot(  # TODO: Refactor this as an options for formation_energy_plot
     defect_phase_diagram,
     chempot_limits: Optional[Dict] = None,
     pd_facets: Optional[List] = None,
@@ -653,27 +654,6 @@ def _all_entries_TLD_plot(
     lower_cap, upper_cap = -100.0, 100.0
     y_range_vals = []  # for finding max/min values on y-axis based on x-limits
 
-    (
-        cmap,
-        colors,
-        f,
-        ax,
-        styled_fig_size,
-        styled_font_size,
-        styled_linewidth,
-        styled_markersize,
-    ) = _get_plot_setup(colormap, xy)
-
-    for_legend = []
-    for_legend = _plot_formation_energy_lines(  # plot formation energy lines
-        xy,  # this needed??
-        colors=colors,
-        ax=ax,
-        styled_linewidth=styled_linewidth,
-        styled_markersize=styled_markersize,
-        for_legend=for_legend,
-    )  # plot formation energy lines
-
     legends_txt = []
     for defect_entry in defect_phase_diagram.entries:
         try:
@@ -710,10 +690,30 @@ def _all_entries_TLD_plot(
             )
             for x_window in xlim
         )
+
+    (
+        cmap,
+        colors,
+        fig,
+        ax,
+        styled_fig_size,
+        styled_font_size,
+        styled_linewidth,
+        styled_markersize,
+    ) = _get_plot_setup(colormap, xy)
+
     ax.legend(
         legends_txt,
         loc=2,
         bbox_to_anchor=(1, 1),
+    )
+
+    _plot_formation_energy_lines(  # plot formation energy lines
+        xy,
+        colors=colors,
+        ax=ax,
+        styled_linewidth=styled_linewidth,
+        styled_markersize=styled_markersize,
     )
 
     if ylim is None:
@@ -730,6 +730,6 @@ def _all_entries_TLD_plot(
     if chempot_table and dft_chempots:
         _plot_chemical_potential_table(ax, dft_chempots, loc="left", elt_refs=elt_refs)
 
-    _set_title_and_save_figure(ax, f, title, chempot_table, filename, styled_font_size)
+    _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_font_size)
 
-    return ax
+    return fig

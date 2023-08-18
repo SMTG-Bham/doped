@@ -47,4 +47,3 @@ ytick.left           : True
 
 # Legend
 legend.handlelength  : 1.5
-legend.fontsize      : 7.5
