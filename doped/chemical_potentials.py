@@ -42,6 +42,7 @@ warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary`.
+# TODO: Refactor 'facet' to 'limit' in chempot dicts
 
 
 def make_molecule_in_a_box(element: str):
