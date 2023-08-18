@@ -26,6 +26,7 @@ import warnings
 from math import erfc, exp
 from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 from monty.json import MontyDecoder
 
@@ -44,7 +45,7 @@ def _monty_decode_nested_dicts(d):
     nested in dicts or in lists of dicts, and decode them.
     """
     for key, value in d.items():
-        if isinstance(value, dict) and not any(k in value for k in ["@module", "@class"]):
+        if isinstance(value, dict) and all(k not in value for k in ["@module", "@class"]):
             _monty_decode_nested_dicts(value)
         elif (
             isinstance(value, list)
@@ -55,14 +56,11 @@ def _monty_decode_nested_dicts(d):
                 d[key] = [MontyDecoder().process_decoded(i) for i in value]
             except Exception as exc:
                 print(f"Failed to decode {key} with error {exc}")
-                pass
-
         if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
             try:
                 d[key] = MontyDecoder().process_decoded(value)
             except Exception as exc:
                 print(f"Failed to decode {key} with error {exc}")
-                pass
 
 
 def get_correction_freysoldt(
@@ -130,11 +128,9 @@ def get_correction_freysoldt(
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
-        print(
-            '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
-            '"potalign".'.format(partflag)
+        raise ValueError(
+            f'{partflag} is incorrect potalign type. Must be "All", "AllSplit", "pc", or "potalign".'
         )
-        return None
 
     q_model = defect_entry.parameters.get("q_model", None)
     encut = defect_entry.parameters.get("encut", 520)
@@ -152,14 +148,15 @@ def get_correction_freysoldt(
 
     if plot:
         if axis is None:
-            ax_list = [[k, "axis" + str(k)] for k in corr_class.metadata["pot_plot_data"]]
+            ax_list = [[k, f"axis{k!s}"] for k in corr_class.metadata["pot_plot_data"]]
         else:
-            ax_list = [[axis, "axis" + str(axis + 1)]]
+            ax_list = [[axis, f"axis{axis + 1!s}"]]
 
         for ax_key, ax_title in ax_list:
-            p = corr_class.plot(ax_key, title=ax_title, saved=False)
+            with plt.style.context("doped.mplstyle"):
+                p = corr_class.plot(ax_key, title=ax_title, saved=False)
             if filename:
-                p.savefig(filename + "_" + ax_title + ".pdf", bbox_inches="tight")
+                p.savefig(f"{filename}_{ax_title}.pdf", bbox_inches="tight")
 
     if partflag in ["AllSplit", "All"]:
         freyval = np.sum(list(f_corr_summ.values()))
@@ -231,12 +228,9 @@ def get_correction_kumagai(
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     if partflag not in ["All", "AllSplit", "pc", "potalign"]:
-        print(
-            '{} is incorrect potalign type. Must be "All", "AllSplit", "pc", or '
-            '"potalign".'.format(partflag)
+        raise ValueError(
+            f'{partflag} is incorrect potalign type. Must be "All", "AllSplit", "pc", or "potalign".'
         )
-        return None
-
     sampling_radius = defect_entry.parameters.get("sampling_radius", None)
     gamma = defect_entry.parameters.get("gamma", None)
 
@@ -249,7 +243,8 @@ def get_correction_kumagai(
     k_corr_summ = corr_class.get_correction(template_defect)
 
     if plot:
-        p = corr_class.plot(title="Kumagai", saved=False)
+        with plt.style.context("doped.mplstyle"):
+            p = corr_class.plot(title="Kumagai", saved=False)
         if filename:
             p.savefig(f"{filename}.pdf", bbox_inches="tight")
 
