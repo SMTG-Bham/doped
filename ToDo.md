@@ -51,7 +51,7 @@
     actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
     and have this automatically plug-and-play with `py-sc-fermi`. Already have the site analysis /
     Wyckoff matching code for this.
-  - See `pydefect` for tools for this.
+  - See `pydefect` and pmg `finder.py` for tools for this.
   - For complex defects, this is future work, and should be done manually (note in docs and give
     warning when parsing).
     - For split-interstitials and split-vacancies however, should be relatively straightforward?
