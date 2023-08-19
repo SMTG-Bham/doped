@@ -94,7 +94,7 @@ class DefectEntry(thermo.DefectEntry):
     name: str = ""
     calculation_metadata: Dict = field(default_factory=dict)
     conventional_structure: Optional[Structure] = None
-    conv_cell_frac_coords: Optional[np.ndarray] = field(default_factory=np.array)
+    conv_cell_frac_coords: Optional[np.ndarray] = None
     equiv_conv_cell_frac_coords: List[np.ndarray] = field(default_factory=list)
     _BilbaoCS_conv_cell_vector_mapping: List[int] = field(default_factory=lambda: [0, 1, 2])
     wyckoff: Optional[str] = None
@@ -216,8 +216,6 @@ class Defect(core.Defect):
             user_charges=defect.user_charges,
             **doped_kwargs,
         )
-
-    # TODO: Need to define defect types as subclasses
 
     def get_supercell_structure(
         self,
@@ -344,6 +342,15 @@ class Defect(core.Defect):
             if return_sites
             else sc_defect_struct
         )
+
+    def as_dict(self):
+        """
+        JSON-serializable dict representation of Defect.
+
+        Needs to be redefined because attributes not explicitly specified in
+        subclasses, which is required for monty functions.
+        """
+        return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
 
 
 class Vacancy(core.Vacancy, Defect):
