@@ -875,8 +875,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -1331,8 +1330,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -1803,8 +1801,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -2228,8 +2225,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -2638,8 +2634,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -3036,8 +3031,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
@@ -3420,8 +3414,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             )
             assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
             assert not defect_entry.corrections
-            with self.assertRaises(KeyError):
-                print(defect_entry.corrected_energy)
+            assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
 
             # test charge state guessing:
             for charge_state_dict in defect_entry.charge_state_guessing_log:
