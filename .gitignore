@@ -27,3 +27,6 @@ local_doped_testing/
 
 # POTCARs not allowed
 *POTCAR
+
+# Sphinx documentation
+docs/_build/
