@@ -35,6 +35,7 @@ release = '2.0.0'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.coverage',
     'sphinx.ext.napoleon',
     'sphinx.ext.mathjax',
@@ -42,9 +43,7 @@ extensions = [
     'sphinx.ext.autosectionlabel',
     'sphinx_click',
     'sphinx_design',
-    # 'sphinx_mdinclude',
     'myst_nb',  # for jupyter notebooks
-    # 'myst_parser',
 ]
 
 source_suffix = {
