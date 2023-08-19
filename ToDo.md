@@ -153,8 +153,7 @@
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
-  - Go through docstrings and trim to 80 characters. Also make sure all tidy and understandable
-    (idiot-proof).
+  - Go through docstrings and trim to 80 characters. Also make sure all tidy and understandable (idiot-proof). Should be able to generate docs with little to no warnings/errors.
   - Add type hints for all functions.
   - Check code for each function is relatively lean & efficient, can check with ChatGPT for any gnarly
     ones.
