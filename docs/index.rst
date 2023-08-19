@@ -31,6 +31,20 @@ Chemical potential/stability region plots and defect formation energy (a.k.a. tr
    :align: right
    :width: 385
 
+.. raw:: html
+
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+   <br>
+
 Tutorials showing the code functionality and usage are provided on the `docs`_ site.
 ``doped`` can be installed via ``pip`` or ``conda``, and further instructions for setting up ``POTCAR``s
 with ``pymatgen`` (needed for input file generation), if not already done, are provided on
@@ -50,11 +64,19 @@ approach is followed in the `tutorials`_, with a more in-depth explanation and t
 .. _tutorials: https://www.nature.com/articles/s41524-023-00973-1 # TODO!!!
 
 Summary GIF:
+
 .. image:: SnB_Supercell_Schematic_PES_2sec_Compressed.gif
 
 ``SnB`` CLI Usage:
+
 .. image:: SnB_CLI.gif
 
+.. raw:: html
+
+   <br>
+   <br>
+   <br>
+   <br>
 
 Acknowledgments
 ================
@@ -73,6 +95,12 @@ The colour scheme for defect formation energy plots was originally templated fro
 developed by the dynamic duo `Adam Jackson`_ and `Alex Ganose`_.
 
 
+Studies using ``doped``
+========================
+
+**TODO**
+We'll add papers that use `doped` to this list as they come out!
+
 .. _ShakeNBreak: https://shakenbreak.readthedocs.io
 .. _docs: #
 .. _example files: examples
@@ -86,6 +114,6 @@ developed by the dynamic duo `Adam Jackson`_ and `Alex Ganose`_.
    :maxdepth: 4
 
    Installation
-   API
+   Python API <doped>
    Tutorials
    Contributing
