@@ -3,7 +3,6 @@
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
-# **D**efect **O**riented **P**ython **E**nvironment **D**istribution (`doped`)
 <img align="right" width="300" src="docs/doped_v2_logo.png">`doped` is a python package for
 managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
@@ -11,22 +10,16 @@ generate defect structures and relevant competing phases (for chemical potential
 [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for defect
 supercell calculations, and automatically parse and analyse the results.
 
-Example Jupyter notebooks (the `.ipynb` files) are provided in [examples](examples) to show the code functionality and
-usage.
+Tutorials showing the code functionality and usage are provided on the [docs]() site.
 
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
 <img align="left" src="docs/doped_chempot_plotting.png" width="420"> <img src="docs/doped_TLD_plot.png" width="390" align="right">
 
-## Requirements
-`doped` requires `pymatgen>=2022.8.23` and its dependencies.
-
 ## Installation
-1. Create virtual environment and install:
 ```bash
-pip install doped  # install doped and dependencies, can also
-pip install --force --no-cache-dir numpy==1.23 # install numpy after doped to avoid binary incompatibility
+pip install doped  # install doped and dependencies
 ```
 
 Alternatively if desired, `doped` can also be installed from `conda` with:
@@ -35,10 +28,12 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
   conda install -c conda-forge doped
 ```
 
-If you want to use the [example files](examples),
-you should clone the repository and install with `pip install -e .` from the `doped` directory, but still make sure to `pip install numpy --upgrade`.
+### Setup `POTCAR`s and `Materials Project` API
+To generate `VASP` `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for
+charged defects, your `POTCAR` directory needs to be setup to work with `pymatgen` (via the `.pmgrc.yaml` file).
 
-2. (If not set) Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml`
+**Instructions:**
+1. Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml`
 (`pymatgen` config file) as follows:
 ```bash
   PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
@@ -67,10 +62,8 @@ If this does not work, you may need to add this to the `.pmgrc.yaml` file:
   PMG_DEFAULT_FUNCTIONAL: PBE_54  # whatever functional label your POTCARs have
 ```
 
-This is necessary to generate `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for charged
-defects.
-
-The Materials Project API key is required for determining the necessary competing phases to calculate in order to
+Note the Materials Project API key is required for determining the necessary competing phases to
+calculate in order to
 determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy
 MP API, with your unique key available at: https://legacy.materialsproject.org/open.
 
@@ -84,8 +77,12 @@ Summary GIF:
 `SnB` CLI Usage:
 ![ShakeNBreak CLI](docs/SnB_CLI.gif)
 
+## Requirements
+`doped` requires `pymatgen>=2022.10.22` and its dependencies.
 
 ### Developer Installation
+If you want to use the [example files](examples) from the tutorials, you will need to clone the
+`doped` GitHub repository:
 
 1. Download the `doped` source code using the command:
 ```bash
