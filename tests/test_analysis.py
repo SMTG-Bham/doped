@@ -13,7 +13,7 @@ import numpy as np
 from pymatgen.core.structure import Structure
 
 from doped.analysis import defect_entry_from_paths
-from doped.pycdt.utils.parse_calculations import (
+from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
 )
@@ -52,7 +52,7 @@ accurate total energies. Recommended to look at the correction plots (i.e. run
 `doped.corrections`) to visually determine if the charge
 correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic
 correction). You can also change the DefectCompatibility() tolerance settings via the
-`compatibility` parameter in `SingleDefectParser.from_paths()`."""
+`compatibility` parameter in `DefectParser.from_paths()`."""
 
     def tearDown(self):
         if_present_rm("bulk_voronoi_nodes.json")
@@ -129,7 +129,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert np.isclose(parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, atol=1e-3)
         assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 7.661, atol=1e-3)
-        assert parsed_v_cd_m2_fake_aniso.corrections == {"freysoldt": 0}
+        assert parsed_v_cd_m2_fake_aniso.corrections == {}
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -267,7 +267,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert np.isclose(parsed_v_cd_m2.uncorrected_energy, 7.661, atol=1e-3)
         assert np.isclose(parsed_v_cd_m2.get_ediff(), 7.661, atol=1e-3)
-        assert parsed_v_cd_m2.corrections == {"freysoldt": 0}
+        assert parsed_v_cd_m2.corrections == {}
 
         # move LOCPOT back to original:
         shutil.move(f"{defect_path}/hidden_lcpt.gz", f"{defect_path}/LOCPOT.gz")
@@ -300,12 +300,10 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 dielectric=fake_aniso_dielectric,
                 charge_state=2,
             )
-            for warning in w:
-                print(warning.message)
             assert (
-                len(w) == 3
-            )  # one delocalization warning (general one already give) and multiple OUTCARs (both
-            # defect and bulk) - (this fails if run on it's own - len(w) -> 4)
+                len(w) == 4
+            )  # two delocalization warnings (general and specific one) and multiple OUTCARs (both
+            # defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
             assert (
                 f"Multiple `OUTCAR` files found in bulk directory: {self.CDTE_BULK_DATA_DIR}. Using"
@@ -319,6 +317,19 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[1].message)
             )
             # other two warnings are delocalization warnings, already tested
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=fake_aniso_dielectric,
+                charge_state=2,
+            )
+            assert (
+                len(w) == 3
+            )  # one delocalization warning (general one already given) and multiple OUTCARs (both
+            # defect and bulk)
+            assert all(issubclass(warning.category, UserWarning) for warning in w)
 
     def test_multiple_locpots(self):
         defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
@@ -394,8 +405,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # Check that the correct Freysoldt correction is applied
         correct_correction_dict = {
-            "charge_correction": 0.7376460317828045,
-            "bandfilling_correction": -0.0,
+            "freysoldt_charge_correction": 0.7376460317828045,
         }
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -521,16 +531,14 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "vac_1_Cd_-1",
                 6.355,
                 {
-                    "charge_correction": 0.22517150393292082,
-                    "bandfilling_correction": -0.0,
+                    "freysoldt_charge_correction": 0.22517150393292082,
                 },
             ),
             (
                 "vac_1_Cd_-2",
                 8.398,
                 {
-                    "charge_correction": 0.7376460317828045,
-                    "bandfilling_correction": -0.0,
+                    "freysoldt_charge_correction": 0.7376460317828045,
                 },
             ),
         ]:
@@ -546,15 +554,12 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
             if name == "vac_1_Cd_0":
                 np.testing.assert_array_almost_equal(
-                    parsed_vac_Cd_dict[name].site.frac_coords, [0.5, 0.5, 0.5]
+                    parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords, [0.5, 0.5, 0.5]
                 )
             else:
-                np.testing.assert_array_almost_equal(parsed_vac_Cd_dict[name].site.frac_coords, [0, 0, 0])
-
-            # test get_correction_freysoldt:
-            from doped.utils.corrections import get_correction_freysoldt
-
-            get_correction_freysoldt(parsed_vac_Cd_dict[name], 9.13, plot=True)
+                np.testing.assert_array_almost_equal(
+                    parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords, [0, 0, 0]
+                )
 
     def test_interstitial_parsing_and_kumagai(self):
         """
@@ -582,15 +587,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert np.isclose(te_i_2_ent.get_ediff(), -6.221, atol=1e-3)
         # assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.8834518111049584,
-            "bandfilling_correction": -0.0,
+            "kumagai_charge_correction": 0.8834518111049584,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
 
         # assert auto-determined interstitial site is correct
         # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
-        np.testing.assert_array_almost_equal(te_i_2_ent.site.frac_coords, [0.9375, 0.9375, 0.6875])
+        np.testing.assert_array_almost_equal(
+            te_i_2_ent.defect_supercell_site.frac_coords, [0.9375, 0.9375, 0.6875]
+        )
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
@@ -628,14 +634,15 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert np.isclose(te_cd_1_ent.get_ediff(), -2.665996, atol=1e-3)
         # assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.24005014473002428,
-            "bandfilling_correction": -0.0,
+            "kumagai_charge_correction": 0.24005014473002428,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_cd_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-        np.testing.assert_array_almost_equal(te_cd_1_ent.site.frac_coords, [0.5000, 0.5000, 0.5000])
+        np.testing.assert_array_almost_equal(
+            te_cd_1_ent.defect_supercell_site.frac_coords, [0.5000, 0.5000, 0.5000]
+        )
 
     def test_extrinsic_interstitial_defect_ID(self):
         """
@@ -713,8 +720,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert np.isclose(int_F_minus1_ent.get_ediff(), 0.767, atol=1e-3)
         # assert np.isclose(int_F_minus1_ent.uncorrected_energy, 0.7515, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.0155169495708003,
-            "bandfilling_correction": -0.0,
+            "kumagai_charge_correction": 0.0155169495708003,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(
@@ -725,7 +731,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            int_F_minus1_ent.site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
+            int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
             0.0,
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell
@@ -754,14 +760,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert np.isclose(F_O_1_ent.get_ediff(), 0.03146836204627482, atol=1e-3)
         # assert np.isclose(F_O_1_ent.uncorrected_energy, -0.08523418000004312, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.11670254204631794,
-            "bandfilling_correction": -0.0,
+            "freysoldt_charge_correction": 0.11670254204631794,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(F_O_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            F_O_1_ent.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
+            F_O_1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
             atol=1e-2,
         )
@@ -779,14 +784,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert np.isclose(F_O_1_ent.get_ediff(), -0.0031, atol=1e-3)
         # assert np.isclose(F_O_1_ent.uncorrected_energy, -0.0852, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.08214,
-            "bandfilling_correction": -0.0,
+            "kumagai_charge_correction": 0.08214,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(F_O_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            F_O_1_ent.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
+            F_O_1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
             atol=1e-2,
         )
