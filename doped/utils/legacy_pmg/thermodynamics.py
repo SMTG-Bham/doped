@@ -54,7 +54,7 @@ class DefectPhaseDiagram(MSONable):
                 incompatible by the DefectComaptibility class. Note this must be set to False
                 if you desire a suggestion for larger supercell sizes.
                 Default is True (to omit calculations which have "is_compatible"=False in
-                    DefectEntry'sparameters)
+                    DefectEntry's calculation_metadata)
             metadata (dict): Dictionary of metadata to store with the PhaseDiagram. Has
                 no impact on calculations.
         """
@@ -63,18 +63,18 @@ class DefectPhaseDiagram(MSONable):
         self.filter_compatible = filter_compatible
 
         if filter_compatible:
-            self.entries = [e for e in entries if e.parameters.get("is_compatible", True)]
+            self.entries = [e for e in entries if e.calculation_metadata.get("is_compatible", True)]
         else:
             self.entries = entries
 
         for ent_ind, ent in enumerate(self.entries):
-            if "vbm" not in ent.parameters.keys() or ent.parameters["vbm"] != vbm:
+            if "vbm" not in ent.calculation_metadata.keys() or ent.calculation_metadata["vbm"] != vbm:
                 # logger.info(
                 #     f"Entry {ent.name} did not have vbm equal to given DefectPhaseDiagram value."
                 #     " Manually overriding."
                 # )
                 new_ent = copy.deepcopy(ent)
-                new_ent.parameters["vbm"] = vbm
+                new_ent.calculation_metadata["vbm"] = vbm
                 self.entries[ent_ind] = new_ent
 
         self.metadata = metadata or {}
@@ -142,8 +142,9 @@ class DefectPhaseDiagram(MSONable):
                 Keys are Element objects within the defect structure's composition.
                 Values are float numbers equal to the atomic chemical potential for that element.
              fermi_level (float):  Value corresponding to the electron chemical potential.
-                If "vbm" is supplied in parameters dict, then fermi_level is referenced to the VBM.
-                If "vbm" is NOT supplied in parameters dict, then fermi_level is referenced to the
+                If "vbm" is supplied in calculation_metadata dict, then fermi_level is referenced to
+                the VBM.  "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
+                referenced to the
                 calculation's absolute Kohn-Sham potential (and should include the vbm value provided
                 by a band structure calculation).
 
@@ -154,8 +155,10 @@ class DefectPhaseDiagram(MSONable):
 
         formation_energy = defect_entry.get_ediff() + chempot_correction
 
-        if "vbm" in defect_entry.parameters:
-            formation_energy += defect_entry.charge_state * (defect_entry.parameters["vbm"] + fermi_level)
+        if "vbm" in defect_entry.calculation_metadata:
+            formation_energy += defect_entry.charge_state * (
+                defect_entry.calculation_metadata["vbm"] + fermi_level
+            )
         else:
             formation_energy += defect_entry.charge_state * fermi_level
 
@@ -444,7 +447,7 @@ class DefectPhaseDiagram(MSONable):
                     if entry.charge_state == charge:
                         break
 
-                if entry.parameters.get("is_compatible", True):
+                if entry.calculation_metadata.get("is_compatible", True):
                     continue
 
                 # consider if transition level is within
