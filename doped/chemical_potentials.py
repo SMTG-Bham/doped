@@ -19,7 +19,7 @@ from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
 
-from doped.pycdt.utils.parse_calculations import _get_output_files_and_check_if_multiple
+from doped.utils.parsing import _get_output_files_and_check_if_multiple
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))
