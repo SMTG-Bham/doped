@@ -137,7 +137,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
                 "site_matching_indices": site_matching_indices,
             }
         )
-        self.defect_entry = DefectEntry(vac, 0.0, parameters=p)
+        self.defect_entry = DefectEntry(vac, 0.0, calculation_metadata=p)
 
     def test_get_correction_freysoldt(self):
         freyout = get_correction_freysoldt(self.defect_entry, self.dielectric, partflag="All", axis=None)

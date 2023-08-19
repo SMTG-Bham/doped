@@ -41,8 +41,8 @@ warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 def _monty_decode_nested_dicts(d):
     """
-    Recursively find any dictionaries in defect_entry.parameters, which may be
-    nested in dicts or in lists of dicts, and decode them.
+    Recursively find any dictionaries in defect_entry.calculation_metadata,
+    which may be nested in dicts or in lists of dicts, and decode them.
     """
     for key, value in d.items():
         if isinstance(value, dict) and all(k not in value for k in ["@module", "@class"]):
@@ -78,7 +78,7 @@ def get_correction_freysoldt(
     doi: 10.1103/PhysRevLett.102.016402
     Args:
         defect_entry: DefectEntry object with the following
-            keys stored in defect.parameters:
+            keys stored in defect.calculation_metadata:
                 required:
                     axis_grid (3 x NGX where NGX is the length of the NGX grid
                     in the x,y and z axis directions. Same length as planar
@@ -124,8 +124,8 @@ def get_correction_freysoldt(
 
     Returns Correction
     """
-    # ensure parameters are decoded in case defect_dict was reloaded from json
-    _monty_decode_nested_dicts(defect_entry.parameters)
+    # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
+    _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
@@ -134,9 +134,9 @@ def get_correction_freysoldt(
             f'{partflag} is incorrect potalign type. Must be "All", "AllSplit", "pc", or "potalign".'
         )
 
-    q_model = defect_entry.parameters.get("q_model", None)
-    encut = defect_entry.parameters.get("encut", 520)
-    madetol = defect_entry.parameters.get("madetol", 0.0001)
+    q_model = defect_entry.calculation_metadata.get("q_model", None)
+    encut = defect_entry.calculation_metadata.get("encut", 520)
+    madetol = defect_entry.calculation_metadata.get("madetol", 0.0001)
 
     if not defect_entry.charge_state:
         print("Charge is zero so charge correction is zero.")
@@ -192,7 +192,7 @@ def get_correction_kumagai(
     NOTE that bulk_init class must be pre-instantiated to use this function
     Args:
         defect_entry: DefectEntry object with the following
-            keys stored in defect.parameters:
+            keys stored in defect.calculation_metadata:
                 required:
                     bulk_atomic_site_averages (list):  list of bulk structure"s atomic site
                     averaged ESPs * charge, in same order as indices of bulk structure note this
@@ -228,8 +228,8 @@ def get_correction_kumagai(
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
     """
-    # ensure parameters are decoded in case defect_dict was reloaded from json
-    _monty_decode_nested_dicts(defect_entry.parameters)
+    # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
+    _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
@@ -237,8 +237,8 @@ def get_correction_kumagai(
         raise ValueError(
             f'{partflag} is incorrect potalign type. Must be "All", "AllSplit", "pc", or "potalign".'
         )
-    sampling_radius = defect_entry.parameters.get("sampling_radius", None)
-    gamma = defect_entry.parameters.get("gamma", None)
+    sampling_radius = defect_entry.calculation_metadata.get("sampling_radius", None)
+    gamma = defect_entry.calculation_metadata.get("gamma", None)
 
     if not defect_entry.charge_state:
         print("Charge is zero so charge correction is zero.")
@@ -394,7 +394,7 @@ def get_murphy_image_charge_correction(
     # Calculate supercell parallelpiped and dimensions
     sup_latt = np.dot(np.diag(axis), lattice)
 
-    # Determine which of the lattice parameters is the largest and determine
+    # Determine which of the lattice calculation_metadata is the largest and determine
     # reciprocal space supercell
     recip_axis = np.array([int(x) for x in factor * max(latt) / latt])
     recip_volume = abs(np.dot(np.cross(lattice[0], lattice[1]), lattice[2]))

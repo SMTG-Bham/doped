@@ -1098,7 +1098,7 @@ class DefectParser:
             raise ValueError(
                 f"Unable to parse atomic core potentials from {dir_type} `OUTCAR` at {outcar_path}. This "
                 f"can happen if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the "
-                f"calculation was finished prematurely with a  STOPCAR`. The Kumagai charge correction "
+                f"calculation was finished prematurely with a `STOPCAR`. The Kumagai charge correction "
                 f"cannot be computed without this data!"
             )
 
@@ -1183,8 +1183,8 @@ class DefectParser:
             "bulk_incar": self.bulk_vr.incar,
             "defect_kpoints": self.defect_vr.kpoints,
             "bulk_kpoints": self.bulk_vr.kpoints,
-            "defect_potcar_symbols": self.defect_vr.potcar.spec,
-            "bulk_potcar_symbols": self.bulk_vr.potcar.spec,
+            "defect_potcar_symbols": self.defect_vr.potcar_spec,
+            "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
         }
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
@@ -1390,24 +1390,12 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
 
         if "freysoldt_meta" in self.defect_entry.calculation_metadata:
-            frey_meta = self.defect_entry.calculation_metadata["freysoldt_meta"]
-            frey_corr = (
-                frey_meta["freysoldt_electrostatic"]
-                + frey_meta["freysoldt_potential_alignment_correction"]
-            )
-            self.defect_entry.corrections.update({"freysoldt_charge_correction": frey_corr})
-
+            _update_defect_entry_charge_corrections(self.defect_entry, "freysoldt")
         elif "kumagai_meta" in self.defect_entry.calculation_metadata:
-            kumagai_meta = self.defect_entry.calculation_metadata["kumagai_meta"]
-            kumagai_corr = (
-                kumagai_meta["kumagai_electrostatic"]
-                + kumagai_meta["kumagai_potential_alignment_correction"]
-            )
-            self.defect_entry.corrections.update({"kumagai_charge_correction": kumagai_corr})
-
+            _update_defect_entry_charge_corrections(self.defect_entry, "kumagai")
         if (
             self.defect_entry.charge_state != 0
-            and self.defect_entry.corrections.get("charge_correction", None) is None
+            and (not self.defect_entry.corrections or sum(self.defect_entry.corrections.values())) == 0
         ):
             warnings.warn(
                 f"No charge correction computed for {self.defect_entry.name} with "
@@ -1416,3 +1404,12 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"LOCPOT files for Freysoldt correction, OUTCAR (with ICORELEVEL = 0) "
                 f"for Kumagai correction etc)."
             )
+
+
+def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):
+    meta = defect_entry.calculation_metadata[f"{charge_correction_type}_meta"]
+    corr = (
+        meta[f"{charge_correction_type}_electrostatic"]
+        + meta[f"{charge_correction_type}_potential_alignment_correction"]
+    )
+    defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
