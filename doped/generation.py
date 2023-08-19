@@ -1414,28 +1414,10 @@ class DefectsGenerator(MSONable):
         """
         JSON-serializable dict representation of DefectsGenerator.
         """
-        serialized_defect_entries = {
-            key: {
-                **defect_entry.__dict__,
-                **defect_entry.as_dict(),
-                "defect": {
-                    **defect_entry.defect.__dict__,
-                    **defect_entry.defect.as_dict(),
-                },
-            }
-            for key, defect_entry in self.defect_entries.items()
-        }
-        serialized_defects = {
-            defect_type: [{**defect.__dict__, **defect.as_dict()} for defect in defect_list]
-            for defect_type, defect_list in self.defects.items()
-        }
-
         return {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
             **self.__dict__,
-            "defect_entries": serialized_defect_entries,
-            "defects": serialized_defects,
         }
 
     @classmethod
