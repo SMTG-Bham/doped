@@ -1,0 +1,18 @@
+sphinx
+myst-nb
+sphinx-book-theme
+sphinx_click
+sphinx_design
+numpy>=1.21  # needed for numpy.typing.NDArray
+pymatgen>=2022.10.22
+pymatgen-analysis-defects>=2023.7.12
+ase
+matplotlib
+pandas>=1.1.0
+seaborn
+hiphive
+monty
+click
+shakenbreak>=3.0.0
+doped
+importlib-metadata
