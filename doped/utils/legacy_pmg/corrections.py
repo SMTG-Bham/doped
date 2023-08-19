@@ -4,31 +4,25 @@
 Implementation of defect correction methods.
 """
 
-from __future__ import annotations
-
 import logging
-from typing import TYPE_CHECKING
+import math
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-from scipy import stats
-
-if TYPE_CHECKING:
-    from pymatgen.core.lattice import Lattice
-
-from doped.utils.legacy_pmg import DefectCorrection
-from doped.utils.legacy_pmg.utils import (
+from pymatgen.analysis.defects.utils import (
     QModel,
     ang_to_bohr,
     converge,
     eV_to_k,
-    generate_R_and_G_vecs,
     generate_reciprocal_vectors_squared,
     hart_to_ev,
     kumagai_to_V,
-    tune_for_gamma,
 )
+from scipy import stats
+
+from doped.utils.legacy_pmg import DefectCorrection
 
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -62,7 +56,7 @@ class FreysoldtCorrection(DefectCorrection):
         Args:
             dielectric_const (float or 3x3 matrix): Dielectric constant for the structure
             q_model (QModel): instantiated QModel object or None.
-                Uses default parameters to instantiate QModel if None supplied
+                Uses default calculation_metadata to instantiate QModel if None supplied
             energy_cutoff (int): Maximum energy in eV in reciprocal space to perform
                 integration for potential correction.
             madeltol(float): Convergence criteria for the Madelung energy for potential correction
@@ -89,7 +83,7 @@ class FreysoldtCorrection(DefectCorrection):
         Args:
             entry (DefectEntry): defect entry to compute Freysoldt correction on.
 
-                Requires following keys to exist in DefectEntry.parameters dict:
+                Requires following keys to exist in DefectEntry.calculation_metadata dict:
 
                     axis_grid (3 x NGX where NGX is the length of the NGX grid
                     in the x,y and z axis directions. Same length as planar
@@ -117,9 +111,13 @@ class FreysoldtCorrection(DefectCorrection):
             FreysoldtCorrection values as a dictionary
         """
         if self.axis is None:
-            list_axis_grid = np.array(entry.parameters["axis_grid"], dtype=object)
-            list_bulk_plnr_avg_esp = np.array(entry.parameters["bulk_planar_averages"], dtype=object)
-            list_defect_plnr_avg_esp = np.array(entry.parameters["defect_planar_averages"], dtype=object)
+            list_axis_grid = np.array(entry.calculation_metadata["axis_grid"], dtype=object)
+            list_bulk_plnr_avg_esp = np.array(
+                entry.calculation_metadata["bulk_planar_averages"], dtype=object
+            )
+            list_defect_plnr_avg_esp = np.array(
+                entry.calculation_metadata["defect_planar_averages"], dtype=object
+            )
             list_axes = range(len(list_axis_grid))
         else:
             list_axes = np.array(self.axis)
@@ -129,12 +127,16 @@ class FreysoldtCorrection(DefectCorrection):
                 [],
             )
             for ax in list_axes:
-                list_axis_grid.append(np.array(entry.parameters["axis_grid"][ax]))
-                list_bulk_plnr_avg_esp.append(np.array(entry.parameters["bulk_planar_averages"][ax]))
-                list_defect_plnr_avg_esp.append(np.array(entry.parameters["defect_planar_averages"][ax]))
+                list_axis_grid.append(np.array(entry.calculation_metadata["axis_grid"][ax]))
+                list_bulk_plnr_avg_esp.append(
+                    np.array(entry.calculation_metadata["bulk_planar_averages"][ax])
+                )
+                list_defect_plnr_avg_esp.append(
+                    np.array(entry.calculation_metadata["defect_planar_averages"][ax])
+                )
 
-        lattice = entry.parameters["initial_defect_structure"].lattice.copy()
-        defect_frac_coords = entry.parameters["defect_frac_sc_coords"]
+        lattice = entry.calculation_metadata["initial_defect_structure"].lattice.copy()
+        defect_frac_sc_coords = entry.sc_defect_frac_coords
 
         es_corr = self.perform_es_corr(lattice, entry.charge_state)
 
@@ -149,7 +151,7 @@ class FreysoldtCorrection(DefectCorrection):
                 defavg,
                 lattice,
                 entry.charge_state,
-                defect_frac_coords,
+                defect_frac_sc_coords,
                 axis,
                 widthsample=1.0,
             )
@@ -157,15 +159,17 @@ class FreysoldtCorrection(DefectCorrection):
 
         pot_corr = np.mean(pot_corr_tracker)
 
-        entry.parameters["freysoldt_meta"] = dict(self.metadata)
-        entry.parameters["potalign"] = pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
+        entry.calculation_metadata["freysoldt_meta"] = dict(self.metadata)
+        entry.calculation_metadata["potalign"] = (
+            pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
+        )
 
         return {
             "freysoldt_electrostatic": es_corr,
             "freysoldt_potential_alignment": pot_corr,
         }
 
-    def perform_es_corr(self, lattice: Lattice, q, step=1e-4):
+    def perform_es_corr(self, lattice, q, step=1e-4):
         """
         Perform Electrostatic Freysoldt Correction
         Args:
@@ -276,7 +280,7 @@ class FreysoldtCorrection(DefectCorrection):
         # Build background charge potential with defect at origin
         v_G = np.empty(len(axis_grid), np.dtype("c16"))
         v_G[0] = 4 * np.pi * -q / self.dielectric * self.q_model.rho_rec_limit0
-        g = np.roll(np.arange(-nx / 2, nx / 2, 1, dtype=int), int(nx / 2)) * dg
+        g = np.roll(np.arange(-nx / 2, nx / 2, 1, dtype=int), nx // 2) * dg
         g2 = np.multiply(g, g)[1:]
         v_G[1:] = 4 * np.pi / (self.dielectric * g2) * -q * self.q_model.rho_rec(g2)
         v_G[nx // 2] = 0 if not (nx % 2) else v_G[nx // 2]
@@ -343,34 +347,35 @@ class FreysoldtCorrection(DefectCorrection):
         if not self.metadata["pot_plot_data"]:
             raise ValueError("Cannot plot potential alignment before running correction!")
 
-        x = self.metadata["pot_plot_data"][axis]["x"]
-        v_R = self.metadata["pot_plot_data"][axis]["Vr"]
-        dft_diff = self.metadata["pot_plot_data"][axis]["dft_diff"]
-        final_shift = self.metadata["pot_plot_data"][axis]["final_shift"]
-        check = self.metadata["pot_plot_data"][axis]["check"]
+        with plt.style.context(f"{os.path.dirname(__file__)}/../doped.mplstyle"):
+            x = self.metadata["pot_plot_data"][axis]["x"]
+            v_R = self.metadata["pot_plot_data"][axis]["Vr"]
+            dft_diff = self.metadata["pot_plot_data"][axis]["dft_diff"]
+            final_shift = self.metadata["pot_plot_data"][axis]["final_shift"]
+            check = self.metadata["pot_plot_data"][axis]["check"]
 
-        plt.figure()
-        plt.clf()
-        plt.plot(x, v_R, c="green", zorder=1, label="long range from model")
-        plt.plot(x, dft_diff, c="red", label="DFT locpot diff")
-        plt.plot(x, final_shift, c="blue", label="short range (aligned)")
+            plt.figure()
+            plt.clf()
+            plt.plot(x, v_R, c="green", zorder=1, label="Long range from model")
+            plt.plot(x, dft_diff, c="red", label="DFT locpot diff")
+            plt.plot(x, final_shift, c="blue", label="Short range (aligned)")
 
-        tmpx = [x[i] for i in range(check[0], check[1])]
-        plt.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="sampling region")
+            tmpx = [x[i] for i in range(check[0], check[1])]
+            plt.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
 
-        plt.xlim(round(x[0]), round(x[-1]))
-        ymin = min(*v_R, *dft_diff, *final_shift)
-        ymax = max(*v_R, *dft_diff, *final_shift)
-        plt.ylim(-0.2 + ymin, 0.2 + ymax)
-        plt.xlabel(r"distance along axis ($\AA$)", fontsize=15)
-        plt.ylabel("Potential (V)", fontsize=15)
-        plt.legend(loc=9)
-        plt.axhline(y=0, linewidth=0.2, color="black")
-        plt.title(str(title) + " defect potential", fontsize=18)
-        plt.xlim(0, max(x))
-        if saved:
-            plt.savefig(str(title) + "FreyplnravgPlot.pdf")
-            return None
+            plt.xlim(round(x[0]), round(x[-1]))
+            ymin = min(*v_R, *dft_diff, *final_shift)
+            ymax = max(*v_R, *dft_diff, *final_shift)
+            plt.ylim(-0.2 + ymin, 0.2 + ymax)
+            plt.xlabel(r"Distance along axis ($\AA$)")
+            plt.ylabel("Potential (V)")
+            plt.legend(loc=9)
+            plt.axhline(y=0, linewidth=0.2, color="black")
+            plt.title(f"{title!s} Defect Potential")
+            plt.xlim(0, max(x))
+            if saved:
+                plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
+                return None
         return plt
 
 
@@ -416,7 +421,7 @@ class KumagaiCorrection(DefectCorrection):
         Args:
             entry (DefectEntry): defect entry to compute Kumagai correction on.
 
-                Requires following parameters in the DefectEntry to exist:
+                Requires following calculation_metadata in the DefectEntry to exist:
 
                     bulk_atomic_site_averages (list):  list of bulk structure"s atomic site averaged
                         ESPs * charge, in same order as indices of bulk structure note this is list
@@ -440,11 +445,11 @@ class KumagaiCorrection(DefectCorrection):
             KumagaiCorrection values as a dictionary
 
         """
-        bulk_atomic_site_averages = entry.parameters["bulk_atomic_site_averages"]
-        defect_atomic_site_averages = entry.parameters["defect_atomic_site_averages"]
-        site_matching_indices = entry.parameters["site_matching_indices"]
-        defect_sc_structure = entry.parameters["initial_defect_structure"]
-        defect_frac_sc_coords = entry.parameters["defect_frac_sc_coords"]
+        bulk_atomic_site_averages = entry.calculation_metadata["bulk_atomic_site_averages"]
+        defect_atomic_site_averages = entry.calculation_metadata["defect_atomic_site_averages"]
+        site_matching_indices = entry.calculation_metadata["site_matching_indices"]
+        defect_sc_structure = entry.calculation_metadata["initial_defect_structure"]
+        defect_frac_sc_coords = entry.sc_defect_frac_coords
 
         lattice = defect_sc_structure.lattice
         volume = lattice.volume
@@ -507,8 +512,10 @@ class KumagaiCorrection(DefectCorrection):
             self.metadata["gamma"],
         )
 
-        entry.parameters["kumagai_meta"] = dict(self.metadata)
-        entry.parameters["potalign"] = pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
+        entry.calculation_metadata["kumagai_meta"] = dict(self.metadata)
+        entry.calculation_metadata["potalign"] = (
+            pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
+        )
 
         return {
             "kumagai_electrostatic": es_corr,
@@ -637,7 +644,7 @@ class KumagaiCorrection(DefectCorrection):
                     f"radius {sampling_radius} (so will not include for correction)"
                 )
 
-        if len(for_correction) > 0:
+        if for_correction:
             pot_alignment = np.mean(for_correction)
         else:
             logger.info(
@@ -747,51 +754,52 @@ class KumagaiCorrection(DefectCorrection):
             if dist > sampling_radius:
                 sample_region.append(Vqb - Vpc)
 
-        plt.plot(
-            distances,
-            Vqb_list,
-            color="r",
-            marker="^",
-            linestyle="None",
-            label="$V_{q/b}$",
-        )
+        with plt.style.context(f"{os.path.dirname(__file__)}/../doped.mplstyle"):
+            plt.plot(
+                distances,
+                Vqb_list,
+                color="r",
+                marker="^",
+                linestyle="None",
+                label="$V_{q/b}$",
+            )
 
-        plt.plot(
-            distances,
-            Vpc_list,
-            color="g",
-            marker="o",
-            linestyle="None",
-            label="$V_{pc}$",
-        )
+            plt.plot(
+                distances,
+                Vpc_list,
+                color="g",
+                marker="o",
+                linestyle="None",
+                label="$V_{pc}$",
+            )
 
-        plt.plot(
-            distances,
-            diff_list,
-            color="b",
-            marker="x",
-            linestyle="None",
-            label="$V_{q/b}$ - $V_{pc}$",
-        )
+            plt.plot(
+                distances,
+                diff_list,
+                color="b",
+                marker="x",
+                linestyle="None",
+                label="$V_{q/b}$ - $V_{pc}$",
+            )
 
-        x = np.arange(sampling_radius, max(distances) * 1.05, 0.01)
-        y_max = max(*Vqb_list, *Vpc_list, *diff_list) + 0.1
-        y_min = min(*Vqb_list, *Vpc_list, *diff_list) - 0.1
-        plt.fill_between(x, y_min, y_max, facecolor="red", alpha=0.15, label="sampling region")
-        plt.axhline(y=potalign, linewidth=0.5, color="red", label="pot. align. / -q")
+            x = np.arange(sampling_radius, max(distances) * 1.05, 0.01)
+            y_max = max(*Vqb_list, *Vpc_list, *diff_list) + 0.1
+            y_min = min(*Vqb_list, *Vpc_list, *diff_list) - 0.1
+            plt.fill_between(x, y_min, y_max, facecolor="red", alpha=0.15, label="Sampling region")
+            plt.axhline(y=potalign, linewidth=0.5, color="red", label="Pot. align. / -q")
 
-        plt.legend(loc=0)
-        plt.axhline(y=0, linewidth=0.2, color="black")
+            plt.legend(loc=0)
+            plt.axhline(y=0, linewidth=0.2, color="black")
 
-        plt.ylim([y_min, y_max])
-        plt.xlim([0, max(distances) * 1.1])
+            plt.ylim([y_min, y_max])
+            plt.xlim([0, max(distances) * 1.1])
 
-        plt.xlabel(r"Distance from defect ($\AA$)", fontsize=20)
-        plt.ylabel("Potential (V)", fontsize=20)
-        plt.title(str(title) + " atomic site potential plot", fontsize=20)
+            plt.xlabel(r"Distance from defect ($\AA$)")
+            plt.ylabel("Potential (V)")
+            plt.title(f"{title!s} Atomic Site Potential")
 
         if saved:
-            plt.savefig(str(title) + "KumagaiESPavgPlot.pdf")
+            plt.savefig(f"{title!s}KumagaiESPavgPlot.pdf")
             return None
         return plt
 
@@ -818,7 +826,7 @@ class BandFillingCorrection(DefectCorrection):
         Gets the BandFilling correction for a defect entry
         Args:
             entry (DefectEntry): defect entry to compute BandFilling correction on.
-                Requires following parameters in the DefectEntry to exist:
+                Requires following calculation_metadata in the DefectEntry to exist:
                     eigenvalues
                         dictionary of defect eigenvalues, as stored in a Vasprun object.
 
@@ -851,16 +859,16 @@ class BandFillingCorrection(DefectCorrection):
             Bandfilling Correction value as a dictionary
 
         """
-        eigenvalues = entry.parameters["eigenvalues"]
-        kpoint_weights = entry.parameters["kpoint_weights"]
-        potalign = entry.parameters["potalign"]
-        vbm = entry.parameters["vbm"]
-        cbm = entry.parameters["cbm"]
-        soc_calc = entry.parameters["run_metadata"]["defect_incar"].get("LSORBIT")
+        eigenvalues = entry.calculation_metadata["eigenvalues"]
+        kpoint_weights = entry.calculation_metadata["kpoint_weights"]
+        potalign = entry.calculation_metadata["potalign"]
+        vbm = entry.calculation_metadata["vbm"]
+        cbm = entry.calculation_metadata["cbm"]
+        soc_calc = entry.calculation_metadata["run_metadata"]["defect_incar"].get("LSORBIT")
 
         bf_corr = self.perform_bandfill_corr(eigenvalues, kpoint_weights, potalign, vbm, cbm, soc_calc)
 
-        entry.parameters["bandfilling_meta"] = dict(self.metadata)
+        entry.calculation_metadata["bandfilling_meta"] = dict(self.metadata)
 
         return {"bandfilling_correction": bf_corr}
 
@@ -913,3 +921,108 @@ class BandFillingCorrection(DefectCorrection):
         bf_corr *= -1  # need to take negative of this shift for energetic correction
 
         return bf_corr
+
+
+def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
+    """
+    This returns a set of real and reciprocal lattice vectors (and real/recip
+    summation values) based on a list of precision values (prec_set).
+
+    gamma (float): Ewald parameter
+    prec_set (list or number): for prec values to consider (20, 25, 30 are sensible numbers)
+    lattice: Lattice object of supercell in question
+    """
+    if not isinstance(prec_set, list):
+        prec_set = [prec_set]
+
+    [a1, a2, a3] = lattice.matrix  # Angstrom
+    volume = lattice.volume
+    [b1, b2, b3] = lattice.reciprocal_lattice.matrix  # 1/ Angstrom
+    invepsilon = np.linalg.inv(epsilon)
+    rd_epsilon = np.sqrt(np.linalg.det(epsilon))
+
+    # generate reciprocal vector set (for each prec_set)
+    recip_set = [[] for _ in prec_set]
+    recip_summation_values = [0.0 for _ in prec_set]
+    recip_cut_set = [(2 * gamma * prec) for prec in prec_set]
+
+    i_max = int(math.ceil(max(recip_cut_set) / np.linalg.norm(b1)))
+    j_max = int(math.ceil(max(recip_cut_set) / np.linalg.norm(b2)))
+    k_max = int(math.ceil(max(recip_cut_set) / np.linalg.norm(b3)))
+    for i in np.arange(-i_max, i_max + 1):
+        for j in np.arange(-j_max, j_max + 1):
+            for k in np.arange(-k_max, k_max + 1):
+                if not i and not j and not k:
+                    continue
+                gvec = i * b1 + j * b2 + k * b3
+                normgvec = np.linalg.norm(gvec)
+                for recip_cut_ind, recip_cut in enumerate(recip_cut_set):
+                    if normgvec <= recip_cut:
+                        recip_set[recip_cut_ind].append(gvec)
+
+                        Gdotdiel = np.dot(gvec, np.dot(epsilon, gvec))
+                        summand = math.exp(-Gdotdiel / (4 * (gamma**2))) / Gdotdiel
+                        recip_summation_values[recip_cut_ind] += summand
+
+    recip_summation_values = np.array(recip_summation_values)
+    recip_summation_values /= volume
+
+    # generate real vector set (for each prec_set)
+    real_set = [[] for prec in prec_set]
+    real_summation_values = [0.0 for prec in prec_set]
+    real_cut_set = [(prec / gamma) for prec in prec_set]
+
+    i_max = int(math.ceil(max(real_cut_set) / np.linalg.norm(a1)))
+    j_max = int(math.ceil(max(real_cut_set) / np.linalg.norm(a2)))
+    k_max = int(math.ceil(max(real_cut_set) / np.linalg.norm(a3)))
+    for i in np.arange(-i_max, i_max + 1):
+        for j in np.arange(-j_max, j_max + 1):
+            for k in np.arange(-k_max, k_max + 1):
+                rvec = i * a1 + j * a2 + k * a3
+                normrvec = np.linalg.norm(rvec)
+                for real_cut_ind, real_cut in enumerate(real_cut_set):
+                    if normrvec <= real_cut:
+                        real_set[real_cut_ind].append(rvec)
+                        if normrvec > 1e-8:
+                            sqrt_loc_res = np.sqrt(np.dot(rvec, np.dot(invepsilon, rvec)))
+                            nmr = math.erfc(gamma * sqrt_loc_res)
+                            real_summation_values[real_cut_ind] += nmr / sqrt_loc_res
+
+    real_summation_values = np.array(real_summation_values)
+    real_summation_values /= 4 * np.pi * rd_epsilon
+
+    return recip_set, recip_summation_values, real_set, real_summation_values
+
+
+def tune_for_gamma(lattice, epsilon):
+    """
+    This tunes the gamma parameter for Kumagai anisotropic Ewald calculation.
+
+    Method is to find a gamma parameter which generates a similar number of
+    reciprocal and real lattice vectors, given the suggested cut off radii by
+    Kumagai and Oba.
+    """
+    logger.debug("Converging for Ewald parameter...")
+    prec = 25  # a reasonable precision to tune gamma for
+
+    gamma = (2 * np.average(lattice.abc)) ** (-1 / 2.0)
+    recip_set, _, real_set, _ = generate_R_and_G_vecs(gamma, prec, lattice, epsilon)
+    recip_set = recip_set[0]
+    real_set = real_set[0]
+
+    logger.debug(
+        f"First approach with gamma ={gamma}\nProduced {len(real_set)} real vecs and {len(recip_set)} "
+        f"recip vecs."
+    )
+
+    while float(len(real_set)) / len(recip_set) > 1.05 or float(len(recip_set)) / len(real_set) > 1.05:
+        gamma *= (float(len(real_set)) / float(len(recip_set))) ** 0.17
+        logger.debug(f"\tNot converged...Try modifying gamma to {gamma}.")
+        recip_set, _, real_set, _ = generate_R_and_G_vecs(gamma, prec, lattice, epsilon)
+        recip_set = recip_set[0]
+        real_set = real_set[0]
+        logger.debug(f"Now have {len(real_set)} real vecs and {len(recip_set)} recip vecs.")
+
+    logger.debug(f"Converged with gamma = {gamma}")
+
+    return gamma
