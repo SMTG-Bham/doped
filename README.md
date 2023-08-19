@@ -32,8 +32,8 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
 To generate `VASP` `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for
 charged defects, your `POTCAR` directory needs to be setup to work with `pymatgen` (via the `.pmgrc.yaml` file).
 
-**Instructions:**
-1. Set the VASP pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml`
+#### Instructions:
+Set the `VASP` pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml`
 (`pymatgen` config file) as follows:
 ```bash
   PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
