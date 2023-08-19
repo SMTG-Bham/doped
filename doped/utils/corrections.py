@@ -29,9 +29,9 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from monty.json import MontyDecoder
+from shakenbreak.plotting import _install_custom_font
 
-from doped.analysis import _convert_dielectric_to_tensor
-from doped.pycdt.utils.parse_calculations import SingleDefectParser
+from doped.analysis import DefectParser, _convert_dielectric_to_tensor
 from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
 
 warnings.simplefilter("default")
@@ -70,6 +70,7 @@ def get_correction_freysoldt(
     filename: Optional[str] = None,
     partflag="All",
     axis=None,
+    **kwargs,
 ):
     """
     Function to compute the isotropic Freysoldt correction for each defect.
@@ -116,7 +117,8 @@ def get_correction_freysoldt(
                'potalign' for just potalign correction, or
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
-        axis (int or None): if integer, then freysoldt correction is performed on the single axis.
+        axis (int or None):
+            if integer, then freysoldt correction is performed on the single axis specified.
             If it is None, then averaging of the corrections for the three axes is used for the
             correction.
 
@@ -147,16 +149,20 @@ def get_correction_freysoldt(
     f_corr_summ = corr_class.get_correction(template_defect)
 
     if plot:
+        axis_labels = ["x", "y", "z"]
         if axis is None:
-            ax_list = [[k, f"axis{k!s}"] for k in corr_class.metadata["pot_plot_data"]]
+            ax_list = [[k, f"${axis_labels[k]}$-axis"] for k in corr_class.metadata["pot_plot_data"]]
         else:
-            ax_list = [[axis, f"axis{axis + 1!s}"]]
+            ax_list = [[axis, f"${axis_labels[axis]}$-axis"]]
 
         for ax_key, ax_title in ax_list:
-            with plt.style.context("doped.mplstyle"):
-                p = corr_class.plot(ax_key, title=ax_title, saved=False)
+            _install_custom_font()
+            p = corr_class.plot(ax_key, title=ax_title, saved=False)
             if filename:
                 p.savefig(f"{filename}_{ax_title}.pdf", bbox_inches="tight")
+            if kwargs.get("return_fig", False):  # for testing
+                return p
+            plt.show()
 
     if partflag in ["AllSplit", "All"]:
         freyval = np.sum(list(f_corr_summ.values()))
@@ -178,7 +184,7 @@ def get_correction_freysoldt(
 
 
 def get_correction_kumagai(
-    defect_entry, dielectric, plot: bool = False, filename: Optional[str] = None, partflag="All"
+    defect_entry, dielectric, plot: bool = False, filename: Optional[str] = None, partflag="All", **kwargs
 ):
     """
     Function to compute the Kumagai correction for each defect (modified freysoldt for
@@ -243,10 +249,13 @@ def get_correction_kumagai(
     k_corr_summ = corr_class.get_correction(template_defect)
 
     if plot:
-        with plt.style.context("doped.mplstyle"):
-            p = corr_class.plot(title="Kumagai", saved=False)
+        _install_custom_font()
+        p = corr_class.plot(title="Kumagai", saved=False)
         if filename:
             p.savefig(f"{filename}.pdf", bbox_inches="tight")
+        if kwargs.get("return_fig", False):  # for testing
+            return p
+        plt.show()
 
     if partflag in ["AllSplit", "All"]:
         kumagai_val = np.sum(list(k_corr_summ.values()))
@@ -273,6 +282,7 @@ def freysoldt_correction_from_paths(
     defect_charge,
     plot=False,
     filename: Optional[str] = None,
+    **kwargs,
 ):
     """
     A function for performing the Freysoldt correction with a set of file paths.
@@ -290,12 +300,12 @@ def freysoldt_correction_from_paths(
     :return:
         Dictionary of Freysoldt Correction for defect
     """
-    sdp = SingleDefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
-    _ = sdp.freysoldt_loader()
+    dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
+    _ = dp.freysoldt_loader()
     if plot:
-        print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
+        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
 
-    return get_correction_freysoldt(sdp.defect_entry, dielectric, plot=plot, filename=filename)
+    return get_correction_freysoldt(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
 
 def kumagai_correction_from_paths(
@@ -305,6 +315,7 @@ def kumagai_correction_from_paths(
     defect_charge,
     plot=False,
     filename: Optional[str] = None,
+    **kwargs,
 ):
     """
     A function for performing the Kumagai correction with a set of file paths.
@@ -323,12 +334,12 @@ def kumagai_correction_from_paths(
         '{filename}.pdf'
     :return: Dictionary of Kumagai Correction for defect
     """
-    sdp = SingleDefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
-    _ = sdp.kumagai_loader()
+    dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
+    _ = dp.kumagai_loader()
     if plot:
-        print(f"{sdp.defect_entry.name}, charge = {defect_charge}")
+        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
 
-    return get_correction_kumagai(sdp.defect_entry, dielectric, plot=plot, filename=filename)
+    return get_correction_kumagai(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
 
 # The following functions are taken from the deprecated AIDE package developed by the dynamic duo
