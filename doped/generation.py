@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.core import Defect, DefectType
+from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.generators import (
     AntiSiteGenerator,
     InterstitialGenerator,
@@ -22,7 +22,6 @@ from pymatgen.analysis.defects.generators import (
     VoronoiInterstitialGenerator,
 )
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
-from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.operations import SymmOp
@@ -34,6 +33,7 @@ from pymatgen.transformations.advanced_transformations import _proj
 from tabulate import tabulate
 from tqdm import tqdm
 
+from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.utils.wyckoff import (
     _round_floats,
     get_BCS_conventional_structure,
@@ -74,7 +74,7 @@ def get_defect_entry_from_defect(
     dummy_species: DummySpecies = _dummy_species,
 ):
     """
-    Generate DefectEntry object from a Defect object.
+    Generate doped DefectEntry object from a doped Defect object.
 
     This is used to describe a Defect with a specified simulation cell.
     """
@@ -102,23 +102,23 @@ def get_defect_entry_from_defect(
     )
 
 
-def _defect_dict_key_from_pmg_type(defect_type: DefectType) -> str:
+def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     """
     Returns the corresponding defect dictionary key for a pymatgen Defect
     object.
     """
-    if defect_type == DefectType.Vacancy:
+    if defect_type == core.DefectType.Vacancy:
         return "vacancies"
-    if defect_type == DefectType.Substitution:
+    if defect_type == core.DefectType.Substitution:
         return "substitutions"
-    if defect_type == DefectType.Interstitial:
+    if defect_type == core.DefectType.Interstitial:
         return "interstitials"
-    if defect_type == DefectType.Other:
+    if defect_type == core.DefectType.Other:
         return "others"
 
     raise ValueError(
-        f"Defect type {defect_type} not recognised. Must be one of {DefectType.Vacancy}, "
-        f"{DefectType.Substitution}, {DefectType.Interstitial}, {DefectType.Other}."
+        f"Defect type {defect_type} not recognised. Must be one of {core.DefectType.Vacancy}, "
+        f"{core.DefectType.Substitution}, {core.DefectType.Interstitial}, {core.DefectType.Other}."
     )
 
 
@@ -324,7 +324,7 @@ def name_defect_entries(defect_entries):
     defect_naming_dict = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_entry(defect_entry)
-        split_number = 1 if defect_entry.defect.defect_type == DefectType.Interstitial else 2
+        split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
@@ -506,13 +506,13 @@ def _charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def _get_vacancy_charge_states(defect: Defect, padding: int = 1) -> List[int]:
+def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> List[int]:
     """
     Get the possible charge states for a vacancy defect, which is from +/-1 to
     the vacancy oxidation state.
 
     Args:
-        defect (Defect): A `pymatgen` vacancy Defect object.
+        defect (Defect): A doped Vacancy object.
         padding (int):
             Padding for vacancy charge states, such that the vacancy
             charge states are set to range(vacancy oxi state, padding),
@@ -537,7 +537,7 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
     Get the possible oxidation states and probabilities for a defect.
 
     Args:
-        defect (Defect): A `pymatgen` Defect object.
+        defect (Defect): A doped Defect object.
 
     Returns:
         Dict: A dictionary with possible oxidation states as
@@ -572,7 +572,7 @@ def guess_defect_charge_states(
     Guess the possible charge states of a defect.
 
     Args:
-        defect (Defect): `pymatgen` Defect object.
+        defect (Defect): doped Defect object.
         probability_threshold (float):
             Probability threshold for including defect charge states
             (for substitutions and interstitials). Default is 0.01.
@@ -596,7 +596,7 @@ def guess_defect_charge_states(
     # extreme charge states less likely. Would rather avoid having to query the database here though,
     # as could give inconsistent results depending on whether the user generated defects with internet
     # access or not (i.e. MP access or not). Will keep in mind.
-    if defect.defect_type == DefectType.Vacancy:
+    if defect.defect_type == core.DefectType.Vacancy:
         # Set defect charge state: from +/-1 to defect oxi state
         vacancy_charge_states = _get_vacancy_charge_states(defect, padding=padding)
         if return_log:
@@ -618,7 +618,7 @@ def guess_defect_charge_states(
 
     possible_oxi_states = _get_possible_oxi_states(defect)
     max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
-    if defect.defect_type == DefectType.Substitution:
+    if defect.defect_type == core.DefectType.Substitution:
         orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
     else:  # interstitial
         orig_oxi = 0
@@ -646,7 +646,7 @@ def guess_defect_charge_states(
     )
 
     if (
-        defect.defect_type == DefectType.Substitution
+        defect.defect_type == core.DefectType.Substitution
         and defect_elt_oxi_in_struct is not None
         and defect_elt_oxi_in_struct - orig_oxi
         not in range(charge_state_range[0], charge_state_range[1] + 1)
@@ -664,7 +664,7 @@ def guess_defect_charge_states(
         )
 
     if (
-        defect.defect_type == DefectType.Interstitial
+        defect.defect_type == core.DefectType.Interstitial
         and defect_elt_oxi_in_struct is not None
         and defect_elt_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
     ):
@@ -699,7 +699,7 @@ def guess_defect_charge_states(
         charge_state_range = (most_likely_charge_state, most_likely_charge_state)
 
     if (
-        defect.defect_type == DefectType.Substitution
+        defect.defect_type == core.DefectType.Substitution
         and defect_elt_oxi_in_struct is not None
         and defect_elt_oxi_in_struct - orig_oxi == 0
         and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
@@ -894,7 +894,8 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating simulation supercell")
             pmg_supercell_matrix = get_sc_fromstruct(
                 primitive_structure,
-                min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),
+                min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different to current
+                # pymatgen default (80)
                 max_atoms=self.supercell_gen_kwargs.get(
                     "max_atoms", 500
                 ),  # different to current pymatgen default (240)
@@ -1004,14 +1005,14 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating vacancies")
             vac_generator_obj = VacancyGenerator()
             vac_generator = vac_generator_obj.generate(self.primitive_structure)
-            self.defects["vacancies"] = list(vac_generator)
+            self.defects["vacancies"] = [Vacancy._from_pmg_defect(vac) for vac in vac_generator]
             pbar.update(5)  # 20% of progress bar
 
             # Antisites:
             pbar.set_description("Generating substitutions")
             antisite_generator_obj = AntiSiteGenerator()
             as_generator = antisite_generator_obj.generate(self.primitive_structure)
-            self.defects["substitutions"] = list(as_generator)
+            self.defects["substitutions"] = [Substitution._from_pmg_defect(anti) for anti in as_generator]
             pbar.update(5)  # 25% of progress bar
 
             # Substitutions:
@@ -1058,10 +1059,11 @@ class DefectsGenerator(MSONable):
                 sub_generator = substitution_generator_obj.generate(
                     self.primitive_structure, substitution=substitutions
                 )
+                sub_defects = [Substitution._from_pmg_defect(sub) for sub in sub_generator]
                 if "substitutions" in self.defects:
-                    self.defects["substitutions"].extend(list(sub_generator))
+                    self.defects["substitutions"].extend(sub_defects)
                 else:
-                    self.defects["substitutions"] = list(sub_generator)
+                    self.defects["substitutions"] = sub_defects
             if not self.defects["substitutions"]:  # no substitutions, single-elt system, no extrinsic
                 del self.defects["substitutions"]  # remove empty list
             pbar.update(5)  # 30% of progress bar
@@ -1076,7 +1078,9 @@ class DefectsGenerator(MSONable):
                 interstitial_generator = interstitial_generator_obj.generate(
                     self.primitive_structure, insertions=insertions
                 )
-                self.defects["interstitials"] = list(interstitial_generator)
+                self.defects["interstitials"] = [
+                    Interstitial._from_pmg_defect(inter) for inter in interstitial_generator
+                ]
 
             else:
                 # Generate interstitial sites using Voronoi tessellation
@@ -1157,13 +1161,14 @@ class DefectsGenerator(MSONable):
                 for el in element_list:
                     cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
 
+                    inter_generator = ig.generate(
+                        self.primitive_structure,
+                        insertions={el: cand_sites},
+                        multiplicities={el: multiplicity},
+                        equivalent_positions={el: equiv_fpos},
+                    )
                     self.defects["interstitials"].extend(
-                        ig.generate(
-                            self.primitive_structure,
-                            insertions={el: cand_sites},
-                            multiplicities={el: multiplicity},
-                            equivalent_positions={el: equiv_fpos},
-                        )
+                        [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
                     )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
