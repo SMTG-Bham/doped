@@ -1,3 +1,6 @@
+doped
+=======================================
+
 .. image:: https://github.com/SMTG-UCL/doped/actions/workflows/build_and_test.yml/badge.svg
    :target: https://github.com/SMTG-UCL/doped/actions
 .. image:: https://img.shields.io/pypi/v/doped
@@ -7,9 +10,10 @@
 .. image:: https://img.shields.io/pypi/dm/doped
    :target: https://pypi.org/project/doped
 
-.. image:: docs/doped_v2_logo.png
+.. image:: doped_v2_logo.png
    :align: right
    :width: 300
+
 
 ``doped`` is a python package for managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with `ShakeNBreak`_ for defect structure-searching, write VASP input files for defect supercell calculations, and automatically parse and analyse the results.
@@ -20,12 +24,13 @@ Example Outputs:
 -----------------
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-.. image:: docs/doped_chempot_plotting.png
+.. image:: doped_chempot_plotting.png
    :align: left
    :width: 420
-.. image:: docs/doped_TLD_plot.png
+.. image:: doped_TLD_plot.png
    :align: right
    :width: 390
+
 
 Installation
 --------------
