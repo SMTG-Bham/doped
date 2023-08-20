@@ -176,27 +176,12 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )
 
         with warnings.catch_warnings(record=True) as w:
-            parsed_int_Te_2_fake_aniso = defect_entry_from_paths(
-                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
-                bulk_path=self.CDTE_BULK_DATA_DIR,
-                dielectric=fake_aniso_dielectric,
-                charge_state=2,
+            parsed_int_Te_2_fake_aniso = self._check_no_icorelevel_warning_int_te(
+                fake_aniso_dielectric,
+                w,
+                1,
+                "-> Charge corrections will not be applied for this defect.",
             )
-            assert len(w) == 1
-            assert all(issubclass(warning.category, UserWarning) for warning in w)
-            assert (
-                f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
-                f"the _anisotropic_ Kumagai eFNV charge correction) in the defect (at"
-                f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at {self.CDTE_BULK_DATA_DIR}) "
-                f"folders were unable to be parsed, giving the following error message:\nUnable to parse "
-                f"atomic core potentials from defect `OUTCAR` at"
-                f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen "
-                f"if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
-                f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be "
-                f"computed without this data!\n-> Charge corrections will not be applied for this defect."
-                in str(w[0].message)
-            )
-
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
         assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -7.105, atol=1e-3)
 
@@ -208,30 +193,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )
 
         with warnings.catch_warnings(record=True) as w:
-            parsed_int_Te_2_fake_aniso = defect_entry_from_paths(
-                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
-                bulk_path=self.CDTE_BULK_DATA_DIR,
-                dielectric=fake_aniso_dielectric,
-                charge_state=2,
+            parsed_int_Te_2_fake_aniso = self._check_no_icorelevel_warning_int_te(
+                fake_aniso_dielectric,
+                w,
+                2,
+                "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
+                "charge correction developed for _isotropic_ materials will be applied here, "
+                "which corresponds to using the effective isotropic average of the supplied anisotropic "
+                "dielectric. This could lead to significant errors for very anisotropic systems and/or "
+                "relatively small supercells!",
             )
-            assert len(w) == 2  # now also with a delocalization analysis warning (using incorrect LOCPOT)
-            assert all(issubclass(warning.category, UserWarning) for warning in w)
-            assert (
-                f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
-                f"the _anisotropic_ Kumagai eFNV charge correction) in the defect (at"
-                f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at {self.CDTE_BULK_DATA_DIR}) "
-                f"folders were unable to be parsed, giving the following error message:\nUnable to parse "
-                f"atomic core potentials from defect `OUTCAR` at"
-                f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen "
-                f"if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
-                f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
-                f"without this data!\n`LOCPOT` files were found in both defect & bulk folders, and so the "
-                f"Freysoldt (FNV) charge correction developed for _isotropic_ materials will be applied "
-                f"here, which corresponds to using the effective isotropic average of the supplied "
-                f"anisotropic dielectric. This could lead to significant errors for very anisotropic "
-                f"systems and/or relatively small supercells!" in str(w[0].message)
-            )
-
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
         assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.734, atol=1e-3)
 
@@ -286,6 +257,29 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert np.isclose(parsed_v_cd_0.uncorrected_energy, 4.166, atol=1e-3)
         assert np.isclose(parsed_v_cd_0.get_ediff(), 4.166, atol=1e-3)
+
+    def _check_no_icorelevel_warning_int_te(self, dielectric, warnings, num_warnings, action):
+        result = defect_entry_from_paths(
+            defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+            bulk_path=self.CDTE_BULK_DATA_DIR,
+            dielectric=dielectric,
+            charge_state=2,
+        )
+        assert len(warnings) == num_warnings
+        assert all(issubclass(warning.category, UserWarning) for warning in warnings)
+        assert (
+            f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
+            f"_anisotropic_ Kumagai eFNV charge correction) in the defect (at "
+            f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at {self.CDTE_BULK_DATA_DIR}) folders "
+            f"were unable to be parsed, giving the following error message:\nUnable to parse atomic core "
+            f"potentials from defect `OUTCAR` at "
+            f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
+            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
+            f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
+            f"without this data!\n{action}" in str(warnings[0].message)
+        )
+
+        return result
 
     def test_multiple_outcars(self):
         shutil.copyfile(

@@ -1,5 +1,10 @@
 """
 Test functions for getting freysoldt and kumagai corrections.
+
+This uses tests originally written by the PyCDT (
+https://doi.org/10.1016/j.cpc.2018.01.004)
+developers,
+with some updates.
 """
 import os
 import tarfile
@@ -7,11 +12,12 @@ from shutil import copyfile
 
 import numpy as np
 from monty.tempfile import ScratchDir
-from pymatgen.analysis.defects.core import DefectEntry, Vacancy
 from pymatgen.core.sites import PeriodicSite
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Locpot
 from pymatgen.util.testing import PymatgenTest
 
+from doped.core import DefectEntry, Vacancy
 from doped.utils.corrections import (
     freysoldt_correction_from_paths,
     get_correction_freysoldt,
@@ -19,7 +25,7 @@ from doped.utils.corrections import (
     kumagai_correction_from_paths,
 )
 
-test_files_dir = os.path.join(os.path.dirname(__file__), "../doped/pycdt/test_files")
+test_files_dir = os.path.join(os.path.dirname(__file__), "data/corrections_test_files")
 
 
 class FilePathCorrectionsTest(PymatgenTest):
@@ -51,7 +57,7 @@ class FilePathCorrectionsTest(PymatgenTest):
             assert np.isclose(fcc, -1.4954476868106865, rtol=1e-5)  # note this has been updated from the
             # pycdt version, because there they used a `transformation.json` that gave an
             # incorrect `initial_defect_structure` (corresponding to primitive rather than bulk)
-            assert os.path.exists("test_freysoldt_correction_axis1.pdf")
+            assert os.path.exists("test_freysoldt_correction_x-axis.pdf")
 
             kcc = kumagai_correction_from_paths(
                 "test_path_files/sub_1_Sb_on_Ga/charge_2/",
@@ -77,28 +83,23 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
         struct.make_supercell(3)
         vac = Vacancy(struct, struct.sites[0], charge=-3)
 
-        # load necessary parameters for defect_entry to make use
-        # of Freysoldt and Kumagai corrections
-        p = {}
-        ids = vac.get_supercell_structure(1)
+        ids = vac.defect_structure
         abc = struct.lattice.abc
         axisdata = [np.arange(0.0, lattval, 0.2) for lattval in abc]
-        bldata = [np.array([1.0 for u in np.arange(0.0, lattval, 0.2)]) for lattval in abc]
+        bldata = [np.array([1.0 for _ in np.arange(0.0, lattval, 0.2)]) for lattval in abc]
         dldata = [
             np.array([(-1 - np.cos(2 * np.pi * u / lattval)) for u in np.arange(0.0, lattval, 0.2)])
             for lattval in abc
         ]
-        p.update(
-            {
-                "axis_grid": axisdata,
-                "bulk_planar_averages": bldata,
-                "defect_planar_averages": dldata,
-                "initial_defect_structure": ids,
-                "defect_frac_sc_coords": struct.sites[0].frac_coords,
-                "bulk_sc_structure": struct,
-            }
-        )
-
+        # load necessary parameters for defect_entry to make use of Freysoldt and Kumagai corrections
+        p = {} | {
+            "axis_grid": axisdata,
+            "bulk_planar_averages": bldata,
+            "defect_planar_averages": dldata,
+            "initial_defect_structure": ids,
+            "defect_frac_sc_coords": struct.sites[0].frac_coords,
+            "bulk_sc_structure": struct,
+        }
         bulk_atomic_site_averages, defect_atomic_site_averages = [], []
         defect_site_with_sc_lattice = PeriodicSite(
             struct.sites[0].specie,
@@ -130,14 +131,21 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
         site_matching_indices = [[ind, ind - 1] for ind in range(len(struct.sites)) if ind != 0]
 
-        p.update(
-            {
-                "bulk_atomic_site_averages": bulk_atomic_site_averages,
-                "defect_atomic_site_averages": defect_atomic_site_averages,
-                "site_matching_indices": site_matching_indices,
-            }
+        p |= {
+            "bulk_atomic_site_averages": bulk_atomic_site_averages,
+            "defect_atomic_site_averages": defect_atomic_site_averages,
+            "site_matching_indices": site_matching_indices,
+        }
+        self.defect_entry = DefectEntry(
+            vac,
+            charge_state=-3,
+            sc_entry=ComputedStructureEntry(
+                structure=ids,
+                energy=0.0,  # needs to be set, so set to 0.0
+            ),
+            sc_defect_frac_coords=struct.sites[0].frac_coords,
+            calculation_metadata=p,
         )
-        self.defect_entry = DefectEntry(vac, 0.0, calculation_metadata=p)
 
     def test_get_correction_freysoldt(self):
         freyout = get_correction_freysoldt(self.defect_entry, self.dielectric, partflag="All", axis=None)

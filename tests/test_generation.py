@@ -3527,6 +3527,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
         self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
+        cd_i_defect_gen.to_json("data/cd_i_supercell_defect_gen.json")  # for testing in test_vasp.py
+
     def test_supercell_w_defect_cd_i_cdte_no_generate_supercell(self):
         # test inputting a defective supercell; input supercell is good here so same output
         cdte_defect_gen = DefectsGenerator(self.prim_cdte)
