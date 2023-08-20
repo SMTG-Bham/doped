@@ -196,21 +196,16 @@ class DefectsSetTest(unittest.TestCase):
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
         self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
-        self.ytos_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/ytos_defect_gen.json")
-        self.ytos_no_generate_supercell_defect_gen = DefectsGenerator.from_json(
-            f"{self.data_dir}/ytos_defect_gen_supercell.json"
-        )
-        self.lmno_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
-        self.cu_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cu_defect_gen.json")
-        self.agcu_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/agcu_defect_gen.json")
 
     def tearDown(self):
-        for folder in os.listdir(self.cdte_data_dir):  # remove all generated CdTe defect folders
-            if_present_rm(folder)
-
         for file in os.listdir():
             if file.endswith(".json"):
                 if_present_rm(file)
+
+        for folder in os.listdir():
+            if any(os.path.exists(f"{folder}/vasp_{xxx}") for xxx in ["gam", "std", "ncl"]):
+                # generated output files
+                if_present_rm(folder)
 
     def check_generated_vasp_inputs(
         self,
@@ -433,6 +428,25 @@ class DefectsSetTest(unittest.TestCase):
                     single_defect_dir=True,
                     check_poscar=False,
                 )
+
+    def test_initialise_and_write_all_defect_gens(self):
+        # test initialising DefectsSet with our generation-tests materials, and writing files to disk
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "ytos_defect_gen_supercell",
+            "lmno_defect_gen",
+            "cu_defect_gen",
+            "agcu_defect_gen",
+            "cd_i_supercell_defect_gen",
+        ]:
+            print(f"Initialising and testing:{defect_gen_name}")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+            defects_set = DefectsSet(
+                defect_gen,
+                user_potcar_functional=None,  # to allow testing on GH Actions
+            )
+            defects_set.write_files(potcar_spec=True)
+            self.tearDown()  # delete generated folders each time
 
 
 if __name__ == "__main__":
