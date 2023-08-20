@@ -159,7 +159,7 @@ def get_correction_freysoldt(
             _install_custom_font()
             p = corr_class.plot(ax_key, title=ax_title, saved=False)
             if filename:
-                p.savefig(f"{filename}_{ax_title}.pdf", bbox_inches="tight")
+                p.savefig(f"{filename}_{ax_title.replace('$','')}.pdf", bbox_inches="tight")
             if kwargs.get("return_fig", False):  # for testing
                 return p
             plt.show()
