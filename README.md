@@ -1,21 +1,22 @@
 [![Build status](https://github.com/SMTG-UCL/doped/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/SMTG-UCL/doped/actions)
+[![Documentation Status](https://readthedocs.org/projects/doped/badge/?version=latest&style=flat)](https://doped.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/doped)](https://pypi.org/project/doped)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
-<img align="right" width="300" src="docs/doped_v2_logo.png">`doped` is a python package for
+<img align="right" width="275" src="docs/doped_v2_logo.png">`doped` is a python package for
 managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
 [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for
 [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for defect
 supercell calculations, and automatically parse and analyse the results.
 
-Tutorials showing the code functionality and usage are provided on the [docs]() site.
+Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site.
 
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-<img align="left" src="docs/doped_chempot_plotting.png" width="420"> <img src="docs/doped_TLD_plot.png" width="390" align="right">
+<img align="left" src="docs/doped_chempot_plotting.png" width="365"> <img src="docs/doped_TLD_plot.png" width="385" align="right">
 
 ## Installation
 ```bash
@@ -28,44 +29,9 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
   conda install -c conda-forge doped
 ```
 
-### Setup `POTCAR`s and `Materials Project` API
-To generate `VASP` `POTCAR` input files, and auto-determine `INCAR` settings such as `NELECT` for
-charged defects, your `POTCAR` directory needs to be setup to work with `pymatgen` (via the `.pmgrc.yaml` file).
+If you haven't done so already, you will need to set up your VASP `POTCAR` files and `Materials Project` API with `pymatgen` using the `.pmgrc.yaml` file, in order for `doped` to automatically generate VASP input files for defect calculations and determine competing phases for chemical potentials.
+See the docs [Installation](https://doped.readthedocs.io/en/latest/Installation.html) page for details on this.
 
-#### Instructions:
-Set the `VASP` pseudopotential directory and your Materials Project API key in `$HOME/.pmgrc.yaml`
-(`pymatgen` config file) as follows:
-```bash
-  PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
-  PMG_MAPI_KEY: <Your MP API key obtained from https://legacy.materialsproject.org/open>
-```
-Within your `VASP pseudopotential top directory`, you should have a folder named
-`POT_GGA_PAW_PBE`/`potpaw_PBE.54`/`POT_GGA_PAW_PBE_54` which contains `POTCAR.X(.gz)` files, generated using `pmg config`.
-
-If you have not previously setup your `POTCAR` directory in this way with `pymatgen`, then follow these steps:
-```bash
-mkdir temp_potcars  # make a top folder to store the unzipped POTCARs
-mkdir temp_potcars/POT_PAW_GGA_PBE  # make a subfolder to store the unzipped POTCARs
-mv potpaw_PBE.54.tar.gz temp_potcars/POT_PAW_GGA_PBE  # copy in your zipped VASP POTCAR source
-cd temp_potcars/POT_PAW_GGA_PBE
-tar -xzf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
-cd ../..  # return to the top folder
-pmg config -p temp_potcars psp_resources  # configure the psp_resources pymatgen POTCAR directory
-pmg config --add PMG_VASP_PSP_DIR "${PWD}/psp_resources"  # add the POTCAR directory to pymatgen's config file (`$HOME/.pmgrc.yaml`)
-rm -r temp_potcars  # remove the temporary POTCAR directory
-```
-If this has been successful, you should be able to run `pmg potcar -s Na_pv`, and `grep PBE POTCAR` should show
-`PAW_PBE Na_pv {date}` (you can ignore any `pymatgen` warnings about recognising the `POTCAR`).
-
-If this does not work, you may need to add this to the `.pmgrc.yaml` file:
-```
-  PMG_DEFAULT_FUNCTIONAL: PBE_54  # whatever functional label your POTCARs have
-```
-
-Note the Materials Project API key is required for determining the necessary competing phases to
-calculate in order to
-determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy
-MP API, with your unique key available at: https://legacy.materialsproject.org/open.
 
 
 ## `ShakeNBreak`
@@ -77,25 +43,6 @@ Summary GIF:
 `SnB` CLI Usage:
 ![ShakeNBreak CLI](docs/SnB_CLI.gif)
 
-## Requirements
-`doped` requires `pymatgen>=2022.10.22` and its dependencies.
-
-### Developer Installation
-If you want to use the [example files](examples) from the tutorials, you will need to clone the
-`doped` GitHub repository:
-
-1. Download the `doped` source code using the command:
-```bash
-  git clone https://github.com/SMTG-UCL/doped
-```
-2. Navigate to root directory:
-```bash
-  cd doped
-```
-3. Install the code, using the command:
-```bash
-  pip install -e .
-```
 
 ## Acknowledgments
 `doped` (née `DefectsWithTheBoys` #gonebutnotforgotten) has benefitted from feedback from many users, in particular
@@ -109,8 +56,7 @@ Code to efficiently identify defect species from input supercell structures was 
 [PyCDT](https://www.sciencedirect.com/science/article/pii/S0010465518300079) (no longer maintained), but transformed
 and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was
 entirely refactored and rewritten, to work with the new
-[`pymatgen-analysis-defects`](https://github.com/materialsproject/pymatgen-analysis-defects) package.
+`pymatgen-analysis-defects` package.
 
-The colour scheme for defect formation energy plots was originally templated from
-[AIDE](https://github.com/SMTG-UCL/aide) (#neverforget), developed by the dynamic duo
+The colour scheme for defect formation energy plots was originally templated from `aide` (#neverforget), developed by the dynamic duo
 [Adam Jackson](https://github.com/ajjackson) and [Alex Ganose](https://github.com/utf).
