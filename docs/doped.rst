@@ -3,10 +3,10 @@ doped
 
 Module contents
 ---------------
- .. automodule:: doped
-     :members:
-     :undoc-members:
-     :show-inheritance:
+.. automodule:: doped
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Submodules
 -----------
@@ -14,11 +14,11 @@ Submodules
 .. toctree::
    :maxdepth: 3
 
-  doped.analysis
-  doped.chemical_potentials
-  doped.core
-  doped.generation
-  doped.plotting
-  doped.utils
-  doped.vasp
-  doped.VASP_sets
+   doped.analysis
+   doped.chemical_potentials
+   doped.core
+   doped.generation
+   doped.plotting
+   doped.utils
+   doped.vasp
+   doped.VASP_sets

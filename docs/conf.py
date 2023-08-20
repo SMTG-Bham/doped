@@ -45,6 +45,9 @@ extensions = [
     'myst_nb',  # for jupyter notebooks
 ]
 
+# Make sure the target is unique
+autosectionlabel_prefix_document = True
+
 source_suffix = {
     '.rst': 'restructuredtext',
     '.ipynb': 'myst-nb',
@@ -67,17 +70,12 @@ myst_enable_extensions = [
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_book_theme' # 'sphinx_rtd_theme'
+html_theme = 'renku' # 'sphinx_book_theme'
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = "doped_v2_logo.png"
+html_logo = "doped_logo_inverted.png"
 html_title = "doped"
-
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
@@ -88,6 +86,10 @@ html_use_smartypants = True
 
 html_theme_options = {
     "repository_url": "https://github.com/SMTG-UCL/doped",
+    "github_repo": "https://github.com/SMTG-UCL/doped",  # renku
+    "github_button": True,
+    "github_user": "SMTG-UCL", # Username
+    "description": "Python package for setting up, parsing and analysing ab-initio defect calculations",
     "repository_branch": "develop",
     "path_to_docs": "docs",
     "use_repository_button": True,
