@@ -1,7 +1,7 @@
 sphinx
 myst-nb
 recommonmark
-sphinx-book-theme
+renku-sphinx-theme
 sphinx_click
 sphinx_design
 numpy>=1.21  # needed for numpy.typing.NDArray
