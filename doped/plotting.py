@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colormaps, ticker
 from pymatgen.util.string import latexify
-from shakenbreak.plotting import _format_defect_name
+from shakenbreak.plotting import _format_defect_name, _install_custom_font
 
 
 # TODO: Make a specific tutorial in docs for editing return Matplotlib figures, or with rcParams,
@@ -107,8 +107,10 @@ def formation_energy_plot(
         filename (str): Filename to save the plot to. (Default: None (not saved))
 
     Returns:
-        Matplotlib Figure object.
+        Matplotlib Figure object, or list of Figure objects if multiple facets
+        chosen.
     """
+    _install_custom_font()
     # check input options:
     if all_entries not in [False, True, "faded"]:
         raise ValueError(f"`all_entries` option must be either False, True, or 'faded', not {all_entries}")
@@ -135,6 +137,7 @@ def formation_energy_plot(
             if facets is None:
                 facets = chempots["facets"].keys()  # Phase diagram facets to use for chemical
                 # potentials, to calculate and plot formation energies
+            figs = []
             for facet in facets:
                 dft_chempots = chempots["facets"][facet]
                 elt_refs = chempots["elemental_refs"]
@@ -145,7 +148,7 @@ def formation_energy_plot(
                     else None
                 )
 
-                plot = _TLD_plot(
+                fig = _TLD_plot(
                     defect_phase_diagram,
                     dft_chempots=dft_chempots,
                     elt_refs=elt_refs,
@@ -159,10 +162,12 @@ def formation_energy_plot(
                     auto_labels=auto_labels,
                     filename=plot_filename,
                 )
+                figs.append(fig)
+                plt.show()  # show figure
 
-            return plot
+            return figs
 
-        # Else if you only want to give {Elt: Energy} dict for chempots, or no chempots
+        # else manually specified chemical potentials, or no chempots specified
         return _TLD_plot(
             defect_phase_diagram,
             dft_chempots=chempots,
@@ -295,7 +300,7 @@ def _get_legends_txt(for_legend, all_entries=False):
                 defect_species=defect_entry_name,
                 include_site_num_in_name=False,
             )
-            if not all_entries:
+            if all_entries is not True:
                 defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
 
         except Exception:  # if formatting fails, just use the defect_species name
@@ -307,7 +312,7 @@ def _get_legends_txt(for_legend, all_entries=False):
                 defect_species=defect_entry_name,
                 include_site_num_in_name=True,
             )
-            if not all_entries:
+            if all_entries is not True:
                 defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
 
         if defect_name in legends_txt:
