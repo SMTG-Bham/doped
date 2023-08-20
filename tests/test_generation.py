@@ -984,6 +984,17 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cdte_defect_gen_check(cdte_defect_gen)
         self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
+    def test_adding_charge_states(self):
+        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+
+        cdte_defect_gen.add_charge_states("Cd_i_C3v_0", [-7, -6])
+
+        assert "Cd_i_C3v_-6" in cdte_defect_gen.defect_entries
+        assert cdte_defect_gen["Cd_i_C3v_-7"].charge_state == -7
+        #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
+        info_line = "Cd_i_C3v         [0,+1,+2,-7,-6]        [0.625,0.625,0.625]  16e"
+        assert info_line in repr(cdte_defect_gen)
+
     def test_cdte_no_generate_supercell_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
