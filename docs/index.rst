@@ -104,11 +104,13 @@ Studies using ``doped``
 ========================
 We'll add papers that use `doped` to this list as they come out!
 
+- A\. T. J. Nicolson et al. `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
 - Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
 - P\. A. Hyde et al. `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.3c01510>`_ 2023
-- A\. T. J. Nicolson et al. `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
+- J\. Willis, K. B. Spooner, D. O. Scanlon. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/64c29140ce23211b20a787bb>`__ 2023
 - X\. Wang et al. `arXiv`_ 2023
 - J\. Cen et al. `Journal of Materials Chemistry A`_ 2023
+- J\. Willis & R. Claes et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2023-lttnf>`__ 2023
 - I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon `npj Computational Materials`_ 2023
 - Y\. T. Huang & S. R. Kavanagh et al. `Nature Communications`_ 2022
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt `Faraday Discussions`_ 2022
