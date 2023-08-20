@@ -1,3 +1,5 @@
+.. _installation:
+
 Installation
 ==============
 
@@ -66,8 +68,8 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
 
 
 Developer Installation
-========================
-If you want to use the `example files`_ from the tutorials, you will need to clone the ``doped`` GitHub
+-----------------------
+If you want to use the example files from the tutorials, you will need to clone the ``doped`` GitHub
 repository:
 
 #. Download the ``doped`` source code using the command:
