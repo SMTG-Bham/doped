@@ -1268,9 +1268,9 @@ class DefectsGenerator(MSONable):
                 for charge in charge_states:
                     defect_entry = copy.deepcopy(neutral_defect_entry)
                     defect_entry.charge_state = charge
-                    defect_name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
-                    defect_entry.name = defect_name  # set name attribute
-                    self.defect_entries[defect_name] = defect_entry
+                    # set name attribute:
+                    defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
+                    self.defect_entries[defect_entry.name] = defect_entry
 
                 pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
@@ -1409,6 +1409,28 @@ class DefectsGenerator(MSONable):
         )
 
         return info_string
+
+    def add_charge_states(self, defect_entry: str, charge_states: list):
+        """
+        Add additional `DefectEntry`s with the specified charge states to
+        `self.defect_entries`.
+
+        Args:
+            defect_entry (str):
+                Name of defect entry to add charge states to. Doesn't need to include the
+                charge state.
+            charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
+        """
+        previous_defect_entry = [
+            entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry)
+        ][0]
+        for charge in charge_states:
+            defect_entry = copy.deepcopy(previous_defect_entry)
+            defect_entry.charge_state = charge
+            defect_entry.name = (
+                f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
+            )
+            self.defect_entries[defect_entry.name] = defect_entry
 
     def as_dict(self):
         """
