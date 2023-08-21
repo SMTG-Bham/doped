@@ -349,7 +349,7 @@ def defect_entry_from_paths(
             warnings.warn(
                 f"Possible error in defect object matching. Determined defect: {defect.name} for defect "
                 f"at {defect_path} in bulk at {bulk_path} but unrelaxed structure (1st below) does not "
-                f"match pymatgen defect.get_supercell_structure() (2nd below):"
+                f"match defect.get_supercell_structure() (2nd below):"
                 f"\n{unrelaxed_defect_structure}\n{test_defect_structure}"
             )
 
@@ -530,7 +530,7 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
             DefectParser.get_bulk_gap_data())
 
     Returns:
-        pymatgen DefectPhaseDiagram object (DefectPhaseDiagram)
+        doped DefectPhaseDiagram object (DefectPhaseDiagram)
     """
     # TODO: Can we make the dpd generation more efficient? What's the bottleneck in it's
     #  initialisation? `pymatgen` site-matching that can be avoided?
