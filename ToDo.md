@@ -149,7 +149,8 @@
     efficient than the `doped` version (which is already far more efficient than the original...) and
     isn't available in current `pymatgen`.
   - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
-    functions (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
+    functions, `DefectSet` (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
+  - Should have quick scan through both codes to ensure no redundant/duplicate functions.
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
