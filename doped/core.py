@@ -23,7 +23,7 @@ class DefectEntry(thermo.DefectEntry):
 
     Core Attributes:
         defect:
-            pymatgen defect object corresponding to the defect in the entry.
+            doped/pymatgen defect object corresponding to the defect in the entry.
         charge_state:
             Charge state of the defect.
         sc_entry:
@@ -101,7 +101,11 @@ class DefectEntry(thermo.DefectEntry):
     wyckoff: Optional[str] = None
     charge_state_guessing_log: Dict = field(default_factory=dict)
     defect_supercell: Optional[Structure] = None
-    defect_supercell_site: Optional[PeriodicSite] = None
+    defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Should be able to refactor SnB to use
+    # this, in the from_structures approach, and just show general doped workflow on the docs and
+    # from_structures, and mention can also do other shit. Also add `from_structures` method to doped
+    # DefectEntry??
+    # Ctrl F this: m{DefectEntry.defect.multiplicity} (and naming etc)
     equivalent_supercell_sites: List[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
 
@@ -150,6 +154,10 @@ class DefectEntry(thermo.DefectEntry):
 
 
 class Defect(core.Defect):
+    """
+    Doped Defect object.
+    """
+
     def __init__(
         self,
         structure: Structure,
