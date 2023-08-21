@@ -991,8 +991,21 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert "Cd_i_C3v_-6" in cdte_defect_gen.defect_entries
         assert cdte_defect_gen["Cd_i_C3v_-7"].charge_state == -7
-        #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
         info_line = "Cd_i_C3v         [0,+1,+2,-7,-6]        [0.625,0.625,0.625]  16e"
+        assert info_line in repr(cdte_defect_gen)
+
+    def test_removing_charge_states(self):
+        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+        cdte_defect_gen.remove_charge_states("Cd_i", [+1, +2])
+
+        assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_+2" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_C3v_0" in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_0" in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_0" in cdte_defect_gen.defect_entries
+        #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
+        info_line = "Cd_i_C3v         [0]                    [0.625,0.625,0.625]  16e"
         assert info_line in repr(cdte_defect_gen)
 
     def test_cdte_no_generate_supercell_supercell_input(self):
