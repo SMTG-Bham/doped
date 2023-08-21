@@ -3,12 +3,10 @@ name: Build and test package
 on:
   pull_request:
     branches:
-       - master
-       - develop
+       - '*'  # all branches
   push:
     branches:
-      - master
-      - develop
+      - '*'  # all branches
   workflow_dispatch:
 
 jobs:
