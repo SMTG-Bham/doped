@@ -294,7 +294,9 @@ class DefectRelaxSet(MSONable):
         Creates attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
             relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended).
+            performed (recommended), unless only Γ-point _k_-point sampling is
+            required (converged) for your system, and no vasp_std calculations
+            with multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
             kpoint mesh and using `NKRED`. Not generated for GGA calculations (if
             `LHFCALC` is set to `False` in user_incar_settings) or if only Gamma
@@ -363,7 +365,10 @@ class DefectRelaxSet(MSONable):
         Attributes:
             vasp_gam (DefectDictSet):
                 DefectDictSet for Gamma-point only relaxation. Not needed if
-                ShakeNBreak structure searching has been performed (recommended).
+                ShakeNBreak structure searching has been performed (recommended),
+                unless only Γ-point _k_-point sampling is required (converged)
+                for your system, and no vasp_std calculations with multiple
+                _k_-points are required (determined from kpoints settings).
             vasp_nkred_std (DefectDictSet):
                 DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
                 `NKRED(X,Y,Z)` INCAR tag(s) to downsample kpoints for the HF exchange
@@ -471,8 +476,10 @@ class DefectRelaxSet(MSONable):
         """
         Returns a DefectDictSet object for a VASP Γ-point-only (`vasp_gam`)
         defect supercell relaxation. Typically not needed if ShakeNBreak
-        structure searching has been performed (recommended), unless only Γ-
-        point k-point sampling is required.
+        structure searching has been performed (recommended), unless only
+        Γ-point _k_-point sampling is required (converged) for your system, and
+        no vasp_std calculations with multiple _k_-points are required
+        (determined from kpoints settings).
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -724,7 +731,7 @@ class DefectRelaxSet(MSONable):
         `bulk_vasp_gam` should be used to calculate the singlepoint (static)
         bulk supercell reference energy. Can also sometimes be useful for the
         purpose of calculating defect formation energies at early stages of the
-        typical `vasp_gam` -> `vasp_nkred_std` (if hybrid & non- Γ-only
+        typical `vasp_gam` -> `vasp_nkred_std` (if hybrid & non-Γ-only
         k-points) -> `vasp_std` (if non-Γ-only k-points) -> `vasp_ncl` (if SOC
         included) workflow, to obtain rough formation energy estimates and flag
         any potential issues with defect calculations early on.
@@ -1015,9 +1022,10 @@ class DefectRelaxSet(MSONable):
         Write the input files for VASP Γ-point-only (`vasp_gam`) defect
         supercell relaxation. Typically not recommended for use, as the
         recommended workflow is to perform `vasp_gam` calculations using
-        `ShakeNBreak` for defect structure-searching and initial relaxations.
-        If bulk is True, the input files for a singlepoint calculation of the
-        bulk supercell are also written to "{formula}_bulk/{subfolder}".
+        `ShakeNBreak` for defect structure-searching and initial relaxations,
+        but should be used if the final, converged _k_-point mesh is Γ-point-
+        only. If bulk is True, the input files for a singlepoint calculation of
+        the bulk supercell are also written to "{formula}_bulk/{subfolder}".
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
@@ -1401,7 +1409,8 @@ class DefectRelaxSet(MSONable):
             generated for systems with a max atomic number (Z) >= 31 (i.e. further
             down the periodic table than Zn).
 
-        If vasp_gam=True (not recommended):
+        If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
+        _k_-point sampling converged for the kpoints settings used), then outputs:
         - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
             structure searching has been performed (recommended).
 
@@ -1564,7 +1573,9 @@ class DefectsSet(MSONable):
         {defect_species: DefectRelaxSet}, where DefectRelaxSet has the attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
             relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended).
+            performed (recommended), unless only Γ-point _k_-point sampling is
+            required (converged) for your system, and no vasp_std calculations with
+            multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
             kpoint mesh and using `NKRED`. Not generated for GGA calculations (if
             `LHFCALC` is set to `False` in user_incar_settings) or if only Gamma
@@ -1819,7 +1830,8 @@ class DefectsSet(MSONable):
             generated for systems with a max atomic number (Z) >= 31 (i.e. further
             down the periodic table than Zn).
 
-        If vasp_gam=True (not recommended):
+        If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
+        _k_-point sampling converged for the kpoints settings used), then outputs:
         - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
             structure searching has been performed (recommended).
 
