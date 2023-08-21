@@ -340,7 +340,14 @@ class CompetingPhases:
                     f"are available at https://legacy.materialsproject.org/open"
                 )
 
-        with MPRester(api_key=self.api_key) as mpr:
+        # use with MPRester() as mpr: if self.api_key is None, else use with MPRester(self.api_key)
+        with contextlib.ExitStack() as stack:
+            if self.api_key is None:
+                mpr = stack.enter_context(MPRester())
+            else:
+                mpr = stack.enter_context(MPRester(self.api_key))
+
+            # get all entries in the chemical system
             self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
                 list(self.bulk_comp.as_dict().keys()),
                 inc_structure="initial",
@@ -768,7 +775,13 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 #  self.MP_intrinsic_full_pd_entries]
                 #  self.MP_full_pd_entries = MP_full_pd_entries  # includes molecules-in-boxes
 
-                with MPRester(api_key=self.api_key) as mpr:
+                with contextlib.ExitStack() as stack:
+                    if self.api_key is None:
+                        mpr = stack.enter_context(MPRester())
+                    else:
+                        mpr = stack.enter_context(MPRester(self.api_key))
+
+                    # get all entries in the chemical system
                     self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
                         self.intrinsic_species + self.extrinsic_species,
                         inc_structure="initial",
@@ -812,7 +825,12 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 self.MP_full_pd_entries = []
                 for sub_elt in self.extrinsic_species:
                     extrinsic_entries = []
-                    with MPRester(api_key=self.api_key) as mpr:
+                    with contextlib.ExitStack() as stack:
+                        if self.api_key is None:
+                            mpr = stack.enter_context(MPRester())
+                        else:
+                            mpr = stack.enter_context(MPRester(self.api_key))
+
                         MP_full_pd_entries = mpr.get_entries_in_chemsys(
                             [*self.intrinsic_species, sub_elt],
                             inc_structure="initial",
@@ -866,7 +884,12 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
             for sub_elt in self.extrinsic_species:
                 extrinsic_pd_entries = []
-                with MPRester(api_key=self.api_key) as mpr:
+                with contextlib.ExitStack() as stack:
+                    if self.api_key is None:
+                        mpr = stack.enter_context(MPRester())
+                    else:
+                        mpr = stack.enter_context(MPRester(self.api_key))
+
                     MP_full_pd_entries = mpr.get_entries_in_chemsys(
                         [*self.intrinsic_species, sub_elt],
                         inc_structure="initial",
