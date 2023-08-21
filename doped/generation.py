@@ -104,8 +104,7 @@ def get_defect_entry_from_defect(
 
 def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     """
-    Returns the corresponding defect dictionary key for a pymatgen Defect
-    object.
+    Returns the corresponding defect dictionary key for a Defect object.
     """
     if defect_type == core.DefectType.Vacancy:
         return "vacancies"
@@ -242,7 +241,8 @@ def name_defect_entries(defect_entries):
     sites for the defect, in which case the point group of the defect site is
     appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique,
     then element identity and distance to the nearest neighbour of the defect
-    site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.).
+    site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.). Names do not
+    yet have charge states included.
 
     For interstitials, the same naming scheme is used, but the point group is
     always appended to the pymatgen defect name.
@@ -726,6 +726,10 @@ def guess_defect_charge_states(
 
 
 class DefectsGenerator(MSONable):
+    """
+    Class for generating doped DefectEntry objects.
+    """
+
     def __init__(
         self,
         structure: Structure,
@@ -739,7 +743,7 @@ class DefectsGenerator(MSONable):
         processes: Optional[int] = None,
     ):
         """
-        Generates pymatgen DefectEntry objects for defects in the input host
+        Generates doped DefectEntry objects for defects in the input host
         structure. By default, generates all intrinsic defects, but extrinsic
         defects (impurities) can also be created using the `extrinsic`
         argument.
