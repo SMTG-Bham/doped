@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.core.composition import Composition, Element
@@ -117,6 +118,35 @@ class DefectEntry(thermo.DefectEntry):
         The energy of the defect entry with _all_ corrections applied.
         """
         return self.sc_entry.energy + sum(self.corrections.values())
+
+    def to_json(self, filename: Optional[str] = None):
+        """
+        Save the DefectEntry object to a json file, which can be reloaded with
+        the DefectEntry.from_json() class method.
+
+        Args:
+            filename (str):
+                Filename to save json file as. If None, the filename will
+                be set as "{DefectEntry.name}.json".
+        """
+        if filename is None:
+            filename = f"{self.name}.json"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: str):
+        """
+        Load a DefectEntry object from a json file.
+
+        Args:
+            filename (str):
+                Filename of json file to load DefectEntry from.
+
+        Returns:
+            DefectEntry object
+        """
+        return loadfn(filename)
 
 
 class Defect(core.Defect):
@@ -351,6 +381,35 @@ class Defect(core.Defect):
         subclasses, which is required for monty functions.
         """
         return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
+
+    def to_json(self, filename: Optional[str] = None):
+        """
+        Save the Defect object to a json file, which can be reloaded with the
+        Defect.from_json() class method.
+
+        Args:
+            filename (str):
+                Filename to save json file as. If None, the filename will
+                be set as "{Defect.name}.json".
+        """
+        if filename is None:
+            filename = f"{self.name}.json"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: str):
+        """
+        Load a Defect object from a json file.
+
+        Args:
+            filename (str):
+                Filename of json file to load Defect from.
+
+        Returns:
+            Defect object
+        """
+        return loadfn(filename)
 
 
 class Vacancy(core.Vacancy, Defect):
