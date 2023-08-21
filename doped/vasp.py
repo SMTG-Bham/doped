@@ -69,6 +69,29 @@ singleshot_incar_settings = {
 }
 
 
+def _test_potcar_functional_choice(potcar_functional):
+    """
+    Check if the potcar functional choice needs to be changed to match those
+    available.
+    """
+    test_potcar = None
+    try:
+        test_potcar = Potcar(["Mg"], functional=potcar_functional)
+    except OSError as e:
+        # try other functional choices:
+        if potcar_functional.startswith("PBE"):
+            for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
+                with contextlib.suppress(OSError):
+                    potcar_functional: UserPotcarFunctional = pbe_potcar_string
+                    test_potcar = Potcar(["Mg"], functional=potcar_functional)
+                    break
+
+        if test_potcar is None:
+            raise e
+
+    return potcar_functional
+
+
 class DefectDictSet(DictSet):
     def __init__(
         self,
@@ -205,22 +228,10 @@ class DefectDictSet(DictSet):
 
         Redefined to intelligently handle pymatgen POTCAR issues.
         """
-        potcar = None
-        try:
-            potcar = super(self.__class__, self).potcar
-        except OSError as e:
-            # try other functional choices:
-            if self.user_potcar_functional.startswith("PBE"):
-                for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
-                    with contextlib.suppress(OSError):
-                        self.user_potcar_functional: UserPotcarFunctional = pbe_potcar_string
-                        potcar = super(self.__class__, self).potcar
-                        break
-
-            if potcar is None:
-                raise e
-
-        return potcar
+        self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
+            self.user_potcar_functional
+        )
+        return super(self.__class__, self).potcar
 
     @property
     def poscar(self) -> Poscar:
