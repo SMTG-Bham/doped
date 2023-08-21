@@ -1414,19 +1414,19 @@ class DefectsGenerator(MSONable):
 
         return info_string
 
-    def add_charge_states(self, defect_entry: str, charge_states: list):
+    def add_charge_states(self, defect_entry_name: str, charge_states: list):
         """
         Add additional `DefectEntry`s with the specified charge states to
         `self.defect_entries`.
 
         Args:
-            defect_entry (str):
-                Name of defect entry to add charge states to. Doesn't need to include the
-                charge state.
+            defect_entry_name (str):
+                Name of defect entry to add charge states to.
+                Doesn't need to include the charge state.
             charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
         """
         previous_defect_entry = [
-            entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry)
+            entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry_name)
         ][0]
         for charge in charge_states:
             defect_entry = copy.deepcopy(previous_defect_entry)
@@ -1435,6 +1435,31 @@ class DefectsGenerator(MSONable):
                 f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
             )
             self.defect_entries[defect_entry.name] = defect_entry
+
+    def remove_charge_states(self, defect_entry_name: str, charge_states: list):
+        """
+        Remove `DefectEntry`s with the specified charge states from
+        `self.defect_entries`.
+
+        Args:
+            defect_entry_name (str):
+                Name of defect entry to remove charge states from.
+                Doesn't need to include the charge state.
+            charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
+        """
+        # if defect entry name ends with number:
+        if defect_entry_name[-1].isdigit():
+            defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
+
+        for charge in charge_states:
+            # remove defect entries with defect_entry_name in name:
+            for defect_entry_name_to_remove in [
+                name
+                for name in self.defect_entries
+                if name.startswith(defect_entry_name)
+                and name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
+            ]:
+                del self.defect_entries[defect_entry_name_to_remove]
 
     def as_dict(self):
         """
