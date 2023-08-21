@@ -15,26 +15,28 @@ from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.inputs import Kpoints, UnknownPotcarWarning
+from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import Vasprun
-from pymatgen.io.vasp.sets import BadInputSetWarning, DictSet
+from pymatgen.io.vasp.sets import DictSet
 
+from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple
+from doped.vasp import (
+    MODULE_DIR,
+    _test_potcar_functional_choice,
+    deep_dict_update,
+    default_HSE_set,
+    default_potcar_dict,
+    default_relax_set,
+)
 
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))
+pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
 
 # globally ignore:
-warnings.filterwarnings("ignore", category=BadInputSetWarning)
-warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
-warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-warnings.filterwarnings(
-    "ignore", message="POTCAR data with symbol"
-)  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
+_ignore_pmg_warnings()
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
 )  # currently rely on this so shouldn't show warning
-warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
 
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
@@ -279,9 +281,7 @@ class CompetingPhases:
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
                 environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) - see the `doped`
-                homepage (https://github.com/SMTG-UCL/doped) for instructions on setting this up.
-                This should correspond to the legacy MP API; from
-                https://legacy.materialsproject.org/open.
+                Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
             full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
                 with energy above hull < e_above_hull) for the chemical system of the input
                 composition (not recommended). If False, only includes phases that (would) border
@@ -353,6 +353,7 @@ class CompetingPhases:
                 inc_structure="initial",
                 property_data=self.data,
             )
+
         self.MP_full_pd_entries = [
             e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= e_above_hull
         ]
@@ -446,21 +447,26 @@ class CompetingPhases:
         use with https://github.com/kavanase/vaspup2.0.
 
         Args:
-            kpoints_metals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
+            kpoints_metals (tuple):
+                Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for metals
-            kpoints_nonmetals (tuple): Kpoint density per inverse volume (Å^-3) to be tested in
+            kpoints_nonmetals (tuple):
+                Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for nonmetals
-            user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
-            user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE_54" and if this fails,
+                tries "PBE_52", then "PBE".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
-            user_incar_settings (dict): Override the default INCAR settings
-                e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
-                non-True/False flags need to be input as strings with quotation marks. See
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False,
+                "ALGO": "All"}. Note that any non-numerical or non-True/False flags
+                need to be input as strings with quotation marks. See
                 `doped/VASP_sets/PBEsol_ConvergenceSet.yaml` for the default settings.
             **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
-        pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
 
         # kpoints should be set as (min, max, step)
         min_nm, max_nm, step_nm = kpoints_nonmetals
@@ -471,6 +477,8 @@ class CompetingPhases:
             potcar_dict["POTCAR"].update(user_potcar_settings)
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
+        # test potcar choice:
+        potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(potcar_dict["POTCAR_FUNCTIONAL"])
         pbesol_convrg_set.update(potcar_dict)
 
         # separate metals and non-metals
@@ -556,28 +564,41 @@ class CompetingPhases:
         with those used for the defect supercell calculations.
 
         Args:
-            kpoints_metals (int): Kpoint density per inverse volume (Å^-3) for metals
-            kpoints_nonmetals (int): Kpoint density per inverse volume (Å^-3) for nonmetals
-            user_potcar_functional (str): POTCAR functional to use (default = "PBE_54")
-            user_potcar_settings (dict): Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            kpoints_metals (int):
+                Kpoint density per inverse volume (Å^-3) for metals
+            kpoints_nonmetals (int):
+                Kpoint density per inverse volume (Å^-3) for nonmetals
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE_54" and if this fails,
+                tries "PBE_52", then "PBE".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
-            user_incar_settings (dict): Override the default INCAR settings
-                e.g. {"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}. Note that any non-numerical or
-                non-True/False flags need to be input as strings with quotation marks. See
-                `doped/VASP_sets/RelaxSet.yaml` for the default settings.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False,
+                "ALGO": "All"}. Note that any non-numerical or non-True/False flags
+                need to be input as strings with quotation marks. See
+                `doped/VASP_sets/RelaxSet.yaml` and `HSESet.yaml` for the default settings.
             **kwargs: Additional kwargs to pass to `DictSet.write_input()`
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
         #  struct = sym.get_primitive_standard_structure() -> output this structure
-        hse06_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
+        relax_set = copy.deepcopy(default_relax_set)
+        lhfcalc = (
+            True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
+        )  # True (hybrid) by default
+        if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
+            relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
         potcar_dict = copy.deepcopy(default_potcar_dict)
         if user_potcar_settings:
             potcar_dict["POTCAR"].update(user_potcar_settings)
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
-        hse06_relax_set.update(potcar_dict)
+            # test potcar choice:
+        potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(potcar_dict["POTCAR_FUNCTIONAL"])
+        relax_set.update(potcar_dict)
 
         # separate metals, non-metals and molecules
         self.nonmetals = []
@@ -586,11 +607,10 @@ class CompetingPhases:
         for e in self.entries:
             if e.data["molecule"]:
                 self.molecules.append(e)
+            elif e.data["band_gap"] > 0:
+                self.nonmetals.append(e)
             else:
-                if e.data["band_gap"] > 0:
-                    self.nonmetals.append(e)
-                else:
-                    self.metals.append(e)
+                self.metals.append(e)
 
         for e in self.nonmetals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
@@ -602,7 +622,7 @@ class CompetingPhases:
 
             dict_set = DictSet(
                 e.structure,
-                hse06_relax_set,
+                relax_set,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
                 user_incar_settings=uis,
                 force_gamma=True,
@@ -625,7 +645,7 @@ class CompetingPhases:
 
             dict_set = DictSet(
                 e.structure,
-                hse06_relax_set,
+                relax_set,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_incar_settings=uis,
                 force_gamma=True,
@@ -647,7 +667,7 @@ class CompetingPhases:
 
             dict_set = DictSet(
                 e.structure,
-                hse06_relax_set,
+                relax_set,
                 user_kpoints_settings=Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
@@ -707,7 +727,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
                 environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) - see the `doped`
-                homepage (https://github.com/SMTG-UCL/doped) for instructions on setting this up.
+                Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
                 This should correspond to the legacy MP API; from
                 https://legacy.materialsproject.org/open.
 
@@ -1127,8 +1147,7 @@ class CompetingPhasesAnalyzer:
 
         # Ignore POTCAR warnings when loading vasprun.xml
         # pymatgen assumes the default PBE with no way of changing this
-        warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
-        warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+        _ignore_pmg_warnings()
 
         num = len(self.vasprun_paths)
         print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
