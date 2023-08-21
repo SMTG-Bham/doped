@@ -1007,9 +1007,7 @@ class DefectRelaxSet(MSONable):
                 vasp_xxx_attribute.potcar.write_file(f"{output_dir}/POTCAR")
 
         if "bulk" not in defect_dir:  # not a bulk supercell
-            dumpfn(self.defect_entry, f"{output_dir}/{self.defect_entry.name}.json")
-        # Note: saving `DefectEntry`s (rather than `DefectsGenerator`) to `JSON` to file removes the
-        # `doped` attributes...
+            self.defect_entry.to_json(f"{output_dir}/{self.defect_entry.name}.json")
 
     def write_gam(
         self,
