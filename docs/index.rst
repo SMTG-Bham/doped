@@ -85,8 +85,9 @@ Summary GIF:
 
 Acknowledgments
 ================
-``doped`` (née ``DefectsWithTheBoys`` #gonebutnotforgotten) has benefitted from feedback from many
-users, in particular members of the Walsh and Scanlon research groups who have used / are using it in
+``doped`` (née ``DefectsWithTheBoys`` #iykyk) has benefitted from feedback from many
+users, in particular members of the `Scanlon <http://davidscanlon.com/>`_ and
+`Walsh <https://wmd-group.github.io/>`_ research groups who have used / are using it in
 their work. Direct contributors are listed in the GitHub ``Contributors`` sidebar; including Seán
 Kavanagh, Bonan Zhu, Katarina Brlec, Adair Nicolson, Sabrine Hachmioune and Savya Aggarwal.
 
