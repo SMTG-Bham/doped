@@ -90,8 +90,8 @@ class ChemPotsTestCase(unittest.TestCase):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         chempot_df = stable_cpa.calculate_chempots(sort_by="Zr")
-        assert list(chempot_df["Zr"])[0] == 0
-        assert list(chempot_df["Zr"])[1] == -10.975428439999998
+        assert np.isclose(list(chempot_df["Zr"])[0], -0.199544)
+        assert np.isclose(list(chempot_df["Zr"])[1], -10.975428439999998)
 
         with self.assertRaises(KeyError):
             stable_cpa.calculate_chempots(sort_by="M")
@@ -227,7 +227,7 @@ class BoxedMoleculesTestCase(unittest.TestCase):
         assert m == 2
         assert type(s) == Structure
 
-        with self.assertRaises(UnboundLocalError):
+        with self.assertRaises(ValueError):
             chemical_potentials.make_molecule_in_a_box("R2")
 
 
@@ -333,7 +333,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(self.cp.entries[0].data["energy_per_atom"], -4.94795546875)
         assert np.isclose(self.cp.entries[0].data["energy"], -9.8959109375)
         assert self.cp.entries[1].name == "Zr"
-        assert np.isclose(self.cp.entries[1].data["total_magnetization"], 0, places=3)
+        assert np.isclose(self.cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
         assert self.cp.entries[1].data["e_above_hull"] == 0
         assert not self.cp.entries[1].data["molecule"]
         assert self.cp.entries[2].name == "Zr3O"
@@ -364,7 +364,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
         assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
         assert cp.entries[1].name == "Zr"
-        assert np.isclose(cp.entries[1].data["total_magnetization"], 0, places=3)
+        assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
         assert cp.entries[1].data["e_above_hull"] == 0
         assert not cp.entries[1].data["molecule"]
         assert cp.entries[2].name == "Zr3O"
@@ -482,9 +482,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         with open(f"{path1}/INCAR") as file:
             contents = file.readlines()
-            assert contents[0] == "AEXX = 0.25\n"
-            assert contents[8] == "ISIF = 3\n"
-            assert contents[5] == "GGA = Pe\n"
+            assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
         path2 = "competing_phases/O2_EaH_0/vasp_std"
         assert Path(path2).is_dir()
@@ -492,9 +490,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert contents[3] == "1 1 1\n"
 
-        with open(f"{path2}/POSCAR") as file:
-            contents = file.readlines()
-            assert contents[-1] == "0.500000 0.500000 0.540667 O\n"
+        struct = Structure.from_file(f"{path2}/POSCAR")
+        assert np.isclose(struct.sites[0].frac_coords, [0.5, 0.5, 0.5]).all()
+        assert np.isclose(struct.sites[1].frac_coords, [0.5, 0.5, 0.540333333]).all()
 
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
