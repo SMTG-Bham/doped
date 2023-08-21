@@ -93,6 +93,10 @@ def _test_potcar_functional_choice(potcar_functional):
 
 
 class DefectDictSet(DictSet):
+    """
+    Extension to pymatgen DictSet object for VASP defect calculations.
+    """
+
     def __init__(
         self,
         structure: Structure,
@@ -105,8 +109,6 @@ class DefectDictSet(DictSet):
         **kwargs,
     ):
         """
-        Extension to pymatgen DictSet object for VASP defect calculations.
-
         Args:
             structure (Structure): pymatgen Structure object of the defect supercell
             charge_state (int): Charge of the defect structure
@@ -131,7 +133,7 @@ class DefectDictSet(DictSet):
             poscar_comment (str):
                 Comment line to use for POSCAR files. Default is defect name,
                 fractional coordinates of initial site and charge state.
-            **kwargs: Additional kwargs to pass to DictSet
+            **kwargs: Additional kwargs to pass to DictSet.
         """
         self.charge_state = charge_state
         self.poscar_comment = (
@@ -284,6 +286,16 @@ def scaled_ediff(natoms: int) -> float:
 
 
 class DefectRelaxSet(MSONable):
+    """
+    An object for generating input files for VASP defect relaxation
+    calculations from pymatgen `DefectEntry` (recommended) or `Structure`
+    objects.
+
+    The supercell structure and charge state are taken from the `DefectEntry`
+    attributes, or if a `Structure` is provided, then from the
+    `defect_supercell` and `charge_state` input parameters.
+    """
+
     def __init__(
         self,
         defect_entry: Union[DefectEntry, Structure],
@@ -296,12 +308,6 @@ class DefectRelaxSet(MSONable):
         **kwargs,
     ):
         """
-        An object for generating input files for VASP defect relaxation
-        calculations from pymatgen `DefectEntry` (recommended) or `Structure`
-        objects. The supercell structure and charge state are taken from the
-        `DefectEntry` attributes, or if a `Structure` is provided, then from
-        the `defect_supercell` and `charge_state` input parameters.
-
         Creates attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
             relaxation. Not needed if ShakeNBreak structure searching has been
@@ -341,8 +347,8 @@ class DefectRelaxSet(MSONable):
 
         Args:
             defect_entry (DefectEntry, Structure):
-                pymatgen DefectEntry or Structure (defect supercell) for which to
-                generate `DefectDictSet`s for.
+                doped/pymatgen DefectEntry or Structure (defect supercell) for
+                which to generate `DefectDictSet`s for.
             charge_state (int):
                 Charge state of the defect. Overrides `DefectEntry.charge_state` if
                 `DefectEntry` is input.
@@ -471,7 +477,7 @@ class DefectRelaxSet(MSONable):
             )
 
         else:
-            raise TypeError("defect_entry must be a pymatgen DefectEntry or Structure object.")
+            raise TypeError("defect_entry must be a doped/pymatgen DefectEntry or Structure object.")
 
         if soc is not None:
             self.soc = soc
@@ -1565,6 +1571,11 @@ class DefectRelaxSet(MSONable):
 
 
 class DefectsSet(MSONable):
+    """
+    An object for generating input files for VASP defect calculations from
+    doped/pymatgen `DefectEntry` objects.
+    """
+
     def __init__(
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
@@ -1576,10 +1587,9 @@ class DefectsSet(MSONable):
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
         """
-        An object for generating input files for VASP defect calculations from
-        pymatgen `DefectEntry` objects. Creates a dictionary of.
+        Creates a dictionary of: {defect_species: DefectRelaxSet}.
 
-        {defect_species: DefectRelaxSet}, where DefectRelaxSet has the attributes:
+        DefectRelaxSet has the attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
             relaxation. Not needed if ShakeNBreak structure searching has been
             performed (recommended), unless only Γ-point _k_-point sampling is
