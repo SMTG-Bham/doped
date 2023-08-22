@@ -614,7 +614,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         Test parsing of Te_Cd_1 and Kumagai-Oba (eFNV) correction.
         """
         for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-            if "as_1_Te" in i:  # loop folders and parse those with "as_1_Te" in name
+            if "Te_Cd" in i:  # loop folders and parse those with "Te_Cd" in name
                 defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json:
@@ -672,7 +672,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         """
         Test parsing of extrinsic U_on_Cd in CdTe.
         """
-        bulk_sc_structure = Structure.from_file(f"{self.CDTE_EXAMPLE_DIR}/CdTe_bulk_supercell_POSCAR")
+        bulk_sc_structure = Structure.from_file(
+            f"{self.CDTE_EXAMPLE_DIR}/CdTe_bulk/CdTe_bulk_supercell_POSCAR"
+        )
         initial_defect_structure = Structure.from_file(f"{self.CDTE_EXAMPLE_DIR}/U_on_Cd_POSCAR")
         (
             def_type,
