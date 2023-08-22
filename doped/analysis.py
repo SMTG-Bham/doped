@@ -6,9 +6,9 @@ alongside substantial modification, in the efforts of making an efficient,
 user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
+import contextlib
 import os
 import warnings
-from operator import itemgetter
 from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -24,6 +24,7 @@ from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry, Interstitial, Substitution, Vacancy
+from doped.plotting import _format_defect_name
 from doped.utils.legacy_pmg.defect_compatibility import DefectCompatibility
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
@@ -98,6 +99,9 @@ def _convert_dielectric_to_tensor(dielectric):
 #  calls in the example notebook. Benefit of this one is that we can then auto-run
 #  `check_defects_compatibility()` at the end of parsing the full defects dict. - When doing
 #  this, look at `PostProcess` code, and then delete it once all functionality is moved here.
+# TODO: With function/class for parsing all defects, implement the doped naming scheme as our fallback
+#  option when the folder names aren't recognised (rather than defaulting to pmg name as currently the
+#  case)
 # TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
 #  (for later integration with `py-sc-fermi`).
 # TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
@@ -361,19 +365,26 @@ def defect_entry_from_paths(
         sc_defect_frac_coords=defect_site.frac_coords,
         bulk_entry=bulk_vr.get_computed_entry(),
         # doped attributes:
+        # at minimum: (below we try to rename using the folder name (if recognised)
+        name=f"{defect.name}_{'+' if charge_state>0 else ''}{charge_state}",
         defect_supercell_site=defect_site,
         defect_supercell=defect_vr.final_structure,
         bulk_supercell=bulk_vr.final_structure,
         calculation_metadata=calculation_metadata,
     )
 
-    defect_name = os.path.basename(defect_path)  # set equal to folder name (TODO: update) Set equal to
-    # folder name if it's recognised by the doped/SnB defect name formatting functions, otherwise doped
-    # name
+    defect_name = os.path.basename(defect_path)  # set equal to folder name
     if "vasp" in defect_name:  # get parent directory name:
         defect_name = os.path.basename(os.path.dirname(defect_path))
 
-    defect_entry.name = defect_name
+    try:  # check if defect name is recognised
+        formatted_defect_name = _format_defect_name(defect_name, include_site_info_in_name=True)
+    except Exception:
+        with contextlib.suppress(Exception):
+            formatted_defect_name = _format_defect_name(f"{defect_name}_0", include_site_info_in_name=True)
+
+    if formatted_defect_name:
+        defect_entry.name = defect_name
 
     return_dp = kwargs.pop("return DefectParser", False)  # internal use for tests/debugging
     dp = DefectParser(
@@ -712,14 +723,19 @@ def single_formation_energy_table(
     if hide_cols is None:
         hide_cols = []
 
-    for defect_entry in defect_phase_diagram.entries:
+    defect_entries = defect_phase_diagram.entries
+    # sort by defect name, then charge state (most positive to most negative), then energy:
+    defect_entries = sorted(
+        defect_entries, key=lambda entry: (entry.defect.name, -entry.charge_state, entry.get_ediff())
+    )
+    for defect_entry in defect_entries:
         row = [
             defect_entry.name,
             defect_entry.charge_state,
             defect_entry.calculation_metadata.get("defect_path", "N/A"),
         ]
-        if "ΔE" not in hide_cols:
-            header += ["ΔE"]
+        if "ΔEʳᵃʷ" not in hide_cols:
+            header += ["ΔEʳᵃʷ"]
             row += [
                 f"{defect_entry.get_ediff() - sum(defect_entry.corrections.values()):.2f} eV"
             ]  # With 0 chemical potentials, at the calculation fermi level
@@ -729,14 +745,14 @@ def single_formation_energy_table(
         if "Σμ" not in hide_cols:
             header += ["Σμ"]
             row += [f"{defect_phase_diagram._get_chempot_term(defect_entry, chempot_limits):.2f} eV"]
-        header += ["Formation Energy"]
+        header += ["ΔEᶠᵒʳᵐ"]
         formation_energy = defect_phase_diagram._formation_energy(
             defect_entry, chemical_potentials=chempot_limits, fermi_level=fermi_level
         )
         row += [f"{formation_energy:.2f} eV"]
 
         table.append(row)
-    table = sorted(table, key=itemgetter(0, 1))
+
     print(
         tabulate(
             table,
@@ -753,29 +769,27 @@ def single_formation_energy_table(
         print(
             """'Defect' -> Defect type and multiplicity.
 'q' -> Defect charge state.
-'ΔE' -> Energy difference between defect and host supercell (E_defect - E_host).
+'ΔEʳᵃʷ' -> Energy difference between defect and host supercell (E_defect - E_host).
 (chemical potentials set to 0 and the fermi level at average electrostatic potential in the supercell).
 'E_corr' -> Defect energy correction.
 'Σμ' -> Sum of chemical potential terms in the formation energy equation.
-'Formation Energy' -> Final defect formation energy, with the specified chemical potentials (
+'ΔEᶠᵒʳᵐ' -> Final defect formation energy, with the specified chemical potentials (
 chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM).
         """
         )
 
-    sorted_df = pd.DataFrame(
+    return pd.DataFrame(
         table,
         columns=[
             "Defect",
             "q",
             "Path",
-            "ΔE",
+            "ΔEʳᵃʷ",
             "E_corr",
             "Σμ",
-            "Formation Energy",
+            "ΔEᶠᵒʳᵐ",
         ],
     )
-    sorted_df = sorted_df.sort_values("Formation Energy")
-    return sorted_df
 
 
 # def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):

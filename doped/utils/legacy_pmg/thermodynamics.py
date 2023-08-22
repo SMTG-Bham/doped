@@ -8,6 +8,7 @@ pymatgen-analysis-defects package takes place.
 Defect thermodynamics, such as defect phase diagrams, etc.
 """
 import copy
+import warnings
 from itertools import chain
 
 import matplotlib.pyplot as plt
@@ -107,6 +108,7 @@ class DefectPhaseDiagram(MSONable):
         Returns:
             DefectPhaseDiagram object
         """
+        warnings.filterwarnings("ignore", "Use of properties is")
         entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
         vbm = d["vbm"]
         band_gap = d["band_gap"]

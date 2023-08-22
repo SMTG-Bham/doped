@@ -6,6 +6,7 @@ and AIDE (by Adam Jackson and Alex Ganose), alongside substantial modification,
 in the efforts of making an efficient, user-friendly package for managing and
 analysing defect calculations, with publication-quality outputs.
 """
+import contextlib
 import os
 import re
 import warnings
@@ -270,7 +271,8 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     )
 
     ax.set_xlim(xlim)
-    ax.plot([xlim[0], xlim[1]], [0, 0], "k-")  # black dashed line for E_formation = 0 in case ymin < 0
+    # dashed line for E_formation = 0 in case ymin < 0
+    ax.plot([xlim[0], xlim[1]], [0, 0], c="k", ls="--", alpha=0.7)
     ax.set_ylim(ylim)
 
     if fermi_level is not None:
@@ -402,8 +404,8 @@ def _format_defect_name(
     # vacancy/interstitial strings from name
 
     doped_site_info = None
-    if include_site_info_in_name:
-        # check if name is doped format, having site info as point group symbol (and more) after 2nd "_"
+    # check if name is doped format, having site info as point group symbol (and more) after 2nd "_":
+    with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols:  # recognised point group symbol?
             # from 2nd underscore to last underscore (before charge state):
@@ -507,7 +509,7 @@ def _format_defect_name(
             _check_matching_defect_format(element, name, pre_vacancy_strings, post_vacancy_strings)
             and defect_name is None
         ):
-            if doped_site_info is not None:
+            if include_site_info_in_name and doped_site_info is not None:
                 return f"$V_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
             return f"$V_{{{element}}}^{{{charge_string}}}$"
@@ -521,7 +523,7 @@ def _format_defect_name(
             )
             and defect_name is None
         ):
-            if doped_site_info is not None:
+            if include_site_info_in_name and doped_site_info is not None:
                 return f"{element}$_{{i_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
             return f"{element}$_i^{{{charge_string}}}$"
@@ -537,7 +539,7 @@ def _format_defect_name(
             f"{substituting_element}_{orig_site_element}" in name
             or f"{substituting_element}_on_{orig_site_element}" in name
         ):
-            if doped_site_info is not None:  # only not None if include_site_info_in_name is True
+            if include_site_info_in_name and doped_site_info is not None:
                 defect_name = (
                     f"{substituting_element}$_{{{orig_site_element}_{{{doped_site_info}}}}}^"
                     f"{{{charge_string}}}$"
@@ -840,7 +842,7 @@ def _get_formation_energy_lines(defect_phase_diagram, dft_chempots, xlim):
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
                 f"mis-specification of chemical potentials (see docstrings and/or tutorials). "
             )
-            ymin = min(ymin, *yvals)
+            ymin = min(ymin, *yvals)  # TODO: Test this
 
     return (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin
 
