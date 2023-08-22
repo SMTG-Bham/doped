@@ -14,12 +14,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
 from monty.json import MSONable
-from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core.periodic_table import Element
 from pymatgen.electronic_structure.dos import FermiDos
 from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
 
+from doped.core import DefectEntry
 from doped.utils.legacy_pmg import PointDefectComparator
 
 __author__ = "Danny Broberg, Shyam Dwaraknath"
