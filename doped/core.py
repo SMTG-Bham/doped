@@ -163,7 +163,7 @@ class Defect(core.Defect):
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
         oxi_state: Optional[float] = None,
-        equivalent_sites: List[PeriodicSite] | None = None,
+        equivalent_sites: Optional[List[PeriodicSite]] = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
         user_charges: Optional[List[int]] = None,
@@ -256,13 +256,13 @@ class Defect(core.Defect):
 
     def get_supercell_structure(
         self,
-        sc_mat: np.ndarray | None = None,
+        sc_mat: Optional[np.ndarray] = None,
         min_atoms: int = 50,  # different to current pymatgen default (80)
         max_atoms: int = 500,  # different to current pymatgen default (240)
         min_length: float = 10.0,  # same as current pymatgen default
         force_diagonal: bool = False,  # same as current pymatgen default
-        dummy_species: str | None = None,
-        target_frac_coords: np.ndarray | None = None,
+        dummy_species: Optional[str] = None,
+        target_frac_coords: Optional[np.ndarray] = None,
         return_sites: bool = False,
     ) -> Structure:
         """

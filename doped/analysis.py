@@ -1192,7 +1192,7 @@ class DefectParser:
                 )
             self.defect_vr = get_vasprun(defect_vr_path)
 
-        run_metadata = {} | {  # TODO: Add check that incars, kpoints and potcars are compatible here
+        run_metadata = {  # TODO: Add check that incars, kpoints and potcars are compatible here
             "defect_incar": self.defect_vr.incar,
             "bulk_incar": self.bulk_vr.incar,
             "defect_kpoints": self.defect_vr.kpoints,
