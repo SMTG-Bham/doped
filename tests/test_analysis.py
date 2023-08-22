@@ -69,16 +69,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"{self.YTOS_EXAMPLE_DIR}/F_O_1/OUTCAR.gz",
             )
 
-        if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/another_LOCPOT.gz")
+        if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_LOCPOT.gz")
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_LOCPOT.gz")
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_OUTCAR.gz")
-        if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/another_vasprun.xml.gz")
+        if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_vasprun.xml.gz")
         if_present_rm(f"{self.CDTE_BULK_DATA_DIR}/another_vasprun.xml.gz")
 
-        if os.path.exists(f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz"):
+        if os.path.exists(f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz"):
             shutil.move(
-                f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/hidden_lcpt.gz",
-                f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz",
+                f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz",
+                f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             )
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
@@ -90,7 +90,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         """
         Test skipping of charge corrections and warnings.
         """
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         fake_aniso_dielectric = [1, 2, 3]
 
         with warnings.catch_warnings(record=True) as w:
@@ -188,7 +188,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         # test warning when no core level info in OUTCAR (ICORELEVEL != 0), but LOCPOT
         # files present, but anisotropic dielectric:
         shutil.copyfile(
-            f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl/LOCPOT.gz",
+            f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz",
         )
 
@@ -215,7 +215,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )
 
         # test warning when no OUTCAR or LOCPOT file found:
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         shutil.move(
             f"{defect_path}/LOCPOT.gz",
             f"{defect_path}/hidden_lcpt.gz",
@@ -244,7 +244,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         shutil.move(f"{defect_path}/hidden_lcpt.gz", f"{defect_path}/LOCPOT.gz")
 
         # test no warning when no OUTCAR or LOCPOT file found, but charge is zero:
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_0/vasp_ncl"  # no LOCPOT/OUTCAR
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_0/vasp_ncl"  # no LOCPOT/OUTCAR
 
         with warnings.catch_warnings(record=True) as w:
             parsed_v_cd_0 = defect_entry_from_paths(
@@ -326,7 +326,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             assert all(issubclass(warning.category, UserWarning) for warning in w)
 
     def test_multiple_locpots(self):
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
 
         shutil.copyfile(f"{defect_path}/LOCPOT.gz", f"{defect_path}/another_LOCPOT.gz")
         shutil.copyfile(
@@ -355,7 +355,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
 
     def test_multiple_vaspruns(self):
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
 
         shutil.copyfile(f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz")
         shutil.copyfile(
@@ -388,7 +388,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         Test that dielectric can be supplied as float or int or 3x1 array/list
         or 3x3 array/list.
         """
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         # get correct Freysoldt correction energy:
         parsed_v_cd_m2 = defect_entry_from_paths(  # defect charge determined automatically
             defect_path=defect_path,
@@ -501,7 +501,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         parsed_vac_Cd_dict = {}
 
         for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-            if "vac_1_Cd" in i:  # loop folders and parse those with "vac_1_Cd" in name
+            if "v_Cd" in i:  # loop folders and parse those with "v_Cd" in name
                 defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
                 # parse with no transformation.json
@@ -513,23 +513,23 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 )  # Keep dictionary of parsed defect entries
 
         assert len(parsed_vac_Cd_dict) == 3
-        assert all(f"vac_1_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2])
+        assert all(f"v_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2])
         # Check that the correct Freysoldt correction is applied
         for name, energy, correction_dict in [
             (
-                "vac_1_Cd_0",
+                "v_Cd_0",
                 4.166,
                 {},
             ),
             (
-                "vac_1_Cd_-1",
+                "v_Cd_-1",
                 6.355,
                 {
                     "freysoldt_charge_correction": 0.22517150393292082,
                 },
             ),
             (
-                "vac_1_Cd_-2",
+                "v_Cd_-2",
                 8.398,
                 {
                     "freysoldt_charge_correction": 0.7376460317828045,
@@ -546,7 +546,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-            if name == "vac_1_Cd_0":
+            if name == "v_Cd_0":
                 np.testing.assert_array_almost_equal(
                     parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords, [0.5, 0.5, 0.5]
                 )
