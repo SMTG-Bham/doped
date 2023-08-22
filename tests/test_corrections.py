@@ -92,7 +92,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             for lattval in abc
         ]
         # load necessary parameters for defect_entry to make use of Freysoldt and Kumagai corrections
-        p = {} | {
+        p = {
             "axis_grid": axisdata,
             "bulk_planar_averages": bldata,
             "defect_planar_averages": dldata,
