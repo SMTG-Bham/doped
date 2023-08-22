@@ -36,7 +36,7 @@ class DopedParsingTestCase(unittest.TestCase):
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CDTE_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.CDTE_BULK_DATA_DIR = os.path.join(self.CDTE_EXAMPLE_DIR, "Bulk_Supercell/vasp_ncl")
+        self.CDTE_BULK_DATA_DIR = os.path.join(self.CDTE_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
         self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
         self.ytos_dielectric = [  # from legacy Materials Project
