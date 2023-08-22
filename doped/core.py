@@ -4,7 +4,7 @@ Core functions and classes for defects in doped.
 
 import collections
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -87,7 +87,7 @@ class DefectEntry(thermo.DefectEntry):
     sc_entry: ComputedStructureEntry
     corrections: Dict[str, float] = field(default_factory=dict)
     corrections_metadata: Dict[str, Any] = field(default_factory=dict)
-    sc_defect_frac_coords: Optional[tuple[float, float, float]] = None
+    sc_defect_frac_coords: Optional[Tuple[float, float, float]] = None
     bulk_entry: Optional[ComputedStructureEntry] = None
     entry_id: Optional[str] = None
 
@@ -163,10 +163,10 @@ class Defect(core.Defect):
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
         oxi_state: Optional[float] = None,
-        equivalent_sites: list[PeriodicSite] | None = None,
+        equivalent_sites: List[PeriodicSite] | None = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
-        user_charges: Optional[list[int]] = None,
+        user_charges: Optional[List[int]] = None,
         **doped_kwargs,
     ):
         """
