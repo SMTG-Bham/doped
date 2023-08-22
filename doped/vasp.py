@@ -6,7 +6,7 @@ import copy
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 from monty.json import MSONable
@@ -1724,7 +1724,7 @@ class DefectsSet(MSONable):
     def _format_defect_entries_input(
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
-    ) -> tuple[Dict[str, DefectEntry], str, Union[Dict[str, DefectEntry], DefectsGenerator]]:
+    ) -> Tuple[Dict[str, DefectEntry], str, Union[Dict[str, DefectEntry], DefectsGenerator]]:
         """
         Helper function to format input `defect_entries` into a named
         dictionary of `DefectEntry` objects. Also returns the name of the JSON
