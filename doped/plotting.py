@@ -409,7 +409,7 @@ def _format_defect_name(
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols:  # recognised point group symbol?
             # from 2nd underscore to last underscore (before charge state):
-            doped_site_info = "_".join(defect_species.split("_")[2:-1])
+            doped_site_info = "-".join(defect_species.split("_")[2:-1])
             trimmed_pre_charge_name = pre_charge_name.replace(f"_{doped_site_info}", "")
 
     def _check_matching_defect_format(element, name, pre_def_type_list, post_def_type_list):
@@ -730,10 +730,13 @@ def _get_legends_txt(for_legend, all_entries=False):
     # get latex-like legend titles
     legends_txt = []
     for defect_entry_name in for_legend:
+        include_site_info = not all(  # all PyCDT/old-doped format, don't include site num
+            any(name.startswith(i) for i in ["Int_", "vac_", "as_", "sub_"]) for name in for_legend
+        )
         try:
             defect_name = _format_defect_name(
                 defect_species=defect_entry_name,
-                include_site_info_in_name=True,
+                include_site_info_in_name=include_site_info,
             )
             if all_entries is not True:
                 defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
@@ -742,11 +745,19 @@ def _get_legends_txt(for_legend, all_entries=False):
             defect_name = defect_entry_name
 
         # append "a,b,c.." for different defect species with the same name
-        if defect_name in legends_txt:
+        if any(defect_name in i for i in legends_txt):
             i = 1
+
+            if defect_name in legends_txt:  # first repeat, direct match, rename previous entry
+                # find index of previous defect_name, and rename
+                prev_idx = legends_txt.index(defect_name)
+                legends_txt[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
+                defect_name = f"{defect_name}$_{{-{chr(96 + 2)}}}$"  # b
+
             while defect_name in legends_txt:
                 i += 1
-                defect_name = f"{defect_name[:-3]}{chr(96 + i)}{defect_name[-3:]}"  # a, b c etc
+                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # a, b, c etc
+
         legends_txt.append(defect_name)
 
     return legends_txt
@@ -936,14 +947,16 @@ def _TLD_plot(
         tl_labels, tl_label_type = [], []
         for x_val, chargeset in defect_phase_diagram.transition_level_map[def_name].items():
             x_trans.append(x_val)
-            y_trans.extend(
-                defect_phase_diagram._formation_energy(
-                    defect_entry,
-                    chemical_potentials=dft_chempots,
-                    fermi_level=x_val,
-                )
-                for defect_entry in defect_phase_diagram.stable_entries[def_name]
-                if defect_entry.charge_state == chargeset[0]
+            y_trans.append(
+                [
+                    defect_phase_diagram._formation_energy(
+                        defect_entry,
+                        chemical_potentials=dft_chempots,
+                        fermi_level=x_val,
+                    )
+                    for defect_entry in defect_phase_diagram.stable_entries[def_name]
+                    if defect_entry.charge_state == chargeset[0]
+                ][0]
             )
             tl_labels.append(
                 rf"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
