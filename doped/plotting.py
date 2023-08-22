@@ -410,7 +410,9 @@ def _format_defect_name(
         if point_group_symbol in sch_symbols:  # recognised point group symbol?
             # from 2nd underscore to last underscore (before charge state):
             doped_site_info = "-".join(defect_species.split("_")[2:-1])
-            trimmed_pre_charge_name = pre_charge_name.replace(f"_{doped_site_info}", "")
+            trimmed_pre_charge_name = pre_charge_name.replace(
+                f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
+            )
 
     def _check_matching_defect_format(element, name, pre_def_type_list, post_def_type_list):
         return any(f"{pre_def_type}{element}" in name for pre_def_type in pre_def_type_list) or any(
