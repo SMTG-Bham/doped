@@ -85,8 +85,8 @@ class DefectEntry(thermo.DefectEntry):
     defect: "Defect"
     charge_state: int
     sc_entry: ComputedStructureEntry
-    corrections: dict[str, float] = field(default_factory=dict)
-    corrections_metadata: dict[str, Any] = field(default_factory=dict)
+    corrections: Dict[str, float] = field(default_factory=dict)
+    corrections_metadata: Dict[str, Any] = field(default_factory=dict)
     sc_defect_frac_coords: Optional[tuple[float, float, float]] = None
     bulk_entry: Optional[ComputedStructureEntry] = None
     entry_id: Optional[str] = None
@@ -113,7 +113,7 @@ class DefectEntry(thermo.DefectEntry):
         Post-initialization method, using super() and self.defect.
         """
         super().__post_init__()
-        self.name: str = self.defect.name
+        self.name: str = self.defect.name if not self.name else self.name
 
     @property  # bug fix for now, will PR and delete later
     def corrected_energy(self) -> float:
@@ -357,7 +357,7 @@ class Defect(core.Defect):
 
             Same method as Structure.remove_oxidation_states().
             """
-            new_sp: dict[Element, float] = collections.defaultdict(float)
+            new_sp: Dict[Element, float] = collections.defaultdict(float)
             for el, occu in site.species.items():
                 sym = el.symbol
                 new_sp[Element(sym)] += occu

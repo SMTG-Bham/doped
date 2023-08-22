@@ -191,7 +191,7 @@
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
   - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
-    this to their docs as example use cases as well. Also include examples of extending to
+    this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Update `doped` links on `SnB`/`easyunfold` etc docs.
