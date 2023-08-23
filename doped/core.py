@@ -244,7 +244,7 @@ class Defect(core.Defect):
 
         return cls(
             structure=defect.structure,
-            site=defect.site,
+            site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
             oxi_state=defect.oxi_state,
             equivalent_sites=defect.equivalent_sites,

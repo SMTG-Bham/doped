@@ -960,7 +960,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cdte_defect_gen_check(cdte_defect_gen)
         self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
-        cdte_defect_gen.to_json("data/cdte_defect_gen.json")  # for testing in test_vasp.py
+        cdte_defect_gen.to_json(f"{self.data_dir}/cdte_defect_gen.json")  # for testing in test_vasp.py
 
     def test_defects_generator_cdte_supercell_input(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -1525,7 +1525,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
-        ytos_defect_gen.to_json("data/ytos_defect_gen_supercell.json")  # for testing in test_vasp.py
+        ytos_defect_gen.to_json(
+            f"{self.data_dir}/ytos_defect_gen_supercell.json"
+        )  # for testing in test_vasp.py
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
         assert self.lmno_defect_gen_info in lmno_defect_gen._defect_generator_info()
@@ -1945,7 +1947,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.lmno_defect_gen_check(lmno_defect_gen)
         self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
-        lmno_defect_gen.to_json("data/lmno_defect_gen.json")  # for testing in test_vasp.py
+        lmno_defect_gen.to_json(f"{self.data_dir}/lmno_defect_gen.json")  # for testing in test_vasp.py
 
     def test_lmno_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
@@ -2742,7 +2744,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cu_defect_gen_check(cu_defect_gen)
         self._load_and_test_defect_gen_jsons(cu_defect_gen)
 
-        cu_defect_gen.to_json("data/cu_defect_gen.json")  # for testing in test_vasp.py
+        cu_defect_gen.to_json(f"{self.data_dir}/cu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_cu_no_generate_supercell(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
@@ -3175,7 +3177,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.agcu_defect_gen_check(agcu_defect_gen)
         self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
-        agcu_defect_gen.to_json("data/agcu_defect_gen.json")  # for testing in test_vasp.py
+        agcu_defect_gen.to_json(f"{self.data_dir}/agcu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
@@ -3551,7 +3553,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
         self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
-        cd_i_defect_gen.to_json("data/cd_i_supercell_defect_gen.json")  # for testing in test_vasp.py
+        cd_i_defect_gen.to_json(
+            f"{self.data_dir}/cd_i_supercell_defect_gen.json"
+        )  # for testing in test_vasp.py
 
     def test_supercell_w_defect_cd_i_cdte_no_generate_supercell(self):
         # test inputting a defective supercell; input supercell is good here so same output
