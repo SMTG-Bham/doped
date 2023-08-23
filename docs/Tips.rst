@@ -1,6 +1,28 @@
 Tips & Tricks
 ============================
 
+Interstitials
+-------------------
+As described in the `YouTube defect calculation tutorial <https://youtu.be/FWz7nm9qoNg>`_, our
+recommended workflow for calculating interstitial defects is to first generate the set of
+possible interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
+to do this), and then perform Gamma-point-only relaxations (using ``vasp_gam``) for the neutral state of
+each generated interstitial candidate. The ``vasp_gam`` relaxation files can be generated following the
+steps shown in the
+`defect generation tutorial <https://doped.readthedocs.io/en/latest/dope_workflow_example.html>`_ and
+setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
+
+We can then compare the energies of these trial neutral relaxations, and remove any candidates that
+either:
+
+- Are very high energy (>1 eV above the lowest energy site), and so are unlikely to form.
+
+- Relax to the same final structure/energy as other interstitial sites (despite different initial
+  positions), and so are unnecessary to calculate. This can happen due to interstitial migration within
+  the relaxation calculation, from an unfavourable higher energy site, to a lower energy one. Typically
+  if the energy from the test neutral `vasp_gam` relaxations are within a couple meV of eachother, this
+  is the case.
+
 Tricky Relaxations
 -------------------
 
