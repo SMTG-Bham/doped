@@ -17,7 +17,7 @@ doped
    :width: 250
 
 
-``doped`` is a python package for managing solid-state defect calculations, with functionality to
+``doped`` is a Python package for managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
 `ShakeNBreak`_ for defect structure-searching, write VASP input files for defect supercell calculations,
 and automatically parse and analyse the results.
@@ -57,7 +57,7 @@ already done, are provided on the :ref:`Installation` page.
 ``ShakeNBreak``
 ================
 As shown in the tutorials, it is highly recommended to use the `ShakeNBreak`_ approach when calculating
-point defects in solids, to ensure you have identified the groundstate structures of your defects. As
+point defects in solids, to ensure you have identified the ground-state structures of your defects. As
 detailed in the `theory paper`_, skipping this step can result in drastically incorrect formation
 energies, transition levels, carrier capture (basically any property associated with defects). This
 approach is followed in the :ref:`tutorials <Tutorials>`, with a more in-depth explanation and tutorial
@@ -83,17 +83,17 @@ Summary GIF:
    <br>
    <br>
 
-Acknowledgments
+Acknowledgements
 ================
 ``doped`` (née ``DefectsWithTheBoys`` #iykyk) has benefitted from feedback from many
 users, in particular members of the `Scanlon <http://davidscanlon.com/>`_ and
-`Walsh <https://wmd-group.github.io/>`_ research groups who have used / are using it in
+`Walsh <https://wmd-group.github.io/>`_ research groups who are using it in
 their work. Direct contributors are listed in the GitHub ``Contributors`` sidebar; including Seán
 Kavanagh, Bonan Zhu, Katarina Brlec, Adair Nicolson, Sabrine Hachmioune and Savya Aggarwal.
 
-Code to efficiently identify defect species from input supercell structures was contributed by Dr
+Code to efficiently identify defect species from input supercell structures was contributed by
 `Alex Ganose`_, and the colour scheme for defect formation energy plots was originally templated from
-the ``aide`` package, developed by the dynamic duo `Adam Jackson`_ and `Alex Ganose`_.
+the ``aide`` package, developed by `Adam Jackson`_ and `Alex Ganose`_.
 
 The `docs`_ website setup was templated from the ``ShakeNBreak`` docs set up by `Irea Mosquera-Lois`_ 🙌
 
@@ -103,7 +103,6 @@ package was rewritten to operate using the new ``pymatgen-analysis-defects`` pac
 
 Studies using ``doped``
 ========================
-We'll add papers that use `doped` to this list as they come out!
 
 - A\. T. J. Nicolson et al. `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
 - Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
