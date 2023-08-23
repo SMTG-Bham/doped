@@ -135,6 +135,7 @@ class DefectDictSet(DictSet):
                 fractional coordinates of initial site and charge state.
             **kwargs: Additional kwargs to pass to DictSet.
         """
+        self.potcars = kwargs.pop("potcars", True)  # to allow testing on GH Actions
         self.charge_state = charge_state
         self.poscar_comment = (
             poscar_comment
@@ -230,9 +231,10 @@ class DefectDictSet(DictSet):
 
         Redefined to intelligently handle pymatgen POTCAR issues.
         """
-        self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
-            self.user_potcar_functional
-        )
+        if self.potcars:
+            self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
+                self.user_potcar_functional
+            )
         return super(self.__class__, self).potcar
 
     @property
@@ -978,9 +980,10 @@ class DefectRelaxSet(MSONable):
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
             potcar_warning_string = (
-                "POTCAR directory not set up with pymatgen (see the doped homepage: "
-                "https://github.com/SMTG-UCL/doped for instructions on setting this up). This is "
-                "required to generate `POTCAR` and `INCAR` files (to set `NELECT` and `NUPDOWN`)"
+                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                "this up). This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` and "
+                "`NUPDOWN`)"
             )
             if vasp_type == "gam" or unperturbed_poscar:
                 warnings.warn(
@@ -1007,7 +1010,8 @@ class DefectRelaxSet(MSONable):
         self, defect_dir, subfolder, unperturbed_poscar, vasp_xxx_attribute, vasp_type, **kwargs
     ):
         output_dir = self._get_output_dir(defect_dir, subfolder)
-        self._check_user_potcars(vasp_type=vasp_type, unperturbed_poscar=unperturbed_poscar)
+        if not kwargs.get("potcar_spec", False):
+            self._check_user_potcars(vasp_type=vasp_type, unperturbed_poscar=unperturbed_poscar)
 
         if unperturbed_poscar:
             vasp_xxx_attribute.write_input(
