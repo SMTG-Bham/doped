@@ -17,6 +17,8 @@ Tutorials showing the code functionality and usage are provided on the [docs](ht
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
 <img align="left" src="docs/doped_chempot_plotting.png" width="365"> <img src="docs/doped_TLD_plot.png" width="385" align="right">
+<br><br><br><br><br><br><br><br><br><br><br>
+
 
 ## Installation
 ```bash
