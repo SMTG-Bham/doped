@@ -1319,7 +1319,14 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
             # test equivalent_sites for defects:
             assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            assert any(
+                np.isclose(
+                    defect_entry.defect.site.distance(site),
+                    0,
+                    atol=1e-3,
+                )
+                for site in defect_entry.defect.equivalent_sites
+            )
             for equiv_site in defect_entry.defect.equivalent_sites:
                 nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
                     equiv_site.coords,
