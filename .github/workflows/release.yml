@@ -26,9 +26,9 @@ jobs:
           pip install -e .
           pip install -e .[tests]
 
-#      - name: Test  # To be added later
-#        run:  |
-#          pytest --ignore local_doped_testing  # test everything
+      - name: Test  # To be added later
+        run:  |
+          pytest --ignore local_doped_testing  # test everything
 
       - name: Build packages
         run: |
