@@ -164,11 +164,20 @@ Studies using ``doped``
 
 .. toctree::
    :hidden:
+   :caption: Usage
    :maxdepth: 4
 
    Installation
    Python API <doped>
    Tutorials
    Tips
+
+.. toctree::
+   :hidden:
+   :caption: Information
+   :maxdepth: 1
+
    Contributing
    Code_Compatibility
+   changelog_link
+   doped on GitHub <https://github.com/SMTG-UCL/doped>

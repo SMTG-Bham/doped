@@ -1,5 +1,13 @@
 Change Log
 ==========
+
+v.2.0.0
+----------
+- Major overhaul to rebase onto the new `pymatgen` defects code (`>v2022.7.25`).
+- Add documentation (https://doped.readthedocs.io/en/latest)
+- Add `DefectsGenerator` class with major upgrade in functionality.
+- Add `DefectsSet` classes in `vasp.py`
+
 v.1.1.2
 ----------
 - Cap `numpy` to `1.23` to avoid `pymatgen` dependency issues.
