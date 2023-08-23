@@ -1,7 +1,6 @@
-# For some stupid fucking reason, gitignore comments have to be on their own line
-# What a load of bollocks, anyway here's Wonderwall
+# gitignore comments have to be on their own line
 
-# No PyCharm shit
+# No PyCharm
 .idea/
 
 # Ignore Mac Finder metadata file
@@ -17,14 +16,18 @@
 *__pycache__/
 *.pyc
 
-# Ignore SMTG Paper Talk PowerPoint stuff
-DWTB_Paper_Talk.pptx
-
 # No PyPi stuff
 pypi_packaging.sh
 dist/
 build/
 
 # Local notes & testing folder
-doped_JOSS_project/
+JOSS/
 local_doped_testing/
+
+# POTCARs not allowed
+*POTCAR
+
+# Sphinx documentation
+docs/_build/
+docs/jupyter_execute/

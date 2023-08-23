@@ -15,7 +15,7 @@ jobs:
       max-parallel: 5
 
       matrix:
-        python-version: ['3.8', '3.9', '3.10']
+        python-version: ['3.8', '3.9', '3.10', '3.11']
 
     name: Python ${{ matrix.python-version }} pip install
 
@@ -35,4 +35,4 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --ignore local_doped_testing  # test everything
+          pytest --ignore local_doped_testing -vv  # test everything
