@@ -196,10 +196,12 @@ class Defect(core.Defect):
         """
         super().__init__(
             structure=structure,
-            site=site,
+            site=site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=multiplicity,
             oxi_state=oxi_state,
-            equivalent_sites=equivalent_sites,
+            equivalent_sites=[site.to_unit_cell() for site in equivalent_sites]
+            if equivalent_sites is not None
+            else None,
             symprec=symprec,
             angle_tolerance=angle_tolerance,
             user_charges=user_charges,
@@ -247,7 +249,9 @@ class Defect(core.Defect):
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
             oxi_state=defect.oxi_state,
-            equivalent_sites=defect.equivalent_sites,
+            equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
+            if defect.equivalent_sites is not None
+            else None,
             symprec=defect.symprec,
             angle_tolerance=defect.angle_tolerance,
             user_charges=defect.user_charges,
