@@ -92,7 +92,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             for lattval in abc
         ]
         # load necessary parameters for defect_entry to make use of Freysoldt and Kumagai corrections
-        p = {
+        metadata = {
             "axis_grid": axisdata,
             "bulk_planar_averages": bldata,
             "defect_planar_averages": dldata,
@@ -131,11 +131,13 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
         site_matching_indices = [[ind, ind - 1] for ind in range(len(struct.sites)) if ind != 0]
 
-        p = {
-            "bulk_atomic_site_averages": bulk_atomic_site_averages,
-            "defect_atomic_site_averages": defect_atomic_site_averages,
-            "site_matching_indices": site_matching_indices,
-        }
+        metadata.update(
+            {
+                "bulk_atomic_site_averages": bulk_atomic_site_averages,
+                "defect_atomic_site_averages": defect_atomic_site_averages,
+                "site_matching_indices": site_matching_indices,
+            }
+        )
         self.defect_entry = DefectEntry(
             vac,
             charge_state=-3,
@@ -144,7 +146,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
                 energy=0.0,  # needs to be set, so set to 0.0
             ),
             sc_defect_frac_coords=struct.sites[0].frac_coords,
-            calculation_metadata=p,
+            calculation_metadata=metadata,
         )
 
     def test_get_correction_freysoldt(self):
