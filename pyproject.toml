@@ -21,9 +21,9 @@ dependencies = [
     "tabulate",
     "matplotlib",
     "numpy>=1.21.0",
-    "pymatgen>=2022.10.22",
-    "pymatgen-analysis-defects>=2023.7.12",
-    "shakenbreak>=3.0.0",  # new pymatgen
+    "pymatgen>=2023.5.8",  # imposed by pymatgen-analysis-defects
+    "pymatgen-analysis-defects>=2023.8.22",
+    "shakenbreak>=3.0.0",
     "pandas",
 ]
 
