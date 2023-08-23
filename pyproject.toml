@@ -27,6 +27,16 @@ dependencies = [
     "pandas",
 ]
 
+[project.optional-dependencies]
+tests = ["pytest"]
+analysis = [
+    "easyunfold",
+    "py-sc-fermi",
+    "sumo",
+    "nonrad",
+    #"CarrierCapture.jl"
+]
+
 [project.urls]
 "Homepage" = "https://github.com/SMTG-UCL/doped"
 
