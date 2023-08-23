@@ -12,7 +12,7 @@ from unittest.mock import patch
 import numpy as np
 from pymatgen.core.structure import Structure
 
-from doped.analysis import defect_entry_from_paths
+from doped.analysis import DefectParser, defect_entry_from_paths
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
@@ -282,6 +282,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         return result
 
     def test_multiple_outcars(self):
+        DefectParser._delocalization_warning_printed = False  # reset class variable, so test is
+        # independent of what tests have been run before
         shutil.copyfile(
             f"{self.CDTE_BULK_DATA_DIR}/OUTCAR.gz",
             f"{self.CDTE_BULK_DATA_DIR}/another_OUTCAR.gz",
@@ -295,7 +297,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 charge_state=2,
             )
             assert (
-                len(w) == 4
+                len(w) == 4  #
             )  # two delocalization warnings (general and specific one) and multiple OUTCARs (both
             # defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
