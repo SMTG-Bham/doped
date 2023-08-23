@@ -10,7 +10,6 @@ https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
 import os
 
 import numpy as np
-from ase.utils import basestring
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
@@ -500,7 +499,7 @@ def _read_wyckoff_datafile(spacegroup, f, setting=None):
     """
     if isinstance(spacegroup, int):
         pass
-    elif isinstance(spacegroup, basestring):
+    elif isinstance(spacegroup, str):
         spacegroup = " ".join(spacegroup.strip().split())
     else:
         raise ValueError("`spacegroup` must be of type int or str")
