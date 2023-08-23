@@ -49,8 +49,8 @@ warnings.filterwarnings(
 
 def make_molecule_in_a_box(element: str):
     """
-    Generate a X2 'molecule-in-a-box' structure for the input element X, (i.e.
-    a 30 Å cubed supercell with a single X2 molecule in the centre).
+    Generate an X2 'molecule-in-a-box' structure for the input element X, (i.e.
+    a 30 Å cuboid supercell with a single X2 molecule in the centre).
 
     This is the natural state of several elemental competing phases, such
     as O2, N2, H2, F2 and Cl2. Initial bond lengths are set to the experimental
@@ -63,9 +63,9 @@ def make_molecule_in_a_box(element: str):
         Structure: pymatgen Structure object of the molecule in a box.
         str: Chemical formula of the molecule in a box.
         int: Total magnetization of the molecule in a box (0 for all X2 except
-            O2 which has a triplet ground state (S=1)).
+            O2 which has a triplet ground state (S = 1)).
     """
-    lattice = [[30, 0, 0], [0, 30, 0], [0, 0, 30]]
+    lattice = [[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]]
     all_structures = {
         "O2": {
             "structure": Structure(
@@ -441,7 +441,7 @@ class CompetingPhases:
         **kwargs,
     ):
         """
-        Generates VASP input files for kpoints convergence testing for
+        Generates VASP input files for k-points convergence testing for
         competing phases, using PBEsol (GGA) DFT by default. Automatically sets
         the `ISMEAR` `INCAR` tag to 2 (if metallic) or 0 if not. Recommended to
         use with https://github.com/kavanase/vaspup2.0.
@@ -1044,7 +1044,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
 class CompetingPhasesAnalyzer:
     """
-    Post processing competing phases data to calculate chemical potentials.
+    Post-processing competing phases data to calculate chemical potentials.
     """
 
     def __init__(self, system, extrinsic_species=None):
