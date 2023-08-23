@@ -1339,7 +1339,7 @@ class DefectParser:
             actual_bulk_vr = get_vasprun(actual_bulk_vr_path)
             bandgap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
 
-        gap_calculation_metadata |= {
+        gap_calculation_metadata = {
             "mpid": mpid,
             "cbm": cbm,
             "vbm": vbm,
