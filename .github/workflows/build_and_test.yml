@@ -3,12 +3,10 @@ name: Build and test package
 on:
   pull_request:
     branches:
-       - master
-       - develop
+       - '*'  # all branches
   push:
     branches:
-      - master
-      - develop
+      - '*'  # all branches
   workflow_dispatch:
 
 jobs:
@@ -18,7 +16,7 @@ jobs:
       max-parallel: 5
 
       matrix:
-        python-version: ['3.8', '3.9', '3.10']
+        python-version: ['3.8', '3.9', '3.10', '3.11']
 
     name: Python ${{ matrix.python-version }} Test Pop
 
@@ -39,4 +37,4 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --ignore local_doped_testing  # test everything
+          pytest --ignore local_doped_testing -vv  # test everything
