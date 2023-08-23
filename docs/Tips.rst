@@ -23,30 +23,30 @@ either:
   if the energy from the test neutral `vasp_gam` relaxations are within a couple meV of eachother, this
   is the case.
 
-Tricky Relaxations
+Difficult Structural Relaxations
 -------------------
 
-If some of your defect supercell relaxations are not converging after multiple continuation calculations
+If defect supercell relaxations do not converge after multiple continuation calculations
 (i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to an error in
-the underlying calculation, extreme forces and/or small residual forces which the structure optimisation
-algorithm is struggling to relax.
+the underlying calculation, extreme forces and/or small residual forces which the local optimisation
+algorithm is struggling to find a solution.
 
 - A common culprit is the :code:`EDWAV` error in the output file, which can typically be avoided by
   reducing :code:`NCORE` and/or :code:`KPAR`.
 
     - If some relaxations are still not converging after multiple continuations, you should check the
       calculation output files to see if this requires fixing. Often this may require changing a
-      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations which
+      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations that
       are also struggling to converge.
 
 - If the calculation outputs show that the relaxation is proceeding fine, without any errors, just not
   converging to completion, then it suggests that the structure relaxation is bouncing around a narrow
-  region of the potential energy surface, within which the gradient-based geometry optimiser is
+  region of the potential energy surface. Here, the gradient-based geometry optimiser is
   struggling to converge.
 
     - Often (but not always) this indicates that the structure may be stuck around a `saddle point` or
-      shallow local minimum on the potential energy surface (PES), and so it's important to make sure
-      you've performed structure-searching (PES scanning) with
+      shallow local minimum on the potential energy surface (PES), so it's important to make sure
+      that you have performed structure-searching (PES scanning) with
       `ShakeNBreak <https://shakenbreak.readthedocs.io>`_ (``SnB``) to avoid this. You may want to try
       'rattling' the structure to break symmetry in case this is an issue, as detailed in
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
@@ -57,7 +57,7 @@ algorithm is struggling to relax.
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
     - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All`), if
-      electronic concergence seems to be causing issues.
+      electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
 
 ``ShakeNBreak``
@@ -90,7 +90,5 @@ Troubleshooting
       pip install --force --no-cache-dir numpy==1.23
       pip uninstall pymatgen
       pip install pymatgen
-
-
 
 Have any tips for users from using ``doped``? Please share it with the developers and we'll add them here!
