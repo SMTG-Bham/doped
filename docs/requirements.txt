@@ -1,0 +1,17 @@
+# required dependencies:
+tabulate
+matplotlib
+numpy>=1.21.0
+pymatgen>=2022.8.23
+pymatgen-analysis-defects
+monty
+shakenbreak
+packaging
+pandas
+
+# optional dependencies:
+py-sc-fermi
+sumo
+easyunfold
+nonrad
+CarrierCapture.jl
