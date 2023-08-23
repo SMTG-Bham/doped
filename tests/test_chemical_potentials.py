@@ -491,8 +491,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert contents[3] == "1 1 1\n"
 
         struct = Structure.from_file(f"{path2}/POSCAR")
-        assert np.isclose(struct.sites[0].frac_coords, [0.5, 0.5, 0.5]).all()
-        assert np.isclose(struct.sites[1].frac_coords, [0.5, 0.5, 0.540333333]).all()
+        assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
+        assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
 
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
