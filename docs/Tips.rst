@@ -24,7 +24,7 @@ either:
   is the case.
 
 Difficult Structural Relaxations
--------------------
+--------------------------------
 
 If defect supercell relaxations do not converge after multiple continuation calculations
 (i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to an error in
