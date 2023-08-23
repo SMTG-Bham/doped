@@ -478,7 +478,10 @@ class CompetingPhases:
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
         # test potcar choice:
-        potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(potcar_dict["POTCAR_FUNCTIONAL"])
+        if not kwargs.get("potcar_spec", False):
+            potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(
+                potcar_dict["POTCAR_FUNCTIONAL"]
+            )
         pbesol_convrg_set.update(potcar_dict)
 
         # separate metals and non-metals
@@ -596,8 +599,11 @@ class CompetingPhases:
             potcar_dict["POTCAR"].update(user_potcar_settings)
         if user_potcar_functional:
             potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
-            # test potcar choice:
-        potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(potcar_dict["POTCAR_FUNCTIONAL"])
+        # test potcar choice:
+        if not kwargs.get("potcar_spec", False):
+            potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(
+                potcar_dict["POTCAR_FUNCTIONAL"]
+            )
         relax_set.update(potcar_dict)
 
         # separate metals, non-metals and molecules
