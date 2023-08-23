@@ -63,7 +63,12 @@ class DefectDictSetTest(unittest.TestCase):
         self.doped_gam_kpoint_comment = "Γ-only KPOINTS from doped"
 
     def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
-        dds = DefectDictSet(struct, **dds_kwargs)  # fine for a bulk primitive input as well
+        dds = DefectDictSet(
+            struct,
+            potcars=False,  # to allow testing on GH Actions - comment out when testing
+            # locally to recheck this functionality!
+            **dds_kwargs,
+        )  # fine for a bulk primitive input as well
         if incar_check:
             assert self.neutral_def_incar_min.items() <= dds.incar.items()
             assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
@@ -86,16 +91,18 @@ class DefectDictSetTest(unittest.TestCase):
                 else:
                     assert v == dds.incar[k]
 
-        for potcar_functional in [
-            dds.potcar_functional,
-            dds.potcar.functional,
-            dds.potcar.as_dict()["functional"],
-        ]:
-            assert "PBE" in potcar_functional
+        if dds.potcars:
+            for potcar_functional in [
+                dds.potcar_functional,
+                dds.potcar.functional,
+                dds.potcar.as_dict()["functional"],
+            ]:
+                assert "PBE" in potcar_functional
 
-        assert set(dds.potcar.as_dict()["symbols"]) == {
-            default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
-        }
+            assert set(dds.potcar.as_dict()["symbols"]) == {
+                default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
+            }
+
         assert dds.structure == struct
         if "charge_state" not in dds_kwargs:
             assert dds.charge_state == 0
@@ -106,8 +113,9 @@ class DefectDictSetTest(unittest.TestCase):
 
     def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
         assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
-        assert dds.incar["NELECT"] == nelect
-        assert dds.incar["NUPDOWN"] == nupdown
+        if dds.potcars:
+            assert dds.incar["NELECT"] == nelect
+            assert dds.incar["NUPDOWN"] == nupdown
 
     def test_neutral_defect_incar(self):
         dds = self.defect_dict_set_defaults_check(self.prim_cdte.copy())
@@ -232,6 +240,9 @@ class DefectsSetTest(unittest.TestCase):
             # load the Incar, Poscar and Kpoints and check it matches the previous:
             test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
             incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
+            # remove NELECT and NUPDOWN from test_incar to allow testing without POTCARs on GH Actions:
+            test_incar.pop("NELECT", None)
+            test_incar.pop("NUPDOWN", None)  # remove when testing locally to recheck this functionality!
             assert test_incar == incar
 
             if check_poscar:
