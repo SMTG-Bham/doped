@@ -131,7 +131,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 
         site_matching_indices = [[ind, ind - 1] for ind in range(len(struct.sites)) if ind != 0]
 
-        p |= {
+        p = {
             "bulk_atomic_site_averages": bulk_atomic_site_averages,
             "defect_atomic_site_averages": defect_atomic_site_averages,
             "site_matching_indices": site_matching_indices,
