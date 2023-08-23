@@ -192,31 +192,44 @@ def defect_entry_from_paths(
                 auto_charge = -1 * (defect_nelect - neutral_defect_dict_set.nelect)
 
             except Exception as e:
-                raise RuntimeError(
-                    "Defect charge cannot be automatically determined as POTCARs have not been setup "
-                    "with pymatgen (see Step 2 at https://github.com/SMTG-UCL/doped#installation). "
-                    "Please specify defect charge manually using the `charge` argument, or set up "
-                    "POTCARs with pymatgen."
-                ) from e
+                auto_charge = None
+                if charge_state is None:
+                    raise RuntimeError(
+                        "Defect charge cannot be automatically determined as POTCARs have not been setup "
+                        "with pymatgen (see Step 2 at https://github.com/SMTG-UCL/doped#installation). "
+                        "Please specify defect charge manually using the `charge_state` argument, "
+                        "or set up POTCARs with pymatgen."
+                    ) from e
 
-            if abs(auto_charge) >= 10:  # crazy charge state predicted
+            if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
                 raise RuntimeError(
                     f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
                     f"Please specify defect charge manually using the `charge` argument."
                 )
 
-        if charge_state is not None and int(charge_state) != int(auto_charge) and abs(auto_charge) < 5:
+        if (
+            charge_state is not None
+            and auto_charge is not None
+            and int(charge_state) != int(auto_charge)
+            and abs(auto_charge) < 5
+        ):
             warnings.warn(
                 f"Auto-determined defect charge q={int(auto_charge):+} does not match "
                 f"specified charge q={int(charge_state):+}. Will continue with specified "
                 f"charge_state, but beware!"
             )
-        else:
+        elif charge_state is None and auto_charge is not None:
             charge_state = auto_charge
 
     except Exception as e:
         if charge_state is None:
             raise e
+
+    if charge_state is None:
+        raise RuntimeError(
+            "Defect charge could not be automatically determined from the defect calculation outputs. "
+            "Please manually specify defect charge using the `charge_state` argument."
+        )
 
     # Can specify initial defect structure (to help PyCDT find the defect site if
     # multiple relaxations were required, else use from defect relaxation OUTCAR:

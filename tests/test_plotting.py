@@ -61,7 +61,12 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
                 print(f"Parsing {i}...")
                 defect_path = f"{cls.cdte_example_dir}/{i}/vasp_ncl"
                 cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(
-                    defect_path, cls.cdte_bulk_data_dir, cls.cdte_dielectric
+                    defect_path,
+                    cls.cdte_bulk_data_dir,
+                    cls.cdte_dielectric,
+                    charge_state=int(i.split("_")[-1])  # runs fine without on local as charge states
+                    # can be guessed using POTCARs, but not on GitHub Actions. Comment out when running
+                    # tests locally to recheck this functionality!
                 )
 
         cls.v_Cd_dpd = analysis.dpd_from_defect_dict(cls.v_Cd_dict)
@@ -70,10 +75,10 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             defect_path=f"{cls.ytos_example_dir}/F_O_1",
             bulk_path=f"{cls.ytos_example_dir}/Bulk",
             dielectric=[40.7, 40.7, 25.2],
+            charge_state=1,  # runs fine without on local as charge states can be guessed using POTCARs,
+            # but not on GitHub Actions. Comment out when running tests locally to recheck this
+            # functionality!
         )
-
-    # def setUp(self):
-    # self.parsed_v_Cd_dict = loadfn("parsed_v_Cd_dict.json")
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
