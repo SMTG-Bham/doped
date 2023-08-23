@@ -1,0 +1,15 @@
+INCAR:
+  ICORELEVEL: "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge correction scheme"
+  ISIF: 2  # Fixed supercell for defects
+  ISPIN: '2  # Spin polarisation likely for defects'
+  ISYM: '0  # Symmetry breaking extremely likely for defects'
+  LVHAR: "True  # Needed if using the Freysoldt (FNV) charge correction scheme"
+  NSW: 200  # increase NSW for defect calculations
+
+# Notes:
+# KPAR is set to 2 for `vasp_std` calculations (multiple kpoints)
+# NUPDOWN is set to 0 (singlet) or 1 (doublet) depending on the number of electrons
+# (even or odd, respectively).
+# Note that even-electron defects with multiple spin-polarised states (e.g. bipolarons;
+# Fig. 2c in doi.org/10.1021/acsenergylett.1c00380) could also have triplet spin states
+# (NUPDOWN=2), but the energy difference is likely to be small.
