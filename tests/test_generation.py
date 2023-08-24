@@ -3156,12 +3156,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         else:
             np.testing.assert_allclose(
                 agcu_defect_gen.defect_entries["Ag_Cu_-1"].sc_defect_frac_coords,
-                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                np.array([0.0, 0.5, 0.5]),  # closest to middle of supercell
                 atol=1e-4,
             )
             np.testing.assert_allclose(
                 agcu_defect_gen["Ag_Cu_-1"].defect_supercell_site.frac_coords,
-                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                np.array([0.0, 0.5, 0.5]),  # closest to middle of supercell
                 atol=1e-4,
             )
         np.testing.assert_allclose(
