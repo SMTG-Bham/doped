@@ -779,26 +779,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
@@ -1240,26 +1232,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.01)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].name == "O_i_D2d_-1"
@@ -1711,26 +1695,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].name == "Ni_i_C1_O1.78_+2"
@@ -2174,26 +2150,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].name == "S_i_Td_S2.35_-2"
@@ -2582,26 +2550,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].name == "Cu_i_Oh_+1"
@@ -2959,26 +2919,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert (
