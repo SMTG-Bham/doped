@@ -159,7 +159,10 @@ class FreysoldtCorrection(DefectCorrection):
 
         pot_corr = np.mean(pot_corr_tracker)
 
-        entry.calculation_metadata["freysoldt_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("freysoldt_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
+
         entry.calculation_metadata["potalign"] = (
             pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
         )
@@ -512,7 +515,10 @@ class KumagaiCorrection(DefectCorrection):
             self.metadata["gamma"],
         )
 
-        entry.calculation_metadata["kumagai_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("kumagai_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
+
         entry.calculation_metadata["potalign"] = (
             pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
         )
@@ -868,7 +874,9 @@ class BandFillingCorrection(DefectCorrection):
 
         bf_corr = self.perform_bandfill_corr(eigenvalues, kpoint_weights, potalign, vbm, cbm, soc_calc)
 
-        entry.calculation_metadata["bandfilling_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("bandfilling_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
 
         return {"bandfilling_correction": bf_corr}
 
