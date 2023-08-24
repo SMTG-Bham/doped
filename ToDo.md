@@ -1,5 +1,6 @@
 # `doped` WishList
 ## Defect calculations set up
+- See SK Remarkable notes
 - CLI Functionality for core functions.
   - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
     POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
