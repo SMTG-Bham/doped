@@ -24,6 +24,7 @@ from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry, Interstitial, Substitution, Vacancy
+from doped.generation import get_defect_name_from_entry
 from doped.plotting import _format_defect_name
 from doped.utils.legacy_pmg.defect_compatibility import DefectCompatibility
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
@@ -85,6 +86,37 @@ def _convert_dielectric_to_tensor(dielectric):
     return dielectric
 
 
+def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_name: str) -> None:
+    """
+    Check that `possible_defect_name` is a recognised format by doped (i.e. in
+    the format "{defect_name}_{optional_site_info}_{charge_state}").
+
+    If the DefectEntry.name attribute is not defined or does not end with the
+    charge state, then the entry will be renamed with the doped default name.
+    """
+    formatted_defect_name = None
+    charge_state = defect_entry.charge_state
+    # check if defect folder name ends with charge state:
+    defect_name_w_charge_state = (
+        possible_defect_name
+        if (possible_defect_name.endswith((f"_{charge_state}", f"_{charge_state:+}")))
+        else f"{possible_defect_name}_{'+' if charge_state > 0 else ''}{charge_state}"
+    )
+
+    with contextlib.suppress(Exception):  # check if defect name is recognised
+        formatted_defect_name = _format_defect_name(
+            defect_name_w_charge_state, include_site_info_in_name=True
+        )  # tries without site_info if with site_info fails
+
+    if formatted_defect_name is not None:
+        defect_entry.name = defect_name_w_charge_state
+    else:
+        defect_entry.name = (
+            f"{get_defect_name_from_entry(defect_entry)}_"
+            f"{'+' if charge_state > 0 else ''}{charge_state}"
+        )  # otherwise use default doped name  # TODO: Test!
+
+
 # TODO: Should add check the bulk and defect KPOINTS/INCAR/POTCAR/POSCAR (size) settings
 #  are compatible, and throw warning if not.
 # TODO: Add `check_defects_compatibility()` function that checks the bulk and defect
@@ -119,27 +151,36 @@ def defect_entry_from_paths(
 ):
     """
     Parse the defect calculation outputs in `defect_path` and return the parsed
-    `DefectEntry` object.
+    `DefectEntry` object. By default, the `DefectEntry.name` attribute (later
+    used to label the defects in plots) is set to the defect_path folder name
+    (if it is a recognised defect name), else it is set to the default doped
+    name for that defect.
 
     Args:
-    defect_path (str): path to defect folder of interest (with vasprun.xml(.gz))
-    bulk_path (str): path to bulk folder of interest (with vasprun.xml(.gz))
-    dielectric (float or int or 3x1 matrix or 3x3 matrix):
-        ionic + static contributions to dielectric constant
-    charge_state (int):
-        charge of defect. If not provided, will be automatically determined
-        from the defect calculation outputs (requires POTCARs to be set up
-        with `pymatgen`).
-    initial_defect_structure (str):  Path to the unrelaxed defect structure,
-        if structure matching with the relaxed defect structure(s) fails.
-    skip_corrections (bool): Whether to skip the calculation and application of
-        finite-size charge corrections to the defect energy.
-    bulk_bandgap_path (str):
-        Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
-        occur at reciprocal space points not included in the bulk supercell
-        calculation, you should use this tag to point to a bulk bandstructure
-        calculation instead. If None, will use self.defect_entry.calculation_metadata["bulk_path"].
-    **kwargs: Additional keyword arguments to pass to `DefectParser()`.
+        defect_path (str):
+            Path to defect supercell folder (containing at least vasprun.xml(.gz)).
+        bulk_path (str):
+            Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            Ionic + static contributions to the dielectric constant.
+        charge_state (int):
+            Charge state of defect. If not provided, will be automatically determined
+            from the defect calculation outputs (requires `POTCAR`s to be set up
+            with `pymatgen`).
+        initial_defect_structure (str):
+            Path to the unrelaxed defect structure, if structure matching with the
+            relaxed defect structure(s) fails (rarely required). Default is None.
+        skip_corrections (bool):
+            Whether to skip the calculation and application of finite-size charge
+            corrections to the defect energy (not recommended in most cases).
+            Default = False.
+        bulk_bandgap_path (str):
+            Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+            occur at reciprocal space points not included in the bulk supercell
+            calculation, you should use this tag to point to a bulk bandstructure
+            calculation instead.
+            If None, will use self.defect_entry.calculation_metadata["bulk_path"].
+        **kwargs: Additional keyword arguments to pass to `DefectParser()`.
 
     Return:
         Parsed `DefectEntry` object.
@@ -378,8 +419,6 @@ def defect_entry_from_paths(
         sc_defect_frac_coords=defect_site.frac_coords,
         bulk_entry=bulk_vr.get_computed_entry(),
         # doped attributes:
-        # at minimum: (below we try to rename using the folder name (if recognised)
-        name=f"{defect.name}_{'+' if charge_state>0 else ''}{charge_state}",
         defect_supercell_site=defect_site,
         defect_supercell=defect_vr.final_structure,
         bulk_supercell=bulk_vr.final_structure,
@@ -390,14 +429,7 @@ def defect_entry_from_paths(
     if "vasp" in defect_name:  # get parent directory name:
         defect_name = os.path.basename(os.path.dirname(defect_path))
 
-    try:  # check if defect name is recognised
-        formatted_defect_name = _format_defect_name(defect_name, include_site_info_in_name=True)
-    except Exception:
-        with contextlib.suppress(Exception):
-            formatted_defect_name = _format_defect_name(f"{defect_name}_0", include_site_info_in_name=True)
-
-    if formatted_defect_name:
-        defect_entry.name = defect_name
+    check_and_set_defect_entry_name(defect_entry, defect_name)
 
     return_dp = kwargs.pop("return DefectParser", False)  # internal use for tests/debugging
     dp = DefectParser(
@@ -540,17 +572,22 @@ def defect_entry_from_paths(
     return dp.defect_entry
 
 
-def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
-    """Generates a DefectPhaseDiagram object from a dictionary of parsed defect calculations (
-    format: {"defect_name": defect_entry}), likely created using DefectParser from
-    doped.pycdt.utils.parse_calculations), which can then be used to analyse and plot the defect
-    thermodynamics (formation energies, transition levels, concentrations etc).
+def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
+    """
+    Generates a DefectPhaseDiagram object from a dictionary of parsed defect
+    calculations in the format: {"defect_name": defect_entry}), likely created
+    using defect_entry_from_paths() (or DefectParser), which can then be used to
+    analyse and plot the defect thermodynamics (formation energies, transition
+    levels, concentrations etc).
+    Note that the DefectEntry.name attributes (rather than the defect_name key
+    in the defect_dict) are used to label the defects in plots.
 
     Args:
-        parsed_defect_dict (dict):
-            Dictionary of parsed defect calculations (format: {"defect_name": defect_entry}),
-            likely created using DefectParser from doped.pycdt.utils.parse_calculations).
-            Must have 'vbm' and 'gap' in defect_entry.calculation_metadata for each defect (from
+        defect_dict (dict):
+            Dictionary of parsed defect calculations in the format:
+            {"defect_name": defect_entry}), likely created using defect_entry_from_paths()
+            (or DefectParser). Must have 'vbm' and 'gap' in
+            defect_entry.calculation_metadata for at least one defect (from
             DefectParser.get_bulk_gap_data())
 
     Returns:
@@ -572,28 +609,40 @@ def dpd_from_defect_dict(parsed_defect_dict: dict) -> DefectPhaseDiagram:
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
     # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
+
+    if not defect_dict:
+        raise ValueError(
+            "No defects found in `defect_dict`. Please check the supplied dictionary is in the "
+            "correct format (i.e. {'defect_name': defect_entry})."
+        )
+    if not isinstance(defect_dict, dict):
+        raise TypeError(f"Expected `defect_dict` to be a dictionary, but got {type(defect_dict)} instead.")
+
     vbm_vals = []
     bandgap_vals = []
-    for defect in parsed_defect_dict.values():
-        vbm_vals.append(defect.calculation_metadata["vbm"])
-        bandgap_vals.append(defect.calculation_metadata["gap"])
-    if len(set(vbm_vals)) > 1:  # Check if all defects give same vbm
+    for defect_entry in defect_dict.values():
+        if "vbm" in defect_entry.calculation_metadata:
+            vbm_vals.append(defect_entry.calculation_metadata["vbm"])
+        if "gap" in defect_entry.calculation_metadata:
+            bandgap_vals.append(defect_entry.calculation_metadata["gap"])
+
+    def _raise_VBM_bandgap_value_error(vals, type="VBM"):
         raise ValueError(
-            f"VBM values don't match for defects in given defect dictionary, "
-            f"the VBM values in the dictionary are: {vbm_vals}. "
-            f"Are you sure the correct/same bulk files were used with "
-            f"DefectParser and/or get_bulk_gap_data()?"
-        )
-    if len(set(bandgap_vals)) > 1:  # Check if all defects give same bandgap
-        raise ValueError(
-            f"Bandgap values don't match for defects in given defect dictionary, "
-            f"the bandgap values in the dictionary are: {bandgap_vals}. "
-            f"Are you sure the correct/same bulk files were used with "
-            f"DefectParser and/or get_bulk_gap_data()?"
+            f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
+            f"and so are incompatible for thermodynamic analysis with DefectPhaseDiagram. The {type} "
+            f"values in the dictionary are: {vals}. You should recheck the correct/same bulk files were "
+            f"used when parsing."
         )
 
+    # get the max difference in VBM & bandgap vals:
+    if max(vbm_vals) - min(vbm_vals) > 0.05:  # Check if all defects give same vbm
+        _raise_VBM_bandgap_value_error(vbm_vals, type="VBM")
+
+    if max(bandgap_vals) - min(bandgap_vals) > 0.05:  # Check if all defects give same bandgap
+        _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
+
     return DefectPhaseDiagram(
-        list(parsed_defect_dict.values()), vbm_vals[0], bandgap_vals[0], filter_compatible=False
+        list(defect_dict.values()), vbm_vals[0], bandgap_vals[0], filter_compatible=False
     )
 
 
@@ -624,7 +673,7 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
 def formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
     chempot_limits: Optional[Dict] = None,
-    pd_facets: Optional[List] = None,
+    facets: Optional[List] = None,
     fermi_level: float = 0,
     hide_cols: Optional[List] = None,
     show_key: bool = True,
@@ -637,7 +686,7 @@ def formation_energy_table(
     the key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
     by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). In the
     latter case, a subset of facet(s) / chemical potential limit(s) can be chosen with the
-    pd_facets argument, or if not specified, will print formation energy tables for each facet in
+    facets argument, or if not specified, will print formation energy tables for each facet in
     the phase diagram.
     Returns the results a pandas DataFrame or list of DataFrames.
 
@@ -652,7 +701,7 @@ def formation_energy_table(
             by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). If
             not specified, chemical potentials are not included in the formation energy calculation
             (all set to zero energy).
-        pd_facets (list):
+        facets (list):
             A list facet(s) / chemical potential limit(s) for which to print the defect formation
             energy tables. If not specified, will print formation energy tables for each facet in
             the phase diagram. (default: None)
@@ -672,10 +721,10 @@ def formation_energy_table(
 
     if "facets" in chempot_limits:
         list_of_dfs = []
-        if pd_facets is None:
-            pd_facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
+        if facets is None:
+            facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
-        for facet in pd_facets:
+        for facet in facets:
             bold_print("Facet: " + unicodeify(facet))
             single_formation_energy_df = single_formation_energy_table(
                 defect_phase_diagram,
@@ -1335,7 +1384,7 @@ class DefectParser:
                     "edge extrema."
                 )
 
-            gap_calculation_metadata.update({"MP_gga_BScalc_data": None})  # to signal no MP BS is used
+            gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
             bandgap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
 
         if bulk_bandgap_path:

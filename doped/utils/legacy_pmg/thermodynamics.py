@@ -21,43 +21,46 @@ from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
 
 from doped.core import DefectEntry
-from doped.utils.legacy_pmg import PointDefectComparator
 
-__author__ = "Danny Broberg, Shyam Dwaraknath"
-__copyright__ = "Copyright 2018, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Shyam Dwaraknath"
-__email__ = "shyamd@lbl.gov"
-__status__ = "Development"
-__date__ = "Mar 15, 2018"
+# TODO: Cleanup and refactor this code
 
 
 class DefectPhaseDiagram(MSONable):
     """
-    This is similar to a PhaseDiagram object in pymatgen, but has ability to do
-    quick analysis of defect formation energies when fed DefectEntry objects.
-
-    uses many of the capabilities from PyCDT's DefectsAnalyzer class...
+    Class for analysing the thermodynamics of defects in solids. Similar to a
+    pymatgen PhaseDiagram object, having the ability to quickly analyse defect
+    formation energies when fed DefectEntry objects.
 
     This class is able to get:
         a) stability of charge states for a given defect,
-        b) list of all formation ens
-        c) transition levels in the gap
+        b) list of all formation energies,
+        c) transition levels in the gap,
+        d) used as input to doped plotting/analysis functions
     """
 
     def __init__(self, entries, vbm, band_gap, filter_compatible=True, metadata=None):
         """
         Args:
-            entries ([DefectEntry]): A list of DefectEntry objects
-            vbm (float): Valence Band energy to use for all defect entries.
-            band_gap (float): Band gap to use for all defect entries.
-            filter_compatible (bool): Whether to consider entries which were ruled
-                incompatible by the DefectComaptibility class. Note this must be set to False
-                if you desire a suggestion for larger supercell sizes.
-                Default is True (to omit calculations which have "is_compatible"=False in
-                    DefectEntry's calculation_metadata)
-            metadata (dict): Dictionary of metadata to store with the PhaseDiagram. Has
-                no impact on calculations.
+            entries ([DefectEntry]):
+                A list of DefectEntry objects. Note that `DefectEntry.name` attributes
+                 are used for grouping and plotting purposes! These should end be in
+                 the format "{defect_name}_{optional_site_info}_{charge_state}". If
+                 the DefectEntry.name attribute is not defined or does not end with
+                 the charge state, then the entry will be renamed with the doped
+                 default name.
+            vbm (float):
+                VBM energy to use as Fermi level reference point for all defect entries.
+            band_gap (float):
+                Band gap value to use for all defect entries.
+            filter_compatible (bool):
+                Whether to consider entries which were ruled incompatible by the
+                DefectCompatibility class. Must be set to False if you desire a
+                suggestion for larger supercell sizes. Default is True (to omit
+                calculations which have "is_compatible"=False in DefectEntry's
+                calculation_metadata)
+            metadata (dict):
+                Dictionary of metadata to store with the PhaseDiagram. Has no impact on
+                calculations.
         """
         self.vbm = vbm
         self.band_gap = band_gap
@@ -168,9 +171,16 @@ class DefectPhaseDiagram(MSONable):
 
     def find_stable_charges(self):
         """
-        Sets the stable charges and transition states for a series of
-        defect entries. This function uses scipy's HalfspaceInterection
-        to oncstruct the polygons corresponding to defect stability as
+        Sets the stable charges and transition states for a series of defect
+        entries. Defect entries are grouped together based on their
+        DefectEntry.name attributes. These should end be in the format
+        "{defect_name}_{optional_site_info}_{charge_state}". If the
+        DefectEntry.name attribute is not defined or does not end with the
+        charge state, then the entry will be renamed with the doped default
+        name.
+
+        This function uses scipy's HalfspaceIntersection
+        to construct the polygons corresponding to defect stability as
         a function of the Fermi-level. The Halfspace Intersection
         constructs N-dimensional hyperplanes, in this case N=2,  based
         on the equation of defect formation energy with considering chemical
@@ -183,34 +193,69 @@ class DefectPhaseDiagram(MSONable):
         This code was modeled after the Halfspace Intersection code for
         the Pourbaix Diagram
         """
+        # Old pymatgen defect-matching code: # TODO: Reconsider this approach. For now, we group based
+        #  on defect entry names (which themselves should contain the information on inequivalent (
+        #  initial) defect sites)
+        # def similar_defects(entryset):
+        #     """
+        #     Used for grouping similar defects of different charges
+        #     Can distinguish identical defects even if they are not
+        #     in same position.
+        #     """
+        #     pdc = PointDefectComparator(
+        #         check_charge=False, check_primitive_cell=True, check_lattice_scale=False
+        #     )
+        #     grp_def_sets = []
+        #     grp_def_indices = []
+        #     for ent_ind, ent in enumerate(entryset):
+        #         # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
+        #         # this is currently most time intensive part of DefectPhaseDiagram
+        #         matched_ind = None
+        #         for grp_ind, defgrp in enumerate(grp_def_sets):
+        #             if pdc.are_equal(ent.defect, defgrp[0].defect):
+        #                 matched_ind = grp_ind
+        #                 break
+        #         if matched_ind is not None:
+        #             grp_def_sets[matched_ind].append(copy.deepcopy(ent))
+        #             grp_def_indices[matched_ind].append(ent_ind)
+        #         else:
+        #             grp_def_sets.append([copy.deepcopy(ent)])
+        #             grp_def_indices.append([ent_ind])
+        #
+        #     return zip(grp_def_sets, grp_def_indices)
 
         def similar_defects(entryset):
             """
-            Used for grouping similar defects of different charges Can
-            distinguish identical defects even if they are not in same
-            position.
-            """
-            pdc = PointDefectComparator(
-                check_charge=False, check_primitive_cell=True, check_lattice_scale=False
-            )
-            grp_def_sets = []
-            grp_def_indices = []
-            for ent_ind, ent in enumerate(entryset):
-                # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
-                # this is currently most time intensive part of DefectPhaseDiagram
-                matched_ind = None
-                for grp_ind, defgrp in enumerate(grp_def_sets):
-                    if pdc.are_equal(ent.defect, defgrp[0].defect):
-                        matched_ind = grp_ind
-                        break
-                if matched_ind is not None:
-                    grp_def_sets[matched_ind].append(copy.deepcopy(ent))
-                    grp_def_indices[matched_ind].append(ent_ind)
-                else:
-                    grp_def_sets.append([copy.deepcopy(ent)])
-                    grp_def_indices.append([ent_ind])
+            Group defects based on their DefectEntry.name attributes. Defect
+            entries are grouped together based on their DefectEntry.name attributes.
+            These should end be in the format:
+            "{defect_name}_{optional_site_info}_{charge_state}". If the
+            DefectEntry.name attribute is not defined or does not end with the
+            charge state, then the entry will be renamed with the doped default name.
 
-            return zip(grp_def_sets, grp_def_indices)
+            For example, 'defect_A_1' and 'defect_A_2' will be grouped together.
+            """
+            from doped.analysis import check_and_set_defect_entry_name
+
+            # Dictionary to hold groups of entries with the same prefix
+            grouped_entries = {}
+
+            for ent_ind, ent in enumerate(entryset):
+                # check defect entry name and (re)define if necessary
+                check_and_set_defect_entry_name(ent, ent.name)
+
+                entry_name_wout_charge = ent.name.rsplit("_", 1)[0]
+
+                # If the prefix is not yet in the dictionary, initialize it with empty lists
+                if entry_name_wout_charge not in grouped_entries:
+                    grouped_entries[entry_name_wout_charge] = {"entries": [], "indices": []}
+
+                # Append the current entry and its index to the appropriate group
+                grouped_entries[entry_name_wout_charge]["entries"].append(ent)
+                grouped_entries[entry_name_wout_charge]["indices"].append(ent_ind)
+
+            # Convert the dictionary to the desired output format
+            return [(group["entries"], group["indices"]) for group in grouped_entries.values()]
 
         # Limits for search
         # E_fermi = { -1 eV to band gap+1}
@@ -268,7 +313,8 @@ class DefectPhaseDiagram(MSONable):
             # log a defect name for tracking (using full index list to avoid naming
             # in-equivalent defects with same name)
             str_index_list = [str(ind) for ind in sorted(index_list)]
-            track_name = f"{defects[0].name}@" + "-".join(str_index_list)
+            track_name = f"{defects[0].name}@" + "-".join(str_index_list)  # TODO: Needs to be
+            # consistent with plotting
 
             if len(ints_and_facets) > 0:
                 # Unpack into lists
