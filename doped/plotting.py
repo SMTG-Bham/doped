@@ -171,7 +171,7 @@ def formation_energy_plot(
                 figs.append(fig)
                 plt.show()  # show figure
 
-            return figs
+            return figs[0] if len(figs) == 1 else figs
 
         # else manually specified chemical potentials, or no chempots specified
         fig = _TLD_plot(
@@ -775,7 +775,7 @@ def _get_formation_energy_lines(defect_phase_diagram, dft_chempots, xlim):
     ymin = 0
 
     for defect_entry in defect_phase_diagram.entries:
-        defect_entry_name = f"{defect_entry.name}_{defect_entry.charge_state}"
+        defect_entry_name = defect_entry.name  # name includes charge state
         all_lines_xy[defect_entry_name] = [[], []]
         for x_extrem in [lower_cap, upper_cap]:
             all_lines_xy[defect_entry_name][0].append(x_extrem)

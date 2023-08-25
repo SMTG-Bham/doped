@@ -17,6 +17,7 @@ from doped.generation import DefectsGenerator
 from doped.vasp import (
     DefectDictSet,
     DefectsSet,
+    _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
     scaled_ediff,
@@ -24,6 +25,19 @@ from doped.vasp import (
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
 #  jsons etc
+
+
+def _potcars_available() -> bool:
+    """
+    Check if the POTCARs are available for the tests (i.e. testing locally).
+
+    If not (testing on GitHub Actions), POTCAR testing will be skipped.
+    """
+    try:
+        _test_potcar_functional_choice("PBE")
+        return True
+    except ValueError:
+        return False
 
 
 class DefectDictSetTest(unittest.TestCase):
@@ -65,8 +79,7 @@ class DefectDictSetTest(unittest.TestCase):
     def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
         dds = DefectDictSet(
             struct,
-            potcars=False,  # to allow testing on GH Actions - comment out when testing
-            # locally to recheck this functionality!
+            potcars=_potcars_available(),  # to allow testing on GH Actions
             **dds_kwargs,
         )  # fine for a bulk primitive input as well
         if incar_check:
@@ -240,9 +253,12 @@ class DefectsSetTest(unittest.TestCase):
             # load the Incar, Poscar and Kpoints and check it matches the previous:
             test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
             incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
-            # remove NELECT and NUPDOWN from test_incar to allow testing without POTCARs on GH Actions:
-            test_incar.pop("NELECT", None)
-            test_incar.pop("NUPDOWN", None)  # remove when testing locally to recheck this functionality!
+            # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
+            # locally)), otherwise pop from test_incar:
+            if not _potcars_available():  # to allow testing on GH Actions
+                test_incar.pop("NELECT", None)
+                test_incar.pop("NUPDOWN", None)
+
             assert test_incar == incar
 
             if check_poscar:
