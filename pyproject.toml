@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.0.0"
+version = "2.0.1"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.21.0",
     "pymatgen>=2023.5.8",  # imposed by pymatgen-analysis-defects
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.0.0",
+    "shakenbreak>=3.2.0",
     "pandas",
 ]
 
@@ -45,10 +45,12 @@ analysis = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["examples*"]
+exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
-doped = ["*.yaml"]
+"doped.VASP_sets" = ["*.yaml"]
+"doped.utils" = ["*.dat", "*.mplstyle"]
+"doped.utils.legacy_pmg" = ["*.rst"]
 
 [tool.black]
 line-length = 107

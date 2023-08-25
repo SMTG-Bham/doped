@@ -1,6 +1,15 @@
 Change Log
 ==========
 
+v.2.0.1
+----------
+- Update naming handling in ``DefectPhaseDiagram`` to be more robust/flexible, following failure case
+  noted by @utf 🙌
+- Ensure package data files are correctly included in the package distribution, again noted by @utf 🙌
+- Updates to chemical potentials code.
+- Refactoring of site-matching code.
+- Tests updates and code cleanup.
+
 v.2.0.0
 ----------
 - Major overhaul to rebase onto the new `pymatgen` defects code (`>v2022.7.25`).
