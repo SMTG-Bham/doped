@@ -1,6 +1,10 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 """
+This code has been copied over from pymatgen==2022.7.25, as it was deleted in
+later versions. This is a temporary measure while refactoring to use the new
+pymatgen-analysis-defects package takes place.
+
 Implementation of defect correction methods.
 """
 
@@ -23,14 +27,6 @@ from pymatgen.analysis.defects.utils import (
 from scipy import stats
 
 from doped.utils.legacy_pmg import DefectCorrection
-
-__author__ = "Danny Broberg, Shyam Dwaraknath"
-__copyright__ = "Copyright 2018, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Shyam Dwaraknath"
-__email__ = "shyamd@lbl.gov"
-__status__ = "Development"
-__date__ = "Mar 15, 2018"
 
 logger = logging.getLogger(__name__)
 
