@@ -11,7 +11,6 @@ from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
@@ -19,6 +18,7 @@ from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
+from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
     _custom_formatwarning,
@@ -462,11 +462,24 @@ class DefectRelaxSet(MSONable):
             self.defect_supercell = (
                 self.defect_entry.defect_supercell or self.defect_entry.sc_entry.structure
             )
-            self.bulk_supercell = (
-                self.defect_entry.bulk_supercell or self.defect_entry.bulk_entry.structure
-            )
+            if self.defect_entry.bulk_supercell is not None:
+                self.bulk_supercell = self.defect_entry.bulk_supercell
+            elif self.defect_entry.bulk_entry is not None:
+                self.bulk_supercell = self.defect_entry.bulk_entry.structure
+            else:
+                raise ValueError(
+                    "Bulk supercell must be defined in DefectEntry object attributes. Both "
+                    "DefectEntry.bulk_supercell and DefectEntry.bulk_entry are None!"
+                )
+
             # get POSCAR comment:
             sc_frac_coords = self.defect_entry.sc_defect_frac_coords
+            if sc_frac_coords is None:
+                raise ValueError(
+                    "Fractional coordinates of defect in the supercell must be defined in "
+                    "DefectEntry object attributes, but DefectEntry.sc_defect_frac_coords "
+                    "is None!"
+                )
             approx_coords = f"~[{sc_frac_coords[0]:.4f},{sc_frac_coords[1]:.4f},{sc_frac_coords[2]:.4f}]"
             # Gets truncated to 40 characters in the CONTCAR (so kept to less than 40 chars here)
             if hasattr(self.defect_entry, "name"):
@@ -1688,28 +1701,28 @@ class DefectsSet(MSONable):
         if soc is not None:
             self.soc = soc
         else:
-            try:
-                self.soc = (
-                    np.max(
-                        [
-                            np.max(defect_entry.defect_supercell.atomic_numbers)
-                            for defect_entry in self.defect_entries.values()
-                        ]
-                    )
-                    >= 31
-                )  # use defect supercell rather than defect.defect_structure because could be e.g. a
+
+            def _get_atomic_numbers(defect_entry):
+                # use defect supercell rather than defect.defect_structure because could be e.g. a
                 # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
                 # (Z>=31) one
-            except AttributeError:
-                self.soc = (
-                    np.max(
-                        [
-                            np.max(defect_entry.sc_entry.structure.atomic_numbers)
-                            for defect_entry in self.defect_entries.values()
-                        ]
-                    )
-                    >= 31
+                if defect_entry.defect_supercell is not None:
+                    return defect_entry.defect_supercell.atomic_numbers
+                if defect_entry.sc_entry.structure is not None:
+                    return defect_entry.sc_entry.structure.atomic_numbers
+
+                raise ValueError(
+                    "Defect supercell needs to be defined in the DefectEntry attributes, but both "
+                    "DefectEntry.defect_supercell and DefectEntry.sc_entry.structure are None!"
                 )
+
+            max_atomic_num = np.max(
+                [
+                    np.max(_get_atomic_numbers(defect_entry))
+                    for defect_entry in self.defect_entries.values()
+                ]
+            )
+            self.soc = max_atomic_num >= 31
 
         self.defect_sets: Dict[str, DefectRelaxSet] = {}
 
