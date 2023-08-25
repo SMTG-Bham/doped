@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
+from monty.serialization import loadfn
 
 from doped import analysis, plotting
 from doped.core import DefectEntry
@@ -395,3 +396,24 @@ class DefectPlottingTestCase(unittest.TestCase):
                 include_site_info_in_name=True,
             )
             assert formatted_name == expected_name
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="neutral_v_O_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_neutral_v_O_V2O5(self):
+        """
+        Test FNV correction plotting.
+        """
+        dielectric = [4.186, 19.33, 17.49]
+        bulk_path = f"{data_dir}/V2O5/bulk"
+        chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
+
+        defect_dict = {
+            defect: analysis.defect_entry_from_paths(f"{data_dir}/V2O5/{defect}", bulk_path, dielectric)
+            for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
+        }  # charge auto-determined (as neutral)
+        dpd = analysis.dpd_from_defect_dict(defect_dict)
+        return plotting.formation_energy_plot(dpd, chempots, facets=["VO2-V2O5"])
