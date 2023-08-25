@@ -70,11 +70,11 @@ the
 
 Summary GIF:
 
-.. image:: SnB_Supercell_Schematic_PES_2sec_Compressed.gif
+.. image:: https://raw.githubusercontent.com/SMTG-UCL/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif
 
 ``SnB`` CLI Usage:
 
-.. image:: SnB_CLI.gif
+.. image:: https://raw.githubusercontent.com/SMTG-UCL/ShakeNBreak/main/docs/SnB_CLI.gif
 
 .. raw:: html
 

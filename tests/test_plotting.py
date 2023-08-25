@@ -1,6 +1,6 @@
 """
-Tests for the `doped.analysis` module, which also implicitly tests most of the
-`doped.pycdt.utils.parse_calculations` module.
+Tests for the `doped.plotting` module, which also implicitly tests most of the
+`doped.utils.parsing` and `doped.analysis` modules.
 """
 
 import os
@@ -8,13 +8,18 @@ import shutil
 import unittest
 from typing import Any, Dict
 
+import mpl
 import numpy as np
 import pytest
+from monty.serialization import loadfn
+from test_vasp import _potcars_available
 
 from doped import analysis, plotting
 from doped.core import DefectEntry
 from doped.utils.corrections import get_correction_freysoldt, get_correction_kumagai
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
+
+mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
 def if_present_rm(path):
@@ -64,9 +69,8 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
                     defect_path,
                     cls.cdte_bulk_data_dir,
                     cls.cdte_dielectric,
-                    charge_state=int(i.split("_")[-1])  # runs fine without on local as charge states
-                    # can be guessed using POTCARs, but not on GitHub Actions. Comment out when running
-                    # tests locally to recheck this functionality!
+                    charge_state=None if _potcars_available() else int(i.split("_")[-1])  # to allow
+                    # testing on GH Actions (otherwise test auto-charge determination if POTCARs available
                 )
 
         cls.v_Cd_dpd = analysis.dpd_from_defect_dict(cls.v_Cd_dict)
@@ -75,9 +79,8 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             defect_path=f"{cls.ytos_example_dir}/F_O_1",
             bulk_path=f"{cls.ytos_example_dir}/Bulk",
             dielectric=[40.7, 40.7, 25.2],
-            charge_state=1,  # runs fine without on local as charge states can be guessed using POTCARs,
-            # but not on GitHub Actions. Comment out when running tests locally to recheck this
-            # functionality!
+            charge_state=None if _potcars_available() else 1  # to allow testing on GH Actions
+            # (otherwise test auto-charge determination if POTCARs available)
         )
 
     @pytest.mark.mpl_image_compare(
@@ -395,3 +398,24 @@ class DefectPlottingTestCase(unittest.TestCase):
                 include_site_info_in_name=True,
             )
             assert formatted_name == expected_name
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="neutral_v_O_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_neutral_v_O_V2O5(self):
+        """
+        Test FNV correction plotting.
+        """
+        dielectric = [4.186, 19.33, 17.49]
+        bulk_path = f"{data_dir}/V2O5/bulk"
+        chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
+
+        defect_dict = {
+            defect: analysis.defect_entry_from_paths(f"{data_dir}/V2O5/{defect}", bulk_path, dielectric)
+            for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
+        }  # charge auto-determined (as neutral)
+        dpd = analysis.dpd_from_defect_dict(defect_dict)
+        return plotting.formation_energy_plot(dpd, chempots, facets=["VO2-V2O5"])
