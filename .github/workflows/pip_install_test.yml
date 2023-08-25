@@ -35,4 +35,4 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --ignore local_doped_testing -vv  # test everything
+          pytest tests -vv  # test everything

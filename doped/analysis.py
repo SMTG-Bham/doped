@@ -857,17 +857,15 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 # def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
 #     """
 #     Convert input parsed defect dictionary (presumably created using
-#     DefectParser from doped.pycdt.utils.parse_calculations) with
-#     Freysoldt charge corrections to.
-#
-#     the same parsed defect dictionary but with the Lany-Zunger charge correction (same potential
+#     DefectParser) with Freysoldt charge corrections to the same parsed
+#     defect dictionary but with the Lany-Zunger charge correction (same potential
 #     alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
 #     Freysoldt scheme)).
 #
 #     Args:
 #         defect_dict (dict):
-#             Dictionary of parsed defect calculations (presumably created using DefectParser
-#             from doped.pycdt.utils.parse_calculations) (see example notebook)
+#             Dictionary of parsed defect calculations (presumably created
+#             using DefectParser (see tutorials)
 #             Must have 'freysoldt_meta' in defect.calculation_metadata for each charged defect (from
 #             DefectParser.freysoldt_loader())
 #
@@ -910,18 +908,16 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 # def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
 #     """
 #     Convert input parsed defect dictionary (presumably created using
-#     DefectParser from doped.pycdt.utils.parse_calculations) with Kumagai
-#     charge corrections to.
-#
-#     the same parsed defect dictionary but with the 'Lany-Zunger' charge correction (same potential
-#     alignment plus 0.65 * image charge correction.
+#     DefectParser) with Kumagai charge corrections to the same parsed
+#     defect dictionary but with the 'Lany-Zunger' charge correction
+#     (same potential alignment plus 0.65 * image charge correction.
 #
 #     Args:
 #         defect_dict (dict):
-#             Dictionary of parsed defect calculations (presumably created using DefectParser
-#             from doped.pycdt.utils.parse_calculations) (see example notebook)
-#             Must have 'kumagai_meta' in defect.calculation_metadata for each charged defect (from
-#             DefectParser.kumagai_loader())
+#             Dictionary of parsed defect calculations (presumably created
+#             using DefectParser (see tutorials)
+#             Must have 'kumagai_meta' in defect.calculation_metadata for
+#             each charged defect (from DefectParser.kumagai_loader())
 #
 #     Returns:
 #         Parsed defect dictionary with Lany-Zunger charge corrections.
