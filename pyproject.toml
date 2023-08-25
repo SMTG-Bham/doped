@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.0.0"
+version = "2.0.1"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -45,10 +45,12 @@ analysis = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["examples*"]
+exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
-doped = ["*.yaml"]
+"doped.VASP_sets" = ["*.yaml"]
+"doped.utils" = ["*.dat", "*.mplstyle"]
+"doped.utils.legacy_pmg" = ["*.rst"]
 
 [tool.black]
 line-length = 107
