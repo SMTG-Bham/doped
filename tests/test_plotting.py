@@ -8,7 +8,7 @@ import shutil
 import unittest
 from typing import Any, Dict
 
-import mpl
+import matplotlib as mpl
 import numpy as np
 import pytest
 from monty.serialization import loadfn
