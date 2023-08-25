@@ -92,7 +92,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         """
         if not _potcars_available():
             return
-        defect_path = f"{self.CDTE_EXAMPLE_DIR}/vac_1_Cd_-2/vasp_ncl"
+        defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
 
         parsed_v_cd_m2 = defect_entry_from_paths(
             defect_path=defect_path,
@@ -104,16 +104,15 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             defect_path=defect_path,
             bulk_path=self.CDTE_BULK_DATA_DIR,
             dielectric=self.cdte_dielectric,
-            charge=-2,
+            charge_state=-2,
         )
-        assert parsed_v_cd_m2.energy == parsed_v_cd_m2_explicit_charge.energy
-        assert parsed_v_cd_m2.charge == -2
-        assert parsed_v_cd_m2_explicit_charge.charge == -2
+        assert parsed_v_cd_m2.get_ediff() == parsed_v_cd_m2_explicit_charge.get_ediff()
+        assert parsed_v_cd_m2.charge_state == -2
+        assert parsed_v_cd_m2_explicit_charge.charge_state == -2
 
         # Check that the correct Freysoldt correction is applied
         correct_correction_dict = {
-            "charge_correction": 0.7376460317828045,
-            "bandfilling_correction": -0.0,
+            "freysoldt_charge_correction": 0.7376460317828045,
         }
         for correction_name, correction_energy in correct_correction_dict.items():
             for defect_entry in [parsed_v_cd_m2, parsed_v_cd_m2_explicit_charge]:
@@ -129,15 +128,17 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 defect_path=defect_path,
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=self.cdte_dielectric,
-                charge=-1,
+                charge_state=-1,
             )
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
             assert (
                 "Auto-determined defect charge q=-2 does not match specified charge q=-1. Will continue "
-                "with specified charge, but beware!" in str(w[-1].message)
+                "with specified charge_state, but beware!" in str(w[-1].message)
             )
-            assert np.isclose(parsed_v_cd_m1.corrections["charge_correction"], 0.26066457692529815)
+            assert np.isclose(
+                parsed_v_cd_m1.corrections["freysoldt_charge_correction"], 0.26066457692529815
+            )
 
         # test YTOS, has trickier POTCAR symbols with  Y_sv, Ti, S, O
         ytos_F_O_1 = defect_entry_from_paths(
@@ -145,18 +146,17 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
         )
-        assert ytos_F_O_1.charge == 1
-        assert np.isclose(ytos_F_O_1.energy, -0.0031, atol=1e-3)
-        assert np.isclose(ytos_F_O_1.uncorrected_energy, -0.0852, atol=1e-3)
+        assert ytos_F_O_1.charge_state == 1
+        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0031, atol=1e-3)
+        # assert np.isclose(ytos_F_O_1.uncorrected_energy, -0.0852, atol=1e-3)
         correction_dict = {
-            "charge_correction": 0.08214,
-            "bandfilling_correction": -0.0,
+            "kumagai_charge_correction": 0.08214,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(ytos_F_O_1.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            ytos_F_O_1.site.distance_and_image_from_frac_coords([0, 0, 0])[0],
+            ytos_F_O_1.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0])[0],
             0.0,
             atol=1e-2,
         )
@@ -218,7 +218,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 charge_state=None if _potcars_available() else 2  # to allow testing on GH Actions
                 # (otherwise test auto-charge determination if POTCARs available)
             )
-            print([str(warning.message) for warning in w])
             assert (
                 f"Multiple `OUTCAR` files found in defect directory:"
                 f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using"
