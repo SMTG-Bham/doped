@@ -1,4 +1,4 @@
-exclude: ^(docs|examples|.github|doped/pycdt/test_files|tests/data)
+exclude: ^(docs|examples|.github|tests/data)
 repos:
   # Lint and format, isort, docstrings...
   - repo: https://github.com/charliermarsh/ruff-pre-commit

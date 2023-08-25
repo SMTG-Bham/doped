@@ -217,7 +217,46 @@ class ChemPotsTestCase(unittest.TestCase):
         assert (
             "1 Zr 2 O -10.951109995000005\n" not in contents
         )  # shouldn't be included as is a higher energy polymorph of the bulk phase
-        assert not any("2 Zr 1 O" in i for i in contents)  # non-bordering phase
+        assert all("2 Zr 1 O" not in i for i in contents)  # non-bordering phase
+
+    def test_latex_table(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+
+        with self.assertRaises(ValueError):
+            cpa.to_LaTeX_table(columns="M")
+
+        string = cpa.to_LaTeX_table(columns=1)
+        assert (
+            string[28:209]
+            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
+            "are included"
+        )
+        assert len(string) == 586
+        assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\"
+        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
+
+        string = cpa.to_LaTeX_table(columns=2)
+        assert (
+            string[28:209]
+            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
+            "are included"
+        )
+        assert (
+            string.split("hline")[1]
+            == "\nFormula & k-mesh & $\\Delta E_f$ (eV) & Formula & k-mesh & $\\Delta E_f$ (eV)\\\\ \\"
+        )
+
+        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 &"
+        assert len(string) == 579
+
+        cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        cpa_csv.from_csv(self.csv_path)
+        with self.assertRaises(ValueError):
+            cpa_csv.to_LaTeX_table(columns=2)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):

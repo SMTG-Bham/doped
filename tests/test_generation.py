@@ -19,14 +19,14 @@ import numpy as np
 from ase.build import bulk, make_supercell
 from monty.json import MontyEncoder
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.core import Defect, DefectType
-from pymatgen.analysis.defects.thermo import DefectEntry
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
 
+from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator
 
 
@@ -150,8 +150,7 @@ O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
             "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 197 defect "
             "entries created."
         )
-        self.lmno_defect_gen_info = (
-            """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
+        self.lmno_defect_gen_info_pt1 = """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
 v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
@@ -176,9 +175,12 @@ Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.385,0.385,0.385]  8c
 O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
+"""
 
-Interstitials        Charge States    Conv. Cell Coords    Wyckoff
--------------------  ---------------  -------------------  ---------
+        self.lmno_defect_gen_info_interstitials = (
+            "Interstitials        Charge States    Conv. Cell "
+            "Coords    Wyckoff\n"
+            """-------------------  ---------------  -------------------  ---------
 Li_i_C1_Li1.75       [0,+1]           [0.199,0.303,0.444]  24e
 Li_i_C1_O1.72        [0,+1]           [0.248,0.480,0.249]  24e
 Li_i_C1_O1.78        [0,+1]           [0.017,0.261,0.250]  24e
@@ -208,6 +210,44 @@ O_i_C2_Li1.84O1.94   [-2,-1,0]        [0.151,0.375,0.401]  12d
 O_i_C2_Li1.86        [-2,-1,0]        [0.086,0.375,0.336]  12d
 O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
 \n"""
+        )
+
+        self.lmno_defect_gen_info_interstitials_GH = (
+            "Interstitials    Charge States    Conv. Cell "
+            "Coords    Wyckoff\n"
+            """---------------  ---------------  -------------------  ---------
+Li_i_C1_Li1.75   [0,+1]           [0.199,0.303,0.444]  24e
+Li_i_C1_O1.72    [0,+1]           [0.248,0.480,0.249]  24e
+Li_i_C1_O1.78    [0,+1]           [0.017,0.261,0.250]  24e
+Li_i_C2_Li1.83   [0,+1]           [0.077,0.125,0.173]  12d
+Li_i_C2_Li1.84   [0,+1]           [0.151,0.375,0.401]  12d
+Li_i_C2_Li1.86   [0,+1]           [0.086,0.375,0.336]  12d
+Li_i_C3          [0,+1]           [0.497,0.497,0.497]  8c
+Mn_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
+Mn_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
+Mn_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
+Mn_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
+Mn_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
+Mn_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Mn_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
+Ni_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
+Ni_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
+Ni_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
+Ni_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
+Ni_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
+Ni_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Ni_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
+O_i_C1_Li1.75    [-2,-1,0]        [0.199,0.303,0.444]  24e
+O_i_C1_O1.72     [-2,-1,0]        [0.248,0.480,0.249]  24e
+O_i_C1_O1.78     [-2,-1,0]        [0.017,0.261,0.250]  24e
+O_i_C2_Li1.83    [-2,-1,0]        [0.077,0.125,0.173]  12d
+O_i_C2_Li1.84    [-2,-1,0]        [0.151,0.375,0.401]  12d
+O_i_C2_Li1.86    [-2,-1,0]        [0.086,0.375,0.336]  12d
+O_i_C3           [-2,-1,0]        [0.497,0.497,0.497]  8c
+\n"""
+        )
+
+        self.lmno_defect_gen_info_final = (
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
@@ -739,26 +779,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
@@ -1200,26 +1232,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.01)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].name == "O_i_D2d_-1"
@@ -1505,7 +1529,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.ytos_defect_gen_check(ytos_defect_gen)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
-        ytos_defect_gen.to_json("data/ytos_defect_gen.json")  # for testing in test_vasp.py
+        ytos_defect_gen.to_json(f"{self.data_dir}/ytos_defect_gen.json")  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):
         # tests the case of an input structure which is >10 Å in each direction, has
@@ -1537,7 +1561,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )  # for testing in test_vasp.py
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
-        assert self.lmno_defect_gen_info in lmno_defect_gen._defect_generator_info()
+        assert self.lmno_defect_gen_info_pt1 in lmno_defect_gen._defect_generator_info()
+        assert self.lmno_defect_gen_info_final in lmno_defect_gen._defect_generator_info()
+        assert (
+            self.lmno_defect_gen_info_interstitials in lmno_defect_gen._defect_generator_info()
+            or self.lmno_defect_gen_info_interstitials_GH in lmno_defect_gen._defect_generator_info()
+        )
         assert lmno_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
@@ -1629,121 +1658,106 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert dict(lmno_defect_gen.items()) == lmno_defect_gen.defect_entries  # __iter__()
         assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
-        assert (  # __repr__()
-            repr(lmno_defect_gen)
-            == self.lmno_defect_gen_string
-            + "\n---------------------------------------------------------\n"
-            + self.lmno_defect_gen_info
-        )
+        # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
+        # between local and GH Actions
         assert all(
             defect_entry_name in lmno_defect_gen
             for defect_entry_name in lmno_defect_gen.defect_entries  # __contains__()
         )
         assert (
-            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"]
-            == lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
+            lmno_defect_gen["Ni_i_C1_O1.78_+2"] == lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"]
         )  # __getitem__()
         assert (
-            lmno_defect_gen.get("Ni_i_C2_Li1.84O1.94_+2")
-            == lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
+            lmno_defect_gen.get("Ni_i_C1_O1.78_+2") == lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"]
         )  # get()
-        defect_entry = lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"]
-        del lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"]  # __delitem__()
-        assert "Ni_i_C2_Li1.84O1.94_+2" not in lmno_defect_gen
-        lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = defect_entry  # __setitem__()
+        defect_entry = lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"]
+        del lmno_defect_gen["Ni_i_C1_O1.78_+2"]  # __delitem__()
+        assert "Ni_i_C1_O1.78_+2" not in lmno_defect_gen
+        lmno_defect_gen["Ni_i_C1_O1.78_+2"] = defect_entry  # __setitem__()
         # assert setting something else throws an error
         with self.assertRaises(TypeError) as e:
-            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = defect_entry.defect
+            lmno_defect_gen["Ni_i_C1_O1.78_+2"] = defect_entry.defect
             assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
         with self.assertRaises(ValueError) as e:
-            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"])
+            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"])
             fd_up_defect_entry.defect.structure = self.cdte_bulk_supercell
-            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = fd_up_defect_entry
+            lmno_defect_gen["Ni_i_C1_O1.78_+2"] = fd_up_defect_entry
             assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
                 e.exception
             )
         with self.assertRaises(ValueError) as e:
-            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"])
+            fd_up_defect_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"])
             fd_up_defect_entry.sc_entry = copy.deepcopy(lmno_defect_gen.defect_entries["Li_O_C3_+3"])
-            lmno_defect_gen["Ni_i_C2_Li1.84O1.94_+2"] = fd_up_defect_entry
+            lmno_defect_gen["Ni_i_C1_O1.78_+2"] = fd_up_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
         # randomly test one defect entry equivalent supercell sites:
         random_name, random_defect_entry = random.choice(list(lmno_defect_gen.defect_entries.items()))
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].name == "Ni_i_C2_Li1.84O1.94_+2"
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].charge_state == +2
+        assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].name == "Ni_i_C1_O1.78_+2"
+        assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].charge_state == +2
         assert (
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect.defect_type
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.defect_type
             == DefectType.Interstitial
         )
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].wyckoff == "12d"
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect.wyckoff == "12d"
+        assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].wyckoff == "24e"
+        assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.wyckoff == "24e"
         assert (
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect.multiplicity == 12
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
         )  # prim = conv structure in LMNO
         if generate_supercell:
             np.testing.assert_allclose(
-                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].sc_defect_frac_coords,
-                np.array([0.4246, 0.4375, 0.5496]),  # closest to [0.5, 0.5, 0.5]
+                lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
+                np.array([0.494716, 0.616729, 0.500199]),  # closest to [0.5, 0.5, 0.5]
                 rtol=1e-2,
             )
             np.testing.assert_allclose(
-                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect_supercell_site.frac_coords,
-                np.array([0.4246, 0.4375, 0.5496]),  # closest to [0.5, 0.5, 0.5]
+                lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect_supercell_site.frac_coords,
+                np.array([0.494716, 0.616729, 0.500199]),  # closest to [0.5, 0.5, 0.5]
                 rtol=1e-2,
             )
         else:
             np.testing.assert_allclose(
-                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].sc_defect_frac_coords,
-                np.array([0.15074, 0.375, 0.40074]),  # closest to [0.5, 0.5, 0.5]
+                lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
+                np.array([0.500397, 0.510568, 0.766541]),  # closest to [0.5, 0.5, 0.5]
                 rtol=1e-2,
             )
             np.testing.assert_allclose(
-                lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect_supercell_site.frac_coords,
-                np.array([0.15074, 0.375, 0.40074]),  # closest to [0.5, 0.5, 0.5]
+                lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect_supercell_site.frac_coords,
+                np.array([0.500397, 0.510568, 0.766541]),  # closest to [0.5, 0.5, 0.5]
                 rtol=1e-2,
             )
         assert (
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect_supercell_site.specie.symbol
-            == "Ni"
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect_supercell_site.specie.symbol == "Ni"
         )
         np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].conv_cell_frac_coords,
-            np.array([0.151, 0.375, 0.401]),
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].conv_cell_frac_coords,
+            np.array([0.017, 0.261, 0.250]),
             atol=1e-3,
         )
         np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect.conv_cell_frac_coords,
-            np.array([0.151, 0.375, 0.401]),
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.conv_cell_frac_coords,
+            np.array([0.017, 0.261, 0.250]),
             atol=1e-3,
         )
         np.testing.assert_allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.84O1.94_+2"].defect.site.frac_coords,
-            np.array([0.15074, 0.375, 0.40074]),
+            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.site.frac_coords,
+            np.array([0.017, 0.261, 0.250]),
             atol=1e-3,
         )
 
@@ -1948,7 +1962,16 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value
 
-        assert self.lmno_defect_gen_info in output
+        assert self.lmno_defect_gen_info_pt1 in output
+        assert self.lmno_defect_gen_info_final in output
+        assert (
+            self.lmno_defect_gen_info_interstitials in output
+            or self.lmno_defect_gen_info_interstitials_GH in output
+        )
+        if self.lmno_defect_gen_info_interstitials in output:
+            print("Original interstitials output printed")
+        else:  # for tracking purposes
+            print("GH-rounded interstitials output printed")
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen)
@@ -1980,7 +2003,17 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
-        assert self.lmno_defect_gen_info in output
+        assert self.lmno_defect_gen_info_pt1 in output
+        assert self.lmno_defect_gen_info_final in output
+        assert (
+            self.lmno_defect_gen_info_interstitials in output
+            or self.lmno_defect_gen_info_interstitials_GH in output
+        )
+
+        if self.lmno_defect_gen_info_interstitials in output:
+            print("Original interstitials output printed")
+        else:  # for tracking purposes
+            print("GH-rounded interstitials output printed")
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
@@ -2117,26 +2150,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].name == "S_i_Td_S2.35_-2"
@@ -2525,26 +2550,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].name == "Cu_i_Oh_+1"
@@ -2902,26 +2919,18 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         print(f"Randomly testing the equivalent supercell sites for {random_name}...")
         # get minimum distance of defect_entry.defect_supercell_site to any site in
         # defect_entry.bulk_supercell:
-        distance_matrix = np.linalg.norm(
-            pbc_diff(
-                np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                random_defect_entry.defect_supercell_site.frac_coords,
-            ),
-            axis=1,
-        )
-        min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_frac_dist)
+        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
         for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            distance_matrix = np.linalg.norm(
-                pbc_diff(
-                    np.array([site.frac_coords for site in random_defect_entry.bulk_supercell]),
-                    equiv_defect_supercell_site.frac_coords,
-                ),
-                axis=1,
+            new_defect_structure = random_defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
             )
-            equiv_min_frac_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_frac_dist)
-            assert np.isclose(min_frac_dist, equiv_min_frac_dist, atol=0.001)
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
         # test defect entry attributes
         assert (
@@ -3147,12 +3156,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         else:
             np.testing.assert_allclose(
                 agcu_defect_gen.defect_entries["Ag_Cu_-1"].sc_defect_frac_coords,
-                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                np.array([0.0, 0.5, 0.5]),  # closest to middle of supercell
                 atol=1e-4,
             )
             np.testing.assert_allclose(
                 agcu_defect_gen["Ag_Cu_-1"].defect_supercell_site.frac_coords,
-                np.array([0.5, 0.0, 0.5]),  # closest to middle of supercell
+                np.array([0.0, 0.5, 0.5]),  # closest to middle of supercell
                 atol=1e-4,
             )
         np.testing.assert_allclose(
