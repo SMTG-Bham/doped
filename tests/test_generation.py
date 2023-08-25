@@ -19,14 +19,14 @@ import numpy as np
 from ase.build import bulk, make_supercell
 from monty.json import MontyEncoder
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.core import Defect, DefectType
-from pymatgen.analysis.defects.thermo import DefectEntry
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
 
+from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator
 
 
