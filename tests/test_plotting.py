@@ -8,6 +8,7 @@ import shutil
 import unittest
 from typing import Any, Dict
 
+import mpl
 import numpy as np
 import pytest
 from monty.serialization import loadfn
@@ -17,6 +18,8 @@ from doped import analysis, plotting
 from doped.core import DefectEntry
 from doped.utils.corrections import get_correction_freysoldt, get_correction_kumagai
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
+
+mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
 def if_present_rm(path):

@@ -10,6 +10,7 @@ import os
 import tarfile
 from shutil import copyfile
 
+import matplotlib as mpl
 import numpy as np
 from monty.tempfile import ScratchDir
 from pymatgen.core.sites import PeriodicSite
@@ -26,6 +27,7 @@ from doped.utils.corrections import (
 )
 
 test_files_dir = os.path.join(os.path.dirname(__file__), "data/corrections_test_files")
+mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
 class FilePathCorrectionsTest(PymatgenTest):
