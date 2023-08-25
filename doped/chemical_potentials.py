@@ -1509,6 +1509,117 @@ class CompetingPhasesAnalyzer:
                     print(int(v), k, end=" ")
                 print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
 
+    def to_LaTeX_table(self, columns=1, sort_by_energy=False, prune_polymorphs=True):
+        """
+        A very simple function to print out the competing phase formation
+        energies in a LaTeX table format. Needs the mhchem package to work and
+        does *not* use the booktabs package -- change hline to toprule, midrule
+        and bottomrule if you want to use booktabs style.
+
+        Args:
+            columns (int):
+                Number of columns to print out the table in; either 1 or 2
+            sort_by_energy (bool):
+                If True, sorts the table by formation energy (highest to lowest).
+                Default sorting by formula.
+            prune_polymorphs (bool):
+                Whether to only print out the lowest energy polymorphs for each composition.
+                Default is True.
+
+        Returns:
+            str: LaTeX table string
+        """
+        if columns not in [1, 2]:
+            raise ValueError("columns must be either 1 or 2")
+        # done in the pyscfermi report style
+        data = copy.deepcopy(self.data)
+
+        if any("kpoints" not in item for item in data):
+            raise (
+                ValueError(
+                    "kpoints need to be present in data; run CompetingPhasesAnalyzer.from_vaspruns "
+                    "instead of from_csv"
+                )
+            )
+
+        if prune_polymorphs:  # only keep the lowest energy polymorphs
+            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
+            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
+            pruned_df = formation_energy_df.loc[indices]
+            data = pruned_df.to_dict(orient="records")
+
+        if sort_by_energy:
+            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
+        # moves the bulk composition to the top of the list
+        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
+
+        string = "\\begin{table}[h]\n\\centering\n"
+        string += (
+            "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{"
+            + self.bulk_composition.reduced_formula
+            + "} and all competing phases, with k-meshes used in calculations."
+            + ("}\n" if not prune_polymorphs else " Only the lowest energy polymorphs are included}\n")
+        )
+        string += "\\label{tab:competing_phase_formation_energies}\n"
+        if columns == 1:
+            string += "\\begin{tabular}{ccc}\n"
+            string += "\\hline\n"
+            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
+            for i in data:
+                kpoints = i["kpoints"].split("x")
+                fe = i["formation_energy"]
+                string += (
+                    "\\ce{"
+                    + i["formula"]
+                    + "} & "
+                    + f"{kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}"
+                    " & " + f"{fe:.3f} \\\\ \n"
+                )
+
+        elif columns == 2:
+            string += "\\begin{tabular}{ccc|ccc}\n"
+            string += "\\hline\n"
+            string += (
+                "Formula & k-mesh & $\\Delta E_f$ (eV) & Formula & k-mesh & $\\Delta E_f$ (eV)\\\\ "
+                "\\hline \n"
+            )
+
+            mid = len(data) // 2
+            first_half = data[:mid]
+            last_half = data[mid:]
+
+            for i, j in zip(first_half, last_half):
+                kpoints = i["kpoints"].split("x")
+                fe = i["formation_energy"]
+                kpoints2 = j["kpoints"].split("x")
+                fe2 = j["formation_energy"]
+                string += (
+                    "\\ce{"
+                    + i["formula"]
+                    + "} & "
+                    + f"{kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}"
+                    " & "
+                    + f"{fe:.3f} & "
+                    + "\\ce{"
+                    + j["formula"]
+                    + "} & "
+                    + f"{kpoints2[0]}$\\times${kpoints2[1]}$\\times${kpoints2[2]}"
+                    " & " + f"{fe2:.3f} \\\\ \n"
+                )
+
+        string += "\\hline\n"
+        string += "\\end{tabular}\n"
+        string += "\\end{table}"
+
+        return string
+
+
+def _move_dict_to_start(data, key, value):
+    for index, item in enumerate(data):
+        if key in item and item[key] == value:
+            data.insert(0, data.pop(index))
+            return
+
 
 def combine_extrinsic(first, second, extrinsic_species):
     # TODO: Can we just integrate this to `CompetingPhaseAnalyzer`, so you just pass in a list of

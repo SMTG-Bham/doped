@@ -1,5 +1,6 @@
 # `doped` WishList
 ## Defect calculations set up
+- See SK Remarkable notes
 - CLI Functionality for core functions.
   - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
     POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
@@ -32,8 +33,6 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Post-processing / analysis / plotting
-- Will need to subclass `DefectEntry` to have it working as desired (when it comes to parsing, plotting
-  etc.). Need parameter attributes which aren't removed when saving to json.
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
   settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
@@ -98,7 +97,6 @@
   - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
     addition to `num_hole` and `num_electron`)
   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
-  - PR to pymatgen: Update entry.calculation_metadata["kumagai_meta"] = (dict(self.metadata)) to entry.calculation_metadata["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-UCL/doped/issues/3
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
@@ -144,7 +142,7 @@
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
-- Update to be compatible with new `pymatgen`
+- `ShakeNBreak` related updates:
   - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
     efficient than the `doped` version (which is already far more efficient than the original...) and
     isn't available in current `pymatgen`.
@@ -158,15 +156,14 @@
   - Add type hints for all functions.
   - Check code for each function is relatively lean & efficient, can check with ChatGPT for any gnarly
     ones.
-  - Run `pre-commit run --all-files` to check all files.
-- Generate docs.
-  - Need a `docs_requirements.txt` file like `SnB`.
+
+- Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite
   - https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
-    super-lean for some reason.
+    super-lean for some reason. Can use SMTG wiki stuff for this.
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal

@@ -303,7 +303,7 @@ def freysoldt_correction_from_paths(
     dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = dp.freysoldt_loader()
     if plot:
-        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
+        print(dp.defect_entry.name)
 
     return get_correction_freysoldt(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
@@ -337,7 +337,7 @@ def kumagai_correction_from_paths(
     dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = dp.kumagai_loader()
     if plot:
-        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
+        print(dp.defect_entry.name)
 
     return get_correction_kumagai(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
