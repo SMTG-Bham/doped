@@ -22,6 +22,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
@@ -49,6 +50,11 @@ class DefectsGeneratorTest(unittest.TestCase):
         self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
         self.conv_cdte = sga.get_conventional_standard_structure()
+        self.fd_up_sc_entry = ComputedStructureEntry(self.conv_cdte, 420, correction=0.0)  # for testing
+        # in _check_editing_defect_gen() later
+        self.structure_matcher = StructureMatcher(
+            comparator=ElementComparator()
+        )  # ignore oxidation states
         self.cdte_bulk_supercell = self.conv_cdte * 2 * np.eye(3)
         self.cdte_defect_gen_string = (
             "DefectsGenerator for input composition CdTe, space group F-43m with 50 defect entries "
@@ -538,6 +544,45 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         if_present_rm("test_loadfn.json")
         if_present_rm(default_json_filename)
 
+    def _general_defect_gen_check(self, defect_gen):
+        assert self.structure_matcher.fit(
+            defect_gen.primitive_structure * defect_gen.supercell_matrix,
+            defect_gen.bulk_supercell,
+        )
+        assert len(defect_gen) == len(defect_gen.defect_entries)  # __len__()
+        assert dict(defect_gen.items()) == defect_gen.defect_entries  # __iter__()
+        assert all(
+            defect_entry_name in defect_gen
+            for defect_entry_name in defect_gen.defect_entries  # __contains__()
+        )
+
+        assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
+        if "substitutions" in defect_gen.defects:
+            assert all(
+                defect.defect_type == DefectType.Substitution
+                for defect in defect_gen.defects["substitutions"]
+            )
+        assert all(
+            defect.defect_type == DefectType.Interstitial for defect in defect_gen.defects["interstitials"]
+        )
+        assert sum(vacancy.multiplicity for vacancy in defect_gen.defects["vacancies"]) == len(
+            defect_gen.primitive_structure
+        )
+
+        assert all(
+            isinstance(defect_entry, DefectEntry) for defect_entry in defect_gen.defect_entries.values()
+        )
+
+        for defect_list in defect_gen.defects.values():
+            for defect in defect_list:
+                assert isinstance(defect, Defect)
+                assert defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
+                assert defect.structure == defect_gen.primitive_structure
+                np.testing.assert_array_equal(  # test that defect structure uses primitive structure
+                    defect.defect_structure.lattice.matrix,
+                    defect_gen.primitive_structure.lattice.matrix,
+                )
+
     def _check_defect_entry(
         self,
         defect_entry,
@@ -546,11 +591,12 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     ):
         assert defect_entry.name == defect_name
         assert defect_entry.charge_state == int(defect_name.split("_")[-1])
-        assert defect_entry.wyckoff  # wyckoff label is not None
+        assert defect_entry.wyckoff
         assert defect_entry.defect
-        assert defect_entry.defect.wyckoff
-        assert isinstance(defect_entry.conv_cell_frac_coords, np.ndarray)
-        assert isinstance(defect_entry.defect.conv_cell_frac_coords, np.ndarray)
+        assert defect_entry.defect.wyckoff == defect_entry.wyckoff
+        assert np.isclose(
+            defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords
+        ).all()
         np.testing.assert_allclose(
             defect_entry.sc_entry.structure.lattice.matrix,
             defect_gen.bulk_supercell.lattice.matrix,
@@ -624,7 +670,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
         )
         assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
-        assert defect_entry.defect_supercell_site
+        assert np.isclose(
+            defect_entry.defect_supercell_site.frac_coords, defect_entry.sc_defect_frac_coords
+        ).all()
         assert defect_entry.bulk_entry is None
         assert defect_entry._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
 
@@ -689,6 +737,54 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     ):
                         raise e
 
+    def _random_equiv_supercell_sites_check(self, defect_entry):
+        print(f"Randomly testing the equivalent supercell sites for {defect_entry.name}...")
+        # get minimum distance of defect_entry.defect_supercell_site to any site in
+        # defect_entry.bulk_supercell:
+        distance_matrix = defect_entry.defect_supercell.distance_matrix
+        min_dist = min(distance_matrix[distance_matrix > 0.01])
+        print(min_dist)
+        for equiv_defect_supercell_site in defect_entry.equivalent_supercell_sites:
+            new_defect_structure = defect_entry.bulk_supercell.copy()
+            new_defect_structure.append(
+                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
+            )
+            distance_matrix = new_defect_structure.distance_matrix
+            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
+            print(equiv_min_dist)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+
+    def _check_editing_defect_gen(self, random_defect_entry_name, defect_gen):
+        assert (
+            defect_gen[random_defect_entry_name] == defect_gen.defect_entries[random_defect_entry_name]
+        )  # __getitem__()
+        assert (
+            defect_gen.get(random_defect_entry_name) == defect_gen.defect_entries[random_defect_entry_name]
+        )  # get()
+        random_defect_entry = defect_gen.defect_entries[random_defect_entry_name]
+        del defect_gen[random_defect_entry_name]  # __delitem__()
+        assert random_defect_entry_name not in defect_gen
+        defect_gen[random_defect_entry_name] = random_defect_entry  # __setitem__()
+        # assert setting something else throws an error
+        with self.assertRaises(TypeError) as e:
+            defect_gen[random_defect_entry_name] = random_defect_entry.defect
+            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+
+        with self.assertRaises(ValueError) as e:
+            fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
+            fd_up_random_defect_entry.defect.structure = self.cdte_bulk_supercell  # any structure that
+            # isn't used as a primitive structure for any defect gen will do here
+            defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
+            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+                e.exception
+            )
+
+        with self.assertRaises(ValueError) as e:
+            fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
+            fd_up_random_defect_entry.sc_entry = copy.deepcopy(self.fd_up_sc_entry)
+            defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
+            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+
     def test_extrinsic(self):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
@@ -744,68 +840,39 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # defect_gen = DefectsGenerator(lmno, processes=4)
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
+        self._general_defect_gen_check(cdte_defect_gen)
+
         # test attributes:
         assert self.cdte_defect_gen_info in cdte_defect_gen._defect_generator_info()
         assert cdte_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
+        assert self.structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
         assert np.allclose(
             cdte_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
         )  # same lattice
         np.testing.assert_allclose(
             cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         )
-        assert structure_matcher.fit(
-            cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix,
-            cdte_defect_gen.bulk_supercell,
-        )
+
         assert np.allclose(
             (cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix).lattice.matrix,
             self.cdte_bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(cdte_defect_gen.conventional_structure, self.prim_cdte)
+        assert self.structure_matcher.fit(cdte_defect_gen.conventional_structure, self.prim_cdte)
         assert np.allclose(
             cdte_defect_gen.conventional_structure.lattice.matrix,
             self.conv_cdte.lattice.matrix,
         )
 
-        # test defects
+        # explicitly test defects
         assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(cdte_defect_gen.defects["vacancies"]) == 2
-        assert all(
-            defect.defect_type == DefectType.Vacancy for defect in cdte_defect_gen.defects["vacancies"]
-        )
         assert len(cdte_defect_gen.defects["substitutions"]) == 2
-        assert all(
-            defect.defect_type == DefectType.Substitution
-            for defect in cdte_defect_gen.defects["substitutions"]
-        )
         assert len(cdte_defect_gen.defects["interstitials"]) == 6
-        assert all(
-            defect.defect_type == DefectType.Interstitial
-            for defect in cdte_defect_gen.defects["interstitials"]
-        )
-        assert all(
-            isinstance(defect, Defect)
-            for defect_list in cdte_defect_gen.defects.values()
-            for defect in defect_list
-        )
-        assert all(
-            defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
-            for defect_list in cdte_defect_gen.defects.values()
-            for defect in defect_list
-        )
 
-        # test some relevant defect attributes
+        # explicitly test some relevant defect attributes
         assert cdte_defect_gen.defects["vacancies"][0].name == "v_Cd"
         assert cdte_defect_gen.defects["vacancies"][0].oxi_state == -2
         assert cdte_defect_gen.defects["vacancies"][0].multiplicity == 1
-        assert cdte_defect_gen.defects["vacancies"][0].defect_type == DefectType.Vacancy
-        assert cdte_defect_gen.defects["vacancies"][0].structure == cdte_defect_gen.primitive_structure
-        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
-            cdte_defect_gen.defects["vacancies"][0].defect_structure.lattice.matrix,
-            cdte_defect_gen.primitive_structure.lattice.matrix,
-        )
         assert cdte_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
             "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
         )
@@ -815,14 +882,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert (
             len(cdte_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
         )  # 4x conv cell
-        assert sum(vacancy.multiplicity for vacancy in cdte_defect_gen.defects["vacancies"]) == len(
-            cdte_defect_gen.primitive_structure
-        )
 
         # test defect entries
         assert len(cdte_defect_gen.defect_entries) == 50
-        assert len(cdte_defect_gen) == 50  # __len__()
-        assert dict(cdte_defect_gen.items()) == cdte_defect_gen.defect_entries  # __iter__()
         assert str(cdte_defect_gen) == self.cdte_defect_gen_string  # __str__()
         assert (  # __repr__()
             repr(cdte_defect_gen)
@@ -830,41 +892,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             + "\n---------------------------------------------------------\n"
             + self.cdte_defect_gen_info
         )
-        assert all(
-            defect_entry_name in cdte_defect_gen
-            for defect_entry_name in cdte_defect_gen.defect_entries  # __contains__()
-        )
-        assert (
-            cdte_defect_gen["Cd_i_C3v_0"] == cdte_defect_gen.defect_entries["Cd_i_C3v_0"]
-        )  # __getitem__()
-        assert cdte_defect_gen.get("Cd_i_C3v_0") == cdte_defect_gen.defect_entries["Cd_i_C3v_0"]  # get()
-        cd_i_defect_entry = cdte_defect_gen.defect_entries["Cd_i_C3v_0"]
-        del cdte_defect_gen["Cd_i_C3v_0"]  # __delitem__()
-        assert "Cd_i_C3v_0" not in cdte_defect_gen
-        cdte_defect_gen["Cd_i_C3v_0"] = cd_i_defect_entry  # __setitem__()
-        # assert setting something else throws an error
-        with self.assertRaises(TypeError) as e:
-            cdte_defect_gen["Cd_i_C3v_0"] = cd_i_defect_entry.defect
-            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
-        with self.assertRaises(ValueError) as e:
-            fd_up_cd_i_defect_entry = copy.deepcopy(cdte_defect_gen.defect_entries["Cd_i_C3v_0"])
-            fd_up_cd_i_defect_entry.defect.structure = self.cdte_bulk_supercell
-            cdte_defect_gen["Cd_i_C3v_0"] = fd_up_cd_i_defect_entry
-            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
-                e.exception
-            )
-        with self.assertRaises(ValueError) as e:
-            fd_up_cd_i_defect_entry = copy.deepcopy(cdte_defect_gen.defect_entries["Cd_i_C3v_0"])
-            fd_up_cd_i_defect_entry.sc_entry = copy.deepcopy(
-                cdte_defect_gen.defect_entries["Cd_i_Td_Cd2.83_0"]
-            )
-            cdte_defect_gen["Cd_i_C3v_0"] = fd_up_cd_i_defect_entry
-            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
-        assert all(
-            isinstance(defect_entry, DefectEntry)
-            for defect_entry in cdte_defect_gen.defect_entries.values()
-        )
-        # test defect entry charge state log:
+
+        # explicitly test defect entry charge state log:
         assert cdte_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
             {
                 "input_parameters": {"charge_state": -2},
@@ -981,46 +1010,22 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         ]
         # randomly test one defect entry equivalent supercell sites:
         random_name, random_defect_entry = random.choice(list(cdte_defect_gen.defect_entries.items()))
-        print(f"Randomly testing the equivalent supercell sites for {random_name}...")
-        # get minimum distance of defect_entry.defect_supercell_site to any site in
-        # defect_entry.bulk_supercell:
-        distance_matrix = random_defect_entry.defect_supercell.distance_matrix
-        min_dist = min(distance_matrix[distance_matrix > 0.01])
-        print(min_dist)
-        for equiv_defect_supercell_site in random_defect_entry.equivalent_supercell_sites:
-            new_defect_structure = random_defect_entry.bulk_supercell.copy()
-            new_defect_structure.append(
-                equiv_defect_supercell_site.specie, equiv_defect_supercell_site.frac_coords
-            )
-            distance_matrix = new_defect_structure.distance_matrix
-            equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
-            print(equiv_min_dist)
-            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+        self._random_equiv_supercell_sites_check(random_defect_entry)
+        self._check_editing_defect_gen(random_name, cdte_defect_gen)
 
-        # test defect entry attributes
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].name == "Cd_i_C3v_0"
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].charge_state == 0
+        # explicitly test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff == "16e"
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.wyckoff == "16e"
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
             np.array([0.625, 0.625, 0.625]),
         )
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.conv_cell_frac_coords,
-            np.array([0.625, 0.625, 0.625]),
-        )
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
-        np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
             np.array([0.3125, 0.4375, 0.4375]),
         )
-        np.testing.assert_allclose(
-            cdte_defect_gen["Cd_i_C3v_0"].defect_supercell_site.frac_coords,
-            np.array([0.3125, 0.4375, 0.4375]),  # closest to middle of supercell
-        )
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
+        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
             np.array([0.625, 0.625, 0.625]),
@@ -1042,14 +1047,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
         assert cdte_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
-        assert (
-            cdte_defect_gen.defect_entries["v_Cd_0"].defect.structure
-            == cdte_defect_gen.primitive_structure
-        )
-        np.testing.assert_array_equal(  # test that defect structure uses primitive structure
-            cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_structure.lattice.matrix,
-            cdte_defect_gen.primitive_structure.lattice.matrix,
-        )
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
             "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
         )
@@ -1061,17 +1058,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.array([0, 0, 0]),
         )
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["v_Cd_0"].defect.conv_cell_frac_coords,
-            np.array([0, 0, 0]),
-        )
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
-        np.testing.assert_allclose(
             cdte_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
             np.array([0.5, 0.5, 0.5]),
-        )
-        np.testing.assert_allclose(
-            cdte_defect_gen["v_Cd_0"].defect_supercell_site.frac_coords,
-            np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
         )
 
     def test_defects_generator_cdte(self):
@@ -1187,11 +1175,11 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.ytos_defect_gen_info in ytos_defect_gen._defect_generator_info()
         assert ytos_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
+
+        assert self.structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
             ytos_defect_gen.primitive_structure, self.ytos_bulk_supercell
         )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             ytos_defect_gen.primitive_structure, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
         assert not np.allclose(
@@ -1201,7 +1189,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             ytos_defect_gen.primitive_structure.volume,
             self.ytos_bulk_supercell.get_primitive_structure().volume,
         )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             ytos_defect_gen.bulk_supercell, self.ytos_bulk_supercell.get_primitive_structure()
         )  # reduces to primitive, but StructureMatcher still matches
 
@@ -1225,7 +1213,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
             )
 
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             ytos_defect_gen.primitive_structure * ytos_defect_gen.supercell_matrix,
             ytos_defect_gen.bulk_supercell,
         )
@@ -1234,7 +1222,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             ytos_defect_gen.bulk_supercell.lattice.matrix,
         )
 
-        assert structure_matcher.fit(ytos_defect_gen.conventional_structure, self.ytos_bulk_supercell)
+        assert self.structure_matcher.fit(ytos_defect_gen.conventional_structure, self.ytos_bulk_supercell)
         sga = SpacegroupAnalyzer(self.ytos_bulk_supercell)
         assert np.allclose(
             ytos_defect_gen.conventional_structure.lattice.matrix,
@@ -1531,8 +1519,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert lmno_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
+        assert self.structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
             lmno_defect_gen.primitive_structure, self.lmno_primitive
         )
         assert np.allclose(
@@ -1546,7 +1533,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.testing.assert_allclose(
                 lmno_defect_gen.supercell_matrix, np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
             )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             lmno_defect_gen.primitive_structure * lmno_defect_gen.supercell_matrix,
             lmno_defect_gen.bulk_supercell,
         )
@@ -1555,7 +1542,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             lmno_defect_gen.bulk_supercell.lattice.matrix,
         )
 
-        assert structure_matcher.fit(lmno_defect_gen.conventional_structure, self.lmno_primitive)
+        assert self.structure_matcher.fit(lmno_defect_gen.conventional_structure, self.lmno_primitive)
         sga = SpacegroupAnalyzer(self.lmno_primitive)
         assert np.allclose(
             lmno_defect_gen.conventional_structure.lattice.matrix,
@@ -1856,9 +1843,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.zns_defect_gen_info in zns_defect_gen._defect_generator_info()
         assert zns_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(zns_defect_gen.primitive_structure, self.non_diagonal_ZnS)
-        assert structure_matcher.fit(
+
+        assert self.structure_matcher.fit(zns_defect_gen.primitive_structure, self.non_diagonal_ZnS)
+        assert self.structure_matcher.fit(
             zns_defect_gen.primitive_structure, zns_defect_gen.bulk_supercell
         )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
         assert not np.allclose(
@@ -1873,7 +1860,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.testing.assert_allclose(
                 zns_defect_gen.supercell_matrix, np.array([[0, 0, -2], [0, -4, 2], [-4, 1, 2]])
             )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             zns_defect_gen.primitive_structure * zns_defect_gen.supercell_matrix,
             zns_defect_gen.bulk_supercell,
         )
@@ -1881,7 +1868,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             (zns_defect_gen.primitive_structure * zns_defect_gen.supercell_matrix).lattice.matrix,
             zns_defect_gen.bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(zns_defect_gen.conventional_structure, self.non_diagonal_ZnS)
+        assert self.structure_matcher.fit(zns_defect_gen.conventional_structure, self.non_diagonal_ZnS)
         sga = SpacegroupAnalyzer(self.non_diagonal_ZnS)
         assert np.allclose(
             zns_defect_gen.conventional_structure.lattice.matrix,
@@ -2158,9 +2145,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.cu_defect_gen_info in cu_defect_gen._defect_generator_info()
         assert cu_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(cu_defect_gen.primitive_structure, self.prim_cu)
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(cu_defect_gen.primitive_structure, self.prim_cu)
+        assert self.structure_matcher.fit(
             cu_defect_gen.primitive_structure, cu_defect_gen.bulk_supercell
         )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
         assert np.allclose(cu_defect_gen.primitive_structure.lattice.matrix, self.prim_cu.lattice.matrix)
@@ -2168,7 +2154,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         np.testing.assert_allclose(
             cu_defect_gen.supercell_matrix, np.array([[-3, 3, 3], [3, -3, 3], [3, 3, -3]])
         )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             cu_defect_gen.primitive_structure * cu_defect_gen.supercell_matrix,
             cu_defect_gen.bulk_supercell,
         )
@@ -2176,7 +2162,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             (cu_defect_gen.primitive_structure * cu_defect_gen.supercell_matrix).lattice.matrix,
             cu_defect_gen.bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(cu_defect_gen.conventional_structure, self.prim_cu)
+        assert self.structure_matcher.fit(cu_defect_gen.conventional_structure, self.prim_cu)
         sga = SpacegroupAnalyzer(self.prim_cu)
         assert np.allclose(
             cu_defect_gen.conventional_structure.lattice.matrix,
@@ -2395,9 +2381,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.agcu_defect_gen_info in agcu_defect_gen._defect_generator_info()
         assert agcu_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
+        assert self.structure_matcher.fit(
             agcu_defect_gen.primitive_structure, agcu_defect_gen.bulk_supercell
         )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
         assert not np.allclose(  # reduces from input supercell
@@ -2412,7 +2397,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.testing.assert_allclose(
                 agcu_defect_gen.supercell_matrix, np.array([[1, -1, -1], [-1, 1, -1], [-1, -1, 1]])
             )
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             agcu_defect_gen.primitive_structure * agcu_defect_gen.supercell_matrix,
             agcu_defect_gen.bulk_supercell,
         )
@@ -2420,7 +2405,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             (agcu_defect_gen.primitive_structure * agcu_defect_gen.supercell_matrix).lattice.matrix,
             agcu_defect_gen.bulk_supercell.lattice.matrix,
         )
-        assert structure_matcher.fit(agcu_defect_gen.conventional_structure, self.agcu)
+        assert self.structure_matcher.fit(agcu_defect_gen.conventional_structure, self.agcu)
         sga = SpacegroupAnalyzer(self.agcu)
         assert np.allclose(
             agcu_defect_gen.conventional_structure.lattice.matrix,
@@ -2717,18 +2702,19 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.cd_i_cdte_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
         assert cd_i_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-        structure_matcher = StructureMatcher(comparator=ElementComparator())  # ignore oxidation states
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure, cd_i_defect_gen.bulk_supercell
         )  # reduces to primitive, but StructureMatcher still matches (but below lattice doesn't match)
-        assert not structure_matcher.fit(cd_i_defect_gen.primitive_structure, self.prim_cdte)
-        assert not structure_matcher.fit(cd_i_defect_gen.primitive_structure, self.cdte_bulk_supercell)
+        assert not self.structure_matcher.fit(cd_i_defect_gen.primitive_structure, self.prim_cdte)
+        assert not self.structure_matcher.fit(
+            cd_i_defect_gen.primitive_structure, self.cdte_bulk_supercell
+        )
         assert np.allclose(  # primitive cell of defect supercell here is same as bulk supercell
             cd_i_defect_gen.primitive_structure.lattice.matrix, self.cdte_bulk_supercell.lattice.matrix
         )
 
         np.testing.assert_allclose(cd_i_defect_gen.supercell_matrix, np.eye(3), atol=1e-3)
-        assert structure_matcher.fit(
+        assert self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure * cd_i_defect_gen.supercell_matrix,
             cd_i_defect_gen.bulk_supercell,
         )
