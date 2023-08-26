@@ -1,6 +1,8 @@
 name: pip install doped
 
 on:
+  workflow_dispatch:
+
   workflow_run:
     workflows: ["Release and publish"]
     branches: [master]
