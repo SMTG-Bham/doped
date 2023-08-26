@@ -23,6 +23,8 @@ from scipy.spatial import HalfspaceIntersection
 from doped.core import DefectEntry
 
 # TODO: Cleanup and refactor this code
+# TODO: Need to set the str and repr functions for the final form of our DefectPhaseDiagram to give an
+#  informative output!
 
 
 class DefectPhaseDiagram(MSONable):
