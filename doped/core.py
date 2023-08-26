@@ -14,6 +14,9 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 
+# TODO: Need to set the str and repr functions for these to give an informative output! Same for our
+#  parsing functions/classes
+
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
