@@ -165,7 +165,7 @@ def get_defect_name_from_entry(defect_entry):
     """
     defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
         sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-        dummy_species="X",
+        dummy_species=_dummy_species,
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
     sga = SpacegroupAnalyzer(defect_diagonal_supercell, symprec=1e-2)
@@ -190,7 +190,7 @@ def _get_neutral_defect_entry(
         equivalent_supercell_sites,
     ) = defect.get_supercell_structure(
         sc_mat=supercell_matrix,
-        dummy_species="X",  # keep track of the defect frac coords in the supercell
+        dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
         target_frac_coords=target_frac_coords,
         return_sites=True,
     )
@@ -1074,10 +1074,10 @@ class DefectsGenerator(MSONable):
 
             # Interstitials:
             pbar.set_description("Generating interstitials")
-            element_list = host_element_list + extrinsic_elements  # all elements in system
+            self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
                 # For the moment, this assumes interstitial_sites
-                insertions = {el: self.interstitial_coords for el in element_list}
+                insertions = {el: self.interstitial_coords for el in self._element_list}
                 interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
                 interstitial_generator = interstitial_generator_obj.generate(
                     self.primitive_structure, insertions=insertions
@@ -1162,7 +1162,7 @@ class DefectsGenerator(MSONable):
                 ig = InterstitialGenerator(
                     self.interstitial_gen_kwargs.get("min_dist", 0.9),
                 )  # pmg defects default
-                for el in element_list:
+                for el in self._element_list:
                     cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
 
                     inter_generator = ig.generate(
@@ -1278,46 +1278,7 @@ class DefectsGenerator(MSONable):
 
                 pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
-            # Sort defect entries for deterministic behaviour (for output and when reloading)
-            def _first_and_second_element(defect_name):  # for sorting purposes
-                if defect_name.startswith("v"):
-                    return (defect_name.split("_")[1], defect_name.split("_")[1])
-                if defect_name.split("_")[1] == "i":
-                    return (defect_name.split("_")[0], defect_name.split("_")[0])
-
-                return (
-                    defect_name.split("_")[0],
-                    defect_name.split("_")[1],
-                )
-
-            # sort defect entries by defect type (vacancies, substitutions, interstitials),
-            # then by order of appearance of elements in the primitive structure composition,
-            # then alphabetically, then (for defect entries of the same type) sort by charge state:
-            self.defect_entries = dict(
-                sorted(
-                    self.defect_entries.items(),
-                    key=lambda s: (
-                        s[1].defect.defect_type.value,
-                        element_list.index(_first_and_second_element(s[0])[0]),
-                        element_list.index(_first_and_second_element(s[0])[1]),
-                        s[0].rsplit("_", 1)[0],  # name without charge
-                        s[1].charge_state,  # charge state
-                    ),
-                )
-            )
-            # sort defects in the same way:
-            self.defects = {
-                defect_type: sorted(
-                    defect_list,
-                    key=lambda d: (
-                        element_list.index(_first_and_second_element(d.name)[0]),
-                        element_list.index(_first_and_second_element(d.name)[1]),
-                        d.name,  # bare name without charge
-                        _frac_coords_sort_func(d.conv_cell_frac_coords),
-                    ),
-                )
-                for defect_type, defect_list in self.defects.items()
-            }
+            self._sort_defects_and_entries()
 
             # remove oxidation states from structures (causes deprecation warnings and issues with
             # comparison tests, also only added from oxi state guessing in defect generation so no extra
@@ -1342,6 +1303,53 @@ class DefectsGenerator(MSONable):
             pbar.close()
 
         self.defect_generator_info()
+
+    def _first_and_second_element(self, defect_name):  # for sorting purposes
+        if defect_name.startswith("v"):
+            return (defect_name.split("_")[1], defect_name.split("_")[1])
+        if defect_name.split("_")[1] == "i":
+            return (defect_name.split("_")[0], defect_name.split("_")[0])
+
+        return (
+            defect_name.split("_")[0],
+            defect_name.split("_")[1],
+        )
+
+    def _sort_defects_and_entries(self):
+        """
+        Sort defect entries for deterministic behaviour (for output and when
+        reloading).
+
+        Sorts defects & entries by defect type (vacancies, substitutions,
+        interstitials), then by order of appearance of elements in the
+        primitive structure composition, then alphabetically, then (for defect
+        entries of the same type) sort by charge state.
+        """
+        self.defect_entries = dict(
+            sorted(
+                self.defect_entries.items(),
+                key=lambda s: (
+                    s[1].defect.defect_type.value,
+                    self._element_list.index(self._first_and_second_element(s[0])[0]),
+                    self._element_list.index(self._first_and_second_element(s[0])[1]),
+                    s[0].rsplit("_", 1)[0],  # name without charge
+                    s[1].charge_state,  # charge state
+                ),
+            )
+        )
+        # sort defects in the same way:
+        self.defects = {
+            defect_type: sorted(
+                defect_list,
+                key=lambda d: (
+                    self._element_list.index(self._first_and_second_element(d.name)[0]),
+                    self._element_list.index(self._first_and_second_element(d.name)[1]),
+                    d.name,  # bare name without charge
+                    _frac_coords_sort_func(d.conv_cell_frac_coords),
+                ),
+            )
+            for defect_type, defect_list in self.defects.items()
+        }
 
     def defect_generator_info(self):
         """
@@ -1436,6 +1444,8 @@ class DefectsGenerator(MSONable):
             )
             self.defect_entries[defect_entry.name] = defect_entry
 
+        self._sort_defects_and_entries()
+
     def remove_charge_states(self, defect_entry_name: str, charge_states: list):
         """
         Remove `DefectEntry`s with the specified charge states from
@@ -1460,6 +1470,8 @@ class DefectsGenerator(MSONable):
                 and name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
             ]:
                 del self.defect_entries[defect_entry_name_to_remove]
+
+        self._sort_defects_and_entries()
 
     def as_dict(self):
         """
@@ -1670,6 +1682,8 @@ class DefectsGenerator(MSONable):
             self.defects[defects_key] = []
         if value.defect not in self.defects[defects_key]:
             self.defects[defects_key].append(value.defect)
+
+        self._sort_defects_and_entries()
 
     def __delitem__(self, key):
         """
