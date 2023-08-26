@@ -63,32 +63,7 @@ algorithm is struggling to find a solution.
 ``ShakeNBreak``
 -------------------
 
-For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
+For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
-
-Troubleshooting
--------------------
-.. _troubleshooting:
-
-- A previous known issue with ``numpy``/``pymatgen`` is that it could give an error similar to this:
-
-  .. code:: python
-
-      ValueError: numpy.ndarray size changed, may indicate binary incompatibility. Expected 88 from C header, got 80 from PyObject
-
-  This should be avoided with current versions of ``doped``, due to the package installation
-  requirements (handled automatically by ``pip``), but depending on your ``python`` environment and
-  previously-installed packages, it could possibly still arise. It occurs due to a recent change in the
-  ``numpy`` C API in version ``1.20.0``, see
-  `here <https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp>`_
-  for details.
-  It should be fixed by reinstalling ``numpy`` and ``pymatgen`` (so that they play nice together), so
-  that it is rebuilt with the new ``numpy`` C API:
-
-  .. code:: bash
-
-      pip install --force --no-cache-dir numpy==1.23
-      pip uninstall pymatgen
-      pip install pymatgen
 
 Have any tips for users from using ``doped``? Please share it with the developers and we'll add them here!
