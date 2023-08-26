@@ -171,6 +171,7 @@ Studies using ``doped``
    Python API <doped>
    Tutorials
    Tips
+   Troubleshooting
 
 .. toctree::
    :hidden:
