@@ -583,6 +583,13 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     defect_gen.primitive_structure.lattice.matrix,
                 )
 
+        for defect_name, defect_entry in defect_gen.defect_entries.items():
+            self._check_defect_entry(defect_entry, defect_name, defect_gen)
+
+        random_name, random_defect_entry = random.choice(list(defect_gen.defect_entries.items()))
+        self._random_equiv_supercell_sites_check(random_defect_entry)
+        self._check_editing_defect_gen(random_name, defect_gen)
+
     def _check_defect_entry(
         self,
         defect_entry,
@@ -785,40 +792,58 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
             assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
-    def test_extrinsic(self):
+    def _generate_and_test_no_warnings(self, structure, min_image_distance=None, **kwargs):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                DefectsGenerator(self.prim_cdte, extrinsic="Se")
+                defect_gen = DefectsGenerator(structure, **kwargs)
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
                 ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
+                if min_image_distance is None:
+                    assert not non_ignored_warnings
+                else:
+                    assert len(non_ignored_warnings) == 1
+                    assert issubclass(non_ignored_warnings[-1].category, UserWarning)
+                    assert (
+                        f"Input structure is <10 Å in at least one direction (minimum image distance ="
+                        f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
+                        f"calculations, but generate_supercell = False, so using input structure as "
+                        f"defect & bulk supercells. Caution advised!"
+                        in str(non_ignored_warnings[-1].message)
+                    )
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        return defect_gen, output
+
+    def test_extrinsic(self):
+        cdte_se_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Se")
 
         # split self.cdte_defect_gen_info into lines and check each line is in the output:
         for line in self.cdte_defect_gen_info.splitlines():
             if "Cd" in line or "Te" in line:
                 assert line in output
 
-        def _test_Se_interstitials(output, cdte_se_defect_gen):
+        def _test_cdte_interstitials(output, extrinsic_cdte_defect_gen, element="Se"):
             for info in [
                 output,
-                cdte_se_defect_gen._defect_generator_info(),
-                str(cdte_se_defect_gen),
-                repr(cdte_se_defect_gen),
+                extrinsic_cdte_defect_gen._defect_generator_info(),
+                str(extrinsic_cdte_defect_gen),
+                repr(extrinsic_cdte_defect_gen),
             ]:
-                assert "Se_i_C3v         [-2,-1,0]              [0.625,0.625,0.625]  16e" in info
-                assert "Se_i_Td_Cd2.83   [-2,-1,0]              [0.750,0.750,0.750]  4d" in info
-                assert "Se_i_Td_Te2.83   [-2,-1,0]              [0.500,0.500,0.500]  4b" in info
+                assert f"{element}_i_C3v         [-2,-1,0]              [0.625,0.625,0.625]  16e" in info
+                assert f"{element}_i_Td_Cd2.83   [-2,-1,0]              [0.750,0.750,0.750]  4d" in info
+                assert f"{element}_i_Td_Te2.83   [-2,-1,0]              [0.500,0.500,0.500]  4b" in info
+
+            assert f"{element}_Te            [0,+1]                 [0.250,0.250,0.250]  4c" in output
 
         assert "Se_Cd            [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.000]  4a" in output
-        assert "Se_Te            [0,+1]                 [0.250,0.250,0.250]  4c" in output
+
+        self._general_defect_gen_check(cdte_se_defect_gen)
 
         # primitive_cdte = Structure.from_file("../examples/CdTe/relaxed_primitive_POSCAR")
         # defect_gen = DefectsGenerator(primitive_cdte,
@@ -1008,10 +1033,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                 "probability_threshold": 0.01,
             },
         ]
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(cdte_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, cdte_defect_gen)
 
         # explicitly test defect entry attributes
         assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
@@ -1030,17 +1051,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
             np.array([0.625, 0.625, 0.625]),
         )
-
-        for defect_name, defect_entry in cdte_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, cdte_defect_gen)
-            assert np.allclose(
-                defect_entry.conventional_structure.lattice.matrix,
-                self.conv_cdte.lattice.matrix,
-            )
-            assert np.allclose(
-                defect_entry.defect.conventional_structure.lattice.matrix,
-                self.conv_cdte.lattice.matrix,
-            )
 
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
         assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
@@ -1063,20 +1073,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
 
     def test_defects_generator_cdte(self):
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cdte_defect_gen = DefectsGenerator(self.prim_cdte)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte)
 
         assert self.cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
         # interstitials (https://doi.org/10.1016/j.solener.2013.12.017)
@@ -1089,20 +1086,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         cdte_defect_gen.to_json(f"{self.data_dir}/cdte_defect_gen.json")  # for testing in test_vasp.py
 
     def test_defects_generator_cdte_supercell_input(self):
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.cdte_bulk_supercell)
 
         assert self.cdte_defect_gen_info in output
 
@@ -1111,9 +1095,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
     def test_adding_charge_states(self):
-        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
 
         cdte_defect_gen.add_charge_states("Cd_i_C3v_0", [-7, -6])
+        self._general_defect_gen_check(cdte_defect_gen)
 
         assert "Cd_i_C3v_-6" in cdte_defect_gen.defect_entries
         assert cdte_defect_gen["Cd_i_C3v_-7"].charge_state == -7
@@ -1121,8 +1106,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert info_line in repr(cdte_defect_gen)
 
     def test_removing_charge_states(self):
-        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
         cdte_defect_gen.remove_charge_states("Cd_i", [+1, +2])
+        self._general_defect_gen_check(cdte_defect_gen)
 
         assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
         assert "Cd_i_Td_Cd2.83_+2" not in cdte_defect_gen.defect_entries
@@ -1135,20 +1121,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert info_line in repr(cdte_defect_gen)
 
     def test_cdte_no_generate_supercell_supercell_input(self):
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cdte_defect_gen = DefectsGenerator(self.cdte_bulk_supercell, generate_supercell=False)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.cdte_bulk_supercell, generate_supercell=False
+        )
 
         self._save_defect_gen_jsons(cdte_defect_gen)
         self.cdte_defect_gen_check(cdte_defect_gen)
@@ -1246,11 +1221,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             + self.ytos_defect_gen_info
         )
 
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(ytos_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, ytos_defect_gen)
-
         # explicitly test defect entry attributes
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.defect_type == DefectType.Interstitial
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].wyckoff == "4d"
@@ -1273,9 +1243,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.array([0.25, 0.75, 0.5]),
             atol=1e-3,
         )
-
-        for defect_name, defect_entry in ytos_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, ytos_defect_gen)
 
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.name == "v_Y"
         assert ytos_defect_gen.defect_entries["v_Y_0"].defect.oxi_state == -3
@@ -1314,20 +1281,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     def test_ytos_supercell_input(self):
         # note that this tests the case of an input structure which is >10 Å in each direction and has
         # more atoms (198) than the pmg supercell (99), so the pmg supercell is used
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell)  # Y2Ti2S2O5 supercell
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        ytos_defect_gen, output = self._generate_and_test_no_warnings(self.ytos_bulk_supercell)
 
         assert self.ytos_defect_gen_info in output
 
@@ -1341,20 +1295,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # tests the case of an input structure which is >10 Å in each direction, has
         # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
         # so the _input_ supercell is used
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                ytos_defect_gen = DefectsGenerator(self.ytos_bulk_supercell, generate_supercell=False)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        ytos_defect_gen, output = self._generate_and_test_no_warnings(
+            self.ytos_bulk_supercell, generate_supercell=False
+        )
 
         assert self.ytos_defect_gen_info in output
 
@@ -1414,11 +1357,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
         # between local and GH Actions
 
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(lmno_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, lmno_defect_gen)
-
         # explicitly test defect entry attributes
         assert (
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.defect_type
@@ -1450,9 +1388,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             atol=1e-3,
         )
 
-        for defect_name, defect_entry in lmno_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, lmno_defect_gen)
-
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.name == "Li_O"
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.oxi_state == +3
         assert lmno_defect_gen.defect_entries["Li_O_C3_+3"].defect.multiplicity == 8
@@ -1481,19 +1416,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     def test_lmno(self):
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                lmno_defect_gen = DefectsGenerator(self.lmno_primitive)  # Li2Mn3NiO8 unit cell
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value
+        lmno_defect_gen, output = self._generate_and_test_no_warnings(self.lmno_primitive)
 
         assert self.lmno_defect_gen_info_pt1 in output
         assert self.lmno_defect_gen_info_final in output
@@ -1515,26 +1438,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     def test_lmno_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
         # generate_supercell = False
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                lmno_defect_gen = DefectsGenerator(self.lmno_primitive, generate_supercell=False)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert len(non_ignored_warnings) == 1
-                assert issubclass(non_ignored_warnings[-1].category, UserWarning)
-                assert (
-                    "Input structure is <10 Å in at least one direction (minimum image distance = 8.28 Å, "
-                    "which is usually too small for accurate defect calculations, but "
-                    "generate_supercell = False, so using input structure as defect & bulk supercells. "
-                    "Caution advised!" in str(non_ignored_warnings[-1].message)
-                )
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        lmno_defect_gen, output = self._generate_and_test_no_warnings(
+            self.lmno_primitive, min_image_distance=8.28, generate_supercell=False
+        )
 
         assert self.lmno_defect_gen_info_pt1 in output
         assert self.lmno_defect_gen_info_final in output
@@ -1597,11 +1503,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             + self.zns_defect_gen_info
         )
 
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(zns_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, zns_defect_gen)
-
         # explicitly test defect entry attributes
         assert (
             zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].defect.defect_type == DefectType.Interstitial
@@ -1625,9 +1526,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.array([0.5, 0.5, 0.5]),
             rtol=1e-2,
         )
-
-        for defect_name, defect_entry in zns_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, zns_defect_gen)
 
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.name == "Zn_S"
         assert zns_defect_gen.defect_entries["Zn_S_+2"].defect.oxi_state == +4
@@ -1657,20 +1555,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     def test_zns_non_diagonal_supercell(self):
         # test inputting a non-diagonal supercell structure -> correct primitive structure
         # determined and reasonable supercell generated
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                zns_defect_gen = DefectsGenerator(self.non_diagonal_ZnS)  # ZnS non-diagonal supercell
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        zns_defect_gen, output = self._generate_and_test_no_warnings(
+            self.non_diagonal_ZnS,
+        )
 
         assert self.zns_defect_gen_info in output
 
@@ -1681,28 +1568,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
     def test_zns_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
         # generate_supercell = False
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                zns_defect_gen = DefectsGenerator(
-                    self.non_diagonal_ZnS, generate_supercell=False
-                )  # ZnS non-diagonal supercell
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert len(non_ignored_warnings) == 1
-                assert issubclass(non_ignored_warnings[-1].category, UserWarning)
-                assert (
-                    "Input structure is <10 Å in at least one direction (minimum image distance = 7.59 Å, "
-                    "which is usually too small for accurate defect calculations, but "
-                    "generate_supercell = False, so using input structure as defect & bulk supercells. "
-                    "Caution advised!" in str(non_ignored_warnings[-1].message)
-                )
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        zns_defect_gen, output = self._generate_and_test_no_warnings(
+            self.non_diagonal_ZnS, min_image_distance=7.59, generate_supercell=False
+        )
 
         assert self.zns_defect_gen_info in output
 
@@ -1747,11 +1615,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             + self.cu_defect_gen_info
         )
 
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(cu_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, cu_defect_gen)
-
         # explicitly test defect entry attributes
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].defect.defect_type == DefectType.Interstitial
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].wyckoff == "4b"
@@ -1772,9 +1635,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             np.array([0.5, 0.5, 0.5]),
             rtol=1e-2,
         )
-
-        for defect_name, defect_entry in cu_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, cu_defect_gen)
 
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.name == "v_Cu"
         assert cu_defect_gen.defect_entries["v_Cu_0"].defect.oxi_state == 0
@@ -1800,20 +1660,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def test_cu(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cu_defect_gen = DefectsGenerator(self.prim_cu)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        cu_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cu,
+        )
 
         assert self.cu_defect_gen_info in output
 
@@ -1876,11 +1725,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             + self.agcu_defect_gen_info
         )
 
-        # randomly test one defect entry equivalent supercell sites:
-        random_name, random_defect_entry = random.choice(list(agcu_defect_gen.defect_entries.items()))
-        self._random_equiv_supercell_sites_check(random_defect_entry)
-        self._check_editing_defect_gen(random_name, agcu_defect_gen)
-
         # explicitly test defect entry attributes
         assert (
             agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.defect_type
@@ -1913,9 +1757,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             rtol=1e-2,
         )
 
-        for defect_name, defect_entry in agcu_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, agcu_defect_gen)
-
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.name == "Ag_Cu"
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.oxi_state == 0
         assert agcu_defect_gen.defect_entries["Ag_Cu_-1"].defect.multiplicity == 1
@@ -1941,20 +1782,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def test_agcu(self):
         # test initialising with an intermetallic (where pymatgen oxidation state guessing fails)
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                agcu_defect_gen = DefectsGenerator(self.agcu)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                # warnings.simplefilter("always")
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        agcu_defect_gen, output = self._generate_and_test_no_warnings(
+            self.agcu,
+        )
 
         assert self.agcu_defect_gen_info in output
 
@@ -1966,26 +1796,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                agcu_defect_gen = DefectsGenerator(self.agcu, generate_supercell=False)
-            non_ignored_warnings = [
-                warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-            ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-            # warnings.simplefilter("always")
-            assert len(non_ignored_warnings) == 1
-            assert issubclass(non_ignored_warnings[-1].category, UserWarning)
-            assert (
-                "Input structure is <10 Å in at least one direction (minimum image distance = 4.42 Å, "
-                "which is usually too small for accurate defect calculations, but "
-                "generate_supercell = False, so using input structure as defect & bulk supercells. "
-                "Caution advised!" in str(non_ignored_warnings[-1].message)
-            )
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
+        agcu_defect_gen, output = self._generate_and_test_no_warnings(
+            self.agcu, min_image_distance=4.42, generate_supercell=False
+        )
 
         assert self.agcu_defect_gen_info in output
 
@@ -2058,9 +1871,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             rtol=1e-2,
         )
 
-        for defect_name, defect_entry in cd_i_defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, cd_i_defect_gen)
-
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.name == "Cd_Te"
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.oxi_state == 0
         assert cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.multiplicity == 3
@@ -2090,21 +1900,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # test inputting a defective supercell
         cdte_defect_gen = DefectsGenerator(self.prim_cdte)
 
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cd_i_defect_gen = DefectsGenerator(cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+        cd_i_defect_gen, output = self._generate_and_test_no_warnings(
+            cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure,
+        )
 
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
-
-        assert not non_ignored_warnings
         assert self.cd_i_cdte_supercell_defect_gen_info in output
 
         self._save_defect_gen_jsons(cd_i_defect_gen)
@@ -2115,28 +1914,5 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             f"{self.data_dir}/cd_i_supercell_defect_gen.json"
         )  # for testing in test_vasp.py
 
-    def test_supercell_w_defect_cd_i_cdte_no_generate_supercell(self):
-        # test inputting a defective supercell; input supercell is good here so same output
-        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
-
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                cd_i_defect_gen = DefectsGenerator(
-                    cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure, generate_supercell=False
-                )
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert not non_ignored_warnings
-            output = sys.stdout.getvalue()  # Return a str containing the printed output
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
-
-        assert self.cd_i_cdte_supercell_defect_gen_info in output
-
-        self._save_defect_gen_jsons(cd_i_defect_gen)
-        self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
-        self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
+        # don't need to test generate_supercell = False with this one. Already takes long enough as is,
+        # and we've tested the handling of input >10 Å supercells in CdTe tests above
