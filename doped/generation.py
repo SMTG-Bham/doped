@@ -1680,9 +1680,19 @@ class DefectsGenerator(MSONable):
         defects_key = _defect_dict_key_from_pmg_type(value.defect.defect_type)
         if defects_key not in self.defects:
             self.defects[defects_key] = []
-        if value.defect not in self.defects[defects_key]:
-            self.defects[defects_key].append(value.defect)
+        try:
+            if value.defect not in self.defects[defects_key]:
+                self.defects[defects_key].append(value.defect)
+        except ValueError as value_err:
+            if (
+                "You need at least one site to construct a <class 'pymatgen.core.structure.Structure'>"
+                not in value_err.args[0]
+            ):
+                raise value_err
 
+            # just test based on names instead
+            if value.defect.name not in [defect.name for defect in self.defects[defects_key]]:
+                self.defects[defects_key].append(value.defect)
         self._sort_defects_and_entries()
 
     def __delitem__(self, key):
