@@ -25,8 +25,8 @@ from pymatgen.analysis.defects.utils import (
     kumagai_to_V,
 )
 from scipy import stats
-from shakenbreak.plotting import _get_backend
 
+from doped.plotting import _get_backend
 from doped.utils.legacy_pmg import DefectCorrection
 
 logger = logging.getLogger(__name__)
