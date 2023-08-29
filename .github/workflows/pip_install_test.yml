@@ -39,3 +39,13 @@ jobs:
       - name: Test
         run:  |
           pytest --mpl tests -vv  # test everything
+          
+          # Generate the test plots in case there were any failures:
+          pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
+
+      # Upload test plots
+      - name: Archive test plots
+        uses: actions/upload-artifact@v3
+        with:
+          name: output-plots
+          path: tests/remote_baseline
