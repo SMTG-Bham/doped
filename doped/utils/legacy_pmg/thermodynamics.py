@@ -19,6 +19,7 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.electronic_structure.dos import FermiDos
 from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
+from shakenbreak.plotting import _get_backend
 
 from doped.core import DefectEntry
 
@@ -830,7 +831,12 @@ class DefectPhaseDiagram(MSONable):
             plt.title(f"{title}", size=ax_fontsize * width)
 
         if saved:
-            plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
+            plt.savefig(
+                f"{title!s}FreyplnravgPlot.pdf",
+                backend=_get_backend("pdf"),
+                transparent=True,
+                bbox_inches="tight",
+            )
         else:
             return plt
 
