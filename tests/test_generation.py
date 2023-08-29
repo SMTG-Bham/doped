@@ -1043,7 +1043,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert len(cdte_se_defect_gen.defects["interstitials"]) == 12  # 3 extra
 
         # explicitly test some relevant defect attributes
-        _check_Se_Te(cdte_se_defect_gen)
+        _check_Se_Te(cdte_se_defect_gen, element="S")
         # test defect entries
         assert len(cdte_se_defect_gen.defect_entries) == 72  # 22 more
 
