@@ -29,9 +29,10 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from monty.json import MontyDecoder
-from shakenbreak.plotting import _get_backend, _install_custom_font
+from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import DefectParser, _convert_dielectric_to_tensor
+from doped.plotting import _get_backend
 from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
 
 warnings.simplefilter("default")
