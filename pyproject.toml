@@ -43,6 +43,7 @@ analysis = [
     "nonrad",
     #"CarrierCapture.jl"
 ]
+pdf = ["pycairo"]
 
 [tool.setuptools.packages.find]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
