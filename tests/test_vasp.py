@@ -24,7 +24,7 @@ from doped.vasp import (
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
-#  jsons etc
+#  jsons etc. Test POTCAR warning when POTCARs not available
 
 
 def _potcars_available() -> bool:
@@ -334,12 +334,13 @@ class DefectsSetTest(unittest.TestCase):
         # check_generated_vasp_inputs also checks bulk folders
 
         assert os.path.exists("CdTe_defects_generator.json")
-        self.cdte_defect_gen.to_json("test_CdTe_defects_generator.json")
-        filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
+        cdte_se_defect_gen.to_json("test_CdTe_defects_generator.json")
+        assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
+
         # test vasp_nkred_std: same as vasp_std except for NKRED
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
@@ -383,7 +384,7 @@ class DefectsSetTest(unittest.TestCase):
         self.tearDown()
         defects_set = DefectsSet(
             {k: v for k, v in self.cdte_defect_gen.items() if "v_Te" in k},
-            user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
+            user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_GW"},
             user_kpoints_settings={"reciprocal_density": 500},
             user_potcar_functional=None,
         )
@@ -393,7 +394,7 @@ class DefectsSetTest(unittest.TestCase):
                 with open(f"{folder}/vasp_gam/POTCAR.spec") as file:
                     contents = file.readlines()
                     assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
-                    assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
+                    assert contents[1] in ["Te_GW", "Te_GW\n"]
 
                 for subfolder in ["vasp_std", "vasp_nkred_std", "vasp_ncl"]:
                     kpoints = Kpoints.from_file(f"{folder}/{subfolder}/KPOINTS")
