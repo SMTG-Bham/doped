@@ -25,6 +25,7 @@ from pymatgen.analysis.defects.utils import (
     kumagai_to_V,
 )
 from scipy import stats
+from shakenbreak.plotting import _get_backend
 
 from doped.utils.legacy_pmg import DefectCorrection
 
@@ -373,7 +374,12 @@ class FreysoldtCorrection(DefectCorrection):
             plt.title(f"{title!s} Defect Potential")
             plt.xlim(0, max(x))
             if saved:
-                plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
+                plt.savefig(
+                    f"{title!s}FreyplnravgPlot.pdf",
+                    bbox_inches="tight",
+                    backend=_get_backend("pdf"),
+                    transparent=True,
+                )
                 return None
         return plt
 
@@ -801,7 +807,12 @@ class KumagaiCorrection(DefectCorrection):
             plt.title(f"{title!s} Atomic Site Potential")
 
         if saved:
-            plt.savefig(f"{title!s}KumagaiESPavgPlot.pdf")
+            plt.savefig(
+                f"{title!s}KumagaiESPavgPlot.pdf",
+                bbox_inches="tight",
+                backend=_get_backend("pdf"),
+                transparent=True,
+            )
             return None
         return plt
 

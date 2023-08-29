@@ -297,7 +297,9 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         else:
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
     if filename is not None:
-        fig.savefig(filename, bbox_inches="tight", dpi=600)
+        from shakenbreak.plotting import _get_backend  # avoid circular import
+
+        fig.savefig(filename, dpi=600, bbox_inches="tight", backend=_get_backend("pdf"), transparent=True)
 
 
 def _format_defect_name(
