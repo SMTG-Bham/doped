@@ -19,9 +19,9 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.electronic_structure.dos import FermiDos
 from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
-from shakenbreak.plotting import _get_backend
 
 from doped.core import DefectEntry
+from doped.plotting import _get_backend
 
 # TODO: Cleanup and refactor this code
 # TODO: Need to set the str and repr functions for the final form of our DefectPhaseDiagram to give an
