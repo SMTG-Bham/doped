@@ -29,7 +29,7 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from monty.json import MontyDecoder
-from shakenbreak.plotting import _install_custom_font
+from shakenbreak.plotting import _get_backend, _install_custom_font
 
 from doped.analysis import DefectParser, _convert_dielectric_to_tensor
 from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
@@ -159,7 +159,12 @@ def get_correction_freysoldt(
             _install_custom_font()
             p = corr_class.plot(ax_key, title=ax_title, saved=False)
             if filename:
-                p.savefig(f"{filename}_{ax_title.replace('$','')}.pdf", bbox_inches="tight")
+                p.savefig(
+                    f"{filename}_{ax_title.replace('$','')}.pdf",
+                    bbox_inches="tight",
+                    transparent=True,
+                    backend=_get_backend("pdf"),
+                )
             if kwargs.get("return_fig", False):  # for testing
                 return p
             plt.show()
@@ -252,7 +257,9 @@ def get_correction_kumagai(
         _install_custom_font()
         p = corr_class.plot(title="Kumagai", saved=False)
         if filename:
-            p.savefig(f"{filename}.pdf", bbox_inches="tight")
+            p.savefig(
+                f"{filename}.pdf", bbox_inches="tight", transparent=True, backend=_get_backend("pdf")
+            )
         if kwargs.get("return_fig", False):  # for testing
             return p
         plt.show()
