@@ -435,7 +435,7 @@ class CompetingPhases:
         self,
         kpoints_metals=(40, 120, 5),
         kpoints_nonmetals=(5, 80, 5),
-        user_potcar_functional="PBE_54",
+        user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
         **kwargs,
@@ -454,8 +454,8 @@ class CompetingPhases:
                 Kpoint density per inverse volume (Å^-3) to be tested in
                 (min, max, step) format for nonmetals
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
@@ -554,7 +554,7 @@ class CompetingPhases:
         self,
         kpoints_metals=95,
         kpoints_nonmetals=45,
-        user_potcar_functional="PBE_54",
+        user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
         **kwargs,
@@ -572,8 +572,8 @@ class CompetingPhases:
             kpoints_nonmetals (int):
                 Kpoint density per inverse volume (Å^-3) for nonmetals
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.

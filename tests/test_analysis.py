@@ -218,7 +218,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 charge_state=None if _potcars_available() else 2  # to allow testing on GH Actions
                 # (otherwise test auto-charge determination if POTCARs available)
             )
-            print([str(warning.message) for warning in w])
             assert (
                 f"Multiple `OUTCAR` files found in defect directory:"
                 f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using"
