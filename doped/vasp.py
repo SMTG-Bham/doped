@@ -157,7 +157,7 @@ class DefectDictSet(DictSet):
         if user_incar_settings is not None:
             for k in user_incar_settings:
                 # check INCAR flags and warn if they don't exist (typos)
-                if k not in incar_params.keys():
+                if k not in incar_params.keys() and "#" not in k:
                     warnings.warn(  # but only checking keys, not values so we can add comments etc
                         f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                         BadIncarWarning,
@@ -1068,8 +1068,7 @@ class DefectRelaxSet(MSONable):
             )
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
+            os.makedirs(output_dir, exist_ok=True)
             if not kwargs.get("potcar_spec", False):
                 vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
             vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
