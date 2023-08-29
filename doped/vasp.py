@@ -266,7 +266,7 @@ class DefectDictSet(DictSet):
 
         if kpt_density and "doped" not in pmg_kpoints.comment:
             with contextlib.suppress(Exception):
-                assert np.prod(self.kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
+                assert np.prod(pmg_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
                 pmg_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
         elif "doped" not in pmg_kpoints.comment:
