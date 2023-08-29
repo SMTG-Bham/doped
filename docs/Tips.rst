@@ -27,17 +27,9 @@ Difficult Structural Relaxations
 --------------------------------
 
 If defect supercell relaxations do not converge after multiple continuation calculations
-(i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to an error in
-the underlying calculation, extreme forces and/or small residual forces which the local optimisation
-algorithm is struggling to find a solution.
-
-- A common culprit is the :code:`EDWAV` error in the output file, which can typically be avoided by
-  reducing :code:`NCORE` and/or :code:`KPAR`.
-
-    - If some relaxations are still not converging after multiple continuations, you should check the
-      calculation output files to see if this requires fixing. Often this may require changing a
-      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations that
-      are also struggling to converge.
+(i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to small
+residual forces causing the local optimisation algorithm to struggle to find a solution, an error in the
+underlying calculation and/or extreme forces.
 
 - If the calculation outputs show that the relaxation is proceeding fine, without any errors, just not
   converging to completion, then it suggests that the structure relaxation is bouncing around a narrow
@@ -52,13 +44,23 @@ algorithm is struggling to find a solution.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively, convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed `SnB` structure-seaerching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
     - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All`), if
       electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
+
+- If instead the calculation is crashing due to an error and/or extreme forces, a common culprit is the
+  :code:`EDWAV` error in the output file, which can often be avoided by reducing :code:`NCORE` and/or
+  :code:`KPAR`. If this doesn't fix it, switching the electronic minimisation algorithm (e.g. change
+  :code:`ALGO` to :code:`All`) can sometimes help.
+
+    - If some relaxations are still not converging after multiple continuations, you should check the
+      calculation output files to see if this requires fixing. Often this may require changing a
+      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations that
+      are also struggling to converge.
 
 ``ShakeNBreak``
 -------------------
