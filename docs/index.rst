@@ -1,7 +1,7 @@
 doped
 =========
 
-.. image:: https://github.com/SMTG-UCL/doped/actions/workflows/build_and_test.yml/badge.svg
+.. image:: https://github.com/SMTG-UCL/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-UCL/doped/actions
 .. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
    :target: https://doped.readthedocs.io/en/latest/
