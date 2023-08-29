@@ -1,13 +1,14 @@
 name: Build and test package
 
 on:
+  workflow_dispatch:
+
   pull_request:
     branches:
        - '*'  # all branches
   push:
     branches:
       - '*'  # all branches
-  workflow_dispatch:
 
 jobs:
   build-linux:
