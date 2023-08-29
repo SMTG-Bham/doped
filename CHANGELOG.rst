@@ -1,6 +1,13 @@
 Change Log
 ==========
 
+v.2.0.2
+----------
+- Refactor `_check_user_potcars()` to `DefectDictSet` rather than `DefectRelaxSet`, and add `write_input
+  ()` method (which runs `_check_user_potcars()` first).
+- Update defect generation tests
+- Add troubleshooting docs page and update tips docs page
+
 v.2.0.1
 ----------
 - Update naming handling in ``DefectPhaseDiagram`` to be more robust/flexible, following failure case
