@@ -34,8 +34,7 @@ jobs:
         run: |
           sleep 10m  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
-          pip install doped  # install only from PyPI
-          pip install doped[tests]
+          pip install doped[tests]  # install only from PyPI
 
       - name: Test
         run:  |
