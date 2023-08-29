@@ -1070,7 +1070,8 @@ class DefectRelaxSet(MSONable):
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
+            if not kwargs.get("potcar_spec", False):
+                vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
             vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
             vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
             if self.user_potcar_functional is not None:  # for GH Actions testing
