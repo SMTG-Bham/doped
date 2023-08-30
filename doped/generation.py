@@ -1043,7 +1043,8 @@ class DefectsGenerator(MSONable):
                     f"the host structure, so do not need to be specified as 'extrinsic' in "
                     f"DefectsGenerator(). These will be ignored."
                 )
-            extrinsic_elements = [el for el in extrinsic_elements if el not in host_element_list]
+            # sort extrinsic elements alphabetically for deterministic ordering in output:
+            extrinsic_elements = sorted([el for el in extrinsic_elements if el not in host_element_list])
 
             substitution_generator_obj = SubstitutionGenerator()
             if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
