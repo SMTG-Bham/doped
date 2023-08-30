@@ -3,6 +3,7 @@ Change Log
 
 v.2.0.3
 ----------
+- Sort defect entries in ``DefectPhaseDiagram`` for deterministic behaviour (particularly for plotting).
 - Tests updates (archive test plots, update extrinsic generation tests etc).
 - Avoid long stacklevel issue which cropped up in ``python3.8`` tests for ``SnB``
 - Update PDF figure `savefig` settings, and add `_get_backend` function.
