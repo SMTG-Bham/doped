@@ -1043,7 +1043,8 @@ class DefectsGenerator(MSONable):
                     f"the host structure, so do not need to be specified as 'extrinsic' in "
                     f"DefectsGenerator(). These will be ignored."
                 )
-            extrinsic_elements = [el for el in extrinsic_elements if el not in host_element_list]
+            # sort extrinsic elements alphabetically for deterministic ordering in output:
+            extrinsic_elements = sorted([el for el in extrinsic_elements if el not in host_element_list])
 
             substitution_generator_obj = SubstitutionGenerator()
             if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
@@ -1278,7 +1279,11 @@ class DefectsGenerator(MSONable):
 
                 pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
-            self._sort_defects_and_entries()
+            # sort defects and defect entries for deterministic behaviour:
+            self.defects = _sort_defects(self.defects)  # , element_list=self._element_list)
+            self.defect_entries = _sort_defect_entries(
+                self.defect_entries
+            )  # , element_list=self._element_list
 
             # remove oxidation states from structures (causes deprecation warnings and issues with
             # comparison tests, also only added from oxi state guessing in defect generation so no extra
@@ -1303,53 +1308,6 @@ class DefectsGenerator(MSONable):
             pbar.close()
 
         self.defect_generator_info()
-
-    def _first_and_second_element(self, defect_name):  # for sorting purposes
-        if defect_name.startswith("v"):
-            return (defect_name.split("_")[1], defect_name.split("_")[1])
-        if defect_name.split("_")[1] == "i":
-            return (defect_name.split("_")[0], defect_name.split("_")[0])
-
-        return (
-            defect_name.split("_")[0],
-            defect_name.split("_")[1],
-        )
-
-    def _sort_defects_and_entries(self):
-        """
-        Sort defect entries for deterministic behaviour (for output and when
-        reloading).
-
-        Sorts defects & entries by defect type (vacancies, substitutions,
-        interstitials), then by order of appearance of elements in the
-        primitive structure composition, then alphabetically, then (for defect
-        entries of the same type) sort by charge state.
-        """
-        self.defect_entries = dict(
-            sorted(
-                self.defect_entries.items(),
-                key=lambda s: (
-                    s[1].defect.defect_type.value,
-                    self._element_list.index(self._first_and_second_element(s[0])[0]),
-                    self._element_list.index(self._first_and_second_element(s[0])[1]),
-                    s[0].rsplit("_", 1)[0],  # name without charge
-                    s[1].charge_state,  # charge state
-                ),
-            )
-        )
-        # sort defects in the same way:
-        self.defects = {
-            defect_type: sorted(
-                defect_list,
-                key=lambda d: (
-                    self._element_list.index(self._first_and_second_element(d.name)[0]),
-                    self._element_list.index(self._first_and_second_element(d.name)[1]),
-                    d.name,  # bare name without charge
-                    _frac_coords_sort_func(d.conv_cell_frac_coords),
-                ),
-            )
-            for defect_type, defect_list in self.defects.items()
-        }
 
     def defect_generator_info(self):
         """
@@ -1444,7 +1402,9 @@ class DefectsGenerator(MSONable):
             )
             self.defect_entries[defect_entry.name] = defect_entry
 
-        self._sort_defects_and_entries()
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def remove_charge_states(self, defect_entry_name: str, charge_states: list):
         """
@@ -1471,7 +1431,9 @@ class DefectsGenerator(MSONable):
             ]:
                 del self.defect_entries[defect_entry_name_to_remove]
 
-        self._sort_defects_and_entries()
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def as_dict(self):
         """
@@ -1693,7 +1655,10 @@ class DefectsGenerator(MSONable):
             # just test based on names instead
             if value.defect.name not in [defect.name for defect in self.defects[defects_key]]:
                 self.defects[defects_key].append(value.defect)
-        self._sort_defects_and_entries()
+
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def __delitem__(self, key):
         """
@@ -1747,6 +1712,108 @@ class DefectsGenerator(MSONable):
             + "\n---------------------------------------------------------\n"
             + self._defect_generator_info()
         )
+
+
+def _first_and_second_element(defect_name):
+    """
+    Return a tuple of the first and second element in the defect name.
+
+    For sorting purposes.
+    """
+    if defect_name.startswith("v"):
+        return (defect_name.split("_")[1], defect_name.split("_")[1])
+    if defect_name.split("_")[1] == "i":
+        return (defect_name.split("_")[0], defect_name.split("_")[0])
+
+    return (
+        defect_name.split("_")[0],
+        defect_name.split("_")[1],
+    )
+
+
+def _sort_defect_entries(defect_entries_dict, element_list=None):
+    """
+    Sort defect entries for deterministic behaviour (for output and when
+    reloading DefectsGenerator objects, and with DefectPhaseDiagram entries
+    (particularly for deterministic plotting behaviour)).
+
+    Sorts defect entries by defect type (vacancies, substitutions,
+    interstitials), then by order of appearance of elements in the composition,
+    then alphabetically, then (for defect entries of the same type) sort by
+    charge state.
+    """
+    if element_list is None:
+        host_element_list = None
+        extrinsic_element_list = []
+        for defect_entry in defect_entries_dict.values():
+            if host_element_list is None:  # first iteration
+                host_element_list = [
+                    el.symbol for el in defect_entry.defect.structure.composition.elements
+                ]
+            extrinsic_element_list.extend(
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in host_element_list
+            )
+
+        # sort extrinsic elements alphabetically for deterministic ordering in output:
+        extrinsic_element_list = sorted(
+            [el for el in extrinsic_element_list if el not in host_element_list]
+        )
+        element_list = host_element_list + extrinsic_element_list
+
+    return dict(
+        sorted(
+            defect_entries_dict.items(),
+            key=lambda s: (
+                s[1].defect.defect_type.value,
+                element_list.index(_first_and_second_element(s[0])[0]),
+                element_list.index(_first_and_second_element(s[0])[1]),
+                s[0].rsplit("_", 1)[0],  # name without charge
+                s[1].charge_state,  # charge state
+            ),
+        )
+    )
+
+
+def _sort_defects(defects_dict, element_list=None):
+    """
+    Sort defect objects for deterministic behaviour (for output and when
+    reloading DefectsGenerator objects.
+
+    Sorts defects by defect type (vacancies, substitutions, interstitials),
+    then by order of appearance of elements in the composition, then
+    alphabetically, then according to _frac_coords_sort_func.
+    """
+    if element_list is None:
+        all_elements = []
+        host_element_list = None
+
+        for _defect_type, defect_list in defects_dict.items():
+            for defect in defect_list:
+                if host_element_list is None:  # first iteration
+                    host_element_list = [el.symbol for el in defect.structure.composition.elements]
+                all_elements.extend(el.symbol for el in defect.defect_structure.composition.elements)
+        extrinsic_element_list = list(set(all_elements) - set(host_element_list))
+
+        # sort extrinsic elements alphabetically for deterministic ordering in output:
+        extrinsic_element_list = sorted(
+            [el for el in extrinsic_element_list if el not in host_element_list]
+        )
+        element_list = host_element_list + extrinsic_element_list
+
+    return {
+        defect_type: sorted(
+            defect_list,
+            key=lambda d: (
+                element_list.index(_first_and_second_element(d.name)[0]),
+                element_list.index(_first_and_second_element(d.name)[1]),
+                d.name,  # bare name without charge
+                _frac_coords_sort_func(d.conv_cell_frac_coords),
+            ),
+        )
+        for defect_type, defect_list in defects_dict.items()
+    }
 
 
 def _get_interstitial_candidate_sites(args):
