@@ -38,6 +38,7 @@ jobs:
           pytest --mpl -vv tests  # test everything
           
       - name: Generate GH Actions test plots
+        if: always()  # always generate the plots, even if the tests fail
         run:  |
           # Generate the test plots in case there were any failures:
           pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
