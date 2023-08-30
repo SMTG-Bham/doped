@@ -45,6 +45,7 @@ jobs:
 
       # Upload test plots
       - name: Archive test plots
+        if: always()
         uses: actions/upload-artifact@v3
         with:
           name: output-plots
