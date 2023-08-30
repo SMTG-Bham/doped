@@ -35,7 +35,7 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --mpl tests -vv  # test everything
+          pytest --mpl -vv tests  # test everything
           
           # Generate the test plots in case there were any failures:
           pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
