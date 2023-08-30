@@ -1461,7 +1461,7 @@ class CompetingPhasesAnalyzer:
         if not hasattr(self, "chem_limits"):
             self.calculate_chempots(verbose=False)
 
-        with open(filename, "w") as f, contextlib.redirect_stdout(f):
+        with open(filename, "w", encoding="utf-8") as f, contextlib.redirect_stdout(f):
             # get lowest energy bulk phase
             bulk_entries = [
                 sub_dict
