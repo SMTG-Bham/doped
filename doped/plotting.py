@@ -314,7 +314,9 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         else:
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
     if filename is not None:
-        fig.savefig(filename, dpi=600, bbox_inches="tight", backend=_get_backend("pdf"), transparent=True)
+        fig.savefig(
+            filename, dpi=600, bbox_inches="tight", backend=_get_backend(filename), transparent=True
+        )
 
 
 def _format_defect_name(
