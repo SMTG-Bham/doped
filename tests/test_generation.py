@@ -832,20 +832,20 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
                     in info
                 )
 
-        def _check_Se_Te(extrinsic_cdte_defect_gen, element="Se"):
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][-1].name == f"{element}_Te"
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][-1].oxi_state == 0
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][-1].multiplicity == 1
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][-1].defect_site == PeriodicSite(
+        def _check_Se_Te(extrinsic_cdte_defect_gen, element="Se", idx=-1):
+            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].name == f"{element}_Te"
+            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].oxi_state == 0
+            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].multiplicity == 1
+            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].defect_site == PeriodicSite(
                 "Te", [0.25, 0.25, 0.25], extrinsic_cdte_defect_gen.primitive_structure.lattice
             )
-            assert str(extrinsic_cdte_defect_gen.defects["substitutions"][-1].site.specie) == f"{element}"
+            assert str(extrinsic_cdte_defect_gen.defects["substitutions"][idx].site.specie) == f"{element}"
             assert np.isclose(
-                extrinsic_cdte_defect_gen.defects["substitutions"][-1].site.frac_coords,
+                extrinsic_cdte_defect_gen.defects["substitutions"][idx].site.frac_coords,
                 np.array([0.25, 0.25, 0.25]),
             ).all()
             assert (
-                len(extrinsic_cdte_defect_gen.defects["substitutions"][-1].equiv_conv_cell_frac_coords)
+                len(extrinsic_cdte_defect_gen.defects["substitutions"][idx].equiv_conv_cell_frac_coords)
                 == 4
             )  # 4x conv cell
 
@@ -1043,7 +1043,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert len(cdte_se_defect_gen.defects["interstitials"]) == 12  # 3 extra
 
         # explicitly test some relevant defect attributes
-        _check_Se_Te(cdte_se_defect_gen, element="S")
+        _check_Se_Te(cdte_se_defect_gen, element="S", idx=-2)
+        _check_Se_Te(cdte_se_defect_gen, element="Se")
         # test defect entries
         assert len(cdte_se_defect_gen.defect_entries) == 72  # 22 more
 
