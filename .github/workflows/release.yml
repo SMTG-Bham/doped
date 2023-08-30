@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   workflow_run:
-    workflows: [ "Build and test package" ]
+    workflows: [ "Tests" ]
     branches: [ master ]
     types:
       - completed  # only release when tests have passed

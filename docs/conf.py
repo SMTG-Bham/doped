@@ -25,7 +25,7 @@ copyright = '2023, Seán R. Kavanagh'
 author = 'Seán R. Kavanagh'
 
 # The full version, including alpha/beta/rc tags
-release = '2.0.2'
+release = '2.0.3'
 
 
 # -- General configuration ---------------------------------------------------
