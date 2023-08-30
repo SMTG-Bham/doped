@@ -63,19 +63,17 @@ and morphed over time as more and more functionality was added. After breaking c
 entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
 
-## Studies using `doped`
+## Studies using `doped` (so far)
 
-We'll add papers that use `doped` to this list as they come out!
-
-- A. T. J. Nicolson et al. [Journal of Materials Chemistry A](https://doi.org/10.1039/D3TA02429F) 2023
-- Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh [ACS Energy Letters](https://doi.org/10.1021/acsenergylett.2c02306) 2023
-- P. A. Hyde et al. [Inorganic Chemistry](https://doi.org/10.1021/acs.inorgchem.3c01510) 2023
-- J. Willis, K. B. Spooner, D. O. Scanlon. [ChemRxiv](https://chemrxiv.org/engage/chemrxiv/article-details/64c29140ce23211b20a787bb) 2023
-- X. Wang et al. arXiv 2023
-- J. Cen et al. [Journal of Materials Chemistry A](https://doi.org/10.1039/D3TA00532A) 2023
-- J. Willis & R. Claes et al. [ChemRxiv](https://doi.org/10.26434/chemrxiv-2023-lttnf) 2023
-- I. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon [npj Computational Materials](https://www.nature.com/articles/s41524-023-00973-1) 2023
-- Y. T. Huang & S. R. Kavanagh et al. [Nature Communications](https://www.nature.com/articles/s41467-022-32669-3) 2022
-- S. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt [Faraday Discussions](https://doi.org/10.1039/D2FD00043A) 2022
-- S. R. Kavanagh, D. O. Scanlon, A. Walsh [ACS Energy Letters](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
-- C. J. Krajewska et al. [Chemical Science](https://doi.org/10.1039/D1SC03775G) 2021
+- A. T. J. Nicolson et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA02429F) 2023
+- Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.2c02306) 2023
+- P. A. Hyde et al. [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.3c01510) 2023
+- J. Willis, K. B. Spooner, D. O. Scanlon. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/64c29140ce23211b20a787bb) 2023
+- X. Wang et al. [_arXiv_](https://arxiv.org/abs/2302.04901) 2023
+- J. Cen et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA00532A) 2023
+- J. Willis & R. Claes et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2023-lttnf) 2023
+- I. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon [_npj Computational Materials_](https://www.nature.com/articles/s41524-023-00973-1) 2023
+- Y. T. Huang & S. R. Kavanagh et al. [_Nature Communications_](https://www.nature.com/articles/s41467-022-32669-3) 2022
+- S. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt [_Faraday Discussions_](https://doi.org/10.1039/D2FD00043A) 2022
+- S. R. Kavanagh, D. O. Scanlon, A. Walsh [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
+- C. J. Krajewska et al. [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
