@@ -21,6 +21,8 @@ from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
 
 from doped.core import DefectEntry
+from doped.generation import _sort_defect_entries
+from doped.plotting import _get_backend
 
 # TODO: Cleanup and refactor this code
 # TODO: Need to set the str and repr functions for the final form of our DefectPhaseDiagram to give an
@@ -84,6 +86,10 @@ class DefectPhaseDiagram(MSONable):
                 self.entries[ent_ind] = new_ent
 
         self.metadata = metadata or {}
+        # order entries for deterministic behaviour (particularly for plotting)
+        entries_dict = {entry.name: entry for entry in self.entries}
+        sorted_entries_dict = _sort_defect_entries(entries_dict)
+        self.entries = list(sorted_entries_dict.values())
         self.find_stable_charges()
 
     def as_dict(self):
@@ -830,7 +836,12 @@ class DefectPhaseDiagram(MSONable):
             plt.title(f"{title}", size=ax_fontsize * width)
 
         if saved:
-            plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
+            plt.savefig(
+                f"{title!s}FreyplnravgPlot.pdf",
+                backend=_get_backend("pdf"),
+                transparent=True,
+                bbox_inches="tight",
+            )
         else:
             return plt
 
