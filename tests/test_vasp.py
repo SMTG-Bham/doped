@@ -270,7 +270,7 @@ class DefectsSetTest(unittest.TestCase):
                 assert test_poscar.structure == poscar.structure
 
             if check_potcar_spec:
-                with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec") as file:
+                with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", encoding="utf-8") as file:
                     contents = file.readlines()
                     assert contents[0] in ["Cd", "Cd\n"]
                     assert contents[1] in ["Te", "Te\n"]
@@ -391,7 +391,7 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, vasp_gam=True)  # include vasp_gam to compare POTCAR.spec
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_gam"):
-                with open(f"{folder}/vasp_gam/POTCAR.spec") as file:
+                with open(f"{folder}/vasp_gam/POTCAR.spec", encoding="utf-8") as file:
                     contents = file.readlines()
                     assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
                     assert contents[1] in ["Te_GW", "Te_GW\n"]

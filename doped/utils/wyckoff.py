@@ -268,7 +268,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     number.
     """
     datafile = _get_wyckoff_datafile()
-    with open(datafile) as f:
+    with open(datafile, encoding="utf-8") as f:
         wyckoff = _read_wyckoff_datafile(sgn, f)
 
     wyckoff_label_coords_dict = {}
