@@ -1,4 +1,4 @@
-[![Build status](https://github.com/SMTG-UCL/doped/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/SMTG-UCL/doped/actions)
+[![Build status](https://github.com/SMTG-UCL/doped/actions/workflows/test.yml/badge.svg)](https://github.com/SMTG-UCL/doped/actions)
 [![Documentation Status](https://readthedocs.org/projects/doped/badge/?version=latest&style=flat)](https://doped.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/doped)](https://pypi.org/project/doped)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
