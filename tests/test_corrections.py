@@ -26,7 +26,7 @@ from doped.utils.corrections import (
     kumagai_correction_from_paths,
 )
 
-test_files_dir = os.path.join(os.path.dirname(__file__), "data/corrections_test_files")
+test_files_dir = os.path.join(os.path.dirname(__file__), "data/charge_correction_tests")
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
@@ -43,9 +43,9 @@ class FilePathCorrectionsTest(PymatgenTest):
             tar = tarfile.open("test_path_files.tar.gz")
             tar.extractall()
             tar.close()
-            blocpot = Locpot.from_file(os.path.join(test_files_dir, "bLOCPOT.gz"))
+            blocpot = Locpot.from_file(os.path.join(test_files_dir, "bulk_LOCPOT.gz"))
             blocpot.write_file("test_path_files/bulk/LOCPOT")
-            dlocpot = Locpot.from_file(os.path.join(test_files_dir, "dLOCPOT.gz"))
+            dlocpot = Locpot.from_file(os.path.join(test_files_dir, "defect_LOCPOT.gz"))
             dlocpot.write_file("test_path_files/sub_1_Sb_on_Ga/charge_2/LOCPOT")
 
             fcc = freysoldt_correction_from_paths(
