@@ -945,7 +945,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
 
     def test_kumagai_order(self):
         """
-        Test kumagai defect correction parser can handle mismatched atomic
+        Test Kumagai defect correction parser can handle mismatched atomic
         orders.
         """
         parsed_v_cd_m2_orig = defect_entry_from_paths(
@@ -958,15 +958,28 @@ class ReorderedParsingTestCase(unittest.TestCase):
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.cdte_dielectric,
         )
-        # should use kumagai correction by default when OUTCARs available
+        # should use Kumagai correction by default when OUTCARs available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
         )
 
+        # test where the ordering is all over the shop; v_Cd_-2 POSCAR with a Te atom, then 31 randomly
+        # ordered Cd atoms, then 31 randomly ordered Te atoms:
+        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+            defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+        )
+        # should use Kumagai correction by default when OUTCARs available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
+        )
+
     def test_freysoldt_order(self):
         """
-        Test kumagai defect correction parser can handle mismatched atomic
+        Test Freysoldt defect correction parser can handle mismatched atomic
         orders.
         """
         shutil.move(f"{self.v_Cd_m2_path}/OUTCAR.gz", f"{self.v_Cd_m2_path}/hidden_otcr.gz")  # use FNV
@@ -982,10 +995,32 @@ class ReorderedParsingTestCase(unittest.TestCase):
         )
         shutil.move(f"{self.v_Cd_m2_path}/hidden_otcr.gz", f"{self.v_Cd_m2_path}/OUTCAR.gz")  # move back
 
-        # should use freysold correction by default when OUTCARs not available
+        # should use Freysoldt correction by default when OUTCARs not available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
+        )
+
+        # test where the ordering is all over the shop; v_Cd_-2 POSCAR with a Te atom, then 31 randomly
+        # ordered Cd atoms, then 31 randomly ordered Te atoms:
+        shutil.move(
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
+        )  # use FNV
+        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+            defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+        )
+        shutil.move(
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
+        )  # move back
+
+        # should use Freysoldt correction by default when OUTCARs not available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
 
 
