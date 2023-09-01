@@ -914,5 +914,80 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         os.remove("bulk_voronoi_nodes.json")
 
 
+class ReorderedParsingTestCase(unittest.TestCase):
+    """
+    Test cases where the atoms bulk and defect supercells have been reordered
+    with respect to each other, but that site-matching and charge corrections
+    are still correctly performed.
+    """
+
+    def setUp(self):
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.cdte_corrections_dir = os.path.join(self.module_path, "data/charge_correction_tests/CdTe")
+        self.v_Cd_m2_path = f"{self.cdte_corrections_dir}/v_Cd_-2_vasp_gam"
+        self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+
+    def test_parsing_cdte(self):
+        """
+        Test parsing CdTe bulk vasp_gam example.
+        """
+        parsed_v_cd_m2 = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+        )
+        uncorrected_energy = 7.4475896
+        assert np.isclose(
+            parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()),
+            uncorrected_energy,
+            atol=1e-3,
+        )
+
+    def test_kumagai_order(self):
+        """
+        Test kumagai defect correction parser can handle mismatched atomic
+        orders.
+        """
+        parsed_v_cd_m2_orig = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+        )
+        parsed_v_cd_m2_alt = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+        )
+        # should use kumagai correction by default when OUTCARs available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
+        )
+
+    def test_freysoldt_order(self):
+        """
+        Test kumagai defect correction parser can handle mismatched atomic
+        orders.
+        """
+        shutil.move(f"{self.v_Cd_m2_path}/OUTCAR.gz", f"{self.v_Cd_m2_path}/hidden_otcr.gz")  # use FNV
+        parsed_v_cd_m2_orig = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+        )
+        parsed_v_cd_m2_alt = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+        )
+        shutil.move(f"{self.v_Cd_m2_path}/hidden_otcr.gz", f"{self.v_Cd_m2_path}/OUTCAR.gz")  # move back
+
+        # should use freysold correction by default when OUTCARs not available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
