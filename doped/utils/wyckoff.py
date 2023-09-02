@@ -8,9 +8,11 @@ https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
 """
 
 import os
+from typing import Optional
 
 import numpy as np
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
@@ -28,6 +30,147 @@ def _round_floats(obj):
     if isinstance(obj, (list, tuple)):
         return [_round_floats(x) for x in obj]
     return obj
+
+
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
+    """
+    Get all equivalent sites of the input fractional coordinates in struct.
+    """
+    if symm_ops is None:
+        sga = SpacegroupAnalyzer(struct)
+        symm_ops = sga.get_symmetry_operations()
+
+    dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
+    struct_with_x = struct.copy()
+    struct_with_x.sites += [dummy_site]
+
+    x_sites = []
+    for symm_op in symm_ops:
+        transformed_struct = struct_with_x.copy()
+        transformed_struct.apply_operation(symm_op, fractional=True)
+        x_sites.append(transformed_struct[-1].to_unit_cell())
+
+    # Create a dictionary to store unique frac_coords and corresponding sites
+    return list({tuple(np.round(site.frac_coords, 4)): site for site in x_sites}.values())
+
+
+def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
+    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops)
+    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites)
+    return sga_with_all_X.get_symmetry_dataset(), unique_sites
+
+
+def _get_sga_with_all_X(struct, unique_sites):
+    """
+    Add all sites in unique_sites to a _copy_ of struct and return
+    SpacegroupAnalyzer of this new structure.
+    """
+    struct_with_all_X = struct.copy()
+    struct_with_all_X.sites += unique_sites
+    return SpacegroupAnalyzer(struct_with_all_X)
+
+
+def _get_equiv_frac_coords_in_primitive(
+    frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True
+):
+    """
+    Get an equivalent fractional coordinates of frac_coords in supercell, in
+    the primitive cell.
+
+    Also returns a list of equivalent fractional coords in the primitive cell
+    if equiv_coords is True.
+    """
+    unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops)
+    sga_with_all_X = _get_sga_with_all_X(supercell, unique_sites)
+
+    prim_with_all_X = get_primitive_structure(sga_with_all_X, ignored_species=["X"])
+
+    # ensure matched to primitive structure:
+    rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+    primitive_with_all_X = rotated_struct * matrix
+
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    s2_like_s1 = sm.get_s2_like_s1(primitive, primitive_with_all_X)
+    s2_really_like_s1 = Structure.from_sites(
+        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
+            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
+                site.specie,
+                site.frac_coords,
+                primitive.lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+
+    prim_coord_list = [
+        np.mod(np.round(site.frac_coords, 4), 1)
+        for site in s2_really_like_s1.sites
+        if site.specie.symbol == "X"
+    ]
+
+    # sort with _frac_coords_sort_func
+    from doped.generation import _frac_coords_sort_func
+
+    return (
+        sorted(prim_coord_list, key=_frac_coords_sort_func)[0]
+        if not equiv_coords
+        else sorted(prim_coord_list, key=_frac_coords_sort_func)[0],
+        prim_coord_list,
+    )
+
+
+def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
+    """
+    Rotates the input prim_struct to match the target_struct orientation, and
+    returns the supercell matrix to convert from the rotated prim_struct to the
+    target_struct.
+    """
+    # first rotate primitive structure to match target structure:
+    mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
+    rotation_matrix = mapping[1]
+    if np.allclose(rotation_matrix, -1 * np.eye(3)):
+        # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
+        # equivalent to no rotation. Just use the identity matrix instead.
+        rotation_matrix = np.eye(3)
+        supercell_matrix = -1 * mapping[2]
+    else:
+        supercell_matrix = mapping[2]
+    rotation_symmop = SymmOp.from_rotation_and_translation(
+        rotation_matrix=rotation_matrix.T
+    )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
+    # stability
+    output_prim_struct = prim_struct.copy()
+    output_prim_struct.apply_operation(rotation_symmop)
+    clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
+    return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
+
+
+def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False):
+    """
+    Get the Wyckoff label of the input fractional coordinates in the input
+    structure. If the symmetry operations of the structure have already been
+    computed, these can be input as a list to speed up the calculation.
+
+    Args:
+        frac_coords:
+            Fractional coordinates of the site to get the Wyckoff label of.
+        struct:
+            pymatgen Structure object for which frac_coords corresponds to.
+        symm_ops:
+            List of pymatgen SymmOps of the structure. If None (default),
+            will recompute these from the input struct.
+        equiv_sites:
+            If True, also returns a list of equivalent sites in struct.
+    """
+    symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        frac_coords, struct, symm_ops
+    )
+    conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
+    multiplicity = int(conv_cell_factor * len(unique_sites))
+    wyckoff_label = f"{multiplicity}{symm_dataset['wyckoffs'][-1]}"
+
+    return wyckoff_label, unique_sites if equiv_sites else wyckoff_label
 
 
 def _struc_sorting_func(struct):
@@ -62,7 +205,7 @@ def _struc_sorting_func(struct):
     )
 
 
-def get_primitive_structure(sga):
+def get_primitive_structure(sga, ignored_species: Optional[list] = None):
     """
     Get a consistent/deterministic primitive structure from a
     SpacegroupAnalyzer object.
@@ -72,6 +215,10 @@ def get_primitive_structure(sga):
     conventions/definitions, take the one with the lowest summed norm of the
     fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
     (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
+
+    If ignored_species is set, then the sorting function used to determine the
+    ideal primitive structure will ignore sites with species in
+    ignored_species.
     """
     possible_prim_structs = []
     for _i in range(4):
@@ -79,8 +226,21 @@ def get_primitive_structure(sga):
         possible_prim_structs.append(struct)
         sga = SpacegroupAnalyzer(struct, symprec=1e-2)
 
-    possible_prim_structs = sorted(possible_prim_structs, key=_struc_sorting_func)
-    return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
+    if ignored_species is not None:
+        pruned_possible_prim_structs = [
+            Structure.from_sites([site for site in struct if site.specie.symbol not in ignored_species])
+            for struct in possible_prim_structs
+        ]
+    else:
+        pruned_possible_prim_structs = possible_prim_structs
+
+    # sort and return indices:
+    sorted_indices = sorted(
+        range(len(pruned_possible_prim_structs)),
+        key=lambda i: _struc_sorting_func(pruned_possible_prim_structs[i]),
+    )
+
+    return Structure.from_dict(_round_floats(possible_prim_structs[sorted_indices[0]].as_dict()))
 
 
 def get_spglib_conv_structure(sga):
@@ -240,7 +400,7 @@ def get_conv_cell_site(defect_entry):
     # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
     # initialisation)
     conv_cell_site.to_unit_cell()
-    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
+    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 4)
 
     return conv_cell_site
 

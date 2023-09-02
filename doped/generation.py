@@ -24,9 +24,8 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
-from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
@@ -35,9 +34,13 @@ from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.utils.wyckoff import (
+    _get_equiv_frac_coords_in_primitive,
+    _rotate_and_get_supercell_matrix,
     _round_floats,
     get_BCS_conventional_structure,
+    get_conv_cell_site,
     get_primitive_structure,
+    get_wyckoff,
     get_wyckoff_label_and_equiv_coord_list,
 )
 
@@ -180,6 +183,7 @@ def _get_neutral_defect_entry(
     conventional_structure,
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
+    symm_ops,
 ):
     (
         dummy_defect_supercell,
@@ -206,12 +210,29 @@ def _get_neutral_defect_entry(
         neutral_defect_entry.defect.conventional_structure
     ) = conventional_structure
 
-    wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
-        defect_entry=neutral_defect_entry,
-        wyckoff_dict=wyckoff_label_dict,
-    )
+    try:
+        wyckoff_label, conv_cell_sites = get_wyckoff(
+            get_conv_cell_site(neutral_defect_entry).frac_coords,
+            conventional_structure,
+            symm_ops,
+            equiv_sites=True,
+        )
+        conv_cell_coord_list = [
+            np.mod(np.round(site.to_unit_cell().frac_coords, 4), 1) for site in conv_cell_sites
+        ]
+
+    except Exception as e:  # (slightly) less efficient algebraic matching:
+        try:
+            wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
+                defect_entry=neutral_defect_entry,
+                wyckoff_dict=wyckoff_label_dict,
+            )
+        except Exception as e2:
+            raise e2 from e
+
+    # sort array with _frac_coords_sort_func:
+    conv_cell_coord_list = np.round(conv_cell_coord_list, 4)
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
-    conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
     neutral_defect_entry.conv_cell_frac_coords = (
@@ -795,10 +816,14 @@ class DefectsGenerator(MSONable):
                 extrinsic element(s) to substitute in; as a string or list.
                 In both cases, all possible extrinsic interstitials are generated.
             interstitial_coords (List):
-                List of fractional coordinates (in the primitive cell) to use as
-                interstitial defect sites. Default (when interstitial_coords not
-                specified) is to automatically generate interstitial sites using
-                Voronoi tessellation.
+                List of fractional coordinates (corresponding to the input structure)
+                to use as interstitial defect sites. Default (when interstitial_coords
+                not specified) is to automatically generate interstitial sites using
+                Voronoi tessellation. The input interstitial_coords are converted to
+                DefectsGenerator.prim_interstitial_coords, which are the corresponding
+                fractional coordinates in DefectsGenerator.primitive_structure (which
+                is used for defect generation), sorted according to the doped
+                _frac_coords_sort_func.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
@@ -848,6 +873,7 @@ class DefectsGenerator(MSONable):
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
+        self.prim_interstitial_coords = None
         self.generate_supercell = generate_supercell
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
@@ -923,31 +949,6 @@ class DefectsGenerator(MSONable):
                     b - _proj(b, c),
                 ]
             )
-
-            def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
-                """
-                Rotates the input prim_struct to match the target_struct
-                orientation, and returns the supercell matrix to convert from
-                the rotated prim_struct to the target_struct.
-                """
-                # first rotate primitive structure to match target structure:
-                mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
-                rotation_matrix = mapping[1]
-                if np.allclose(rotation_matrix, -1 * np.eye(3)):
-                    # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
-                    # equivalent to no rotation. Just use the identity matrix instead.
-                    rotation_matrix = np.eye(3)
-                    supercell_matrix = -1 * mapping[2]
-                else:
-                    supercell_matrix = mapping[2]
-                rotation_symmop = SymmOp.from_rotation_and_translation(
-                    rotation_matrix=rotation_matrix.T
-                )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
-                # stability
-                output_prim_struct = prim_struct.copy()
-                output_prim_struct.apply_operation(rotation_symmop)
-                clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
-                return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
             if np.min(np.linalg.norm(length_vecs, axis=1)) >= self.supercell_gen_kwargs.get(
                 "min_length", 10
@@ -1074,29 +1075,24 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating interstitials")
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
-                # convert interstitial coords to fractional coords in primitive cell:
-                final_interstitial_coords = []
-                for interstitial_frac_coords in self.interstitial_coords:
-                    input_struc_w_intersitial = self.structure.copy()
-                    inter_site = PeriodicSite(
-                        _dummy_species, interstitial_frac_coords, input_struc_w_intersitial.lattice
-                    )
-                    input_struc_w_intersitial.append(inter_site)
-                    rotated_struct, transf_matrix = _rotate_and_get_supercell_matrix(
-                        input_struc_w_intersitial, self.primitive_structure
-                    )
-                    final_interstitial_coords.append(rotated_struct[-1].frac_coords * transf_matrix)
+                # map interstitial coords to primitive structure, and get multiplicities
+                sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
+                symm_ops = sga.get_symmetry_operations(cartesian=False)
+                self.prim_interstitial_coords = []
 
-                self._input_to_prim_transf_matrix = transf_matrix
-                self.interstitial_coords = final_interstitial_coords
-                insertions = {el: self.interstitial_coords for el in self._element_list}
-                interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
-                interstitial_generator = interstitial_generator_obj.generate(
-                    self.primitive_structure, insertions=insertions
-                )
-                self.defects["interstitials"] = [
-                    Interstitial._from_pmg_defect(inter) for inter in interstitial_generator
-                ]
+                for interstitial_frac_coords in self.interstitial_coords:
+                    prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                        interstitial_frac_coords,
+                        self.structure,
+                        self.primitive_structure,
+                        symm_ops,
+                        equiv_coords=True,
+                    )
+                    self.prim_interstitial_coords.append(
+                        (prim_inter_coords, len(equiv_coords), equiv_coords)
+                    )
+
+                sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
 
             else:
                 # Generate interstitial sites using Voronoi tessellation
@@ -1170,22 +1166,21 @@ class DefectsGenerator(MSONable):
                         (ideal_cand_site, multiplicity, sorted_equiv_fpos)
                     )
 
-                self.defects["interstitials"] = []
-                ig = InterstitialGenerator(
-                    self.interstitial_gen_kwargs.get("min_dist", 0.9),
-                )  # pmg defects default
-                for el in self._element_list:
-                    cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
-
-                    inter_generator = ig.generate(
-                        self.primitive_structure,
-                        insertions={el: cand_sites},
-                        multiplicities={el: multiplicity},
-                        equivalent_positions={el: equiv_fpos},
-                    )
-                    self.defects["interstitials"].extend(
-                        [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
-                    )
+            self.defects["interstitials"] = []
+            ig = InterstitialGenerator(
+                self.interstitial_gen_kwargs.get("min_dist", 0.9)
+            )  # pmg defects default
+            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
+            for el in self._element_list:
+                inter_generator = ig.generate(
+                    self.primitive_structure,
+                    insertions={el: cand_sites},
+                    multiplicities={el: multiplicity},
+                    equivalent_positions={el: equiv_fpos},
+                )
+                self.defects["interstitials"].extend(
+                    [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
+                )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
@@ -1203,6 +1198,9 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
+            sga = SpacegroupAnalyzer(self.conventional_structure, symprec=1e-2)
+            symm_ops = sga.get_symmetry_operations(cartesian=False)
+
             # process defects into defect entries:
             partial_func = partial(
                 _get_neutral_defect_entry,
@@ -1212,6 +1210,7 @@ class DefectsGenerator(MSONable):
                 conventional_structure=self.conventional_structure,
                 _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict=wyckoff_label_dict,
+                symm_ops=symm_ops,
             )
 
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
@@ -1860,7 +1859,7 @@ def _get_interstitial_candidate_sites(args):
     return [*interstitial_generator._get_candidate_sites(structure)]
 
 
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
+# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
 _PTG_IDS = [
     ("C1", "1", 1),
     ("Ci", "-1", 2),
