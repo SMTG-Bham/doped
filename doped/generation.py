@@ -44,10 +44,6 @@ from doped.utils.wyckoff import (
     get_wyckoff_label_and_equiv_coord_list,
 )
 
-# TODO: For specifying interstitial sites, should correspond to fractional coordinates in the input
-#  structure, so need to know transformation from input structure to primitive used for interstitial
-#  generation
-
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
 
