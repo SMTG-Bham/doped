@@ -1034,7 +1034,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             [0.750, 0.750, 0.750],  # Cd2.83
             [0.500, 0.500, 0.500],  # Te2.83
         ]
-        DefectsGenerator(self.prim_cdte, interstitial_coords=cdte_interstitial_coords)
         cdte_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, interstitial_coords=cdte_interstitial_coords
         )
@@ -1045,6 +1044,8 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self._save_defect_gen_jsons(cdte_defect_gen)
         self.cdte_defect_gen_check(cdte_defect_gen)
         self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+
+        # TODO: Expand!
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
