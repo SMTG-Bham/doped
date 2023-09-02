@@ -381,7 +381,7 @@ class FreysoldtCorrection(DefectCorrection):
                     transparent=True,
                 )
                 return None
-        return plt
+            return plt
 
 
 class KumagaiCorrection(DefectCorrection):
@@ -806,15 +806,15 @@ class KumagaiCorrection(DefectCorrection):
             plt.ylabel("Potential (V)")
             plt.title(f"{title!s} Atomic Site Potential")
 
-        if saved:
-            plt.savefig(
-                f"{title!s}KumagaiESPavgPlot.pdf",
-                bbox_inches="tight",
-                backend=_get_backend("pdf"),
-                transparent=True,
-            )
-            return None
-        return plt
+            if saved:
+                plt.savefig(
+                    f"{title!s}KumagaiESPavgPlot.pdf",
+                    bbox_inches="tight",
+                    backend=_get_backend("pdf"),
+                    transparent=True,
+                )
+                return None
+            return plt
 
 
 class BandFillingCorrection(DefectCorrection):
