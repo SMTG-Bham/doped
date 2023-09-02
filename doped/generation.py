@@ -26,7 +26,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
@@ -41,12 +41,9 @@ from doped.utils.wyckoff import (
     get_wyckoff_label_and_equiv_coord_list,
 )
 
-# TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
-#  supercell coords in this case, so will need functions for transforming between primitive and
-#  supercell defect structures (will want this for defect parsing as well). Defectivator has functions
-#  that do some of this. This will be tricky (SSX trickay you might say) for relaxed interstitials ->
-#  get symmetry-equivalent positions of relaxed interstitial position in unrelaxed bulk (easy pal,
-#  tf you mean 'tricky'??)
+# TODO: For specifying interstitial sites, should correspond to fractional coordinates in the input
+#  structure, so need to know transformation from input structure to primitive used for interstitial
+#  generation
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -1077,7 +1074,21 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating interstitials")
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
-                # For the moment, this assumes interstitial_sites
+                # convert interstitial coords to fractional coords in primitive cell:
+                final_interstitial_coords = []
+                for interstitial_frac_coords in self.interstitial_coords:
+                    input_struc_w_intersitial = self.structure.copy()
+                    inter_site = PeriodicSite(
+                        _dummy_species, interstitial_frac_coords, input_struc_w_intersitial.lattice
+                    )
+                    input_struc_w_intersitial.append(inter_site)
+                    rotated_struct, transf_matrix = _rotate_and_get_supercell_matrix(
+                        input_struc_w_intersitial, self.primitive_structure
+                    )
+                    final_interstitial_coords.append(rotated_struct[-1].frac_coords * transf_matrix)
+
+                self._input_to_prim_transf_matrix = transf_matrix
+                self.interstitial_coords = final_interstitial_coords
                 insertions = {el: self.interstitial_coords for el in self._element_list}
                 interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
                 interstitial_generator = interstitial_generator_obj.generate(
@@ -1762,18 +1773,36 @@ def _sort_defect_entries(defect_entries_dict, element_list=None):
         )
         element_list = host_element_list + extrinsic_element_list
 
-    return dict(
-        sorted(
-            defect_entries_dict.items(),
-            key=lambda s: (
-                s[1].defect.defect_type.value,
-                element_list.index(_first_and_second_element(s[0])[0]),
-                element_list.index(_first_and_second_element(s[0])[1]),
-                s[0].rsplit("_", 1)[0],  # name without charge
-                s[1].charge_state,  # charge state
-            ),
+    try:
+        return dict(
+            sorted(
+                defect_entries_dict.items(),
+                key=lambda s: (
+                    s[1].defect.defect_type.value,
+                    element_list.index(_first_and_second_element(s[0])[0]),
+                    element_list.index(_first_and_second_element(s[0])[1]),
+                    s[0].rsplit("_", 1)[0],  # name without charge
+                    s[1].charge_state,  # charge state
+                ),
+            )
         )
-    )
+    except ValueError as value_err:
+        # possibly defect entries with names not in doped format, try sorting without using name:
+        try:
+            return dict(
+                sorted(
+                    defect_entries_dict.items(),
+                    key=lambda s: (
+                        s[1].defect.defect_type.value,
+                        element_list.index(_first_and_second_element(get_defect_name_from_entry(s[1]))[0]),
+                        element_list.index(_first_and_second_element(get_defect_name_from_entry(s[1]))[1]),
+                        get_defect_name_from_entry(s[1]),  # name without charge
+                        s[1].charge_state,  # charge state
+                    ),
+                )
+            )
+        except ValueError:
+            raise value_err
 
 
 def _sort_defects(defects_dict, element_list=None):
