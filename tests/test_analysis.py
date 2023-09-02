@@ -935,6 +935,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         uncorrected_energy = 7.4475896
         assert np.isclose(
@@ -952,11 +953,13 @@ class ReorderedParsingTestCase(unittest.TestCase):
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         parsed_v_cd_m2_alt = defect_entry_from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         # should use Kumagai correction by default when OUTCARs available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
@@ -970,6 +973,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
             defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         # should use Kumagai correction by default when OUTCARs available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
@@ -987,11 +991,13 @@ class ReorderedParsingTestCase(unittest.TestCase):
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         parsed_v_cd_m2_alt = defect_entry_from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         shutil.move(f"{self.v_Cd_m2_path}/hidden_otcr.gz", f"{self.v_Cd_m2_path}/OUTCAR.gz")  # move back
 
@@ -1011,6 +1017,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
             defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
             bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
             dielectric=self.cdte_dielectric,
+            charge_state=-2,
         )
         shutil.move(
             f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
