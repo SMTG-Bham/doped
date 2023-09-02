@@ -569,6 +569,8 @@ def defect_entry_from_paths(
             # Check compatibility of defect corrections with loaded metadata, and apply
             dp.run_compatibility()
 
+    # TODO: Add sanity check that no corrections are negative
+
     return dp.defect_entry
 
 
