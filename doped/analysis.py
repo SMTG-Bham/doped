@@ -569,7 +569,20 @@ def defect_entry_from_paths(
             # Check compatibility of defect corrections with loaded metadata, and apply
             dp.run_compatibility()
 
-    # TODO: Add sanity check that no corrections are negative
+            # check that charge corrections are not negative
+            summed_corrections = sum(
+                val
+                for key, val in dp.defect_entry.corrections.items()
+                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
+            )
+            if summed_corrections < 0:
+                warnings.warn(
+                    f"The calculated finite-size charge corrections for defect at {defect_path} and bulk "
+                    f"at {bulk_path} sum to a negative value of {summed_corrections:.3f}. This is likely "
+                    f"due to some error or mismatch in the defect and bulk calculations, as the defect "
+                    f"charge correction energy should (almost always) be positive. Please double-check "
+                    f"your calculations and parsed results!"
+                )
 
     return dp.defect_entry
 
