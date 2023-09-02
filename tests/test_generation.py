@@ -95,14 +95,14 @@ Te_i_Td_Te2.83   [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
             """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Y          [-3,-2,-1,0,+1]     [0.000,0.000,0.334]  4e
-v_Ti         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.079]  4e
+v_Ti         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.078]  4e
 v_S          [-1,0,+1,+2]        [0.000,0.000,0.205]  4e
 v_O_C2v      [-1,0,+1,+2]        [0.000,0.500,0.099]  8g
 v_O_D4h      [-1,0,+1,+2]        [0.000,0.000,0.000]  2a
 
 Substitutions    Charge States                Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Y_Ti             [-1,0]                       [0.000,0.000,0.079]  4e
+Y_Ti             [-1,0]                       [0.000,0.000,0.078]  4e
 Y_S              [0,+1,+2,+3,+4,+5]           [0.000,0.000,0.205]  4e
 Y_O_C2v          [0,+1,+2,+3,+4,+5]           [0.000,0.500,0.099]  8g
 Y_O_D4h          [0,+1,+2,+3,+4,+5]           [0.000,0.000,0.000]  2a
@@ -111,11 +111,11 @@ Ti_S             [0,+1,+2,+3,+4,+5,+6]        [0.000,0.000,0.205]  4e
 Ti_O_C2v         [0,+1,+2,+3,+4,+5,+6]        [0.000,0.500,0.099]  8g
 Ti_O_D4h         [0,+1,+2,+3,+4,+5,+6]        [0.000,0.000,0.000]  2a
 S_Y              [-5,-4,-3,-2,-1,0,+1,+2,+3]  [0.000,0.000,0.334]  4e
-S_Ti             [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.079]  4e
+S_Ti             [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.078]  4e
 S_O_C2v          [-1,0,+1]                    [0.000,0.500,0.099]  8g
 S_O_D4h          [-1,0,+1]                    [0.000,0.000,0.000]  2a
 O_Y              [-5,-4,-3,-2,-1,0]           [0.000,0.000,0.334]  4e
-O_Ti             [-6,-5,-4,-3,-2,-1,0]        [0.000,0.000,0.079]  4e
+O_Ti             [-6,-5,-4,-3,-2,-1,0]        [0.000,0.000,0.078]  4e
 O_S              [-1,0,+1]                    [0.000,0.000,0.205]  4e
 
 Interstitials    Charge States          Conv. Cell Coords    Wyckoff
@@ -123,25 +123,25 @@ Interstitials    Charge States          Conv. Cell Coords    Wyckoff
 Y_i_C2v          [0,+1,+2,+3]           [0.000,0.500,0.184]  8g
 Y_i_C4v_O1.92    [0,+1,+2,+3]           [0.000,0.000,0.418]  4e
 Y_i_C4v_O2.68    [0,+1,+2,+3]           [0.000,0.000,0.485]  4e
-Y_i_Cs_O1.71     [0,+1,+2,+3]           [0.180,0.180,0.143]  16m
+Y_i_Cs_O1.71     [0,+1,+2,+3]           [0.181,0.181,0.143]  16m
 Y_i_Cs_O1.95     [0,+1,+2,+3]           [0.325,0.325,0.039]  16m
 Y_i_D2d          [0,+1,+2,+3]           [0.000,0.500,0.250]  4d
 Ti_i_C2v         [0,+1,+2,+3,+4]        [0.000,0.500,0.184]  8g
 Ti_i_C4v_O1.92   [0,+1,+2,+3,+4]        [0.000,0.000,0.418]  4e
 Ti_i_C4v_O2.68   [0,+1,+2,+3,+4]        [0.000,0.000,0.485]  4e
-Ti_i_Cs_O1.71    [0,+1,+2,+3,+4]        [0.180,0.180,0.143]  16m
+Ti_i_Cs_O1.71    [0,+1,+2,+3,+4]        [0.181,0.181,0.143]  16m
 Ti_i_Cs_O1.95    [0,+1,+2,+3,+4]        [0.325,0.325,0.039]  16m
 Ti_i_D2d         [0,+1,+2,+3,+4]        [0.000,0.500,0.250]  4d
 S_i_C2v          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.184]  8g
 S_i_C4v_O1.92    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.418]  4e
 S_i_C4v_O2.68    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.485]  4e
-S_i_Cs_O1.71     [-2,-1,0,+1,+2,+3,+4]  [0.180,0.180,0.143]  16m
+S_i_Cs_O1.71     [-2,-1,0,+1,+2,+3,+4]  [0.181,0.181,0.143]  16m
 S_i_Cs_O1.95     [-2,-1,0,+1,+2,+3,+4]  [0.325,0.325,0.039]  16m
 S_i_D2d          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.250]  4d
 O_i_C2v          [-2,-1,0]              [0.000,0.500,0.184]  8g
 O_i_C4v_O1.92    [-2,-1,0]              [0.000,0.000,0.418]  4e
 O_i_C4v_O2.68    [-2,-1,0]              [0.000,0.000,0.485]  4e
-O_i_Cs_O1.71     [-2,-1,0]              [0.180,0.180,0.143]  16m
+O_i_Cs_O1.71     [-2,-1,0]              [0.181,0.181,0.143]  16m
 O_i_Cs_O1.95     [-2,-1,0]              [0.325,0.325,0.039]  16m
 O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
 \n"""
@@ -162,22 +162,22 @@ v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
 v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
 v_Ni         [-2,-1,0,+1]        [0.625,0.625,0.625]  4b
 v_O_C1       [-1,0,+1,+2]        [0.101,0.124,0.392]  24e
-v_O_C3       [-1,0,+1,+2]        [0.385,0.385,0.385]  8c
+v_O_C3       [-1,0,+1,+2]        [0.384,0.384,0.384]  8c
 
 Substitutions    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Li_Mn            [-3,-2,-1,0]           [0.121,0.129,0.625]  12d
 Li_Ni            [-1,0]                 [0.625,0.625,0.625]  4b
 Li_O_C1          [0,+1,+2,+3]           [0.101,0.124,0.392]  24e
-Li_O_C3          [0,+1,+2,+3]           [0.385,0.385,0.385]  8c
+Li_O_C3          [0,+1,+2,+3]           [0.384,0.384,0.384]  8c
 Mn_Li            [0,+1,+2,+3]           [0.004,0.004,0.004]  8c
 Mn_Ni            [0,+1,+2]              [0.625,0.625,0.625]  4b
 Mn_O_C1          [0,+1,+2,+3,+4,+5,+6]  [0.101,0.124,0.392]  24e
-Mn_O_C3          [0,+1,+2,+3,+4,+5,+6]  [0.385,0.385,0.385]  8c
+Mn_O_C3          [0,+1,+2,+3,+4,+5,+6]  [0.384,0.384,0.384]  8c
 Ni_Li            [0,+1,+2,+3]           [0.004,0.004,0.004]  8c
 Ni_Mn            [-3,-2,-1,0]           [0.121,0.129,0.625]  12d
 Ni_O_C1          [0,+1,+2,+3,+4,+5]     [0.101,0.124,0.392]  24e
-Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.385,0.385,0.385]  8c
+Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.384,0.384,0.384]  8c
 O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
@@ -192,64 +192,29 @@ Li_i_C1_O1.72        [0,+1]           [0.248,0.480,0.249]  24e
 Li_i_C1_O1.78        [0,+1]           [0.017,0.261,0.250]  24e
 Li_i_C2_Li1.84O1.84  [0,+1]           [0.073,0.177,0.125]  12d
 Li_i_C2_Li1.84O1.94  [0,+1]           [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [0,+1]           [0.086,0.375,0.336]  12d
+Li_i_C2_Li1.86       [0,+1]           [0.085,0.375,0.335]  12d
 Li_i_C3              [0,+1]           [0.497,0.497,0.497]  8c
 Mn_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
 Mn_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
 Mn_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
 Mn_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
 Mn_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.085,0.375,0.335]  12d
 Mn_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
 Ni_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
 Ni_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
 Ni_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
 Ni_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
 Ni_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.085,0.375,0.335]  12d
 Ni_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
 O_i_C1_Li1.75        [-2,-1,0]        [0.199,0.303,0.444]  24e
 O_i_C1_O1.72         [-2,-1,0]        [0.248,0.480,0.249]  24e
 O_i_C1_O1.78         [-2,-1,0]        [0.017,0.261,0.250]  24e
 O_i_C2_Li1.84O1.84   [-2,-1,0]        [0.073,0.177,0.125]  12d
 O_i_C2_Li1.84O1.94   [-2,-1,0]        [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [-2,-1,0]        [0.086,0.375,0.336]  12d
+O_i_C2_Li1.86        [-2,-1,0]        [0.085,0.375,0.335]  12d
 O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
-\n"""
-        )
-
-        self.lmno_defect_gen_info_interstitials_GH = (
-            "Interstitials    Charge States    Conv. Cell "
-            "Coords    Wyckoff\n"
-            """---------------  ---------------  -------------------  ---------
-Li_i_C1_Li1.75   [0,+1]           [0.199,0.303,0.444]  24e
-Li_i_C1_O1.72    [0,+1]           [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78    [0,+1]           [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.83   [0,+1]           [0.077,0.125,0.173]  12d
-Li_i_C2_Li1.84   [0,+1]           [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86   [0,+1]           [0.086,0.375,0.336]  12d
-Li_i_C3          [0,+1]           [0.497,0.497,0.497]  8c
-Mn_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Mn_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
-Mn_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Mn_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-Ni_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Ni_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
-Ni_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Ni_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-O_i_C1_Li1.75    [-2,-1,0]        [0.199,0.303,0.444]  24e
-O_i_C1_O1.72     [-2,-1,0]        [0.248,0.480,0.249]  24e
-O_i_C1_O1.78     [-2,-1,0]        [0.017,0.261,0.250]  24e
-O_i_C2_Li1.83    [-2,-1,0]        [0.077,0.125,0.173]  12d
-O_i_C2_Li1.84    [-2,-1,0]        [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86    [-2,-1,0]        [0.086,0.375,0.336]  12d
-O_i_C3           [-2,-1,0]        [0.497,0.497,0.497]  8c
 \n"""
         )
 
@@ -1061,6 +1026,26 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.ytos_defect_gen_info in output
         self.ytos_defect_gen_check(ytos_defect_gen)
 
+    def test_interstitial_coords(self):
+        # first test that specifying the default interstitial coords for CdTe gives the same result as
+        # default:
+        cdte_interstitial_coords = [
+            [0.625, 0.625, 0.625],  # C3v
+            [0.750, 0.750, 0.750],  # Cd2.83
+            [0.500, 0.500, 0.500],  # Te2.83
+        ]
+        DefectsGenerator(self.prim_cdte, interstitial_coords=cdte_interstitial_coords)
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, interstitial_coords=cdte_interstitial_coords
+        )
+
+        assert self.cdte_defect_gen_info in output
+
+        # defect_gen_check changes defect_entries ordering, so save to json first:
+        self._save_defect_gen_jsons(cdte_defect_gen)
+        self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
 
@@ -1510,10 +1495,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self._general_defect_gen_check(lmno_defect_gen)
         assert self.lmno_defect_gen_info_pt1 in lmno_defect_gen._defect_generator_info()
         assert self.lmno_defect_gen_info_final in lmno_defect_gen._defect_generator_info()
-        assert (
-            self.lmno_defect_gen_info_interstitials in lmno_defect_gen._defect_generator_info()
-            or self.lmno_defect_gen_info_interstitials_GH in lmno_defect_gen._defect_generator_info()
-        )
+        assert self.lmno_defect_gen_info_interstitials in lmno_defect_gen._defect_generator_info()
         assert lmno_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert self.structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -1617,10 +1599,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.lmno_defect_gen_info_pt1 in output
         assert self.lmno_defect_gen_info_final in output
-        assert (
-            self.lmno_defect_gen_info_interstitials in output
-            or self.lmno_defect_gen_info_interstitials_GH in output
-        )
+        assert self.lmno_defect_gen_info_interstitials in output
         if self.lmno_defect_gen_info_interstitials in output:
             print("Original interstitials output printed")
         else:  # for tracking purposes
@@ -1641,10 +1620,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         assert self.lmno_defect_gen_info_pt1 in output
         assert self.lmno_defect_gen_info_final in output
-        assert (
-            self.lmno_defect_gen_info_interstitials in output
-            or self.lmno_defect_gen_info_interstitials_GH in output
-        )
+        assert self.lmno_defect_gen_info_interstitials in output
 
         if self.lmno_defect_gen_info_interstitials in output:
             print("Original interstitials output printed")
