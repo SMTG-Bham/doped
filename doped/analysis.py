@@ -419,7 +419,7 @@ def defect_entry_from_paths(
         sc_defect_frac_coords=defect_site.frac_coords,
         bulk_entry=bulk_vr.get_computed_entry(),
         # doped attributes:
-        defect_supercell_site=defect_site,
+        defect_supercell_site=defect_site,  # TODO: this is initial defect site; should be relaxed site?
         defect_supercell=defect_vr.final_structure,
         bulk_supercell=bulk_vr.final_structure,
         calculation_metadata=calculation_metadata,
