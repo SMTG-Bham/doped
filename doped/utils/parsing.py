@@ -11,6 +11,22 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 
+def find_archived_fname(fname, raise_error=True):
+    """
+    Find a suitable filename, taking account of possible use of compression
+    software.
+    """
+    if os.path.exists(fname):
+        return fname
+    # Check for archive files
+    for ext in [".gz", ".xz", ".bz", ".lzma"]:
+        if os.path.exists(fname + ext):
+            return fname + ext
+    if raise_error:
+        raise FileNotFoundError
+    return None
+
+
 def get_vasprun(vasprun_path, **kwargs):
     """
     Read the vasprun.xml(.gz) file as a pymatgen Vasprun object.
@@ -18,15 +34,16 @@ def get_vasprun(vasprun_path, **kwargs):
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
-    )  # Ignore POTCAR warnings when loading vasprun.xml
+    )  # Ignore unknown POTCAR warnings when loading vasprun.xml
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-    if os.path.exists(vasprun_path) and os.path.isfile(vasprun_path):
-        vasprun = Vasprun(vasprun_path, **kwargs)
-    else:
+    try:
+        vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
+    except FileNotFoundError:
         raise FileNotFoundError(
-            f"vasprun.xml file not found at {vasprun_path}. Needed for parsing calculation output."
-        )
+            f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
+            f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
+        ) from None
     return vasprun
 
 
@@ -35,13 +52,13 @@ def get_locpot(locpot_path):
     Read the LOCPOT(.gz) file as a pymatgen Locpot object.
     """
     locpot_path = str(locpot_path)  # convert to string if Path object
-    if os.path.exists(locpot_path) and os.path.isfile(locpot_path):
-        locpot = Locpot.from_file(locpot_path)
-    else:
+    try:
+        locpot = Locpot.from_file(find_archived_fname(locpot_path))
+    except FileNotFoundError:
         raise FileNotFoundError(
-            f"LOCPOT file not found at {locpot_path}. Needed for calculating the Freysoldt (FNV) "
-            f"image charge correction."
-        )
+            f"LOCPOT or compressed version not found at (.gz/.xz/.bz/.lzma) not found at {locpot_path}("
+            f".gz/.xz/.bz/.lzma). Needed for calculating the Freysoldt (FNV) image charge correction!"
+        ) from None
     return locpot
 
 
