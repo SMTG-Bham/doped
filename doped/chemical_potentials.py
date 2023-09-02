@@ -1053,6 +1053,9 @@ class CompetingPhasesAnalyzer:
     Post-processing competing phases data to calculate chemical potentials.
     """
 
+    # TODO: Allow parsing using pymatgen ComputedEntries as well, to aid interoperability with
+    #  high-througput architectures like AiiDA or atomate2. See:
+    #  https://github.com/SMTG-UCL/doped/commit/b4eb9a5083a0a2c9596be5ccc57d060e1fcec530
     def __init__(self, system, extrinsic_species=None):
         """
         Args:
