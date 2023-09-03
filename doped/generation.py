@@ -775,7 +775,8 @@ class DefectsGenerator(MSONable):
         to be the most reliable), which can be controlled using the
         `interstitial_gen_kwargs` argument (passed as keyword arguments to the
         `VoronoiInterstitialGenerator` class). Alternatively, a list of interstitial
-        sites can be manually specified using the `interstitial_coords` argument.
+        sites (or single interstitial site) can be manually specified using the
+        `interstitial_coords` argument.
 
         By default, supercells are generated for each defect using the pymatgen
         `get_supercell_structure()` method, with `doped` default settings of
@@ -821,10 +822,11 @@ class DefectsGenerator(MSONable):
                 extrinsic element(s) to substitute in; as a string or list.
                 In both cases, all possible extrinsic interstitials are generated.
             interstitial_coords (List):
-                List of fractional coordinates (corresponding to the input structure)
-                to use as interstitial defect sites. Default (when interstitial_coords
-                not specified) is to automatically generate interstitial sites using
-                Voronoi tessellation. The input interstitial_coords are converted to
+                List of fractional coordinates (corresponding to the input structure),
+                or a single set of fractional coordinates, to use as interstitial
+                defect site(s). Default (when interstitial_coords not specified) is
+                to automatically generate interstitial sites using Voronoi tessellation.
+                The input interstitial_coords are converted to
                 DefectsGenerator.prim_interstitial_coords, which are the corresponding
                 fractional coordinates in DefectsGenerator.primitive_structure (which
                 is used for defect generation), sorted according to the doped
@@ -877,7 +879,16 @@ class DefectsGenerator(MSONable):
         self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
-        self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
+        if interstitial_coords is not None:
+            # if a single list or array, convert to list of lists
+            self.interstitial_coords = (
+                [list(interstitial_coords)]
+                if not isinstance(interstitial_coords[0], (list, tuple, np.ndarray))
+                else [list(coords) for coords in interstitial_coords]  # ensure list of lists
+            )
+        else:
+            self.interstitial_coords = []
+
         self.prim_interstitial_coords = None
         self.generate_supercell = generate_supercell
         self.charge_state_gen_kwargs = (
@@ -1295,10 +1306,10 @@ class DefectsGenerator(MSONable):
                 pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
             # sort defects and defect entries for deterministic behaviour:
-            self.defects = _sort_defects(self.defects)  # , element_list=self._element_list)
+            self.defects = _sort_defects(self.defects, element_list=self._element_list)
             self.defect_entries = _sort_defect_entries(
-                self.defect_entries
-            )  # , element_list=self._element_list
+                self.defect_entries, element_list=self._element_list
+            )
 
             # remove oxidation states from structures (causes deprecation warnings and issues with
             # comparison tests, also only added from oxi state guessing in defect generation so no extra
