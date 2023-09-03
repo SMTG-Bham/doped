@@ -102,7 +102,7 @@ v_O_D4h      [-1,0,+1,+2]        [0.000,0.000,0.000]  2a
 
 Substitutions    Charge States                Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Y_Ti             [-1,0]                       [0.000,0.000,0.078]  4e
+Y_Ti             [-1,0]                       [0.000,0.000,0.079]  4e
 Y_S              [0,+1,+2,+3,+4,+5]           [0.000,0.000,0.205]  4e
 Y_O_C2v          [0,+1,+2,+3,+4,+5]           [0.000,0.500,0.099]  8g
 Y_O_D4h          [0,+1,+2,+3,+4,+5]           [0.000,0.000,0.000]  2a
@@ -111,38 +111,38 @@ Ti_S             [0,+1,+2,+3,+4,+5,+6]        [0.000,0.000,0.205]  4e
 Ti_O_C2v         [0,+1,+2,+3,+4,+5,+6]        [0.000,0.500,0.099]  8g
 Ti_O_D4h         [0,+1,+2,+3,+4,+5,+6]        [0.000,0.000,0.000]  2a
 S_Y              [-5,-4,-3,-2,-1,0,+1,+2,+3]  [0.000,0.000,0.334]  4e
-S_Ti             [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.078]  4e
+S_Ti             [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.079]  4e
 S_O_C2v          [-1,0,+1]                    [0.000,0.500,0.099]  8g
 S_O_D4h          [-1,0,+1]                    [0.000,0.000,0.000]  2a
 O_Y              [-5,-4,-3,-2,-1,0]           [0.000,0.000,0.334]  4e
-O_Ti             [-6,-5,-4,-3,-2,-1,0]        [0.000,0.000,0.078]  4e
+O_Ti             [-6,-5,-4,-3,-2,-1,0]        [0.000,0.000,0.079]  4e
 O_S              [-1,0,+1]                    [0.000,0.000,0.205]  4e
 
 Interstitials    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Y_i_C2v          [0,+1,+2,+3]           [0.000,0.500,0.184]  8g
-Y_i_C4v_O1.92    [0,+1,+2,+3]           [0.000,0.000,0.418]  4e
 Y_i_C4v_O2.68    [0,+1,+2,+3]           [0.000,0.000,0.485]  4e
-Y_i_Cs_O1.71     [0,+1,+2,+3]           [0.181,0.181,0.143]  16m
-Y_i_Cs_O1.95     [0,+1,+2,+3]           [0.325,0.325,0.039]  16m
+Y_i_C4v_Y1.92    [0,+1,+2,+3]           [0.000,0.000,0.418]  4e
+Y_i_Cs_S1.71     [0,+1,+2,+3]           [0.180,0.180,0.143]  16m
+Y_i_Cs_Ti1.95    [0,+1,+2,+3]           [0.325,0.325,0.039]  16m
 Y_i_D2d          [0,+1,+2,+3]           [0.000,0.500,0.250]  4d
 Ti_i_C2v         [0,+1,+2,+3,+4]        [0.000,0.500,0.184]  8g
-Ti_i_C4v_O1.92   [0,+1,+2,+3,+4]        [0.000,0.000,0.418]  4e
 Ti_i_C4v_O2.68   [0,+1,+2,+3,+4]        [0.000,0.000,0.485]  4e
-Ti_i_Cs_O1.71    [0,+1,+2,+3,+4]        [0.181,0.181,0.143]  16m
-Ti_i_Cs_O1.95    [0,+1,+2,+3,+4]        [0.325,0.325,0.039]  16m
+Ti_i_C4v_Y1.92   [0,+1,+2,+3,+4]        [0.000,0.000,0.418]  4e
+Ti_i_Cs_S1.71    [0,+1,+2,+3,+4]        [0.180,0.180,0.143]  16m
+Ti_i_Cs_Ti1.95   [0,+1,+2,+3,+4]        [0.325,0.325,0.039]  16m
 Ti_i_D2d         [0,+1,+2,+3,+4]        [0.000,0.500,0.250]  4d
 S_i_C2v          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.184]  8g
-S_i_C4v_O1.92    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.418]  4e
 S_i_C4v_O2.68    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.485]  4e
-S_i_Cs_O1.71     [-2,-1,0,+1,+2,+3,+4]  [0.181,0.181,0.143]  16m
-S_i_Cs_O1.95     [-2,-1,0,+1,+2,+3,+4]  [0.325,0.325,0.039]  16m
+S_i_C4v_Y1.92    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.418]  4e
+S_i_Cs_S1.71     [-2,-1,0,+1,+2,+3,+4]  [0.180,0.180,0.143]  16m
+S_i_Cs_Ti1.95    [-2,-1,0,+1,+2,+3,+4]  [0.325,0.325,0.039]  16m
 S_i_D2d          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.250]  4d
 O_i_C2v          [-2,-1,0]              [0.000,0.500,0.184]  8g
-O_i_C4v_O1.92    [-2,-1,0]              [0.000,0.000,0.418]  4e
 O_i_C4v_O2.68    [-2,-1,0]              [0.000,0.000,0.485]  4e
-O_i_Cs_O1.71     [-2,-1,0]              [0.181,0.181,0.143]  16m
-O_i_Cs_O1.95     [-2,-1,0]              [0.325,0.325,0.039]  16m
+O_i_C4v_Y1.92    [-2,-1,0]              [0.000,0.000,0.418]  4e
+O_i_Cs_S1.71     [-2,-1,0]              [0.180,0.180,0.143]  16m
+O_i_Cs_Ti1.95    [-2,-1,0]              [0.325,0.325,0.039]  16m
 O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -169,15 +169,15 @@ Substitutions    Charge States          Conv. Cell Coords    Wyckoff
 Li_Mn            [-3,-2,-1,0]           [0.121,0.129,0.625]  12d
 Li_Ni            [-1,0]                 [0.625,0.625,0.625]  4b
 Li_O_C1          [0,+1,+2,+3]           [0.101,0.124,0.392]  24e
-Li_O_C3          [0,+1,+2,+3]           [0.384,0.384,0.384]  8c
+Li_O_C3          [0,+1,+2,+3]           [0.385,0.385,0.385]  8c
 Mn_Li            [0,+1,+2,+3]           [0.004,0.004,0.004]  8c
 Mn_Ni            [0,+1,+2]              [0.625,0.625,0.625]  4b
 Mn_O_C1          [0,+1,+2,+3,+4,+5,+6]  [0.101,0.124,0.392]  24e
-Mn_O_C3          [0,+1,+2,+3,+4,+5,+6]  [0.384,0.384,0.384]  8c
+Mn_O_C3          [0,+1,+2,+3,+4,+5,+6]  [0.385,0.385,0.385]  8c
 Ni_Li            [0,+1,+2,+3]           [0.004,0.004,0.004]  8c
 Ni_Mn            [-3,-2,-1,0]           [0.121,0.129,0.625]  12d
 Ni_O_C1          [0,+1,+2,+3,+4,+5]     [0.101,0.124,0.392]  24e
-Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.384,0.384,0.384]  8c
+Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.385,0.385,0.385]  8c
 O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
@@ -192,28 +192,28 @@ Li_i_C1_O1.72        [0,+1]           [0.248,0.480,0.249]  24e
 Li_i_C1_O1.78        [0,+1]           [0.017,0.261,0.250]  24e
 Li_i_C2_Li1.84O1.84  [0,+1]           [0.073,0.177,0.125]  12d
 Li_i_C2_Li1.84O1.94  [0,+1]           [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [0,+1]           [0.085,0.375,0.335]  12d
+Li_i_C2_Li1.86       [0,+1]           [0.086,0.375,0.336]  12d
 Li_i_C3              [0,+1]           [0.497,0.497,0.497]  8c
 Mn_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
 Mn_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
 Mn_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
 Mn_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
 Mn_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.085,0.375,0.335]  12d
+Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
 Mn_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
 Ni_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
 Ni_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
 Ni_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
 Ni_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
 Ni_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.085,0.375,0.335]  12d
+Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
 Ni_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
 O_i_C1_Li1.75        [-2,-1,0]        [0.199,0.303,0.444]  24e
 O_i_C1_O1.72         [-2,-1,0]        [0.248,0.480,0.249]  24e
 O_i_C1_O1.78         [-2,-1,0]        [0.017,0.261,0.250]  24e
 O_i_C2_Li1.84O1.84   [-2,-1,0]        [0.073,0.177,0.125]  12d
 O_i_C2_Li1.84O1.94   [-2,-1,0]        [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [-2,-1,0]        [0.085,0.375,0.335]  12d
+O_i_C2_Li1.86        [-2,-1,0]        [0.086,0.375,0.336]  12d
 O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
 \n"""
         )
@@ -298,12 +298,12 @@ Ag_Cu            [-1,0,+1]        [0.000,0.000,0.000]  3a
 
 Interstitials                 Charge States    Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------  -------------------  ---------
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1,+2]        [0.000,0.000,0.125]  6c
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1,+2]        [0.000,0.000,0.375]  6c
-Cu_i_C3v_Ag1.80               [0,+1,+2]        [0.000,0.000,0.250]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1]           [0.000,0.000,0.125]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1]           [0.000,0.000,0.375]  6c
-Ag_i_C3v_Ag1.80               [0,+1]           [0.000,0.000,0.250]  6c
+Cu_i_C3v_Cu1.56Ag1.56Cu2.99a  [0,+1,+2]        [0.000,0.000,0.125]  6c
+Cu_i_C3v_Cu1.56Ag1.56Cu2.99b  [0,+1,+2]        [0.000,0.000,0.375]  6c
+Cu_i_C3v_Cu1.80               [0,+1,+2]        [0.000,0.000,0.250]  6c
+Ag_i_C3v_Cu1.56Ag1.56Cu2.99a  [0,+1]           [0.000,0.000,0.125]  6c
+Ag_i_C3v_Cu1.56Ag1.56Cu2.99b  [0,+1]           [0.000,0.000,0.375]  6c
+Ag_i_C3v_Cu1.80               [0,+1]           [0.000,0.000,0.250]  6c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of AgCu.\n"
@@ -632,7 +632,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
         assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
         for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-            assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert any(
+                np.array_equal(equiv_conv_cell_frac_coords, x)
+                for x in defect_entry.defect.equiv_conv_cell_frac_coords
+            )
         assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
             len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
         )
@@ -1602,7 +1605,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Li_O_C3_+3"].conv_cell_frac_coords,
-            np.array([0.384, 0.384, 0.384]),
+            np.array([0.385, 0.385, 0.385]),
             atol=1e-3,
         )
         frac_coords = np.array(
@@ -1929,32 +1932,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # explicitly test defect entry attributes
         assert (
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.defect_type
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.defect_type
             == DefectType.Interstitial
         )
-        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].wyckoff == "6c"
-        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.multiplicity == 2
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].wyckoff == "6c"
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.multiplicity == 2
         sc_frac_coords = np.array(
             [0.53125, 0.5, 0.395833] if generate_supercell else [0.375, 0.375, 0.375]
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].sc_defect_frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         assert (
             agcu_defect_gen.defect_entries[
-                "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+                "Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"
             ].defect_supercell_site.specie.symbol
             == "Cu"
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].conv_cell_frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].conv_cell_frac_coords,
             np.array([0.0, 0.0, 0.375]),
             rtol=1e-2,
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.site.frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.site.frac_coords,
             np.array([0.375, 0.375, 0.375]),
             rtol=1e-2,
         )
@@ -1984,9 +1987,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def test_agcu(self):
         # test initialising with an intermetallic (where pymatgen oxidation state guessing fails)
-        agcu_defect_gen, output = self._generate_and_test_no_warnings(
-            self.agcu,
-        )
+        agcu_defect_gen, output = self._generate_and_test_no_warnings(self.agcu)
 
         assert self.agcu_defect_gen_info in output
 
