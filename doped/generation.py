@@ -159,16 +159,15 @@ def closest_site_info(defect_entry, n=1, element_list=None):
             for site in defect_entry.sc_entry.structure.sites
             if site.distance(defect_site) > 0.01
         ],
-        key=lambda x: (_custom_round(x[0], 4), element_list.index(x[1]), x[1]),
+        key=lambda x: (_custom_round(x[0]), element_list.index(x[1]), x[1]),
     )
 
-    # prune site_distances to remove any tuples with distances <0.02 Å greater than the previous
-    # entry:
+    # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
     site_distances = [
         site_distances[i]
         for i in range(len(site_distances))
         if i == 0
-        or site_distances[i][0] - site_distances[i - 1][0] > 0.02
+        or abs(site_distances[i][0] - site_distances[i - 1][0]) > 0.02
         or site_distances[i][1] != site_distances[i - 1][1]
     ]
 
@@ -177,7 +176,7 @@ def closest_site_info(defect_entry, n=1, element_list=None):
     return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_entry(defect_entry):
+def get_defect_name_from_entry(defect_entry, element_list=None):
     """
     Get the doped/SnB defect name from DefectEntry object.
     """
@@ -189,7 +188,7 @@ def get_defect_name_from_entry(defect_entry):
     sga = _get_sga(defect_diagonal_supercell)
     return (
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
-        f"_{closest_site_info(defect_entry)}"
+        f"_{closest_site_info(defect_entry, element_list=element_list)}"
     )
 
 
@@ -271,7 +270,7 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
-def name_defect_entries(defect_entries):
+def name_defect_entries(defect_entries, element_list=None):
     """
     Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
     objects, where the names are set according to the default doped algorithm;
@@ -301,16 +300,16 @@ def name_defect_entries(defect_entries):
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
             previous_entry = defect_naming_dict.pop(matching_names[0])
-            previous_entry_full_name = get_defect_name_from_entry(previous_entry)
+            previous_entry_full_name = get_defect_name_from_entry(previous_entry, element_list)
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
             defect_naming_dict[previous_entry_name] = previous_entry
 
         return defect_naming_dict
 
     def append_closest_site_info(name, entry, n):
-        return name + closest_site_info(entry, n=n)
+        return name + closest_site_info(entry, n=n, element_list=element_list)
 
-    def handle_multiple_matches(defect_naming_dict, full_defect_name, defect_entry):
+    def handle_multiple_matches(defect_naming_dict, full_defect_name, defect_entry, element_list=None):
         n = 2
         while True:
             for name in list(defect_naming_dict.keys()):
@@ -362,7 +361,7 @@ def name_defect_entries(defect_entries):
 
     defect_naming_dict = {}
     for defect_entry in defect_entries:
-        full_defect_name = get_defect_name_from_entry(defect_entry)
+        full_defect_name = get_defect_name_from_entry(defect_entry, element_list)
         split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
@@ -1288,7 +1287,7 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            named_defect_dict = name_defect_entries(defect_entry_list)
+            named_defect_dict = name_defect_entries(defect_entry_list, element_list=self._element_list)
             pbar.update(5)  # 95% of progress bar
             if not isinstance(pbar, MagicMock):
                 _pbar_increment_per_defect = max(
@@ -1820,9 +1819,23 @@ def _sort_defect_entries(defect_entries_dict, element_list=None):
                     defect_entries_dict.items(),
                     key=lambda s: (
                         s[1].defect.defect_type.value,
-                        element_list.index(_first_and_second_element(get_defect_name_from_entry(s[1]))[0]),
-                        element_list.index(_first_and_second_element(get_defect_name_from_entry(s[1]))[1]),
-                        get_defect_name_from_entry(s[1]),  # name without charge
+                        element_list.index(
+                            _first_and_second_element(
+                                get_defect_name_from_entry(
+                                    s[1],
+                                    element_list=element_list,
+                                )
+                            )[0]
+                        ),
+                        element_list.index(
+                            _first_and_second_element(
+                                get_defect_name_from_entry(
+                                    s[1],
+                                    element_list=element_list,
+                                )
+                            )[1]
+                        ),
+                        get_defect_name_from_entry(s[1], element_list=element_list),  # name without charge
                         s[1].charge_state,  # charge state
                     ),
                 )
