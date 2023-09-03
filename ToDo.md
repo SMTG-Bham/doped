@@ -143,12 +143,7 @@
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - `ShakeNBreak` related updates:
-  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
-    efficient than the `doped` version (which is already far more efficient than the original...) and
-    isn't available in current `pymatgen`.
-  - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
-    functions, `DefectSet` (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
-  - Should have quick scan through both codes to ensure no redundant/duplicate functions.
+  - Use doped naming conventions and functions and defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
