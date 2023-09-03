@@ -1161,6 +1161,29 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
         self._general_defect_gen_check(cdte_defect_gen)
 
+    def test_target_frac_coords(self):
+        defect_gen = DefectsGenerator(self.prim_cdte)
+        target_frac1_defect_gen = DefectsGenerator(self.prim_cdte, target_frac_coords=[0, 0, 0])
+        target_frac2_defect_gen = DefectsGenerator(self.prim_cdte, target_frac_coords=[0.15, 0.8, 0.777])
+
+        for i in [target_frac1_defect_gen, target_frac2_defect_gen]:
+            self._general_defect_gen_check(i)
+
+            for name, defect_entry in defect_gen.items():
+                # test equivalent supercell sites the same:
+                assert defect_entry.equivalent_supercell_sites == i[name].equivalent_supercell_sites
+
+                assert defect_entry.defect_supercell_site != i[name].defect_supercell_site
+
+                # test that the defect supercell site chosen is indeed the closest site to the target
+                # frac coords:
+                assert i[name].defect_supercell_site == min(
+                    i[name].equivalent_supercell_sites,
+                    key=lambda x: x.distance_and_image_from_frac_coords(
+                        i[name].defect_supercell_site.frac_coords
+                    )[0],
+                )
+
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
 
