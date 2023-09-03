@@ -159,7 +159,7 @@ def closest_site_info(defect_entry, n=1, element_list=None):
             for site in defect_entry.sc_entry.structure.sites
             if site.distance(defect_site) > 0.01
         ],
-        key=lambda x: (_custom_round(x[0], 2), element_list.index(x[1]), x[1]),
+        key=lambda x: (_custom_round(x[0], 4), element_list.index(x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances <0.02 Å greater than the previous
@@ -174,7 +174,7 @@ def closest_site_info(defect_entry, n=1, element_list=None):
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return f"{closest_site}{min_distance:.2f}"
+    return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
 def get_defect_name_from_entry(defect_entry):
