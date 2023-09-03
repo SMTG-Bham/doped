@@ -15,11 +15,11 @@ import numpy as np
 import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.utils import TopographyAnalyzer
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.util.string import unicodeify
+from shakenbreak.input import _get_voronoi_nodes
 from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
@@ -340,13 +340,7 @@ def defect_entry_from_paths(
                 voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
 
             except FileNotFoundError:  # first time parsing
-                topography = TopographyAnalyzer(
-                    bulk_supercell,
-                    bulk_supercell.symbol_set,
-                    [],
-                    check_volume=False,
-                )
-                voronoi_frac_coords = [voronoi_tuple[0] for voronoi_tuple in topography.labeled_sites]
+                voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
                 struc_and_node_dict = {
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,

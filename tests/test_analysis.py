@@ -283,7 +283,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "relatively small supercells!",
             )
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.734, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.725, atol=1e-3)  # -4.734 with old
+        # voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
