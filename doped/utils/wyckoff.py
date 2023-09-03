@@ -16,6 +16,7 @@ from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
+from pymatgen.util.coord import pbc_diff
 from sympy import Eq, simplify, solve, symbols
 
 
@@ -113,10 +114,18 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
     for symm_op in symm_ops:
         transformed_struct = struct_with_x.copy()
         transformed_struct.apply_operation(symm_op, fractional=True)
-        x_sites.append(transformed_struct[-1].to_unit_cell())
+        x_site = transformed_struct[-1].to_unit_cell()
+        # if pbc_diff norm is >0.01 for all other sites in x_sites, add x_site to x_sites:
+        if (
+            all(
+                np.linalg.norm(pbc_diff(x_site.frac_coords, other_x_site.frac_coords)) > 0.01
+                for other_x_site in x_sites
+            )
+            or not x_sites
+        ):
+            x_sites.append(x_site)
 
-    # Create a dictionary to store unique frac_coords and corresponding sites
-    return list({tuple(_vectorized_custom_round(site.frac_coords, 5)): site for site in x_sites}.values())
+    return x_sites
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
