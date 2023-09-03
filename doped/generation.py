@@ -34,9 +34,11 @@ from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.utils.wyckoff import (
+    _frac_coords_sort_func,
     _get_equiv_frac_coords_in_primitive,
     _rotate_and_get_supercell_matrix,
     _round_floats,
+    _vectorized_custom_round,
     get_BCS_conventional_structure,
     get_conv_cell_site,
     get_primitive_structure,
@@ -117,7 +119,7 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry, n=1, r=5):
+def closest_site_info(defect_entry, n=1):
     """
     Return the element and distance (rounded to 2 decimal places) of the
     closest site to defect_entry.sc_defect_frac_coords in
@@ -214,7 +216,8 @@ def _get_neutral_defect_entry(
             equiv_sites=True,
         )
         conv_cell_coord_list = [
-            np.mod(np.round(site.to_unit_cell().frac_coords, 4), 1) for site in conv_cell_sites
+            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.to_unit_cell().frac_coords), 1))
+            for site in conv_cell_sites
         ]
 
     except Exception as e:  # (slightly) less efficient algebraic matching:
@@ -223,11 +226,13 @@ def _get_neutral_defect_entry(
                 defect_entry=neutral_defect_entry,
                 wyckoff_dict=wyckoff_label_dict,
             )
+            conv_cell_coord_list = _vectorized_custom_round(
+                np.mod(_vectorized_custom_round(conv_cell_coord_list), 1)
+            ).tolist()
         except Exception as e2:
             raise e2 from e
 
     # sort array with _frac_coords_sort_func:
-    conv_cell_coord_list = np.round(conv_cell_coord_list, 4)
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
@@ -379,22 +384,6 @@ def herm2sch(herm_symbol):
     Convert from Hermann-Mauguin to Schoenflies.
     """
     return _HERM2SCH.get(herm_symbol, None)
-
-
-def _frac_coords_sort_func(coords):
-    """
-    Sorting function to apply on an iterable of fractional coordinates, where
-    entries are sorted by the number of x, y, z that are (almost) equal (i.e.
-    between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
-    x, y and z.
-    """
-    num_equals = sum(
-        np.isclose(coords[i], coords[j], atol=1e-3)
-        for i in range(len(coords))
-        for j in range(i + 1, len(coords))
-    )
-    magnitude = round(np.linalg.norm(coords), 4)
-    return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
