@@ -27,7 +27,6 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
 from tabulate import tabulate
 from tqdm import tqdm
@@ -37,6 +36,7 @@ from doped.utils.wyckoff import (
     _custom_round,
     _frac_coords_sort_func,
     _get_equiv_frac_coords_in_primitive,
+    _get_sga,
     _rotate_and_get_supercell_matrix,
     _round_floats,
     _vectorized_custom_round,
@@ -186,7 +186,7 @@ def get_defect_name_from_entry(defect_entry):
         dummy_species=_dummy_species,
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = SpacegroupAnalyzer(defect_diagonal_supercell, symprec=1e-2)
+    sga = _get_sga(defect_diagonal_supercell)
     return (
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
         f"_{closest_site_info(defect_entry)}"
@@ -882,9 +882,9 @@ class DefectsGenerator(MSONable):
         if interstitial_coords is not None:
             # if a single list or array, convert to list of lists
             self.interstitial_coords = (
-                [list(interstitial_coords)]
+                [interstitial_coords]
                 if not isinstance(interstitial_coords[0], (list, tuple, np.ndarray))
-                else [list(coords) for coords in interstitial_coords]  # ensure list of lists
+                else interstitial_coords  # ensure list of lists
             )
         else:
             self.interstitial_coords = []
@@ -917,7 +917,7 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
+            sga = _get_sga(self.structure)
 
             prim_struct = get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
@@ -1092,7 +1092,7 @@ class DefectsGenerator(MSONable):
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
                 # map interstitial coords to primitive structure, and get multiplicities
-                sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
+                sga = _get_sga(self.structure)
                 symm_ops = sga.get_symmetry_operations(cartesian=False)
                 self.prim_interstitial_coords = []
 
@@ -1183,9 +1183,7 @@ class DefectsGenerator(MSONable):
                     )
 
             self.defects["interstitials"] = []
-            ig = InterstitialGenerator(
-                self.interstitial_gen_kwargs.get("min_dist", 0.9)
-            )  # pmg defects default
+            ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
             cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
             for el in self._element_list:
                 inter_generator = ig.generate(
@@ -1197,6 +1195,19 @@ class DefectsGenerator(MSONable):
                 self.defects["interstitials"].extend(
                     [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
                 )
+
+                # check if any manually-specified interstitials were skipped due to min_dist and warn user:
+                if self.interstitial_coords and len(self.interstitial_coords) > len(
+                    self.defects["interstitials"]
+                ):
+                    warnings.warn(
+                        f"\nNote that some manually-specified interstitial sites were skipped due to "
+                        f"being too close to host lattice sites (minimum distance = `min_dist` = "
+                        f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some reason "
+                        f"you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
+                        f"Å), or just use the default Voronoi tessellation algorithm for generating "
+                        f"interstials (by not setting the `interstitial_coords` argument)."
+                    )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
@@ -1214,7 +1225,7 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
-            sga = SpacegroupAnalyzer(self.conventional_structure, symprec=1e-2)
+            sga = _get_sga(self.conventional_structure)
             symm_ops = sga.get_symmetry_operations(cartesian=False)
 
             # process defects into defect entries:
