@@ -25,7 +25,7 @@ from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
@@ -34,6 +34,7 @@ from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.utils.wyckoff import (
+    _custom_round,
     _frac_coords_sort_func,
     _get_equiv_frac_coords_in_primitive,
     _rotate_and_get_supercell_matrix,
@@ -119,27 +120,46 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry, n=1):
+def closest_site_info(defect_entry, n=1, element_list=None):
     """
     Return the element and distance (rounded to 2 decimal places) of the
     closest site to defect_entry.sc_defect_frac_coords in
     defect_entry.sc_entry.structure, with distance > 0.01 (i.e. so not the site
-    itself), and if there are multiple elements with the same distance, sort
-    alphabetically and return the first one.
+    itself), and if there are multiple elements with the same distance, sort by
+    order of appearance of elements in the composition, then alphabetically and
+    return the first one.
 
     If n is set, then it returns the nth closest site, where the nth site must be at least
     0.02 Å further away than the n-1th site.
     """
+    if element_list is None:
+        element_list = [  # host elements
+            el.symbol for el in defect_entry.defect.structure.composition.elements
+        ]
+        element_list += sorted(
+            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ]
+        )
+
+    # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
+    defect_site = (
+        defect_entry.defect_supercell_site
+        if hasattr(defect_entry, "defect_supercell_site")
+        else PeriodicSite("X", defect_entry.sc_defect_frac_coords, defect_entry.sc_entry.structure.lattice)
+    )
     site_distances = sorted(
         [
             (
-                site.distance_and_image_from_frac_coords(defect_entry.sc_defect_frac_coords)[0],
-                site,
+                site.distance(defect_site),
+                site.specie.symbol,
             )
             for site in defect_entry.sc_entry.structure.sites
-            if site.distance_and_image_from_frac_coords(defect_entry.sc_defect_frac_coords)[0] > 0.01
+            if site.distance(defect_site) > 0.01
         ],
-        key=lambda x: (round(x[0], 2), x[1].specie.symbol),
+        key=lambda x: (_custom_round(x[0], 2), element_list.index(x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances <0.02 Å greater than the previous
@@ -149,12 +169,12 @@ def closest_site_info(defect_entry, n=1):
         for i in range(len(site_distances))
         if i == 0
         or site_distances[i][0] - site_distances[i - 1][0] > 0.02
-        or site_distances[i][1].specie.symbol != site_distances[i - 1][1].specie.symbol
+        or site_distances[i][1] != site_distances[i - 1][1]
     ]
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return f"{closest_site.specie.symbol}{min_distance:.2f}"
+    return f"{closest_site}{min_distance:.2f}"
 
 
 def get_defect_name_from_entry(defect_entry):
