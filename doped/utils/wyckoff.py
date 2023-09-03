@@ -19,17 +19,65 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from sympy import Eq, simplify, solve, symbols
 
 
-def _round_floats(obj):
+def _round_floats(obj, places=5):
     """
-    Recursively round floats in a dictionary to 5 decimal places.
+    Recursively round floats in a dictionary to `places` decimal places.
     """
     if isinstance(obj, float):
-        return round(obj, 5) + 0.0
+        return _custom_round(obj, places) + 0.0
     if isinstance(obj, dict):
-        return {k: _round_floats(v) for k, v in obj.items()}
+        return {k: _round_floats(v, places) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [_round_floats(x) for x in obj]
+        return [_round_floats(x, places) for x in obj]
     return obj
+
+
+def _custom_round(number: float, decimals: int = 3):
+    """
+    Custom rounding function that rounds numbers to a specified number of
+    decimals, if that rounded number is within 0.15*10^(-decimals) of the
+    original number, else rounds to [decimals+1] decimals.
+
+    Primarily because float rounding with pymatgen/numpy
+    can give cell coordinates of 0.5001 instead of 0.5
+    etc, but also can have coordinates of e.g. 0.6125
+    that should not be rounded to 0.613.
+
+    Args:
+        number (float): The number to round
+        decimals (int):
+            The number of decimals to round to (default: 3)
+
+    Returns:
+        float: The rounded number
+    """
+    rounded_number = round(number, decimals)
+    if abs(rounded_number - number) < 0.15 * float(10) ** (-decimals):
+        return rounded_number
+
+    return round(number, decimals + 1)
+
+
+_vectorized_custom_round = np.vectorize(_custom_round)
+
+
+def _frac_coords_sort_func(coords):
+    """
+    Sorting function to apply on an iterable of fractional coordinates, where
+    entries are sorted by the number of x, y, z that are (almost) equal (i.e.
+    between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
+    x, y and z.
+    """
+    coords_for_sorting = _vectorized_custom_round(
+        np.mod(_vectorized_custom_round(coords), 1)
+    )  # to unit cell
+    num_equals = sum(
+        np.isclose(coords_for_sorting[i], coords_for_sorting[j], atol=1e-3)
+        for i in range(len(coords_for_sorting))
+        for j in range(i + 1, len(coords_for_sorting))
+    )
+    magnitude = _custom_round(np.linalg.norm(coords_for_sorting))
+    return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
@@ -51,7 +99,7 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
         x_sites.append(transformed_struct[-1].to_unit_cell())
 
     # Create a dictionary to store unique frac_coords and corresponding sites
-    return list({tuple(np.round(site.frac_coords, 4)): site for site in x_sites}.values())
+    return list({tuple(_vectorized_custom_round(site.frac_coords, 5)): site for site in x_sites}.values())
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
@@ -104,17 +152,14 @@ def _get_equiv_frac_coords_in_primitive(
     )
 
     prim_coord_list = [
-        np.mod(np.round(site.frac_coords, 4), 1)
+        _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
         for site in s2_really_like_s1.sites
         if site.specie.symbol == "X"
     ]
 
-    # sort with _frac_coords_sort_func
-    from doped.generation import _frac_coords_sort_func
-
-    return (
+    return (  # sort with _frac_coords_sort_func
         sorted(prim_coord_list, key=_frac_coords_sort_func)[0]
-        if not equiv_coords
+        if equiv_coords
         else sorted(prim_coord_list, key=_frac_coords_sort_func)[0],
         prim_coord_list,
     )
@@ -180,28 +225,30 @@ def _struc_sorting_func(struct):
     summed magnitude of all x coordinates, then y coordinates, then z
     coordinates.
     """
+    struct_for_sorting = Structure.from_dict(_round_floats(struct.as_dict(), 3))
+
     # get summed magnitudes of x=y=z coords:
-    matching_coords = struct.frac_coords[  # Find the coordinates where x = y = z:
-        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
-        & (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
+    matching_coords = struct_for_sorting.frac_coords[  # Find the coordinates where x = y = z:
+        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
+        & (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
     ]
     xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = struct.frac_coords[
-        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
-        | (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
-        | (struct.frac_coords[:, 0] == struct.frac_coords[:, 2])
+    matching_coords = struct_for_sorting.frac_coords[
+        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
+        | (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
+        | (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 2])
     ]
     xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     return (
-        np.sum(struct.frac_coords),
+        np.sum(struct_for_sorting.frac_coords),
         xyz_sum_magnitudes,
         xy_sum_magnitudes,
-        np.sum(struct.frac_coords[:, 0]),
-        np.sum(struct.frac_coords[:, 1]),
-        np.sum(struct.frac_coords[:, 2]),
+        np.sum(struct_for_sorting.frac_coords[:, 0]),
+        np.sum(struct_for_sorting.frac_coords[:, 1]),
+        np.sum(struct_for_sorting.frac_coords[:, 2]),
     )
 
 
@@ -400,7 +447,7 @@ def get_conv_cell_site(defect_entry):
     # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
     # initialisation)
     conv_cell_site.to_unit_cell()
-    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 4)
+    conv_cell_site.frac_coords = _vectorized_custom_round(conv_cell_site.frac_coords)
 
     return conv_cell_site
 
@@ -524,7 +571,8 @@ def get_wyckoff_label_and_equiv_coord_list(
                 # convert coords in subbed_coord_list to unit cell, by rounding to 5 decimal places and
                 # then modding by 1:
                 subbed_coord_list = [
-                    np.mod(np.round(coord_array, 4), 1) for coord_array in subbed_coord_list
+                    _vectorized_custom_round(np.mod(_vectorized_custom_round(coord_array, 5), 1))
+                    for coord_array in subbed_coord_list
                 ]
                 return label, subbed_coord_list
 
