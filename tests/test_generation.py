@@ -29,6 +29,7 @@ from pymatgen.util.coord import pbc_diff
 
 from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator
+from doped.utils.wyckoff import get_BCS_conventional_structure
 
 
 def if_present_rm(path):
@@ -95,7 +96,7 @@ Te_i_Td_Te2.83   [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
             """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Y          [-3,-2,-1,0,+1]     [0.000,0.000,0.334]  4e
-v_Ti         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.078]  4e
+v_Ti         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.079]  4e
 v_S          [-1,0,+1,+2]        [0.000,0.000,0.205]  4e
 v_O_C2v      [-1,0,+1,+2]        [0.000,0.500,0.099]  8g
 v_O_D4h      [-1,0,+1,+2]        [0.000,0.000,0.000]  2a
@@ -162,7 +163,7 @@ v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
 v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
 v_Ni         [-2,-1,0,+1]        [0.625,0.625,0.625]  4b
 v_O_C1       [-1,0,+1,+2]        [0.101,0.124,0.392]  24e
-v_O_C3       [-1,0,+1,+2]        [0.384,0.384,0.384]  8c
+v_O_C3       [-1,0,+1,+2]        [0.385,0.385,0.385]  8c
 
 Substitutions    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
@@ -1074,7 +1075,62 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         self.cdte_defect_gen_check(cdte_defect_gen)
         self._load_and_test_defect_gen_jsons(cdte_defect_gen)
 
-        # TODO: Expand!
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, interstitial_coords=[[0.5, 0.5, 0.5]], extrinsic={"Te": ["Se", "S"]}
+        )
+
+        assert self.cdte_defect_gen_info not in output
+
+        assert (
+            """Interstitials    Charge States          Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Cd_i_Td          [0,+1,+2]              [0.500,0.500,0.500]  4b
+Te_i_Td          [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
+S_i_Td           [-2,-1,0]              [0.500,0.500,0.500]  4b
+Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
+            in output
+        )  # now only Td
+        self._general_defect_gen_check(cdte_defect_gen)
+
+        # test with YTOS conventional cell input
+        ytos_interstitial_coords = [  # in conventional structure!
+            [0.000, 0.500, 0.184],  # C2v
+            [0.000, 0.000, 0.418],  # C4v_O1.92
+            [0.000, 0.000, 0.485],  # C4v_O2.68
+            [0.180, 0.180, 0.143],  # Cs_O1.71
+            [0.325, 0.325, 0.039],  # Cs_O1.95
+            [0.000, 0.500, 0.250],  # D2d
+        ]
+        ytos_conv_struc, _swap_array = get_BCS_conventional_structure(self.ytos_bulk_supercell)
+        ytos_defect_gen, output = self._generate_and_test_no_warnings(
+            ytos_conv_struc, interstitial_coords=ytos_interstitial_coords
+        )
+
+        assert self.ytos_defect_gen_info in output
+
+        # defect_gen_check changes defect_entries ordering, so save to json first:
+        self._save_defect_gen_jsons(ytos_defect_gen)
+        self.ytos_defect_gen_check(ytos_defect_gen)
+        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
+
+        # test with CdTe supercell input:
+        cdte_supercell_interstitial_coords = [
+            [0.3125, 0.4375, 0.4375],  # C3v
+            [0.375, 0.375, 0.375],  # Cd2.83
+            [0.25, 0.5, 0.5],  # Te2.83
+        ]
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.cdte_bulk_supercell, interstitial_coords=cdte_supercell_interstitial_coords
+        )
+
+        assert self.cdte_defect_gen_info in output
+
+        self._save_defect_gen_jsons(cdte_defect_gen)
+        self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        # TODO: Expand! Test with interstitial coords different to a Voronoi vertex
+        # TODO: Test with just one coords
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
