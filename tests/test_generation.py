@@ -1013,6 +1013,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # test defect entries
         assert len(cdte_se_defect_gen.defect_entries) == 72  # 22 more
 
+        # test warning when specifying an intrinsic element as extrinsic:
+        for extrinsic_arg in [
+            "Cd",
+            {"Te": "Cd"},
+            {
+                "Te": [
+                    "Cd",
+                ]
+            },
+            ["Cd"],
+        ]:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cdte_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                assert len(non_ignored_warnings) == 1
+                assert (
+                    "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
+                    "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
+                    in str(non_ignored_warnings[-1].message)
+                )
+
+        self.cdte_defect_gen_check(cdte_defect_gen)
+
     def test_processes(self):
         # first test setting processes with a small primitive cell (so it makes no difference):
         cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, processes=4)
