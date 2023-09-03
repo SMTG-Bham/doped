@@ -80,12 +80,29 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
+def _get_sga(struct, symprec=0.01):
+    """
+    Get a SpacegroupAnalyzer object of the input structure, dynamically
+    adjusting symprec if needs be.
+    """
+    sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
+    if sga.get_symmetry_dataset() is not None:
+        return sga
+
+    for trial_symprec in [0.1, 0.001, 1, 0.0001]:  # go one up first, then down, then criss-cross (cha cha)
+        sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)  # go one up first
+        if sga.get_symmetry_dataset() is not None:
+            return sga
+
+    raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
+
+
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
     if symm_ops is None:
-        sga = SpacegroupAnalyzer(struct)
+        sga = _get_sga(struct)
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
@@ -115,7 +132,7 @@ def _get_sga_with_all_X(struct, unique_sites):
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
-    return SpacegroupAnalyzer(struct_with_all_X)
+    return _get_sga(struct_with_all_X)
 
 
 def _get_equiv_frac_coords_in_primitive(
@@ -271,7 +288,7 @@ def get_primitive_structure(sga, ignored_species: Optional[list] = None):
     for _i in range(4):
         struct = sga.get_primitive_standard_structure()
         possible_prim_structs.append(struct)
-        sga = SpacegroupAnalyzer(struct, symprec=1e-2)
+        sga = _get_sga(struct, sga._symprec)  # use same symprec
 
     if ignored_species is not None:
         pruned_possible_prim_structs = [
@@ -308,7 +325,7 @@ def get_spglib_conv_structure(sga):
     for _i in range(4):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
-        sga = SpacegroupAnalyzer(sga.get_primitive_standard_structure(), symprec=1e-2)
+        sga = _get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
 
     possible_conv_structs_and_sgas = sorted(
         possible_conv_structs_and_sgas, key=lambda x: _struc_sorting_func(x[0])
@@ -339,7 +356,7 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     """
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
-    sga = SpacegroupAnalyzer(struc_wout_oxi, symprec=1e-2)
+    sga = _get_sga(struc_wout_oxi)
     conventional_structure, conv_sga = get_spglib_conv_structure(sga)
 
     wyckoff_label_dict = get_wyckoff_dict_from_sgn(conv_sga.get_space_group_number())
@@ -407,7 +424,7 @@ def get_conv_cell_site(defect_entry):
     prim_struct_with_X.remove_oxidation_states()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
-    sga = SpacegroupAnalyzer(bulk_prim_structure)
+    sga = _get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
@@ -530,7 +547,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                     "must be provided."
                 )
             # get sgn from primitive unit cell of bulk structure:
-            sgn = SpacegroupAnalyzer(defect_entry.defect.structure).get_space_group_number()
+            sgn = _get_sga(defect_entry.defect.structure).get_space_group_number()
 
         wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
 
