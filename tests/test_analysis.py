@@ -231,7 +231,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             assert self.general_delocalization_warning in str(w[2].message)
 
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.022, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.926, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -246,7 +246,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )  # no charge correction warning with iso dielectric, parsing from OUTCARs, but multiple
         # OUTCARs present -> warning
         # assert np.isclose(parsed_int_Te_2.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.221, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
 
         # test warning when only OUTCAR present but no core level info (ICORELEVEL != 0)
         shutil.move(
@@ -283,7 +283,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "relatively small supercells!",
             )
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.725, atol=1e-3)  # -4.734 with old
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff(), -4.771092998459437, atol=1e-3
+        )  # -4.734 with old
         # voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
@@ -660,18 +662,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             "to bulk_voronoi_sites.json to speed up future parsing."
         )
 
-        assert np.isclose(te_i_2_ent.get_ediff(), -6.221, atol=1e-3)
+        assert np.isclose(te_i_2_ent.get_ediff(), -6.2009, atol=1e-3)
         # assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
-        correction_dict = {
-            "kumagai_charge_correction": 0.8834518111049584,
-        }
+        correction_dict = {"kumagai_charge_correction": 0.9038318161163628}
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
 
         # assert auto-determined interstitial site is correct
-        # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
+        # initial position is: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
-            te_i_2_ent.defect_supercell_site.frac_coords, [0.9375, 0.9375, 0.6875]
+            te_i_2_ent.defect_supercell_site.frac_coords, [0.834511, 0.943944, 0.69776]
         )
 
         # run again to check parsing of previous Voronoi sites
@@ -707,17 +707,17 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                     charge_state=defect_charge,
                 )
 
-        assert np.isclose(te_cd_1_ent.get_ediff(), -2.665996, atol=1e-3)
+        assert np.isclose(te_cd_1_ent.get_ediff(), -2.6676, atol=1e-3)
         # assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
         correction_dict = {
-            "kumagai_charge_correction": 0.24005014473002428,
+            "kumagai_charge_correction": 0.23840982963691623,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_cd_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
-            te_cd_1_ent.defect_supercell_site.frac_coords, [0.5000, 0.5000, 0.5000]
+            te_cd_1_ent.defect_supercell_site.frac_coords, [0.475139, 0.475137, 0.524856]
         )
 
     def test_extrinsic_interstitial_defect_ID(self):
@@ -810,7 +810,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
+            int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords(
+                [-0.0005726049122470, -0.0001544430438804, 0.4780073657801472]
+            )[
+                0
+            ],  # relaxed site
             0.0,
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell

@@ -104,7 +104,7 @@ def get_defect_type_and_composition_diff(bulk, defect):
     structure.
 
     Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species.
+    extrinsic species and code efficiency/robustness improvements.
     """
     bulk_comp = bulk.composition.get_el_amt_dict()
     defect_comp = defect.composition.get_el_amt_dict()
@@ -133,10 +133,13 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     bulk, defect, defect_type, composition_diff, unique_tolerance=1
 ):
     """
-    Get the defect site and unrelaxed structure.
+    Get the defect site and unrelaxed structure, where "unrelaxed structure"
+    corresponds to the pristine defect supercell structure for
+    vacancies/substitutions, and the pristine bulk structure with the _final_
+    relaxed interstitial site for interstitials.
 
     Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species.
+    extrinsic species and code efficiency/robustness improvements.
     """
 
     def get_species_from_composition_diff(composition_diff, el_change):
@@ -381,24 +384,20 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     return min_dist_with_index
 
 
-def reorder_unrelaxed_structure(
-    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=2.0
-):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=2.0):
     """
-    Reset the position of a partially relaxed structure to its unrelaxed
-    positions.
+    Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
+    the atoms in s2_structure.
 
-    The template structure may have a different species ordering to the
-    `input_structure`.
+    s1/s2 structures may have a different species orderings.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
-    mapping = get_site_mapping_indices(initial_relax_structure, unrelaxed_structure, threshold=threshold)
+    mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
 
-    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (
-    # from the actual calculation)
-    reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
+    # Reorder s1_structure so that it matches the ordering of s2_structure
+    reordered_sites = [s1_structure[tmp[2]] for tmp in mapping]
     new_structure = Structure.from_sites(reordered_sites)
 
-    assert len(new_structure) == len(unrelaxed_structure)
+    assert len(new_structure) == len(s1_structure)
 
     return new_structure
