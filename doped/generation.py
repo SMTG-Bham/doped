@@ -1689,7 +1689,7 @@ class DefectsGenerator(MSONable):
             if value.defect not in self.defects[defects_key]:
                 self.defects[defects_key].append(value.defect)
         except ValueError as value_err:
-            if "You need at least one site to construct " not in value_err.args[0]:
+            if "You need at least" not in value_err.args[0]:
                 raise value_err
 
             # just test based on names instead
