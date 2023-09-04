@@ -231,7 +231,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             assert self.general_delocalization_warning in str(w[2].message)
 
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.022, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.926, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -246,7 +246,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )  # no charge correction warning with iso dielectric, parsing from OUTCARs, but multiple
         # OUTCARs present -> warning
         # assert np.isclose(parsed_int_Te_2.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.221, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
 
         # test warning when only OUTCAR present but no core level info (ICORELEVEL != 0)
         shutil.move(
@@ -283,7 +283,10 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "relatively small supercells!",
             )
         # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.734, atol=1e-3)
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff(), -4.771092998459437, atol=1e-3
+        )  # -4.734 with old
+        # voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -659,18 +662,16 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             "to bulk_voronoi_sites.json to speed up future parsing."
         )
 
-        assert np.isclose(te_i_2_ent.get_ediff(), -6.221, atol=1e-3)
+        assert np.isclose(te_i_2_ent.get_ediff(), -6.2009, atol=1e-3)
         # assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
-        correction_dict = {
-            "kumagai_charge_correction": 0.8834518111049584,
-        }
+        correction_dict = {"kumagai_charge_correction": 0.9038318161163628}
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
 
         # assert auto-determined interstitial site is correct
-        # should be: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
+        # initial position is: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
-            te_i_2_ent.defect_supercell_site.frac_coords, [0.9375, 0.9375, 0.6875]
+            te_i_2_ent.defect_supercell_site.frac_coords, [0.834511, 0.943944, 0.69776]
         )
 
         # run again to check parsing of previous Voronoi sites
@@ -706,17 +707,17 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                     charge_state=defect_charge,
                 )
 
-        assert np.isclose(te_cd_1_ent.get_ediff(), -2.665996, atol=1e-3)
+        assert np.isclose(te_cd_1_ent.get_ediff(), -2.6676, atol=1e-3)
         # assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
         correction_dict = {
-            "kumagai_charge_correction": 0.24005014473002428,
+            "kumagai_charge_correction": 0.23840982963691623,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_cd_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
-            te_cd_1_ent.defect_supercell_site.frac_coords, [0.5000, 0.5000, 0.5000]
+            te_cd_1_ent.defect_supercell_site.frac_coords, [0.475139, 0.475137, 0.524856]
         )
 
     def test_extrinsic_interstitial_defect_ID(self):
@@ -809,7 +810,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # assert auto-determined interstitial site is correct
         assert np.isclose(
-            int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0.4847])[0],
+            int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords(
+                [-0.0005726049122470, -0.0001544430438804, 0.4780073657801472]
+            )[
+                0
+            ],  # relaxed site
             0.0,
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell
@@ -912,6 +917,123 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert len(user_warnings) == 1
         assert warning_message in str(user_warnings[0].message)
         os.remove("bulk_voronoi_nodes.json")
+
+
+class ReorderedParsingTestCase(unittest.TestCase):
+    """
+    Test cases where the atoms bulk and defect supercells have been reordered
+    with respect to each other, but that site-matching and charge corrections
+    are still correctly performed.
+    """
+
+    def setUp(self):
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.cdte_corrections_dir = os.path.join(self.module_path, "data/charge_correction_tests/CdTe")
+        self.v_Cd_m2_path = f"{self.cdte_corrections_dir}/v_Cd_-2_vasp_gam"
+        self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+
+    def test_parsing_cdte(self):
+        """
+        Test parsing CdTe bulk vasp_gam example.
+        """
+        parsed_v_cd_m2 = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        uncorrected_energy = 7.4475896
+        assert np.isclose(
+            parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()),
+            uncorrected_energy,
+            atol=1e-3,
+        )
+
+    def test_kumagai_order(self):
+        """
+        Test Kumagai defect correction parser can handle mismatched atomic
+        orders.
+        """
+        parsed_v_cd_m2_orig = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        parsed_v_cd_m2_alt = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        # should use Kumagai correction by default when OUTCARs available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
+        )
+
+        # test where the ordering is all over the shop; v_Cd_-2 POSCAR with a Te atom, then 31 randomly
+        # ordered Cd atoms, then 31 randomly ordered Te atoms:
+        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+            defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        # should use Kumagai correction by default when OUTCARs available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
+        )
+
+    def test_freysoldt_order(self):
+        """
+        Test Freysoldt defect correction parser can handle mismatched atomic
+        orders.
+        """
+        shutil.move(f"{self.v_Cd_m2_path}/OUTCAR.gz", f"{self.v_Cd_m2_path}/hidden_otcr.gz")  # use FNV
+        parsed_v_cd_m2_orig = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        parsed_v_cd_m2_alt = defect_entry_from_paths(
+            defect_path=self.v_Cd_m2_path,
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam_alt",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        shutil.move(f"{self.v_Cd_m2_path}/hidden_otcr.gz", f"{self.v_Cd_m2_path}/OUTCAR.gz")  # move back
+
+        # should use Freysoldt correction by default when OUTCARs not available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt.corrections.values())
+        )
+
+        # test where the ordering is all over the shop; v_Cd_-2 POSCAR with a Te atom, then 31 randomly
+        # ordered Cd atoms, then 31 randomly ordered Te atoms:
+        shutil.move(
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
+        )  # use FNV
+        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+            defect_path=f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
+            bulk_path=f"{self.cdte_corrections_dir}/bulk_vasp_gam",
+            dielectric=self.cdte_dielectric,
+            charge_state=-2,
+        )
+        shutil.move(
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
+            f"{self.cdte_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
+        )  # move back
+
+        # should use Freysoldt correction by default when OUTCARs not available
+        assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
+        assert np.isclose(
+            sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
+        )
 
 
 if __name__ == "__main__":

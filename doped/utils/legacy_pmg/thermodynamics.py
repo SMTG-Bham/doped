@@ -203,7 +203,14 @@ class DefectPhaseDiagram(MSONable):
         """
         # Old pymatgen defect-matching code: # TODO: Reconsider this approach. For now, we group based
         #  on defect entry names (which themselves should contain the information on inequivalent (
-        #  initial) defect sites)
+        #  initial) defect sites). Could match based on the entry.defect objects as was done before,
+        #  if we had a reliable way of parsing these (but in a far more efficient way than before,
+        #  just checking that the structure and site are the same rather than the old,
+        #  slow PointDefectComparator; Bonan did this via hashing to avoid the old approach (see
+        #  archived branch, but I think with updated comparisons this is unnecessary).
+        # TODO: Should have an adjustable site-displacement tolerance for matching and grouping entries?
+        #  Along with option to just group all defects of the same type and only show the lowest energy
+        #  state (equivalent to setting this displacement tolerance to infinity).
         # def similar_defects(entryset):
         #     """
         #     Used for grouping similar defects of different charges
