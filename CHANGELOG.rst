@@ -1,6 +1,15 @@
 Change Log
 ==========
 
+v.2.0.4
+----------
+- Add supercell re-ordering tests for parsing
+- Ensure final _relaxed_ defect site (for interstitials and substitutions) is used for finite-size
+  charge corrections
+- Consolidate functions and input sets with `ShakeNBreak`
+- Update defect generation tests
+- Use more efficient Wyckoff determination code
+
 v.2.0.3
 ----------
 - Sort defect entries in ``DefectPhaseDiagram`` for deterministic behaviour (particularly for plotting).
