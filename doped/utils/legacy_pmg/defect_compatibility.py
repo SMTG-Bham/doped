@@ -117,7 +117,7 @@ class DefectCompatibility(MSONable):
         """
         for struct_key in [
             "bulk_sc_structure",
-            "initial_defect_structure",
+            "guessed_initial_defect_structure",
             "final_defect_structure",
         ]:
             if struct_key in defect_entry.calculation_metadata and isinstance(
@@ -155,13 +155,14 @@ class DefectCompatibility(MSONable):
         else:
             logger.info("Could not use any charge correction because insufficient metadata was supplied.")
 
-        if self.use_bandfilling and "bandfilling_meta" in defect_entry.calculation_metadata:
-            bfc_corr = defect_entry.calculation_metadata["bandfilling_meta"]["bandfilling_correction"]
-            defect_entry.corrections["bandfilling_correction"] = bfc_corr
-        elif self.use_bandfilling:
-            logger.info(
-                "Could not use band filling correction because insufficient metadata was supplied."
-            )
+        if self.use_bandfilling:
+            if "bandfilling_meta" in defect_entry.calculation_metadata:
+                bfc_corr = defect_entry.calculation_metadata["bandfilling_meta"]["bandfilling_correction"]
+                defect_entry.corrections["bandfilling_correction"] = bfc_corr
+            else:
+                logger.info(
+                    "Could not use band filling correction because insufficient metadata was supplied."
+                )
 
         if isinstance(defect_entry.calculation_metadata["vbm"], float) and isinstance(
             defect_entry.calculation_metadata["cbm"], float
@@ -195,7 +196,8 @@ class DefectCompatibility(MSONable):
             "axis_grid",
             "bulk_planar_averages",
             "defect_planar_averages",
-            "initial_defect_structure",
+            # "unrelaxed_defect_structure", or if not present use guessed_initial_defect_structure,
+            # or defect_structure, or final_defect_structure
         ]
         run_freysoldt = len(
             set(defect_entry.calculation_metadata.keys()).intersection(required_frey_params)
@@ -211,7 +213,8 @@ class DefectCompatibility(MSONable):
             "bulk_atomic_site_averages",
             "defect_atomic_site_averages",
             "site_matching_indices",
-            "initial_defect_structure",
+            # "unrelaxed_defect_structure", or if not present use guessed_initial_defect_structure,
+            # or defect_structure, or final_defect_structure
         ]
         run_kumagai = len(
             set(defect_entry.calculation_metadata.keys()).intersection(required_kumagai_params)
@@ -405,7 +408,7 @@ class DefectCompatibility(MSONable):
 
         req_struct_delocal_params = [
             "final_defect_structure",
-            "initial_defect_structure",
+            "guessed_initial_defect_structure",
             "sampling_radius",
             "defect_frac_sc_coords",
         ]
@@ -529,7 +532,7 @@ class DefectCompatibility(MSONable):
         same way.
         """
         structure_relax_analyze_meta = {}
-        initial_defect_structure = defect_entry.calculation_metadata["initial_defect_structure"]
+        initial_defect_structure = defect_entry.calculation_metadata["guessed_initial_defect_structure"]
         final_defect_structure = defect_entry.calculation_metadata["final_defect_structure"]
         radius_to_sample = defect_entry.calculation_metadata["sampling_radius"]
         def_frac_coords = defect_entry.calculation_metadata["defect_frac_sc_coords"]
@@ -556,7 +559,8 @@ class DefectCompatibility(MSONable):
 
         if defindex is None and not isinstance(defect_entry.defect, Vacancy):
             raise ValueError(
-                "fractional coordinate for defect could not be identified in initial_defect_structure"
+                "fractional coordinate for defect could not be identified in "
+                "guessed_initial_defect_structure"
             )
 
         distdata.sort()

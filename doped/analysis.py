@@ -35,7 +35,7 @@ from doped.utils.parsing import (
     get_locpot,
     get_outcar,
     get_vasprun,
-    reorder_unrelaxed_structure,
+    reorder_s1_like_s2,
 )
 from doped.vasp import DefectDictSet
 
@@ -168,8 +168,9 @@ def defect_entry_from_paths(
             from the defect calculation outputs (requires `POTCAR`s to be set up
             with `pymatgen`).
         initial_defect_structure (str):
-            Path to the unrelaxed defect structure, if structure matching with the
-            relaxed defect structure(s) fails (rarely required). Default is None.
+            Path to the initial/unrelaxed defect structure. Only recommended for use
+            if structure matching with the relaxed defect structure(s) fails (rare).
+            Default is None.
         skip_corrections (bool):
             Whether to skip the calculation and application of finite-size charge
             corrections to the defect energy (not recommended in most cases).
@@ -272,26 +273,23 @@ def defect_entry_from_paths(
             "Please manually specify defect charge using the `charge_state` argument."
         )
 
-    # Can specify initial defect structure (to help PyCDT find the defect site if
-    # multiple relaxations were required, else use from defect relaxation OUTCAR:
+    # Add defect structure to calculation_metadata, so it can be pulled later on (eg. for Kumagai loader)
+    defect_structure = defect_vr.final_structure.copy()
+    calculation_metadata["defect_structure"] = defect_structure
+
+    # identify defect site, structural information, and create defect object:
+    # Can specify initial defect structure (to help find the defect site if
+    # multiple relaxations were required, else use from defect relaxation OUTCAR):
     if initial_defect_structure:
-        initial_defect_structure = Poscar.from_file(initial_defect_structure).structure.copy()
+        defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
     else:
-        initial_defect_structure = defect_vr.initial_structure.copy()
-
-    # Add initial defect structure to calculation_metadata, so it can be pulled later on
-    # (eg. for Kumagai loader)
-    calculation_metadata["initial_defect_structure"] = initial_defect_structure
-
-    # identify defect site, structural information, and create defect object
+        defect_structure_for_ID = defect_structure.copy()
     try:
-        def_type, comp_diff = get_defect_type_and_composition_diff(
-            bulk_supercell, initial_defect_structure
-        )
+        def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_structure_for_ID)
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
-            f"{len(bulk_supercell)} in bulk vs. {len(initial_defect_structure)} in defect?"
+            f"{len(bulk_supercell)} in bulk vs. {len(defect_structure_for_ID)} in defect?"
         ) from exc
 
     # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
@@ -301,7 +299,7 @@ def defect_entry_from_paths(
             defect_site_idx,
             unrelaxed_defect_structure,
         ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_supercell, initial_defect_structure, def_type, comp_diff
+            bulk_supercell, defect_structure_for_ID, def_type, comp_diff
         )
 
     except RuntimeError as exc:
@@ -311,17 +309,15 @@ def defect_entry_from_paths(
         ) from exc
 
     if def_type == "vacancy":
-        defect_site = bulk_supercell[bulk_site_idx]
+        defect_site = guessed_initial_defect_site = bulk_supercell[bulk_site_idx]
     else:
-        if unrelaxed_defect_structure:
-            defect_site = unrelaxed_defect_structure[defect_site_idx]
-        else:
-            defect_site = initial_defect_structure[defect_site_idx]
+        defect_site = defect_structure_for_ID[defect_site_idx]
+        guessed_initial_defect_site = unrelaxed_defect_structure[defect_site_idx]
 
     if unrelaxed_defect_structure:
         if def_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is
-            # likely to be the initial interstitial site
+            # likely to be the _initial_ interstitial site
             try:
                 struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
                 if not StructureMatcher(
@@ -356,22 +352,27 @@ def defect_entry_from_paths(
                 voronoi_frac_coords,
                 key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
             )
-            int_site = unrelaxed_defect_structure[defect_site_idx]
-            unrelaxed_defect_structure.remove_sites([defect_site_idx])
-            unrelaxed_defect_structure.insert(
+            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+            int_site = guessed_initial_defect_structure[defect_site_idx]
+            guessed_initial_defect_structure.remove_sites([defect_site_idx])
+            guessed_initial_defect_structure.insert(
                 defect_site_idx,  # Place defect at same position as in DFT calculation
                 int_site.species_string,
                 closest_node_frac_coords,
                 coords_are_cartesian=False,
                 validate_proximity=True,
             )
-            defect_site = unrelaxed_defect_structure[defect_site_idx]
+            guessed_initial_defect_site = guessed_initial_defect_structure[defect_site_idx]
 
-        # Use the unrelaxed_defect_structure to fix the initial defect structure
-        initial_defect_structure = reorder_unrelaxed_structure(
-            unrelaxed_defect_structure, initial_defect_structure
+        else:
+            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+
+        # ensure unrelaxed_defect_structure ordered to match defect_structure, for appropriate charge
+        # correction mapping
+        unrelaxed_defect_structure = reorder_s1_like_s2(
+            unrelaxed_defect_structure, defect_structure_for_ID
         )
-        calculation_metadata["initial_defect_structure"] = initial_defect_structure
+        calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
         calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
     else:
         warnings.warn(
@@ -383,7 +384,7 @@ def defect_entry_from_paths(
         "@module": "doped.core",
         "@class": def_type.capitalize(),
         "structure": bulk_supercell,
-        "site": defect_site,
+        "site": guessed_initial_defect_site,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be tricky for this...
@@ -397,12 +398,12 @@ def defect_entry_from_paths(
         if not StructureMatcher(
             stol=0.05,
             comparator=ElementComparator(),
-        ).fit(test_defect_structure, unrelaxed_defect_structure):
+        ).fit(test_defect_structure, guessed_initial_defect_structure):
             warnings.warn(
                 f"Possible error in defect object matching. Determined defect: {defect.name} for defect "
                 f"at {defect_path} in bulk at {bulk_path} but unrelaxed structure (1st below) does not "
                 f"match defect.get_supercell_structure() (2nd below):"
-                f"\n{unrelaxed_defect_structure}\n{test_defect_structure}"
+                f"\n{guessed_initial_defect_structure}\n{test_defect_structure}"
             )
 
     defect_entry = DefectEntry(
@@ -413,7 +414,7 @@ def defect_entry_from_paths(
         sc_defect_frac_coords=defect_site.frac_coords,
         bulk_entry=bulk_vr.get_computed_entry(),
         # doped attributes:
-        defect_supercell_site=defect_site,  # TODO: this is initial defect site; should be relaxed site?
+        defect_supercell_site=defect_site,
         defect_supercell=defect_vr.final_structure,
         bulk_supercell=bulk_vr.final_structure,
         calculation_metadata=calculation_metadata,
@@ -1029,8 +1030,8 @@ class DefectParser:
             from the defect calculation outputs (requires POTCARs to be set up with
             `pymatgen`).
         initial_defect_structure (str):
-            Path to the unrelaxed defect structure, if structure matching with the
-            relaxed defect structure(s) fails.
+            Path to the initial/unrelaxed defect structure. Only recommended for use
+            if structure matching with the relaxed defect structure(s) fails.
         skip_corrections (bool):
             Whether to skip the calculation of finite-size charge corrections for the
             DefectEntry.
@@ -1118,14 +1119,6 @@ class DefectParser:
                 "defect_frac_sc_coords": self.defect_entry.sc_defect_frac_coords,
             }
         )
-        if "unrelaxed_defect_structure" in self.defect_entry.calculation_metadata:
-            self.defect_entry.calculation_metadata.update(
-                {
-                    "initial_defect_structure": self.defect_entry.calculation_metadata[
-                        "unrelaxed_defect_structure"
-                    ],
-                }
-            )
 
     def kumagai_loader(self, bulk_outcar=None):
         """
@@ -1192,11 +1185,11 @@ class DefectParser:
         bulk_structure = self.defect_entry.bulk_entry.structure
         bulksites = [site.frac_coords for site in bulk_structure]
 
-        defect_structure = self.defect_entry.calculation_metadata["initial_defect_structure"]
+        defect_structure = self.defect_entry.calculation_metadata["unrelaxed_defect_structure"]
         initsites = [site.frac_coords for site in defect_structure]
 
         distmatrix = bulk_structure.lattice.get_all_distances(
-            bulksites, initsites
+            bulksites, initsites  # TODO: Should be able to take this from the defect ID functions?
         )  # first index of this list is bulk index
         min_dist_with_index = [
             [
