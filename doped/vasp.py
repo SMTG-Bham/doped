@@ -245,13 +245,6 @@ class DefectDictSet(DictSet):
         return Poscar(self.structure, comment=self.poscar_comment)
 
     @property
-    def structure(self):
-        """
-        :return: pymatgen Structure.
-        """
-        return self._structure
-
-    @property
     def kpoints(self):
         """
         Return kpoints object with comment.

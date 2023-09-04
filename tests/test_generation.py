@@ -29,6 +29,7 @@ from pymatgen.util.coord import pbc_diff
 
 from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator
+from doped.utils.wyckoff import get_BCS_conventional_structure
 
 
 def if_present_rm(path):
@@ -121,28 +122,28 @@ O_S              [-1,0,+1]                    [0.000,0.000,0.205]  4e
 Interstitials    Charge States          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Y_i_C2v          [0,+1,+2,+3]           [0.000,0.500,0.184]  8g
-Y_i_C4v_O1.92    [0,+1,+2,+3]           [0.000,0.000,0.418]  4e
 Y_i_C4v_O2.68    [0,+1,+2,+3]           [0.000,0.000,0.485]  4e
-Y_i_Cs_O1.71     [0,+1,+2,+3]           [0.180,0.180,0.143]  16m
-Y_i_Cs_O1.95     [0,+1,+2,+3]           [0.325,0.325,0.039]  16m
+Y_i_C4v_Y1.92    [0,+1,+2,+3]           [0.000,0.000,0.418]  4e
+Y_i_Cs_S1.71     [0,+1,+2,+3]           [0.180,0.180,0.143]  16m
+Y_i_Cs_Ti1.95    [0,+1,+2,+3]           [0.325,0.325,0.039]  16m
 Y_i_D2d          [0,+1,+2,+3]           [0.000,0.500,0.250]  4d
 Ti_i_C2v         [0,+1,+2,+3,+4]        [0.000,0.500,0.184]  8g
-Ti_i_C4v_O1.92   [0,+1,+2,+3,+4]        [0.000,0.000,0.418]  4e
 Ti_i_C4v_O2.68   [0,+1,+2,+3,+4]        [0.000,0.000,0.485]  4e
-Ti_i_Cs_O1.71    [0,+1,+2,+3,+4]        [0.180,0.180,0.143]  16m
-Ti_i_Cs_O1.95    [0,+1,+2,+3,+4]        [0.325,0.325,0.039]  16m
+Ti_i_C4v_Y1.92   [0,+1,+2,+3,+4]        [0.000,0.000,0.418]  4e
+Ti_i_Cs_S1.71    [0,+1,+2,+3,+4]        [0.180,0.180,0.143]  16m
+Ti_i_Cs_Ti1.95   [0,+1,+2,+3,+4]        [0.325,0.325,0.039]  16m
 Ti_i_D2d         [0,+1,+2,+3,+4]        [0.000,0.500,0.250]  4d
 S_i_C2v          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.184]  8g
-S_i_C4v_O1.92    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.418]  4e
 S_i_C4v_O2.68    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.485]  4e
-S_i_Cs_O1.71     [-2,-1,0,+1,+2,+3,+4]  [0.180,0.180,0.143]  16m
-S_i_Cs_O1.95     [-2,-1,0,+1,+2,+3,+4]  [0.325,0.325,0.039]  16m
+S_i_C4v_Y1.92    [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.418]  4e
+S_i_Cs_S1.71     [-2,-1,0,+1,+2,+3,+4]  [0.180,0.180,0.143]  16m
+S_i_Cs_Ti1.95    [-2,-1,0,+1,+2,+3,+4]  [0.325,0.325,0.039]  16m
 S_i_D2d          [-2,-1,0,+1,+2,+3,+4]  [0.000,0.500,0.250]  4d
 O_i_C2v          [-2,-1,0]              [0.000,0.500,0.184]  8g
-O_i_C4v_O1.92    [-2,-1,0]              [0.000,0.000,0.418]  4e
 O_i_C4v_O2.68    [-2,-1,0]              [0.000,0.000,0.485]  4e
-O_i_Cs_O1.71     [-2,-1,0]              [0.180,0.180,0.143]  16m
-O_i_Cs_O1.95     [-2,-1,0]              [0.325,0.325,0.039]  16m
+O_i_C4v_Y1.92    [-2,-1,0]              [0.000,0.000,0.418]  4e
+O_i_Cs_S1.71     [-2,-1,0]              [0.180,0.180,0.143]  16m
+O_i_Cs_Ti1.95    [-2,-1,0]              [0.325,0.325,0.039]  16m
 O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -156,7 +157,8 @@ O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
             "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 197 defect "
             "entries created."
         )
-        self.lmno_defect_gen_info_pt1 = """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
+        self.lmno_defect_gen_info = (
+            """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
 v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
@@ -181,47 +183,9 @@ Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.385,0.385,0.385]  8c
 O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
-"""
 
-        self.lmno_defect_gen_info_interstitials = (
-            "Interstitials        Charge States    Conv. Cell "
-            "Coords    Wyckoff\n"
-            """-------------------  ---------------  -------------------  ---------
-Li_i_C1_Li1.75       [0,+1]           [0.199,0.303,0.444]  24e
-Li_i_C1_O1.72        [0,+1]           [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78        [0,+1]           [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.84O1.84  [0,+1]           [0.073,0.177,0.125]  12d
-Li_i_C2_Li1.84O1.94  [0,+1]           [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [0,+1]           [0.086,0.375,0.336]  12d
-Li_i_C3              [0,+1]           [0.497,0.497,0.497]  8c
-Mn_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Mn_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
-Mn_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Mn_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-Ni_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Ni_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
-Ni_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Ni_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-O_i_C1_Li1.75        [-2,-1,0]        [0.199,0.303,0.444]  24e
-O_i_C1_O1.72         [-2,-1,0]        [0.248,0.480,0.249]  24e
-O_i_C1_O1.78         [-2,-1,0]        [0.017,0.261,0.250]  24e
-O_i_C2_Li1.84O1.84   [-2,-1,0]        [0.073,0.177,0.125]  12d
-O_i_C2_Li1.84O1.94   [-2,-1,0]        [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [-2,-1,0]        [0.086,0.375,0.336]  12d
-O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
-\n"""
-        )
-
-        self.lmno_defect_gen_info_interstitials_GH = (
-            "Interstitials    Charge States    Conv. Cell "
-            "Coords    Wyckoff\n"
-            """---------------  ---------------  -------------------  ---------
+Interstitials    Charge States    Conv. Cell Coords    Wyckoff
+---------------  ---------------  -------------------  ---------
 Li_i_C1_Li1.75   [0,+1]           [0.199,0.303,0.444]  24e
 Li_i_C1_O1.72    [0,+1]           [0.248,0.480,0.249]  24e
 Li_i_C1_O1.78    [0,+1]           [0.017,0.261,0.250]  24e
@@ -251,9 +215,6 @@ O_i_C2_Li1.84    [-2,-1,0]        [0.151,0.375,0.401]  12d
 O_i_C2_Li1.86    [-2,-1,0]        [0.086,0.375,0.336]  12d
 O_i_C3           [-2,-1,0]        [0.497,0.497,0.497]  8c
 \n"""
-        )
-
-        self.lmno_defect_gen_info_final = (
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
@@ -333,12 +294,12 @@ Ag_Cu            [-1,0,+1]        [0.000,0.000,0.000]  3a
 
 Interstitials                 Charge States    Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------  -------------------  ---------
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1,+2]        [0.000,0.000,0.125]  6c
-Cu_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1,+2]        [0.000,0.000,0.375]  6c
-Cu_i_C3v_Ag1.80               [0,+1,+2]        [0.000,0.000,0.250]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99a  [0,+1]           [0.000,0.000,0.125]  6c
-Ag_i_C3v_Ag1.56Cu1.56Ag2.99b  [0,+1]           [0.000,0.000,0.375]  6c
-Ag_i_C3v_Ag1.80               [0,+1]           [0.000,0.000,0.250]  6c
+Cu_i_C3v_Cu1.56Ag1.56Cu2.99a  [0,+1,+2]        [0.000,0.000,0.125]  6c
+Cu_i_C3v_Cu1.56Ag1.56Cu2.99b  [0,+1,+2]        [0.000,0.000,0.375]  6c
+Cu_i_C3v_Cu1.80               [0,+1,+2]        [0.000,0.000,0.250]  6c
+Ag_i_C3v_Cu1.56Ag1.56Cu2.99a  [0,+1]           [0.000,0.000,0.125]  6c
+Ag_i_C3v_Cu1.56Ag1.56Cu2.99b  [0,+1]           [0.000,0.000,0.375]  6c
+Ag_i_C3v_Cu1.80               [0,+1]           [0.000,0.000,0.250]  6c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of AgCu.\n"
@@ -397,8 +358,8 @@ Te_Cd_Cs_Te2.83Cd4.62Te5.42c  [-2,-1,0,+1]     [0.167,0.083,0.333]  9b
 
 Interstitials                Charge States    Conv. Cell Coords    Wyckoff
 ---------------------------  ---------------  -------------------  ---------
-Cd_i_C1_Cd2.71Te2.71Cd4.01a  [0,+1,+2]        [0.458,0.167,0.104]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.01b  [0,+1,+2]        [0.167,0.458,0.271]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00a  [0,+1,+2]        [0.458,0.167,0.104]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00b  [0,+1,+2]        [0.167,0.458,0.271]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25a  [0,+1,+2]        [0.250,0.250,0.188]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25b  [0,+1,+2]        [0.125,0.125,0.438]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25c  [0,+1,+2]        [0.375,0.375,0.438]  18c
@@ -444,8 +405,8 @@ Cd_i_Cs_Te2.83Cd3.27Te5.42b  [0,+1,+2]        [0.500,0.250,0.250]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42c  [0,+1,+2]        [0.500,0.500,0.250]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42d  [0,+1,+2]        [0.500,0.500,0.750]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42e  [0,+1,+2]        [0.750,0.250,0.750]  9b
-Te_i_C1_Cd2.71Te2.71Cd4.01a  [-2,-1,0]        [0.458,0.167,0.104]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.01b  [-2,-1,0]        [0.167,0.458,0.271]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.00a  [-2,-1,0]        [0.458,0.167,0.104]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.00b  [-2,-1,0]        [0.167,0.458,0.271]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25a  [-2,-1,0]        [0.250,0.250,0.188]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25b  [-2,-1,0]        [0.125,0.125,0.438]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25c  [-2,-1,0]        [0.375,0.375,0.438]  18c
@@ -498,8 +459,9 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             "standard structure, for which doped uses the spglib convention."
         )
 
-        # TODO: test all input parameters; extrinsic, interstitial_coords, interstitial/supercell gen
-        #  kwargs, target_frac_coords, charge_state_gen_kwargs setting... test all set as attributes
+        # TODO: test all input parameters set as attributes; extrinsic, interstitial_coords,
+        #  interstitial/supercell gen kwargs, target_frac_coords, charge_state_gen_kwargs setting...
+        # TODO: test charge_state_gen_kwargs, supercell_gen_kwargs
         # TODO: test Zn3P2 (and Sb2Se3)? Important test case(s) for charge state setting and Wyckoff
         #  handling (once charge state setting algorithm finalised a bit more)
 
@@ -625,7 +587,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             axis=1,
         )
         min_dist = min(distance_matrix[distance_matrix > 0.01])
-        assert min_dist > 0.9  # default min_dist = 0.9
+        assert min_dist > defect_gen.interstitial_gen_kwargs.get("min_dist", 0.9)  # default min_dist = 0.9
         for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
             distance_matrix = np.linalg.norm(
                 np.dot(
@@ -667,7 +629,10 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
         assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
         for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-            assert equiv_conv_cell_frac_coords in defect_entry.defect.equiv_conv_cell_frac_coords
+            assert any(
+                np.array_equal(equiv_conv_cell_frac_coords, x)
+                for x in defect_entry.defect.equiv_conv_cell_frac_coords
+            )
         assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
             len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
         )
@@ -1048,6 +1013,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # test defect entries
         assert len(cdte_se_defect_gen.defect_entries) == 72  # 22 more
 
+        # test warning when specifying an intrinsic element as extrinsic:
+        for extrinsic_arg in [
+            "Cd",
+            {"Te": "Cd"},
+            {
+                "Te": [
+                    "Cd",
+                ]
+            },
+            ["Cd"],
+        ]:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cdte_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
+                non_ignored_warnings = [
+                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                assert len(non_ignored_warnings) == 1
+                assert (
+                    "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
+                    "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
+                    in str(non_ignored_warnings[-1].message)
+                )
+
+        self.cdte_defect_gen_check(cdte_defect_gen)
+
     def test_processes(self):
         # first test setting processes with a small primitive cell (so it makes no difference):
         cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, processes=4)
@@ -1060,6 +1051,133 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         )
         assert self.ytos_defect_gen_info in output
         self.ytos_defect_gen_check(ytos_defect_gen)
+
+    def test_interstitial_coords(self):
+        # first test that specifying the default interstitial coords for CdTe gives the same result as
+        # default:
+        cdte_interstitial_coords = [
+            [0.625, 0.625, 0.625],  # C3v
+            [0.750, 0.750, 0.750],  # Cd2.83
+            [0.500, 0.500, 0.500],  # Te2.83
+        ]
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, interstitial_coords=cdte_interstitial_coords
+        )
+
+        assert self.cdte_defect_gen_info in output
+
+        # defect_gen_check changes defect_entries ordering, so save to json first:
+        self._save_defect_gen_jsons(cdte_defect_gen)
+        self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, interstitial_coords=[[0.5, 0.5, 0.5]], extrinsic={"Te": ["Se", "S"]}
+        )
+
+        assert self.cdte_defect_gen_info not in output
+
+        assert (
+            """Interstitials    Charge States          Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Cd_i_Td          [0,+1,+2]              [0.500,0.500,0.500]  4b
+Te_i_Td          [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
+S_i_Td           [-2,-1,0]              [0.500,0.500,0.500]  4b
+Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
+            in output
+        )  # now only Td
+        self._general_defect_gen_check(cdte_defect_gen)
+
+        # test with YTOS conventional cell input
+        ytos_interstitial_coords = [  # in conventional structure! subset of Voronoi vertices
+            [0, 0.5, 0.18377232],  # C2v
+            [0, 0, 0.48467759],  # C4v_O2.68
+            [0, 0, 0.41783323],  # C4v_Y1.92
+            [0, 0.5, 0.25],  # D2d
+        ]
+        ytos_conv_struc, _swap_array = get_BCS_conventional_structure(self.ytos_bulk_supercell)
+        ytos_defect_gen, output = self._generate_and_test_no_warnings(
+            ytos_conv_struc, interstitial_coords=ytos_interstitial_coords
+        )
+
+        for line in output.splitlines():
+            assert line in self.ytos_defect_gen_info.splitlines()
+
+        self._general_defect_gen_check(ytos_defect_gen)
+        self._save_defect_gen_jsons(ytos_defect_gen)
+        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
+
+        # test with CdTe supercell input:
+        cdte_supercell_interstitial_coords = [
+            [0.6875, 0.4375, 0.4375],  # C3v
+            [0.625, 0.375, 0.375],  # Cd2.83
+            [0.75, 0.5, 0.5],  # Te2.83
+        ]  # note that cdte_bulk_supercell has the slightly different orientation to
+        # defect_gen.bulk_supercell
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.cdte_bulk_supercell, interstitial_coords=cdte_supercell_interstitial_coords
+        )
+
+        assert self.cdte_defect_gen_info in output
+
+        self._save_defect_gen_jsons(cdte_defect_gen)
+        self.cdte_defect_gen_check(cdte_defect_gen)
+        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+
+        # with supercell input, single interstitial coord, within min_dist of host atom:
+        te_cd_1_metastable_c2v_antisite_supercell_frac_coords = [0.9999, 0.9999, 0.0313]
+
+        with warnings.catch_warnings(record=True) as w:
+            _cdte_defect_gen = DefectsGenerator(
+                self.cdte_bulk_supercell,
+                interstitial_coords=te_cd_1_metastable_c2v_antisite_supercell_frac_coords,
+            )
+            non_ignored_warnings = [
+                warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+            ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+            assert len(non_ignored_warnings) == 1
+            assert (
+                "Note that some manually-specified interstitial sites were skipped due to being too "
+                "close to host lattice sites (minimum distance = `min_dist` = 0.90 Å). If for some "
+                "reason you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
+                "Å), or just use the default Voronoi tessellation algorithm for generating interstials ("
+                "by not setting the `interstitial_coords` argument)."
+                in str(non_ignored_warnings[-1].message)
+            )
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.cdte_bulk_supercell,
+            interstitial_coords=te_cd_1_metastable_c2v_antisite_supercell_frac_coords,
+            interstitial_gen_kwargs={"min_dist": 0.01},
+        )
+        assert "Cd_i_C2v         [0,+1,+2]              [0.000,0.000,0.063]  24f" in output
+        assert "Te_i_C2v         [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.063]  24f" in output
+
+        self._general_defect_gen_check(cdte_defect_gen)
+
+    def test_target_frac_coords(self):
+        defect_gen = DefectsGenerator(self.prim_cdte)
+        target_frac1_defect_gen = DefectsGenerator(self.prim_cdte, target_frac_coords=[0, 0, 0])
+        target_frac2_defect_gen = DefectsGenerator(self.prim_cdte, target_frac_coords=[0.15, 0.8, 0.777])
+
+        for i in [target_frac1_defect_gen, target_frac2_defect_gen]:
+            self._general_defect_gen_check(i)
+
+            for name, defect_entry in defect_gen.items():
+                # test equivalent supercell sites the same:
+                assert defect_entry.equivalent_supercell_sites == i[name].equivalent_supercell_sites
+
+                assert defect_entry.defect_supercell_site != i[name].defect_supercell_site
+
+                # test that the defect supercell site chosen is indeed the closest site to the target
+                # frac coords:
+                assert i[name].defect_supercell_site == min(
+                    i[name].equivalent_supercell_sites,
+                    key=lambda x: x.distance_and_image_from_frac_coords(
+                        i[name].defect_supercell_site.frac_coords
+                    )[0],
+                )
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
@@ -1508,12 +1626,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(lmno_defect_gen)
-        assert self.lmno_defect_gen_info_pt1 in lmno_defect_gen._defect_generator_info()
-        assert self.lmno_defect_gen_info_final in lmno_defect_gen._defect_generator_info()
-        assert (
-            self.lmno_defect_gen_info_interstitials in lmno_defect_gen._defect_generator_info()
-            or self.lmno_defect_gen_info_interstitials_GH in lmno_defect_gen._defect_generator_info()
-        )
+        assert self.lmno_defect_gen_info in lmno_defect_gen._defect_generator_info()
         assert lmno_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert self.structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -1593,7 +1706,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Li_O_C3_+3"].conv_cell_frac_coords,
-            np.array([0.384, 0.384, 0.384]),
+            np.array([0.385, 0.385, 0.385]),
             atol=1e-3,
         )
         frac_coords = np.array(
@@ -1615,16 +1728,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
         lmno_defect_gen, output = self._generate_and_test_no_warnings(self.lmno_primitive)
 
-        assert self.lmno_defect_gen_info_pt1 in output
-        assert self.lmno_defect_gen_info_final in output
-        assert (
-            self.lmno_defect_gen_info_interstitials in output
-            or self.lmno_defect_gen_info_interstitials_GH in output
-        )
-        if self.lmno_defect_gen_info_interstitials in output:
-            print("Original interstitials output printed")
-        else:  # for tracking purposes
-            print("GH-rounded interstitials output printed")
+        assert self.lmno_defect_gen_info in output
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen)
@@ -1639,17 +1743,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
             self.lmno_primitive, min_image_distance=8.28, generate_supercell=False
         )
 
-        assert self.lmno_defect_gen_info_pt1 in output
-        assert self.lmno_defect_gen_info_final in output
-        assert (
-            self.lmno_defect_gen_info_interstitials in output
-            or self.lmno_defect_gen_info_interstitials_GH in output
-        )
-
-        if self.lmno_defect_gen_info_interstitials in output:
-            print("Original interstitials output printed")
-        else:  # for tracking purposes
-            print("GH-rounded interstitials output printed")
+        assert self.lmno_defect_gen_info in output
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
@@ -1926,32 +2020,32 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
         # explicitly test defect entry attributes
         assert (
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.defect_type
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.defect_type
             == DefectType.Interstitial
         )
-        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].wyckoff == "6c"
-        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.multiplicity == 2
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].wyckoff == "6c"
+        assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.multiplicity == 2
         sc_frac_coords = np.array(
             [0.53125, 0.5, 0.395833] if generate_supercell else [0.375, 0.375, 0.375]
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].sc_defect_frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         assert (
             agcu_defect_gen.defect_entries[
-                "Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"
+                "Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"
             ].defect_supercell_site.specie.symbol
             == "Cu"
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].conv_cell_frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].conv_cell_frac_coords,
             np.array([0.0, 0.0, 0.375]),
             rtol=1e-2,
         )
         np.testing.assert_allclose(
-            agcu_defect_gen.defect_entries["Cu_i_C3v_Ag1.56Cu1.56Ag2.99b_+1"].defect.site.frac_coords,
+            agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.site.frac_coords,
             np.array([0.375, 0.375, 0.375]),
             rtol=1e-2,
         )
@@ -1981,9 +2075,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
 
     def test_agcu(self):
         # test initialising with an intermetallic (where pymatgen oxidation state guessing fails)
-        agcu_defect_gen, output = self._generate_and_test_no_warnings(
-            self.agcu,
-        )
+        agcu_defect_gen, output = self._generate_and_test_no_warnings(self.agcu)
 
         assert self.agcu_defect_gen_info in output
 
