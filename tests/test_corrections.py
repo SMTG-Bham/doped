@@ -98,7 +98,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             "axis_grid": axisdata,
             "bulk_planar_averages": bldata,
             "defect_planar_averages": dldata,
-            "initial_defect_structure": ids,
+            "defect_structure": ids,
             "defect_frac_sc_coords": struct.sites[0].frac_coords,
             "bulk_sc_structure": struct,
         }
