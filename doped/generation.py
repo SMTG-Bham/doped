@@ -1164,11 +1164,18 @@ class DefectsGenerator(MSONable):
                             if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
                                 matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
 
-                    # take the site with the lower multiplicity (higher symmetry):
+                    # take the site with the lower multiplicity (higher symmetry), and most ideal site
+                    # according to _frac_coords_sort_func if multiplicities equal:
                     output_sites_mul_and_equiv_fpos.append(
                         min(
                             [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
-                            key=lambda cand_site_mul_and_equiv_fpos: cand_site_mul_and_equiv_fpos[1],
+                            key=lambda cand_site_mul_and_equiv_fpos: (
+                                cand_site_mul_and_equiv_fpos[1],
+                                # return the minimum _frac_coords_sort_func for all equiv fpos:
+                                *_frac_coords_sort_func(
+                                    sorted(cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func)[0]
+                                ),
+                            ),
                         )
                     )
 

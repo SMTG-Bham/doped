@@ -157,7 +157,8 @@ O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
             "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 197 defect "
             "entries created."
         )
-        self.lmno_defect_gen_info_pt1 = """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
+        self.lmno_defect_gen_info = (
+            """Vacancies    Charge States       Conv. Cell Coords    Wyckoff
 -----------  ------------------  -------------------  ---------
 v_Li         [-1,0,+1]           [0.004,0.004,0.004]  8c
 v_Mn         [-4,-3,-2,-1,0,+1]  [0.121,0.129,0.625]  12d
@@ -182,44 +183,38 @@ Ni_O_C3          [0,+1,+2,+3,+4,+5]     [0.385,0.385,0.385]  8c
 O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
-"""
 
-        self.lmno_defect_gen_info_interstitials = (
-            "Interstitials        Charge States    Conv. Cell "
-            "Coords    Wyckoff\n"
-            """-------------------  ---------------  -------------------  ---------
-Li_i_C1_Li1.75       [0,+1]           [0.199,0.303,0.444]  24e
-Li_i_C1_O1.72        [0,+1]           [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78        [0,+1]           [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.84O1.84  [0,+1]           [0.073,0.177,0.125]  12d
-Li_i_C2_Li1.84O1.94  [0,+1]           [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [0,+1]           [0.086,0.375,0.336]  12d
-Li_i_C3              [0,+1]           [0.497,0.497,0.497]  8c
-Mn_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Mn_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
-Mn_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Mn_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-Ni_i_C1_Li1.75       [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
-Ni_i_C1_O1.72        [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78        [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]  [0.073,0.177,0.125]  12d
-Ni_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
-Ni_i_C3              [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
-O_i_C1_Li1.75        [-2,-1,0]        [0.199,0.303,0.444]  24e
-O_i_C1_O1.72         [-2,-1,0]        [0.248,0.480,0.249]  24e
-O_i_C1_O1.78         [-2,-1,0]        [0.017,0.261,0.250]  24e
-O_i_C2_Li1.84O1.84   [-2,-1,0]        [0.073,0.177,0.125]  12d
-O_i_C2_Li1.84O1.94   [-2,-1,0]        [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [-2,-1,0]        [0.086,0.375,0.336]  12d
-O_i_C3               [-2,-1,0]        [0.497,0.497,0.497]  8c
+Interstitials        Charge States    Conv. Cell Coords    Wyckoff
+-------------------  ---------------  -------------------  ---------
+Li_i_C1_Li1.75   [0,+1]           [0.199,0.303,0.444]  24e
+Li_i_C1_O1.72    [0,+1]           [0.248,0.480,0.249]  24e
+Li_i_C1_O1.78    [0,+1]           [0.017,0.261,0.250]  24e
+Li_i_C2_Li1.83   [0,+1]           [0.077,0.125,0.173]  12d
+Li_i_C2_Li1.84   [0,+1]           [0.151,0.375,0.401]  12d
+Li_i_C2_Li1.86   [0,+1]           [0.086,0.375,0.336]  12d
+Li_i_C3          [0,+1]           [0.497,0.497,0.497]  8c
+Mn_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
+Mn_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
+Mn_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
+Mn_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
+Mn_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
+Mn_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Mn_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
+Ni_i_C1_Li1.75   [0,+1,+2,+3,+4]  [0.199,0.303,0.444]  24e
+Ni_i_C1_O1.72    [0,+1,+2,+3,+4]  [0.248,0.480,0.249]  24e
+Ni_i_C1_O1.78    [0,+1,+2,+3,+4]  [0.017,0.261,0.250]  24e
+Ni_i_C2_Li1.83   [0,+1,+2,+3,+4]  [0.077,0.125,0.173]  12d
+Ni_i_C2_Li1.84   [0,+1,+2,+3,+4]  [0.151,0.375,0.401]  12d
+Ni_i_C2_Li1.86   [0,+1,+2,+3,+4]  [0.086,0.375,0.336]  12d
+Ni_i_C3          [0,+1,+2,+3,+4]  [0.497,0.497,0.497]  8c
+O_i_C1_Li1.75    [-2,-1,0]        [0.199,0.303,0.444]  24e
+O_i_C1_O1.72     [-2,-1,0]        [0.248,0.480,0.249]  24e
+O_i_C1_O1.78     [-2,-1,0]        [0.017,0.261,0.250]  24e
+O_i_C2_Li1.83    [-2,-1,0]        [0.077,0.125,0.173]  12d
+O_i_C2_Li1.84    [-2,-1,0]        [0.151,0.375,0.401]  12d
+O_i_C2_Li1.86    [-2,-1,0]        [0.086,0.375,0.336]  12d
+O_i_C3           [-2,-1,0]        [0.497,0.497,0.497]  8c
 \n"""
-        )
-
-        self.lmno_defect_gen_info_final = (
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
             "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
@@ -1631,9 +1626,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(lmno_defect_gen)
-        assert self.lmno_defect_gen_info_pt1 in lmno_defect_gen._defect_generator_info()
-        assert self.lmno_defect_gen_info_final in lmno_defect_gen._defect_generator_info()
-        assert self.lmno_defect_gen_info_interstitials in lmno_defect_gen._defect_generator_info()
+        assert self.lmno_defect_gen_info in lmno_defect_gen._defect_generator_info()
         assert lmno_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert self.structure_matcher.fit(  # reduces to primitive, but StructureMatcher still matches
@@ -1735,13 +1728,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
         lmno_defect_gen, output = self._generate_and_test_no_warnings(self.lmno_primitive)
 
-        assert self.lmno_defect_gen_info_pt1 in output
-        assert self.lmno_defect_gen_info_final in output
-        assert self.lmno_defect_gen_info_interstitials in output
-        if self.lmno_defect_gen_info_interstitials in output:
-            print("Original interstitials output printed")
-        else:  # for tracking purposes
-            print("GH-rounded interstitials output printed")
+        assert self.lmno_defect_gen_info in output
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen)
@@ -1756,14 +1743,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             self.lmno_primitive, min_image_distance=8.28, generate_supercell=False
         )
 
-        assert self.lmno_defect_gen_info_pt1 in output
-        assert self.lmno_defect_gen_info_final in output
-        assert self.lmno_defect_gen_info_interstitials in output
-
-        if self.lmno_defect_gen_info_interstitials in output:
-            print("Original interstitials output printed")
-        else:  # for tracking purposes
-            print("GH-rounded interstitials output printed")
+        assert self.lmno_defect_gen_info in output
 
         self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
