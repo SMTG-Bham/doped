@@ -11,6 +11,22 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 
+def find_archived_fname(fname, raise_error=True):
+    """
+    Find a suitable filename, taking account of possible use of compression
+    software.
+    """
+    if os.path.exists(fname):
+        return fname
+    # Check for archive files
+    for ext in [".gz", ".xz", ".bz", ".lzma"]:
+        if os.path.exists(fname + ext):
+            return fname + ext
+    if raise_error:
+        raise FileNotFoundError
+    return None
+
+
 def get_vasprun(vasprun_path, **kwargs):
     """
     Read the vasprun.xml(.gz) file as a pymatgen Vasprun object.
@@ -18,15 +34,16 @@ def get_vasprun(vasprun_path, **kwargs):
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
-    )  # Ignore POTCAR warnings when loading vasprun.xml
+    )  # Ignore unknown POTCAR warnings when loading vasprun.xml
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
-    if os.path.exists(vasprun_path) and os.path.isfile(vasprun_path):
-        vasprun = Vasprun(vasprun_path, **kwargs)
-    else:
+    try:
+        vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
+    except FileNotFoundError:
         raise FileNotFoundError(
-            f"vasprun.xml file not found at {vasprun_path}. Needed for parsing calculation output."
-        )
+            f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
+            f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
+        ) from None
     return vasprun
 
 
@@ -35,13 +52,13 @@ def get_locpot(locpot_path):
     Read the LOCPOT(.gz) file as a pymatgen Locpot object.
     """
     locpot_path = str(locpot_path)  # convert to string if Path object
-    if os.path.exists(locpot_path) and os.path.isfile(locpot_path):
-        locpot = Locpot.from_file(locpot_path)
-    else:
+    try:
+        locpot = Locpot.from_file(find_archived_fname(locpot_path))
+    except FileNotFoundError:
         raise FileNotFoundError(
-            f"LOCPOT file not found at {locpot_path}. Needed for calculating the Freysoldt (FNV) "
-            f"image charge correction."
-        )
+            f"LOCPOT or compressed version not found at (.gz/.xz/.bz/.lzma) not found at {locpot_path}("
+            f".gz/.xz/.bz/.lzma). Needed for calculating the Freysoldt (FNV) image charge correction!"
+        ) from None
     return locpot
 
 
@@ -87,7 +104,7 @@ def get_defect_type_and_composition_diff(bulk, defect):
     structure.
 
     Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species.
+    extrinsic species and code efficiency/robustness improvements.
     """
     bulk_comp = bulk.composition.get_el_amt_dict()
     defect_comp = defect.composition.get_el_amt_dict()
@@ -116,10 +133,13 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     bulk, defect, defect_type, composition_diff, unique_tolerance=1
 ):
     """
-    Get the defect site and unrelaxed structure.
+    Get the defect site and unrelaxed structure, where "unrelaxed structure"
+    corresponds to the pristine defect supercell structure for
+    vacancies/substitutions, and the pristine bulk structure with the _final_
+    relaxed interstitial site for interstitials.
 
     Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species.
+    extrinsic species and code efficiency/robustness improvements.
     """
 
     def get_species_from_composition_diff(composition_diff, el_change):
@@ -364,24 +384,20 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     return min_dist_with_index
 
 
-def reorder_unrelaxed_structure(
-    unrelaxed_structure: Structure, initial_relax_structure: Structure, threshold=2.0
-):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=2.0):
     """
-    Reset the position of a partially relaxed structure to its unrelaxed
-    positions.
+    Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
+    the atoms in s2_structure.
 
-    The template structure may have a different species ordering to the
-    `input_structure`.
+    s1/s2 structures may have a different species orderings.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
-    mapping = get_site_mapping_indices(initial_relax_structure, unrelaxed_structure, threshold=threshold)
+    mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
 
-    # Reorder the unrelaxed_structure so it matches the ordering of the initial_relax_structure (
-    # from the actual calculation)
-    reordered_sites = [unrelaxed_structure[tmp[2]] for tmp in mapping]
+    # Reorder s1_structure so that it matches the ordering of s2_structure
+    reordered_sites = [s1_structure[tmp[2]] for tmp in mapping]
     new_structure = Structure.from_sites(reordered_sites)
 
-    assert len(new_structure) == len(unrelaxed_structure)
+    assert len(new_structure) == len(s1_structure)
 
     return new_structure

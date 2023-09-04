@@ -101,6 +101,7 @@
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
   (and note this behaviour in examples/docs)
+- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites that move significantly (or the centroid if a defect cluster), to then use for the charge correction. Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller supercells can have a semi-significant effect on the predicted charge correction. `Int_Te_3_unperturbed_1` is a good example of this tricky case.
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -143,12 +144,7 @@
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - `ShakeNBreak` related updates:
-  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
-    efficient than the `doped` version (which is already far more efficient than the original...) and
-    isn't available in current `pymatgen`.
-  - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
-    functions, `DefectSet` (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
-  - Should have quick scan through both codes to ensure no redundant/duplicate functions.
+  - Use doped naming conventions and functions and defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
@@ -183,6 +179,7 @@
     and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
     bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
     will be added to `doped` VASP calc scripts.
+  - Setting `LREAL = Auto` can sometimes be worth doing if you have a very large supercell for speed up, _but_ it's important to do a final calculation with `LREAL = False` for accurate energies/forces, so only do if you're a power user and have a very large supercell.
   - Show usage of `get_conv_cell_site` in notebooks/docs.
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,

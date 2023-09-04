@@ -198,7 +198,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
         assert Path("input.dat").is_file()
 
-        with open("input.dat") as file:
+        with open("input.dat", encoding="utf-8") as file:
             contents = file.readlines()
 
         # assert these lines are in the file:
@@ -485,15 +485,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
         assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS") as file:
+        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "2 1 1\n"
 
-        with open(f"{path1}/POTCAR.spec") as file:
+        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[0] == "Zr_sv\n"
 
-        with open(f"{path1}/INCAR") as file:
+        with open(f"{path1}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
@@ -510,22 +510,22 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS") as file:
+        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[0] == "pymatgen with grid density = 911 / number of atoms\n"
             assert contents[3] == "4 4 4\n"
 
-        with open(f"{path1}/POTCAR.spec") as file:
+        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
-        with open(f"{path1}/INCAR") as file:
+        with open(f"{path1}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
         path2 = "competing_phases/O2_EaH_0/vasp_std"
         assert Path(path2).is_dir()
-        with open(f"{path2}/KPOINTS") as file:
+        with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "1 1 1\n"
 
