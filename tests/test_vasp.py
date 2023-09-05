@@ -2,6 +2,7 @@
 Tests for the `doped.vasp` module.
 """
 import filecmp
+import locale
 import os
 import unittest
 
@@ -218,7 +219,13 @@ class DefectsSetTest(unittest.TestCase):
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
         self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
 
+        # Get the current locale setting
+        self.original_locale = locale.getlocale(locale.LC_CTYPE)  # should be UTF-8
+
     def tearDown(self):
+        # reset locale:
+        locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
+
         for file in os.listdir():
             if file.endswith(".json"):
                 if_present_rm(file)
@@ -408,6 +415,50 @@ class DefectsSetTest(unittest.TestCase):
             user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+
+        # assert that the same folders in self.cdte_data_dir are present in the current directory
+        self.check_generated_vasp_inputs(  # tests vasp_gam
+            generated_dir="Cd_i_C3v_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
+            check_potcar_spec=True,
+            single_defect_dir=True,
+        )
+        self.check_generated_vasp_inputs(  # vasp_std
+            generated_dir="Cd_i_C3v_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
+            vasp_type="vasp_std",
+            check_poscar=True,
+            single_defect_dir=True,
+        )
+        self.check_generated_vasp_inputs(  # vasp_ncl
+            generated_dir="Cd_i_C3v_+2",
+            data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
+            vasp_type="vasp_ncl",
+            check_poscar=True,
+            single_defect_dir=True,
+        )
+
+        # assert only +2 directory written:
+        assert not os.path.exists("Cd_i_C3v_0")
+
+    def test_write_files_ASCII_encoding(self):
+        """
+        Test writing VASP input files for a system that's not on UTF-8
+        encoding.
+
+        Weirdly seems to be the case on some old HPCs/Windows systems.
+        """
+        # Temporarily set the locale to ASCII/latin encoding (doesn't support emojis or "Γ"):
+        locale.setlocale(locale.LC_CTYPE, "en_US.US-ASCII")
+
+        single_defect_entry = self.cdte_defect_gen["Cd_i_C3v_+2"]
+        defects_set = DefectsSet(
+            single_defect_entry,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
+            user_potcar_functional=None,
+        )
+        defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+        locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(  # tests vasp_gam
