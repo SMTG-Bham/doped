@@ -1,15 +1,19 @@
 name: Release and publish
 
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  workflow_dispatch:
+
+  workflow_run:
+    workflows: [ "Tests" ]
+    branches: [ master ]
+    types:
+      - completed  # only release when tests have passed
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    # only run when tests have passed (or manually triggered)
 
     steps:
       - uses: actions/checkout@v2
@@ -22,13 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install setuptools setuptools_scm wheel
-          pip install numpy
           pip install -e .
-          pip install -e .[tests]
-
-#      - name: Test  # To be added later
-#        run:  |
-#          pytest --ignore local_doped_testing  # test everything
 
       - name: Build packages
         run: |

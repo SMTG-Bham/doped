@@ -1,6 +1,10 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 """
+This code has been copied over from pymatgen==2022.7.25, as it was deleted in
+later versions. This is a temporary measure while refactoring to use the new
+pymatgen-analysis-defects package takes place.
+
 Implementation of defect correction methods.
 """
 
@@ -22,17 +26,29 @@ from pymatgen.analysis.defects.utils import (
 )
 from scipy import stats
 
+from doped.plotting import _get_backend
 from doped.utils.legacy_pmg import DefectCorrection
 
-__author__ = "Danny Broberg, Shyam Dwaraknath"
-__copyright__ = "Copyright 2018, The Materials Project"
-__version__ = "1.0"
-__maintainer__ = "Shyam Dwaraknath"
-__email__ = "shyamd@lbl.gov"
-__status__ = "Development"
-__date__ = "Mar 15, 2018"
-
 logger = logging.getLogger(__name__)
+
+
+def _get_defect_structure_from_calc_metadata(calculation_metadata):
+    keys = [
+        "unrelaxed_defect_structure",
+        "guessed_initial_defect_structure",
+        "defect_structure",
+        "final_defect_structure",
+    ]
+
+    for key in keys:
+        defect_structure = calculation_metadata.get(key)
+        if defect_structure is not None:
+            return defect_structure
+
+    raise ValueError(
+        "No defect structure found in calculation_metadata, so cannot compute finite-size charge "
+        "correction!"
+    )
 
 
 class FreysoldtCorrection(DefectCorrection):
@@ -102,8 +118,8 @@ class FreysoldtCorrection(DefectCorrection):
                         A list of 3 numpy arrays which contain the planar averaged
                         electrostatic potential for the defective supercell.
 
-                    initial_defect_structure (Structure) structure corresponding to
-                        initial defect supercell structure (uses Lattice for charge correction)
+                    defect_structure (Structure) structure corresponding to
+                        defect supercell structure (uses Lattice for charge correction)
 
                     defect_frac_sc_coords (3 x 1 array) Fractional coordinates of
                         defect location in supercell structure
@@ -135,7 +151,8 @@ class FreysoldtCorrection(DefectCorrection):
                     np.array(entry.calculation_metadata["defect_planar_averages"][ax])
                 )
 
-        lattice = entry.calculation_metadata["initial_defect_structure"].lattice.copy()
+        defect_structure = _get_defect_structure_from_calc_metadata(entry.calculation_metadata)
+        lattice = defect_structure.lattice.copy()
         defect_frac_sc_coords = entry.sc_defect_frac_coords
 
         es_corr = self.perform_es_corr(lattice, entry.charge_state)
@@ -159,7 +176,10 @@ class FreysoldtCorrection(DefectCorrection):
 
         pot_corr = np.mean(pot_corr_tracker)
 
-        entry.calculation_metadata["freysoldt_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("freysoldt_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
+
         entry.calculation_metadata["potalign"] = (
             pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
         )
@@ -374,9 +394,14 @@ class FreysoldtCorrection(DefectCorrection):
             plt.title(f"{title!s} Defect Potential")
             plt.xlim(0, max(x))
             if saved:
-                plt.savefig(f"{title!s}FreyplnravgPlot.pdf")
+                plt.savefig(
+                    f"{title!s}FreyplnravgPlot.pdf",
+                    bbox_inches="tight",
+                    backend=_get_backend("pdf"),
+                    transparent=True,
+                )
                 return None
-        return plt
+            return plt
 
 
 class KumagaiCorrection(DefectCorrection):
@@ -439,7 +464,7 @@ class KumagaiCorrection(DefectCorrection):
                     initial_defect_structure (Structure): Pymatgen Structure object representing
                         un-relaxed defect structure
 
-                    defect_frac_sc_coords (array): Defect Position in fractional coordinates of the
+                    defect_frac_sc_coords (array): Defect position in fractional coordinates of the
                         supercell given in bulk_structure
         Returns:
             KumagaiCorrection values as a dictionary
@@ -448,10 +473,10 @@ class KumagaiCorrection(DefectCorrection):
         bulk_atomic_site_averages = entry.calculation_metadata["bulk_atomic_site_averages"]
         defect_atomic_site_averages = entry.calculation_metadata["defect_atomic_site_averages"]
         site_matching_indices = entry.calculation_metadata["site_matching_indices"]
-        defect_sc_structure = entry.calculation_metadata["initial_defect_structure"]
+        defect_structure = _get_defect_structure_from_calc_metadata(entry.calculation_metadata)
         defect_frac_sc_coords = entry.sc_defect_frac_coords
 
-        lattice = defect_sc_structure.lattice
+        lattice = defect_structure.lattice
         volume = lattice.volume
 
         if not self.metadata["gamma"]:
@@ -499,10 +524,10 @@ class KumagaiCorrection(DefectCorrection):
         site_list = []
         for bs_ind, ds_ind in site_matching_indices:
             Vqb = -(defect_atomic_site_averages[int(ds_ind)] - bulk_atomic_site_averages[int(bs_ind)])
-            site_list.append([defect_sc_structure[int(ds_ind)], Vqb])
+            site_list.append([defect_structure[int(ds_ind)], Vqb])
 
         pot_corr = self.perform_pot_corr(
-            defect_sc_structure,
+            defect_structure,
             defect_frac_sc_coords,
             site_list,
             self.metadata["sampling_radius"],
@@ -512,7 +537,10 @@ class KumagaiCorrection(DefectCorrection):
             self.metadata["gamma"],
         )
 
-        entry.calculation_metadata["kumagai_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("kumagai_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
+
         entry.calculation_metadata["potalign"] = (
             pot_corr / (-entry.charge_state) if entry.charge_state else 0.0
         )
@@ -798,10 +826,15 @@ class KumagaiCorrection(DefectCorrection):
             plt.ylabel("Potential (V)")
             plt.title(f"{title!s} Atomic Site Potential")
 
-        if saved:
-            plt.savefig(f"{title!s}KumagaiESPavgPlot.pdf")
-            return None
-        return plt
+            if saved:
+                plt.savefig(
+                    f"{title!s}KumagaiESPavgPlot.pdf",
+                    bbox_inches="tight",
+                    backend=_get_backend("pdf"),
+                    transparent=True,
+                )
+                return None
+            return plt
 
 
 class BandFillingCorrection(DefectCorrection):
@@ -868,7 +901,9 @@ class BandFillingCorrection(DefectCorrection):
 
         bf_corr = self.perform_bandfill_corr(eigenvalues, kpoint_weights, potalign, vbm, cbm, soc_calc)
 
-        entry.calculation_metadata["bandfilling_meta"] = dict(self.metadata)
+        metadata = entry.calculation_metadata.setdefault("bandfilling_meta", {})
+        metadata.update(self.metadata)  # updates bandfilling_metadata (as dictionaries are mutable) if
+        # it already exists, otherwise creates it
 
         return {"bandfilling_correction": bf_corr}
 

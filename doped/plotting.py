@@ -171,7 +171,7 @@ def formation_energy_plot(
                 figs.append(fig)
                 plt.show()  # show figure
 
-            return figs
+            return figs[0] if len(figs) == 1 else figs
 
         # else manually specified chemical potentials, or no chempots specified
         fig = _TLD_plot(
@@ -190,6 +190,25 @@ def formation_energy_plot(
         )
         plt.show()  # show figure
         return fig
+
+
+def _get_backend(save_format: str) -> Optional[str]:
+    """
+    Try use pycairo as backend if installed, and save_format is pdf.
+    """
+    backend = None
+    if "pdf" in save_format:
+        try:
+            import cairo  # noqa: F401
+
+            backend = "cairo"
+        except ImportError:
+            warnings.warn(
+                "pycairo not installed. Defaulting to matplotlib's pdf backend, so default doped fonts "
+                "may not be used - try setting `save_format` to 'png' or `pip install pycairo` if you "
+                "want doped's default font."
+            )
+    return backend
 
 
 def _chempot_warning(dft_chempots):
@@ -297,7 +316,9 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         else:
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
     if filename is not None:
-        fig.savefig(filename, bbox_inches="tight", dpi=600)
+        fig.savefig(
+            filename, dpi=600, bbox_inches="tight", backend=_get_backend(filename), transparent=True
+        )
 
 
 def _format_defect_name(
@@ -775,7 +796,7 @@ def _get_formation_energy_lines(defect_phase_diagram, dft_chempots, xlim):
     ymin = 0
 
     for defect_entry in defect_phase_diagram.entries:
-        defect_entry_name = f"{defect_entry.name}_{defect_entry.charge_state}"
+        defect_entry_name = defect_entry.name  # name includes charge state
         all_lines_xy[defect_entry_name] = [[], []]
         for x_extrem in [lower_cap, upper_cap]:
             all_lines_xy[defect_entry_name][0].append(x_extrem)

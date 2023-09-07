@@ -11,7 +11,6 @@ from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.thermo import DefectEntry
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
@@ -19,6 +18,7 @@ from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
+from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
     _custom_formatwarning,
@@ -103,7 +103,7 @@ class DefectDictSet(DictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -125,8 +125,8 @@ class DefectDictSet(DictSet):
                 {"reciprocal_density": 123}, or a Kpoints object. Default is Gamma-centred,
                 reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
@@ -157,7 +157,7 @@ class DefectDictSet(DictSet):
         if user_incar_settings is not None:
             for k in user_incar_settings:
                 # check INCAR flags and warn if they don't exist (typos)
-                if k not in incar_params.keys():
+                if k not in incar_params.keys() and "#" not in k:
                     warnings.warn(  # but only checking keys, not values so we can add comments etc
                         f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                         BadIncarWarning,
@@ -245,13 +245,6 @@ class DefectDictSet(DictSet):
         return Poscar(self.structure, comment=self.poscar_comment)
 
     @property
-    def structure(self):
-        """
-        :return: pymatgen Structure.
-        """
-        return self._structure
-
-    @property
     def kpoints(self):
         """
         Return kpoints object with comment.
@@ -266,13 +259,74 @@ class DefectDictSet(DictSet):
 
         if kpt_density and "doped" not in pmg_kpoints.comment:
             with contextlib.suppress(Exception):
-                assert np.prod(self.kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
+                assert np.prod(pmg_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
                 pmg_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
         elif "doped" not in pmg_kpoints.comment:
             pmg_kpoints.comment = "KPOINTS from doped"
 
         return pmg_kpoints
+
+    def _check_user_potcars(self, unperturbed_poscar: bool = False) -> bool:
+        """
+        Check and warn the user if POTCARs are not set up with pymatgen.
+        """
+        potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
+        if not potcars:
+            potcar_warning_string = (
+                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                "this up). This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` and "
+                "`NUPDOWN`)"
+            )
+            if unperturbed_poscar:
+                warnings.warn(
+                    f"{potcar_warning_string}, so only (unperturbed) `POSCAR` and `KPOINTS` files will "
+                    f"be generated."
+                )
+            else:
+                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+            return False
+
+        return True
+
+    def write_input(
+        self,
+        output_dir: str,
+        make_dir_if_not_present: bool = True,
+        include_cif: bool = False,
+        potcar_spec: bool = False,
+        zip_output: bool = False,
+    ):
+        """
+        Writes out all input to a directory. Refactored slightly from pymatgen
+        DictSet.write_input() to allow checking of user POTCAR setup.
+
+        Copied from DictSet.write_input() docstring:
+        Args:
+            output_dir (str): Directory to output the VASP input files
+            make_dir_if_not_present (bool): Set to True if you want the
+                directory (and the whole path) to be created if it is not
+                present.
+            include_cif (bool): Whether to write a CIF file in the output
+                directory for easier opening by VESTA.
+            potcar_spec (bool): Instead of writing the POTCAR, write a "POTCAR.spec".
+                This is intended to help sharing an input set with people who might
+                not have a license to specific Potcar files. Given a "POTCAR.spec",
+                the specific POTCAR file can be re-generated using pymatgen with the
+                "generate_potcar" function in the pymatgen CLI.
+            zip_output (bool): Whether to zip each VASP input file written to the output directory.
+        """
+        if not potcar_spec:
+            self._check_user_potcars(unperturbed_poscar=True)
+
+        super().write_input(
+            output_dir,
+            make_dir_if_not_present=make_dir_if_not_present,
+            include_cif=include_cif,
+            potcar_spec=potcar_spec,
+            zip_output=zip_output,
+        )
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -305,7 +359,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -374,8 +428,8 @@ class DefectRelaxSet(MSONable):
                 `vasp_std`, `vasp_nkred_std` and `vasp_ncl` DefectDictSets (Γ-only for
                 `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails,
-                tries "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
@@ -462,11 +516,24 @@ class DefectRelaxSet(MSONable):
             self.defect_supercell = (
                 self.defect_entry.defect_supercell or self.defect_entry.sc_entry.structure
             )
-            self.bulk_supercell = (
-                self.defect_entry.bulk_supercell or self.defect_entry.bulk_entry.structure
-            )
+            if self.defect_entry.bulk_supercell is not None:
+                self.bulk_supercell = self.defect_entry.bulk_supercell
+            elif self.defect_entry.bulk_entry is not None:
+                self.bulk_supercell = self.defect_entry.bulk_entry.structure
+            else:
+                raise ValueError(
+                    "Bulk supercell must be defined in DefectEntry object attributes. Both "
+                    "DefectEntry.bulk_supercell and DefectEntry.bulk_entry are None!"
+                )
+
             # get POSCAR comment:
             sc_frac_coords = self.defect_entry.sc_defect_frac_coords
+            if sc_frac_coords is None:
+                raise ValueError(
+                    "Fractional coordinates of defect in the supercell must be defined in "
+                    "DefectEntry object attributes, but DefectEntry.sc_defect_frac_coords "
+                    "is None!"
+                )
             approx_coords = f"~[{sc_frac_coords[0]:.4f},{sc_frac_coords[1]:.4f},{sc_frac_coords[2]:.4f}]"
             # Gets truncated to 40 characters in the CONTCAR (so kept to less than 40 chars here)
             if hasattr(self.defect_entry, "name"):
@@ -973,30 +1040,6 @@ class DefectRelaxSet(MSONable):
                 **self.dict_set_kwargs,
             )
 
-    def _check_user_potcars(self, unperturbed_poscar: bool = False, vasp_type: str = "gam") -> bool:
-        """
-        Check and warn the user if POTCARs are not set up with pymatgen.
-        """
-        potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
-        if not potcars:
-            potcar_warning_string = (
-                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
-                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                "this up). This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` and "
-                "`NUPDOWN`)"
-            )
-            if vasp_type == "gam" or unperturbed_poscar:
-                warnings.warn(
-                    f"{potcar_warning_string}, so only "
-                    f"{'unperturbed ' if unperturbed_poscar else ''}`POSCAR` and `KPOINTS` files "
-                    f"will be generated."
-                )
-            else:
-                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
-            return False
-
-        return True
-
     def _get_output_dir(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
         if defect_dir is None:
             if self.defect_entry.name is None:
@@ -1007,11 +1050,9 @@ class DefectRelaxSet(MSONable):
         return f"{defect_dir}/{subfolder}" if subfolder is not None else defect_dir
 
     def _check_potcars_and_write_vasp_xxx_files(
-        self, defect_dir, subfolder, unperturbed_poscar, vasp_xxx_attribute, vasp_type, **kwargs
+        self, defect_dir, subfolder, unperturbed_poscar, vasp_xxx_attribute, **kwargs
     ):
         output_dir = self._get_output_dir(defect_dir, subfolder)
-        if not kwargs.get("potcar_spec", False):
-            self._check_user_potcars(vasp_type=vasp_type, unperturbed_poscar=unperturbed_poscar)
 
         if unperturbed_poscar:
             vasp_xxx_attribute.write_input(
@@ -1020,8 +1061,9 @@ class DefectRelaxSet(MSONable):
             )
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
+            os.makedirs(output_dir, exist_ok=True)
+            if not kwargs.get("potcar_spec", False):
+                vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
             vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
             vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
             if self.user_potcar_functional is not None:  # for GH Actions testing
@@ -1088,7 +1130,6 @@ class DefectRelaxSet(MSONable):
             subfolder,
             unperturbed_poscar=True,
             vasp_xxx_attribute=self.vasp_gam,
-            vasp_type="gam",
             **kwargs,
         )
         if bulk:
@@ -1103,7 +1144,6 @@ class DefectRelaxSet(MSONable):
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_gam,
-                vasp_type="gam",
                 **kwargs,
             )
 
@@ -1185,7 +1225,6 @@ class DefectRelaxSet(MSONable):
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
             vasp_xxx_attribute=self.vasp_std,
-            vasp_type="std",
             **kwargs,
         )
         if bulk:
@@ -1200,7 +1239,6 @@ class DefectRelaxSet(MSONable):
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_std,
-                vasp_type="std",
                 **kwargs,
             )
 
@@ -1286,7 +1324,6 @@ class DefectRelaxSet(MSONable):
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
             vasp_xxx_attribute=self.vasp_nkred_std,
-            vasp_type="nkred_std",
             **kwargs,
         )
         if bulk:
@@ -1301,7 +1338,6 @@ class DefectRelaxSet(MSONable):
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_nkred_std,
-                vasp_type="nkred_std",
                 **kwargs,
             )
 
@@ -1386,7 +1422,6 @@ class DefectRelaxSet(MSONable):
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
             vasp_xxx_attribute=self.vasp_ncl,
-            vasp_type="ncl",
             **kwargs,
         )
         if bulk:
@@ -1402,7 +1437,6 @@ class DefectRelaxSet(MSONable):
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_ncl,
-                vasp_type="ncl",
                 **kwargs,
             )
 
@@ -1586,7 +1620,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[dict] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE_54",
+        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
@@ -1653,8 +1687,8 @@ class DefectsSet(MSONable):
                 `vasp_std`, `vasp_nkred_std` and `vasp_ncl` DefectDictSets (Γ-only for
                 `vasp_gam`). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE_54" and if this fails, tries
-                "PBE_52", then "PBE".
+                POTCAR functional to use. Default is "PBE" and if this fails, tries
+                "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_setsPotcarSet.yaml` for the default `POTCAR` set.
@@ -1688,28 +1722,28 @@ class DefectsSet(MSONable):
         if soc is not None:
             self.soc = soc
         else:
-            try:
-                self.soc = (
-                    np.max(
-                        [
-                            np.max(defect_entry.defect_supercell.atomic_numbers)
-                            for defect_entry in self.defect_entries.values()
-                        ]
-                    )
-                    >= 31
-                )  # use defect supercell rather than defect.defect_structure because could be e.g. a
+
+            def _get_atomic_numbers(defect_entry):
+                # use defect supercell rather than defect.defect_structure because could be e.g. a
                 # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
                 # (Z>=31) one
-            except AttributeError:
-                self.soc = (
-                    np.max(
-                        [
-                            np.max(defect_entry.sc_entry.structure.atomic_numbers)
-                            for defect_entry in self.defect_entries.values()
-                        ]
-                    )
-                    >= 31
+                if defect_entry.defect_supercell is not None:
+                    return defect_entry.defect_supercell.atomic_numbers
+                if defect_entry.sc_entry.structure is not None:
+                    return defect_entry.sc_entry.structure.atomic_numbers
+
+                raise ValueError(
+                    "Defect supercell needs to be defined in the DefectEntry attributes, but both "
+                    "DefectEntry.defect_supercell and DefectEntry.sc_entry.structure are None!"
                 )
+
+            max_atomic_num = np.max(
+                [
+                    np.max(_get_atomic_numbers(defect_entry))
+                    for defect_entry in self.defect_entries.values()
+                ]
+            )
+            self.soc = max_atomic_num >= 31
 
         self.defect_sets: Dict[str, DefectRelaxSet] = {}
 

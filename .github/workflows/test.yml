@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+       - '*'  # all branches
+  push:
+    branches:
+      - '*'  # all branches
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 5
+
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+
+    name: Python ${{ matrix.python-version }} Test Pop
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[tests]
+
+      - name: Test
+        run:  |
+          pytest --mpl -vv tests  # test everything
+          
+      - name: Generate GH Actions test plots
+        if: always()  # always generate the plots, even if the tests fail
+        run:  |
+          # Generate the test plots in case there were any failures:
+          pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
+
+      # Upload test plots
+      - name: Archive test plots
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: output-plots
+          path: tests/remote_baseline

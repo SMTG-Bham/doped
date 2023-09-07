@@ -27,17 +27,9 @@ Difficult Structural Relaxations
 --------------------------------
 
 If defect supercell relaxations do not converge after multiple continuation calculations
-(i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to an error in
-the underlying calculation, extreme forces and/or small residual forces which the local optimisation
-algorithm is struggling to find a solution.
-
-- A common culprit is the :code:`EDWAV` error in the output file, which can typically be avoided by
-  reducing :code:`NCORE` and/or :code:`KPAR`.
-
-    - If some relaxations are still not converging after multiple continuations, you should check the
-      calculation output files to see if this requires fixing. Often this may require changing a
-      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations that
-      are also struggling to converge.
+(i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to small
+residual forces causing the local optimisation algorithm to struggle to find a solution, an error in the
+underlying calculation and/or extreme forces.
 
 - If the calculation outputs show that the relaxation is proceeding fine, without any errors, just not
   converging to completion, then it suggests that the structure relaxation is bouncing around a narrow
@@ -52,7 +44,7 @@ algorithm is struggling to find a solution.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively, convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed `SnB` structure-seaerching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -60,35 +52,20 @@ algorithm is struggling to find a solution.
       electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
 
+- If instead the calculation is crashing due to an error and/or extreme forces, a common culprit is the
+  :code:`EDWAV` error in the output file, which can often be avoided by reducing :code:`NCORE` and/or
+  :code:`KPAR`. If this doesn't fix it, switching the electronic minimisation algorithm (e.g. change
+  :code:`ALGO` to :code:`All`) can sometimes help.
+
+    - If some relaxations are still not converging after multiple continuations, you should check the
+      calculation output files to see if this requires fixing. Often this may require changing a
+      specific :code:`INCAR` setting, and using the updated setting(s) for any other relaxations that
+      are also struggling to converge.
+
 ``ShakeNBreak``
 -------------------
 
-For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
+For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
-
-Troubleshooting
--------------------
-.. _troubleshooting:
-
-- A previous known issue with ``numpy``/``pymatgen`` is that it could give an error similar to this:
-
-  .. code:: python
-
-      ValueError: numpy.ndarray size changed, may indicate binary incompatibility. Expected 88 from C header, got 80 from PyObject
-
-  This should be avoided with current versions of ``doped``, due to the package installation
-  requirements (handled automatically by ``pip``), but depending on your ``python`` environment and
-  previously-installed packages, it could possibly still arise. It occurs due to a recent change in the
-  ``numpy`` C API in version ``1.20.0``, see
-  `here <https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp>`_
-  for details.
-  It should be fixed by reinstalling ``numpy`` and ``pymatgen`` (so that they play nice together), so
-  that it is rebuilt with the new ``numpy`` C API:
-
-  .. code:: bash
-
-      pip install --force --no-cache-dir numpy==1.23
-      pip uninstall pymatgen
-      pip install pymatgen
 
 Have any tips for users from using ``doped``? Please share it with the developers and we'll add them here!
