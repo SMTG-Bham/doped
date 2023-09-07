@@ -103,7 +103,7 @@ class DefectDictSet(DictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -175,11 +175,26 @@ class DefectDictSet(DictSet):
                         del relax_set["INCAR"][key]
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
-        if relax_set["KPOINTS"].get("length") or kwargs.get("user_kpoints_settings", {}).get("length"):
+        if relax_set["KPOINTS"].get("length") or (
+            user_kpoints_settings is not None
+            and (
+                "length" in user_kpoints_settings
+                if isinstance(user_kpoints_settings, dict)
+                else "length" in user_kpoints_settings.as_dict()
+            )
+        ):
             relax_set["KPOINTS"].pop("reciprocal_density", None)
 
         self.config_dict = self.CONFIG = relax_set  # avoid bug in pymatgen 2023.5.10, PR'd and fixed in
         # later versions
+
+        # check POTCAR settings not in config dict format:
+        if isinstance(user_potcar_settings, dict):
+            if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":  # i.e.
+                # default
+                user_potcar_functional = user_potcar_settings.pop("POTCAR_FUNCTIONAL")
+            if "POTCAR" in user_potcar_settings:
+                user_potcar_settings = user_potcar_settings["POTCAR"]
 
         super(self.__class__, self).__init__(
             structure,
@@ -373,7 +388,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -1645,7 +1660,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[dict] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
