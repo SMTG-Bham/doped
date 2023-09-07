@@ -1,5 +1,6 @@
 # `doped` WishList
 ## Defect calculations set up
+- See SK Remarkable notes
 - CLI Functionality for core functions.
   - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
     POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
@@ -32,8 +33,6 @@
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 
 ## Post-processing / analysis / plotting
-- Will need to subclass `DefectEntry` to have it working as desired (when it comes to parsing, plotting
-  etc.). Need parameter attributes which aren't removed when saving to json.
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
   settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
@@ -98,11 +97,11 @@
   - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
     addition to `num_hole` and `num_electron`)
   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
-  - PR to pymatgen: Update entry.calculation_metadata["kumagai_meta"] = (dict(self.metadata)) to entry.calculation_metadata["kumagai_meta"].update(dict(self.metadata)) in KumagaiCorrection.get_correction() in pymatgen/analysis/defects/corrections.py so pymatgen doesn't remove the other relevant kumagai_meta (kumagai_electrostatic etc.) when we run KumagaiCorrection.get_correction(defect_entry) (via finite_size_charge_correction.get_correction_kumagai(defect_entry...)) – see https://github.com/materialsproject/pymatgen-analysis-defects/issues/47 – code now gone, so can we add a workaround to `corrections.get_correction_kumagai()` for this?
-  - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-UCL/doped/issues/3
+  - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-UCL/doped/issues/3 -> Think about how we want to refactor the `DefectPhaseDiagram` object!
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
   (and note this behaviour in examples/docs)
+- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites that move significantly (or the centroid if a defect cluster), to then use for the charge correction. Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller supercells can have a semi-significant effect on the predicted charge correction. `Int_Te_3_unperturbed_1` is a good example of this tricky case.
 - Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -144,13 +143,8 @@
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
-- Update to be compatible with new `pymatgen`
-  - Update to use the `ShakeNBreak` voronoi node-finding functions, as this has been made to be more
-    efficient than the `doped` version (which is already far more efficient than the original...) and
-    isn't available in current `pymatgen`.
-  - Use doped naming conventions and functions, site-matching/symmetry functions, defect entry generation
-    functions, `DefectSet` (and anything else?) in `ShakeNBreak`. Streamline SnB notebook with these!!
-  - Should have quick scan through both codes to ensure no redundant/duplicate functions.
+- `ShakeNBreak` related updates:
+  - Use doped naming conventions and functions and defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?
@@ -158,15 +152,14 @@
   - Add type hints for all functions.
   - Check code for each function is relatively lean & efficient, can check with ChatGPT for any gnarly
     ones.
-  - Run `pre-commit run --all-files` to check all files.
-- Generate docs.
-  - Need a `docs_requirements.txt` file like `SnB`.
+
+- Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons).
   - Add our recommended  workflow (gam, NKRED, std, ncl). Cite
   - https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
-    super-lean for some reason.
+    super-lean for some reason. Can use SMTG wiki stuff for this.
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
@@ -186,6 +179,7 @@
     and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
     bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
     will be added to `doped` VASP calc scripts.
+  - Setting `LREAL = Auto` can sometimes be worth doing if you have a very large supercell for speed up, _but_ it's important to do a final calculation with `LREAL = False` for accurate energies/forces, so only do if you're a power user and have a very large supercell.
   - Show usage of `get_conv_cell_site` in notebooks/docs.
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,

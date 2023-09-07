@@ -1,11 +1,11 @@
 ! Database for the Wyckoff positions.
 ! Find the details in http://www.cryst.ehu.es/cryst/
-!                                         !         additional positions
-! For example:                            !        ↙      ↙
-! 21 (0,0,0)(1/2,1/2,0)      spacegroup → ! 21 (0,0,0)(1/2,1/2,0)
-! a 2 222 (0,0,0)        Wyckoff letter → ! a 2 222 (0,0,0) ← Wyckoff position
-! b 2 222 (0,1/2,0)                       ! b ↑   ↖ site symmetry
-! c 2 222 (1/2,0,1/2)                     ! c Multiplicity
+!                                         !
+! For example:                            !    Additional positions:
+! 21 (0,0,0)(1/2,1/2,0)       Spacegroup: ! 21 (0,0,0)(1/2,1/2,0)
+! a 2 222 (0,0,0)         Wyckoff letter: ! a 2 222 (0,0,0)
+! b 2 222 (0,1/2,0)                       ! Letter, Multiplicity, Site symmetry, Wyckoff position
+! c 2 222 (1/2,0,1/2)                     ! c
 ! d 2 222 (0,0,1/2)                       ! d ...
 ! e 4 2.. (x,0,0)(-x,0,0)                 ! ..
 ! f 4 2.. (x,0,1/2)(-x,0,1/2)

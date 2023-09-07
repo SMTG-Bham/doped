@@ -32,6 +32,7 @@ from monty.json import MontyDecoder
 from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import DefectParser, _convert_dielectric_to_tensor
+from doped.plotting import _get_backend
 from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
 
 warnings.simplefilter("default")
@@ -159,7 +160,12 @@ def get_correction_freysoldt(
             _install_custom_font()
             p = corr_class.plot(ax_key, title=ax_title, saved=False)
             if filename:
-                p.savefig(f"{filename}_{ax_title.replace('$','')}.pdf", bbox_inches="tight")
+                p.savefig(
+                    f"{filename}_{ax_title.replace('$','')}.pdf",
+                    bbox_inches="tight",
+                    transparent=True,
+                    backend=_get_backend("pdf"),
+                )
             if kwargs.get("return_fig", False):  # for testing
                 return p
             plt.show()
@@ -252,7 +258,9 @@ def get_correction_kumagai(
         _install_custom_font()
         p = corr_class.plot(title="Kumagai", saved=False)
         if filename:
-            p.savefig(f"{filename}.pdf", bbox_inches="tight")
+            p.savefig(
+                f"{filename}.pdf", bbox_inches="tight", transparent=True, backend=_get_backend("pdf")
+            )
         if kwargs.get("return_fig", False):  # for testing
             return p
         plt.show()
@@ -303,7 +311,7 @@ def freysoldt_correction_from_paths(
     dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = dp.freysoldt_loader()
     if plot:
-        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
+        print(dp.defect_entry.name)
 
     return get_correction_freysoldt(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
@@ -337,7 +345,7 @@ def kumagai_correction_from_paths(
     dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
     _ = dp.kumagai_loader()
     if plot:
-        print(f"{dp.defect_entry.name}, charge = {defect_charge}")
+        print(dp.defect_entry.name)
 
     return get_correction_kumagai(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
