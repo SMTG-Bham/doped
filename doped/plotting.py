@@ -204,9 +204,9 @@ def _get_backend(save_format: str) -> Optional[str]:
             backend = "cairo"
         except ImportError:
             warnings.warn(
-                "pycairo not installed. Defaulting to matplotlib's pdf backend, so default doped fonts "
-                "may not be used - try setting `save_format` to 'png' or `pip install pycairo` if you "
-                "want doped's default font."
+                "Unable to import pycairo. Defaulting to matplotlib's pdf backend, so default doped fonts "
+                "may not be used. Try setting `save_format` to 'png' or doing `conda remove pycairo; "
+                "conda install pycairo` if you want doped's default font."
             )
     return backend
 

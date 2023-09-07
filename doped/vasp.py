@@ -190,8 +190,8 @@ class DefectDictSet(DictSet):
 
         # check POTCAR settings not in config dict format:
         if isinstance(user_potcar_settings, dict):
-            if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":  # i.e.
-                # default
+            if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":
+                # i.e. default
                 user_potcar_functional = user_potcar_settings.pop("POTCAR_FUNCTIONAL")
             if "POTCAR" in user_potcar_settings:
                 user_potcar_settings = user_potcar_settings["POTCAR"]
