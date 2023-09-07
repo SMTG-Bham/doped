@@ -1,6 +1,8 @@
 name: pip install doped
 
 on:
+  workflow_dispatch:
+
   workflow_run:
     workflows: ["Release and publish"]
     branches: [master]
@@ -10,7 +12,9 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    # only run when tests have passed (or manually triggered)
+
     strategy:
       max-parallel: 5
 
@@ -30,9 +34,22 @@ jobs:
         run: |
           sleep 10m  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
-          pip install doped  # install only from PyPI
-          pip install doped[tests]
+          pip install doped[tests]  # install only from PyPI
 
       - name: Test
         run:  |
-          pytest --ignore local_doped_testing -vv  # test everything
+          pytest --mpl -vv tests  # test everything
+
+      - name: Generate GH Actions test plots
+        if: always()  # always generate the plots, even if the tests fail
+        run:  |
+          # Generate the test plots in case there were any failures:
+          pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
+
+      # Upload test plots
+      - name: Archive test plots
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: output-plots
+          path: tests/remote_baseline
