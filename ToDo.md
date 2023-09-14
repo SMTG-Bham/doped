@@ -188,7 +188,7 @@
     this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
-  - Update `doped` links on `SnB`/`easyunfold` etc docs.
+  - Worth adding a very short example showing how to set `MAGMOM`s for AFM/FM systems (see Dan & Abdullah chat)
   - Note about SOC for chemical potential calculations ([FERE paper](https://doi.org/10.1103/PhysRevB.
     85.115104) suggests that the SOC effects on total energy cancel out for chemical potential
     calculations, but only the case when the occupation of the SOC-affected orbitals is constant
