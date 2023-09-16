@@ -36,6 +36,7 @@
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
   settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
+- Profile defect parsing, identify bottlenecks and consider if multiprocessing could be used to speed up.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge
   states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge
   states as a check.
