@@ -853,10 +853,11 @@ class DefectsGenerator(MSONable):
                 in `pymatgen.analysis.defects.supercells` (such as `min_atoms`
                 (default = 50), `max_atoms` (default = 500), `min_length` (default
                 = 10), and `force_diagonal` (default = False)).
-            interstitial_gen_kwargs (Dict):
+            interstitial_gen_kwargs (Dict, bool):
                 Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
                 class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
                 `InterstitialGenerator` if `interstitial_coords` is specified.
+                If set to False, interstitial generation will be skipped entirely.
             target_frac_coords (List):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
@@ -1135,133 +1136,151 @@ class DefectsGenerator(MSONable):
             pbar.update(5)  # 30% of progress bar
 
             # Interstitials:
-            pbar.set_description("Generating interstitials")
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
-            if self.interstitial_coords:
-                # map interstitial coords to primitive structure, and get multiplicities
-                sga = _get_sga(self.structure)
-                symm_ops = sga.get_symmetry_operations(cartesian=False)
-                self.prim_interstitial_coords = []
+            if self.interstitial_gen_kwargs is not False:  # skip interstitials
+                pbar.set_description("Generating interstitials")
+                if self.interstitial_coords:
+                    # map interstitial coords to primitive structure, and get multiplicities
+                    sga = _get_sga(self.structure)
+                    symm_ops = sga.get_symmetry_operations(cartesian=False)
+                    self.prim_interstitial_coords = []
 
-                for interstitial_frac_coords in self.interstitial_coords:
-                    prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
-                        interstitial_frac_coords,
-                        self.structure,
-                        self.primitive_structure,
-                        symm_ops,
-                        equiv_coords=True,
-                    )
-                    self.prim_interstitial_coords.append(
-                        (prim_inter_coords, len(equiv_coords), equiv_coords)
-                    )
-
-                sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
-
-            else:
-                # Generate interstitial sites using Voronoi tessellation
-                vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
-                tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
-                # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
-
-                # parallelize Voronoi interstitial site generation:
-                if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
-                    # communication overhead / process initialisation outweighs speedup
-                    with Pool(2) as p:
-                        interstitial_gen_mp_results = p.map(
-                            _get_interstitial_candidate_sites,
-                            [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
+                    for interstitial_frac_coords in self.interstitial_coords:
+                        prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                            interstitial_frac_coords,
+                            self.structure,
+                            self.primitive_structure,
+                            symm_ops,
+                            equiv_coords=True,
+                        )
+                        self.prim_interstitial_coords.append(
+                            (prim_inter_coords, len(equiv_coords), equiv_coords)
                         )
 
-                    cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
-                    tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
+                    sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
 
                 else:
-                    cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
-                    tight_cand_sites_mul_and_equiv_fpos = [
-                        *tight_vig._get_candidate_sites(self.primitive_structure)
+                    # Generate interstitial sites using Voronoi tessellation
+                    vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
+                    tight_vig = VoronoiInterstitialGenerator(
+                        stol=0.01
+                    )  # for determining multiplicities of
+                    # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
+
+                    # parallelize Voronoi interstitial site generation:
+                    if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
+                        # communication overhead / process initialisation outweighs speedup
+                        with Pool(2) as p:
+                            interstitial_gen_mp_results = p.map(
+                                _get_interstitial_candidate_sites,
+                                [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
+                            )
+
+                        cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
+                        tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
+
+                    else:
+                        cand_sites_mul_and_equiv_fpos = [
+                            *vig._get_candidate_sites(self.primitive_structure)
+                        ]
+                        tight_cand_sites_mul_and_equiv_fpos = [
+                            *tight_vig._get_candidate_sites(self.primitive_structure)
+                        ]
+
+                    structure_matcher = StructureMatcher(
+                        self.interstitial_gen_kwargs.get("ltol", 0.2),
+                        self.interstitial_gen_kwargs.get("stol", 0.3),
+                        self.interstitial_gen_kwargs.get("angle_tol", 5),
+                    )  # pymatgen-analysis-defects default
+                    unique_tight_cand_sites_mul_and_equiv_fpos = [
+                        cand_site_mul_and_equiv_fpos
+                        for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
+                        if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
                     ]
 
-                structure_matcher = StructureMatcher(
-                    self.interstitial_gen_kwargs.get("ltol", 0.2),
-                    self.interstitial_gen_kwargs.get("stol", 0.3),
-                    self.interstitial_gen_kwargs.get("angle_tol", 5),
-                )  # pymatgen-analysis-defects default
-                unique_tight_cand_sites_mul_and_equiv_fpos = [
-                    cand_site_mul_and_equiv_fpos
-                    for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
-                    if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
-                ]
+                    # structure-match the non-matching site & multiplicity tuples, and return the site &
+                    # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
+                    output_sites_mul_and_equiv_fpos = []
+                    for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
+                        matching_sites_mul_and_equiv_fpos = []
+                        if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
+                            for (
+                                tight_cand_site_mul_and_equiv_fpos
+                            ) in unique_tight_cand_sites_mul_and_equiv_fpos:
+                                interstitial_struct = self.primitive_structure.copy()
+                                interstitial_struct.insert(
+                                    0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
+                                )
+                                tight_interstitial_struct = self.primitive_structure.copy()
+                                tight_interstitial_struct.insert(
+                                    0,
+                                    "H",
+                                    tight_cand_site_mul_and_equiv_fpos[0],
+                                    coords_are_cartesian=False,
+                                )
+                                if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
+                                    matching_sites_mul_and_equiv_fpos += [
+                                        tight_cand_site_mul_and_equiv_fpos
+                                    ]
 
-                # structure-match the non-matching site & multiplicity tuples, and return the site &
-                # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
-                output_sites_mul_and_equiv_fpos = []
-                for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
-                    matching_sites_mul_and_equiv_fpos = []
-                    if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
-                        for (
-                            tight_cand_site_mul_and_equiv_fpos
-                        ) in unique_tight_cand_sites_mul_and_equiv_fpos:
-                            interstitial_struct = self.primitive_structure.copy()
-                            interstitial_struct.insert(
-                                0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
-                            )
-                            tight_interstitial_struct = self.primitive_structure.copy()
-                            tight_interstitial_struct.insert(
-                                0, "H", tight_cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
-                            )
-                            if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
-                                matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
-
-                    # take the site with the lower multiplicity (higher symmetry), and most ideal site
-                    # according to _frac_coords_sort_func if multiplicities equal:
-                    output_sites_mul_and_equiv_fpos.append(
-                        min(
-                            [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
-                            key=lambda cand_site_mul_and_equiv_fpos: (
-                                cand_site_mul_and_equiv_fpos[1],
-                                # return the minimum _frac_coords_sort_func for all equiv fpos:
-                                *_frac_coords_sort_func(
-                                    sorted(cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func)[0]
+                        # take the site with the lower multiplicity (higher symmetry), and most ideal site
+                        # according to _frac_coords_sort_func if multiplicities equal:
+                        output_sites_mul_and_equiv_fpos.append(
+                            min(
+                                [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
+                                key=lambda cand_site_mul_and_equiv_fpos: (
+                                    cand_site_mul_and_equiv_fpos[1],
+                                    # return the minimum _frac_coords_sort_func for all equiv fpos:
+                                    *_frac_coords_sort_func(
+                                        sorted(
+                                            cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func
+                                        )[0]
+                                    ),
                                 ),
-                            ),
+                            )
                         )
+
+                    sorted_sites_mul_and_equiv_fpos = []
+                    for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
+                        # take site with equiv_fpos sorted by _frac_coords_sort_func:
+                        sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
+                        ideal_cand_site = sorted_equiv_fpos[0]
+                        sorted_sites_mul_and_equiv_fpos.append(
+                            (ideal_cand_site, multiplicity, sorted_equiv_fpos)
+                        )
+
+                self.defects["interstitials"] = []
+                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
+                for el in self._element_list:
+                    inter_generator = ig.generate(
+                        self.primitive_structure,
+                        insertions={el: cand_sites},
+                        multiplicities={el: multiplicity},
+                        equivalent_positions={el: equiv_fpos},
+                        oxi_state=0,
+                    )
+                    self.defects["interstitials"].extend(
+                        [
+                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=_bulk_oxi_states)
+                            for inter in inter_generator
+                        ]
                     )
 
-                sorted_sites_mul_and_equiv_fpos = []
-                for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
-                    # take site with equiv_fpos sorted by _frac_coords_sort_func:
-                    sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
-                    ideal_cand_site = sorted_equiv_fpos[0]
-                    sorted_sites_mul_and_equiv_fpos.append(
-                        (ideal_cand_site, multiplicity, sorted_equiv_fpos)
-                    )
-
-            self.defects["interstitials"] = []
-            ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
-            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
-            for el in self._element_list:
-                inter_generator = ig.generate(
-                    self.primitive_structure,
-                    insertions={el: cand_sites},
-                    multiplicities={el: multiplicity},
-                    equivalent_positions={el: equiv_fpos},
-                )
-                self.defects["interstitials"].extend(
-                    [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
-                )
-
-                # check if any manually-specified interstitials were skipped due to min_dist and warn user:
-                if self.interstitial_coords and len(self.interstitial_coords) > len(
-                    self.defects["interstitials"]
-                ):
-                    warnings.warn(
-                        f"\nNote that some manually-specified interstitial sites were skipped due to "
-                        f"being too close to host lattice sites (minimum distance = `min_dist` = "
-                        f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some reason "
-                        f"you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
-                        f"Å), or just use the default Voronoi tessellation algorithm for generating "
-                        f"interstials (by not setting the `interstitial_coords` argument)."
-                    )
+                    # check if any manually-specified interstitials were skipped due to min_dist and
+                    # warn user:
+                    if self.interstitial_coords and len(self.interstitial_coords) > len(
+                        self.defects["interstitials"]
+                    ):
+                        warnings.warn(
+                            f"\nNote that some manually-specified interstitial sites were skipped due to "
+                            f"being too close to host lattice sites (minimum distance = `min_dist` = "
+                            f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
+                            f"reason you still want to include these sites, you can adjust `min_dist` ("
+                            f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
+                            f"for generating interstitials (by not setting the `interstitial_coords` "
+                            f"argument)."
+                        )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
