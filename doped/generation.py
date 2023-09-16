@@ -596,7 +596,7 @@ def _get_charge_states(
 
 
 def guess_defect_charge_states(
-    defect: Defect, probability_threshold: float = 0.01, padding: int = 1, return_log: bool = False
+    defect: Defect, probability_threshold: float = 0.0075, padding: int = 1, return_log: bool = False
 ) -> Union[List[int], Tuple[List[int], List[Dict]]]:
     """
     Guess the possible charge states of a defect.
@@ -605,7 +605,7 @@ def guess_defect_charge_states(
         defect (Defect): doped Defect object.
         probability_threshold (float):
             Probability threshold for including defect charge states
-            (for substitutions and interstitials). Default is 0.01.
+            (for substitutions and interstitials). Default is 0.0075.
         padding (int):
             Padding for vacancy charge states, such that the vacancy
             charge states are set to range(vacancy oxi state, padding),
@@ -809,11 +809,12 @@ class DefectsGenerator(MSONable):
         'charged' the host is), with large (absolute) charge states, low probability
         oxidation states and/or greater charge/oxidation state magnitudes than that of
         the host being disfavoured. This can be controlled using the
-        `probability_threshold` or `padding` keys in the `charge_state_gen_kwargs`
-        parameter, which are passed to the `_charge_state_probability()` function.
-        The input and computed values used to guess charge state probabilities are
-        provided in the `DefectEntry.charge_state_guessing_log` attributes.
-        See docs for examples of modifying the generated charge states.
+        `probability_threshold` (default = 0.0075) or `padding` (default = 1) keys in
+        the `charge_state_gen_kwargs` parameter, which are passed to the
+        `_charge_state_probability()` function. The input and computed values used to
+        guess charge state probabilities are provided in the
+        `DefectEntry.charge_state_guessing_log` attributes. See docs for examples of
+        modifying the generated charge states.
 
         Args:
             structure (Structure):
@@ -845,7 +846,7 @@ class DefectsGenerator(MSONable):
                 input structure is used as the defect & bulk supercell.
             charge_state_gen_kwargs (Dict):
                 Keyword arguments to be passed to the `_charge_state_probability`
-                function (such as `probability_threshold` (default = 0.01, used for
+                function (such as `probability_threshold` (default = 0.0075, used for
                 substitutions and interstitials) and `padding` (default = 1, used for
                 vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
