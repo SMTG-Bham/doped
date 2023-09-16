@@ -6,7 +6,7 @@ import copy
 import warnings
 from functools import partial
 from itertools import chain
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, Process, cpu_count
 from typing import Dict, List, Optional, Tuple, Type, Union, cast
 from unittest.mock import MagicMock
 
@@ -31,7 +31,14 @@ from pymatgen.transformations.advanced_transformations import _proj
 from tabulate import tabulate
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
+from doped.core import (
+    Defect,
+    DefectEntry,
+    Interstitial,
+    Substitution,
+    Vacancy,
+    _guess_and_set_struct_oxi_states,
+)
 from doped.utils.wyckoff import (
     _custom_round,
     _frac_coords_sort_func,
@@ -1016,21 +1023,58 @@ class DefectsGenerator(MSONable):
                     f"(which can then be specified with the `supercell_matrix` argument)."
                 )
 
+            _bulk_oxi_states: Union[
+                bool, Dict
+            ] = True  # to check if pymatgen can guess the bulk oxidation states
+            # if input structure was oxi-state-decorated, use these oxi states for defect generation:
+            if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
+                isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
+            ):
+                _bulk_oxi_states = {el.symbol: el.oxi_state for el in self.structure.composition.elements}
+
+            else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
+                guess_oxi_process = Process(
+                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure,)
+                )
+                guess_oxi_process.start()
+                guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
+                # otherwise revert to all Defect oxi states being set to 0
+
+                if guess_oxi_process.is_alive():
+                    _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
+                    warnings.warn(
+                        "\nOxidation states could not be guessed for the input structure. This is "
+                        "required for charge state guessing, so defects will still be generated but all "
+                        "charge states will be set to -1, 0, +1. You can manually edit these with the "
+                        "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
+                        "states of the input structure (e.g. using "
+                        "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
+                    )
+                    guess_oxi_process.terminate()
+                    guess_oxi_process.join()
+
             pbar.update(10)  # 15% of progress bar
 
             # Generate defects
             # Vacancies:
             pbar.set_description("Generating vacancies")
             vac_generator_obj = VacancyGenerator()
-            vac_generator = vac_generator_obj.generate(self.primitive_structure)
-            self.defects["vacancies"] = [Vacancy._from_pmg_defect(vac) for vac in vac_generator]
+            vac_generator = vac_generator_obj.generate(
+                self.primitive_structure, oxi_state=0
+            )  # set oxi_state using doped functions; more robust and efficient
+            self.defects["vacancies"] = [
+                Vacancy._from_pmg_defect(vac, bulk_oxi_states=_bulk_oxi_states) for vac in vac_generator
+            ]
             pbar.update(5)  # 20% of progress bar
 
             # Antisites:
             pbar.set_description("Generating substitutions")
             antisite_generator_obj = AntiSiteGenerator()
-            as_generator = antisite_generator_obj.generate(self.primitive_structure)
-            self.defects["substitutions"] = [Substitution._from_pmg_defect(anti) for anti in as_generator]
+            as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
+            self.defects["substitutions"] = [
+                Substitution._from_pmg_defect(anti, bulk_oxi_states=_bulk_oxi_states)
+                for anti in as_generator
+            ]
             pbar.update(5)  # 25% of progress bar
 
             # Substitutions:
@@ -1076,9 +1120,12 @@ class DefectsGenerator(MSONable):
 
             if substitutions:
                 sub_generator = substitution_generator_obj.generate(
-                    self.primitive_structure, substitution=substitutions
+                    self.primitive_structure, substitution=substitutions, oxi_state=0
                 )
-                sub_defects = [Substitution._from_pmg_defect(sub) for sub in sub_generator]
+                sub_defects = [
+                    Substitution._from_pmg_defect(sub, bulk_oxi_states=_bulk_oxi_states)
+                    for sub in sub_generator
+                ]
                 if "substitutions" in self.defects:
                     self.defects["substitutions"].extend(sub_defects)
                 else:
