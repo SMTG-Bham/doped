@@ -1370,15 +1370,20 @@ class DefectsGenerator(MSONable):
                 # warnings from tqdm
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                charge_state_guessing_output = guess_defect_charge_states(
-                    neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
-                )
-                charge_state_guessing_output = cast(
-                    Tuple[List[int], List[Dict]], charge_state_guessing_output
-                )  # for correct type checking; guess_defect_charge_states can return different types
-                # depending on return_log
-                charge_states, charge_state_guessing_log = charge_state_guessing_output
-                neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
+                if _bulk_oxi_states is not False:
+                    charge_state_guessing_output = guess_defect_charge_states(
+                        neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
+                    )
+                    charge_state_guessing_output = cast(
+                        Tuple[List[int], List[Dict]], charge_state_guessing_output
+                    )  # for correct type checking; guess_defect_charge_states can return different types
+                    # depending on return_log
+                    charge_states, charge_state_guessing_log = charge_state_guessing_output
+                    neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
+
+                else:
+                    charge_states = [-1, 0, 1]  # no oxi states, so can't guess charge states
+                    neutral_defect_entry.charge_state_guessing_log = {}
 
                 for charge in charge_states:
                     defect_entry = copy.deepcopy(neutral_defect_entry)
