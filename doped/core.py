@@ -165,7 +165,7 @@ def _guess_and_set_struct_oxi_states(structure):
         # check oxi_states assigned and not all zero
         if all(specie.oxi_state == 0 for specie in structure.species):
             structure.add_oxidation_state_by_guess()
-    except Exception:  # pragma: no cover
+    except Exception:
         structure.add_oxidation_state_by_guess()
 
 
