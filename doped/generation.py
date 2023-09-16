@@ -421,6 +421,7 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
         dict: Dictionary of oxidation states and their probabilities.
     """
     comp_obj = Composition(element_symbol)
+    comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
     oxi_probabilities = {
         k: v
         for k, v in comp_obj.oxi_prob.items()
@@ -1369,7 +1370,7 @@ class DefectsGenerator(MSONable):
                 table = []
                 header = [
                     defect_class.capitalize(),
-                    "Charge States",
+                    "Guessed Charges",
                     "Conv. Cell Coords",
                     "Wyckoff",
                 ]
