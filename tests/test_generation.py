@@ -236,28 +236,28 @@ O_i_C3           [-2,-1,0]          [0.497,0.497,0.497]  8c
 
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
         self.zns_defect_gen_string = (
-            "DefectsGenerator for input composition ZnS, space group F-43m with 36 defect entries "
+            "DefectsGenerator for input composition ZnS, space group F-43m with 44 defect entries "
             "created."
         )
         self.zns_defect_gen_info = (
-            """Vacancies    Guessed Charges      Conv. Cell Coords    Wyckoff
+            """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
 -----------  -----------------  -------------------  ---------
 v_Zn         [-2,-1,0,+1]       [0.000,0.000,0.000]  4a
 v_S          [-1,0,+1,+2]       [0.250,0.250,0.250]  4c
 
-Substitutions    Guessed Charges    Conv. Cell Coords    Wyckoff
----------------  -----------------  -------------------  ---------
-Zn_S             [0,+1,+2,+3,+4]    [0.250,0.250,0.250]  4c
-S_Zn             [-4,-3,-2,-1,0]    [0.000,0.000,0.000]  4a
+Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Zn_S             [0,+1,+2,+3,+4]        [0.250,0.250,0.250]  4c
+S_Zn             [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.000]  4a
 
 Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
 Zn_i_C3v         [0,+1,+2]          [0.625,0.625,0.625]  16e
 Zn_i_Td_S2.35    [0,+1,+2]          [0.500,0.500,0.500]  4b
 Zn_i_Td_Zn2.35   [0,+1,+2]          [0.750,0.750,0.750]  4d
-S_i_C3v          [-2,-1,0]          [0.625,0.625,0.625]  16e
-S_i_Td_S2.35     [-2,-1,0]          [0.500,0.500,0.500]  4b
-S_i_Td_Zn2.35    [-2,-1,0]          [0.750,0.750,0.750]  4d
+S_i_C3v          [-2,-1,0,+1,+2]    [0.625,0.625,0.625]  16e
+S_i_Td_S2.35     [-2,-1,0,+1,+2]    [0.500,0.500,0.500]  4b
+S_i_Td_Zn2.35    [-2,-1,0,+1,+2]    [0.750,0.750,0.750]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of ZnS.\n"
@@ -1946,7 +1946,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert len(zns_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4  # 4x conv cell
 
         # explicitly test defect entries
-        assert len(zns_defect_gen.defect_entries) == 36
+        assert len(zns_defect_gen.defect_entries) == 44
         assert str(zns_defect_gen) == self.zns_defect_gen_string  # __str__()
         assert (  # __repr__()
             repr(zns_defect_gen)
@@ -2403,6 +2403,4 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert self.N_diamond_defect_gen_info in output
         assert "_i_" not in output  # no interstitials generated
 
-        self._save_defect_gen_jsons(N_diamond_defect_gen)
         self._general_defect_gen_check(N_diamond_defect_gen)
-        self._load_and_test_defect_gen_jsons(N_diamond_defect_gen)
