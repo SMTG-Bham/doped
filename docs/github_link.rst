@@ -2,8 +2,10 @@
    :align: center
    :width: 300
 
-The doped logo kinda looks like an eyeball doesn't it?
+\|
 ========================================================
+**The doped logo kinda looks like an eyeball doesn't it?**
+
 I'm glad you asked.
 
 So after returning home from a quiet night's walk in the Irish countryside circa late-2020 –
