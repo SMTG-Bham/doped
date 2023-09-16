@@ -62,17 +62,17 @@ class DefectsGeneratorTest(unittest.TestCase):
             "created."
         )
         self.cdte_defect_gen_info = (
-            """Vacancies    Charge States    Conv. Cell Coords    Wyckoff
------------  ---------------  -------------------  ---------
-v_Cd         [-2,-1,0,+1]     [0.000,0.000,0.000]  4a
-v_Te         [-1,0,+1,+2]     [0.250,0.250,0.250]  4c
+            """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
+-----------  -----------------  -------------------  ---------
+v_Cd         [-2,-1,0,+1]       [0.000,0.000,0.000]  4a
+v_Te         [-1,0,+1,+2]       [0.250,0.250,0.250]  4c
 
-Substitutions    Charge States          Conv. Cell Coords    Wyckoff
+Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Cd_Te            [0,+1,+2,+3,+4]        [0.250,0.250,0.250]  4c
 Te_Cd            [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.000]  4a
 
-Interstitials    Charge States          Conv. Cell Coords    Wyckoff
+Interstitials    Guessed Charges        Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
 Cd_i_Td_Cd2.83   [0,+1,+2]              [0.750,0.750,0.750]  4d
@@ -1078,7 +1078,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0]        [0.750,0.250,0.750]  9b
         assert self.cdte_defect_gen_info not in output
 
         assert (
-            """Interstitials    Charge States          Conv. Cell Coords    Wyckoff
+            """Interstitials    Guessed Charges          Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
 Cd_i_Td          [0,+1,+2]              [0.500,0.500,0.500]  4b
 Te_i_Td          [-2,-1,0,+1,+2,+3,+4]  [0.500,0.500,0.500]  4b
@@ -1178,6 +1178,21 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                         i[name].defect_supercell_site.frac_coords
                     )[0],
                 )
+
+    def test_supercell_gen_kwargs(self):
+        # test setting supercell_gen_kwargs
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, supercell_gen_kwargs={"min_length": 15}
+        )
+        assert self.cdte_defect_gen_info in output
+        self._general_defect_gen_check(cdte_defect_gen)
+
+        # check now with 216-atom supercell:
+        assert len(cdte_defect_gen.bulk_supercell) == 216
+
+        assert np.allclose(
+            cdte_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords, [8.9933965, 8.9933965, 10.6285595]
+        )
 
     def cdte_defect_gen_check(self, cdte_defect_gen):
         self._general_defect_gen_check(cdte_defect_gen)
