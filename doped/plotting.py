@@ -511,8 +511,8 @@ def _format_defect_name(
             post_vacancy_strings,
         )
         if match_found:
-            defect_name_with_site_info = f"$V_{{{element}_{{{site_info}}}}}^{{{charge_string}}}$"
-            defect_name_without_site_info = f"$V_{{{element}}}^{{{charge_string}}}$"
+            defect_name_with_site_info = f"$\\it{{V}}_{{{element}_{{{site_info}}}}}^{{{charge_string}}}$"
+            defect_name_without_site_info = f"$\\it{{V}}_{{{element}}}^{{{charge_string}}}$"
 
         else:
             match_found, site_info = _check_matching_defect_format_with_site_info(
@@ -533,9 +533,9 @@ def _format_defect_name(
             and defect_name is None
         ):
             if include_site_info_in_name and doped_site_info is not None:
-                return f"$V_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
+                return f"$\\it{{V}}_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
-            return f"$V_{{{element}}}^{{{charge_string}}}$"
+            return f"$\\it{{V}}_{{{element}}}^{{{charge_string}}}$"
 
         if (
             _check_matching_defect_format(
@@ -727,7 +727,7 @@ def _format_defect_name(
 
             if include_site_info_in_name:  # whether to include the site number in defect name
                 if defect_type.lower() == "vac":
-                    defect_name = f"$V_{{{site_element}_{{{site}}}}}^{{{charge_string}}}$"
+                    defect_name = f"$\\it{{V}}_{{{site_element}_{{{site}}}}}^{{{charge_string}}}$"
                     # double brackets to treat it literally (tex), then extra {} for
                     # python str formatting
                 elif defect_type.lower() in ["as", "sub"]:
@@ -737,7 +737,7 @@ def _format_defect_name(
                     raise ValueError("Defect type not recognized. Please check spelling.")
             else:
                 if defect_type.lower() == "vac":
-                    defect_name = f"$V_{{{site_element}}}^{{{charge_string}}}$"
+                    defect_name = f"$\\it{{V}}_{{{site_element}}}^{{{charge_string}}}$"
                 elif defect_type.lower() in ["as", "sub"]:
                     subs_element = defect_species.split("_")[4]
                     defect_name = f"{site_element}$_{{{subs_element}}}^{{{charge_string}}}$"
