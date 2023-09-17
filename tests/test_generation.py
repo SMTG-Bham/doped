@@ -2406,3 +2406,160 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert "_i_" not in output  # no interstitials generated
 
         self._general_defect_gen_check(N_diamond_defect_gen)
+
+    def compare_doped_charges(self, tld_stable_charges, defect_gen):
+        """
+        Compare the charges of the generated defects to the expected charges.
+        """
+        false_positives = {}
+        false_negatives = {}
+        hits = {}
+        for defect, charge_list in tld_stable_charges.items():
+            generated_defect_charges = {
+                defect_gen.defect_entries[defect_entry_name].charge_state
+                for defect_entry_name in defect_gen.defect_entries
+                if defect_entry_name.startswith(defect)
+            }
+
+            false_negatives[defect] = set(charge_list) - generated_defect_charges
+            false_positives[defect] = generated_defect_charges - set(charge_list)
+            hits[defect] = set(charge_list) & generated_defect_charges
+
+        return (false_positives, false_negatives, hits)
+
+    def test_charge_state_guessing(self):
+        # Charge state guessing obvs already explicitly tested above,
+        # but here we test for two representative tricky cases with
+        # amphoteric species:
+
+        zn3p2_tld_stable_charges = {  # from Yihuang and Geoffroy's: https://arxiv.org/abs/2306.13583
+            "v_Zn": list(range(-2, 0 + 1)),
+            "v_P": list(range(-1, +1 + 1)),
+            "Zn_i": list(range(0, +2 + 1)),
+            "P_i": list(range(-1, +3 + 1)),
+            "Zn_P": list(range(-2, +3 + 1)),  # -2 just below CBM...
+            "P_Zn": list(range(-1, +3 + 1)),
+        }
+
+        zn3p2_defect_gen, output = self._generate_and_test_no_warnings(self.zn3p2)
+        self._general_defect_gen_check(zn3p2_defect_gen)
+
+        false_positives, false_negatives, hits = self.compare_doped_charges(
+            zn3p2_tld_stable_charges, zn3p2_defect_gen
+        )
+        assert sum(len(val) for val in false_positives.values()) == 13
+        assert sum(len(val) for val in false_negatives.values()) == 2
+        assert sum(len(val) for val in hits.values()) == 23
+
+        sb2se3_tld_stable_charges = {  # from Xinwei's work
+            "v_Se": list(range(-2, +2 + 1)),
+            "v_Sb": list(range(-3, +1 + 1)),
+            "Sb_Se": list(range(-1, +3 + 1)),
+            "Se_Sb": list(range(-1, +1 + 1)),
+            "Sb_i": list(range(-1, +3 + 1)),
+            "Se_i": list(range(0, +4 + 1)),
+        }
+
+        # note Sb2Se3 is a case where the lattice vectors are swapped to match the BCS conv cell definition
+        sb2se3_defect_gen, output = self._generate_and_test_no_warnings(self.sb2se3)
+        self._general_defect_gen_check(sb2se3_defect_gen)
+
+        false_positives, false_negatives, hits = self.compare_doped_charges(
+            sb2se3_tld_stable_charges, sb2se3_defect_gen
+        )
+        assert sum(len(val) for val in false_positives.values()) == 14
+        assert sum(len(val) for val in false_negatives.values()) == 1
+        assert sum(len(val) for val in hits.values()) == 27
+
+        # all Sb2Se3 atoms occupy the 4c Wyckoff positions (10.1002/pssb.202000063,
+        # 10.1107/S0365110X57000298, https://next-gen.materialsproject.org/materials/mp-2160/), which is
+        # incorrectly determined if the pymatgen/spglib lattice vectors aren't swapped to match the BCS
+        # convention, so this is a good check:
+
+        assert (
+            (
+                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Sb_Cs_Se2.57  [-3,-2,-1,0,+1]    [0.537,0.250,0.355]  4c
+v_Sb_Cs_Se2.63  [-3,-2,-1,0,+1]    [0.328,0.250,0.032]  4c
+v_Se_Cs_Sb2.57  [-1,0,+1,+2]       [0.628,0.250,0.553]  4c
+v_Se_Cs_Sb2.63  [-1,0,+1,+2]       [0.192,0.250,0.210]  4c
+v_Se_Cs_Sb2.65  [-1,0,+1,+2]       [0.445,0.750,0.128]  4c
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Sb_Se_Cs_Sb2.57  [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.628,0.250,0.553]  4c
+Sb_Se_Cs_Sb2.63  [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.192,0.250,0.210]  4c
+Sb_Se_Cs_Sb2.65  [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.445,0.750,0.128]  4c
+Se_Sb_Cs_Se2.57  [-5,-4,-3,-2,-1,0,+1]        [0.537,0.250,0.355]  4c
+Se_Sb_Cs_Se2.63  [-5,-4,-3,-2,-1,0,+1]        [0.328,0.250,0.032]  4c
+
+Interstitials         Guessed Charges              Conv. Cell Coords    Wyckoff
+--------------------  ---------------------------  -------------------  ---------
+Sb_i_C1               [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.367,0.043,0.279]  8d
+Sb_i_Cs_Sb2.14        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.503,0.250,0.700]  4c
+Sb_i_Cs_Sb2.32        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.295,0.250,0.378]  4c
+Sb_i_Cs_Sb2.63        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.591,0.250,0.090]  4c
+Sb_i_Cs_Se2.32Sb2.33  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.393,0.250,0.217]  4c
+Sb_i_Cs_Se2.32Sb2.40  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.074,0.250,0.035]  4c
+Sb_i_Cs_Se2.38        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.293,0.750,0.263]  4c
+Se_i_C1               [-2,-1,0,+1,+2,+3,+4]        [0.367,0.043,0.279]  8d
+Se_i_Cs_Sb2.14        [-2,-1,0,+1,+2,+3,+4]        [0.503,0.250,0.700]  4c
+Se_i_Cs_Sb2.32        [-2,-1,0,+1,+2,+3,+4]        [0.295,0.250,0.378]  4c
+Se_i_Cs_Sb2.63        [-2,-1,0,+1,+2,+3,+4]        [0.591,0.250,0.090]  4c
+Se_i_Cs_Se2.32Sb2.33  [-2,-1,0,+1,+2,+3,+4]        [0.393,0.250,0.217]  4c
+Se_i_Cs_Se2.32Sb2.40  [-2,-1,0,+1,+2,+3,+4]        [0.074,0.250,0.035]  4c
+Se_i_Cs_Se2.38        [-2,-1,0,+1,+2,+3,+4]        [0.293,0.750,0.263]  4c
+\n"""
+                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
+                "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+                "standard structure, for which doped uses the spglib convention."
+            )
+            in output
+        )
+
+    def test_lattice_vector_swapping(self):
+        # Already tested above with Sb2Se3, but Ag2Se is also another tricky case so quick test with it too
+        # note that this Ag2Se structure is not the groundstate, but just a case where the lattice vectors
+        # are not in the standard orientation (spacegroup 17)
+        # https://next-gen.materialsproject.org/materials/mp-568889
+        ag2se_defect_gen, output = self._generate_and_test_no_warnings(self.ag2se)
+        self._general_defect_gen_check(ag2se_defect_gen)
+
+        assert (
+            (
+                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Ag_C1         [-1,0,+1]          [0.103,0.005,0.244]  4e
+v_Ag_C2_Ag2.80  [-1,0,+1]          [0.391,0.000,0.000]  2a
+v_Ag_C2_Ag2.85  [-1,0,+1]          [0.615,0.500,0.500]  2b
+v_Se            [-1,0,+1,+2]       [0.294,0.520,0.251]  4e
+
+Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Ag_Se            [0,+1,+2,+3]           [0.294,0.520,0.251]  4e
+Se_Ag_C1         [-3,-2,-1,0,+1,+2,+3]  [0.103,0.005,0.244]  4e
+Se_Ag_C2_Ag2.80  [-3,-2,-1,0,+1,+2,+3]  [0.391,0.000,0.000]  2a
+Se_Ag_C2_Ag2.85  [-3,-2,-1,0,+1,+2,+3]  [0.615,0.500,0.500]  2b
+
+Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
+---------------  -----------------  -------------------  ---------
+Ag_i_C1_Ag2.04   [0,+1,+2]          [0.335,0.435,0.002]  4e
+Ag_i_C1_Ag2.05   [0,+1,+2]          [0.405,0.109,0.250]  4e
+Ag_i_C2_Ag2.38   [0,+1,+2]          [0.000,0.750,0.002]  2c
+Ag_i_C2_Ag2.48   [0,+1,+2]          [0.091,0.500,0.500]  2b
+Se_i_C1_Ag2.04   [-2,-1,0]          [0.335,0.435,0.002]  4e
+Se_i_C1_Ag2.05   [-2,-1,0]          [0.405,0.109,0.250]  4e
+Se_i_C2_Ag2.38   [-2,-1,0]          [0.000,0.750,0.002]  2c
+Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
+    \n"""
+                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
+                "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
+                "standard structure, for which doped uses the spglib convention."
+            )
+            in output
+        )
+
+        assert ag2se_defect_gen._BilbaoCS_conv_cell_vector_mapping == [1, 0, 2]
