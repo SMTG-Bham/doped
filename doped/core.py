@@ -2,7 +2,9 @@
 Core functions and classes for defects in doped.
 """
 
+
 import collections
+import contextlib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -155,18 +157,32 @@ class DefectEntry(thermo.DefectEntry):
         return loadfn(filename)
 
 
-def _guess_and_set_struct_oxi_states(structure):
+def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
     """
     Tries to guess (and set) the oxidation states of the input structure.
     """
-    # Try to use the reduced cell first since oxidation state assignment scales poorly with system size:
+    if try_without_max_sites:
+        with contextlib.suppress(Exception):
+            structure.add_oxidation_state_by_guess()
+            # check all oxidation states are whole numbers:
+            if all(specie.oxi_state.is_integer() for specie in structure.species):
+                if queue is not None:
+                    queue.put(structure)
+                return
+
+    # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
     try:
         structure.add_oxidation_state_by_guess(max_sites=-1)
         # check oxi_states assigned and not all zero
-        if all(specie.oxi_state == 0 for specie in structure.species):
+        if all(specie.oxi_state == 0 for specie in structure.species) or not all(
+            specie.oxi_state.is_integer() for specie in structure.species
+        ):
             structure.add_oxidation_state_by_guess()
     except Exception:
         structure.add_oxidation_state_by_guess()
+
+    if queue is not None:
+        queue.put(structure)
 
 
 class Defect(core.Defect):
