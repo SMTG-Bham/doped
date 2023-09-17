@@ -837,8 +837,8 @@ class DefectsGenerator(MSONable):
                 The input interstitial_coords are converted to
                 DefectsGenerator.prim_interstitial_coords, which are the corresponding
                 fractional coordinates in DefectsGenerator.primitive_structure (which
-                is used for defect generation), sorted according to the doped
-                _frac_coords_sort_func.
+                is used for defect generation), along with the multiplicity and
+                equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
