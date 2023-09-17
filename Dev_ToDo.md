@@ -126,7 +126,7 @@
 
 - Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-  - Add note about `NUPDOWN` for triplet states (bipolarons).
+  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and O-O in STO from Kanta?)).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
@@ -165,7 +165,7 @@
     calculations, but only the case when the occupation of the SOC-affected orbitals is constant
     (typically not the case)) Better to do consistently (link Emily SOC work and/or thesis).
   - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
-    automatically in `doped`, excited-state degeneracy (e.g. with bipolarons with single and triplet
+    automatically in `doped`, excited-state degeneracy (e.g. with bipolarons/dimers with single and triplet
     states) are not, so the user should manually account for this if present. Also note that
     temperature effects can be important in certain cases so see this review if that's the case.
   - The Wyckoff analysis code is very useful and no other package can do this afaik. See
