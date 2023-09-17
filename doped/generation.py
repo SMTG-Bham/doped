@@ -1162,11 +1162,14 @@ class DefectsGenerator(MSONable):
 
                 else:
                     # Generate interstitial sites using Voronoi tessellation
-                    vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
+                    interstitial_gen_kwargs = self.interstitial_gen_kwargs.copy()
+                    interstitial_gen_kwargs.setdefault("stol", 0.31)  # avoid overwriting input dict
+
+                    vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
                     tight_vig = VoronoiInterstitialGenerator(
                         stol=0.01
-                    )  # for determining multiplicities of
-                    # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
+                    )  # for determining multiplicities of any merged/grouped interstitial sites from
+                    # Voronoi tessellation + structure-matching
 
                     # parallelize Voronoi interstitial site generation:
                     if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
