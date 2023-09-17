@@ -2612,3 +2612,33 @@ Te_i_C3i         [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             )
             in output
         )
+
+    def test_charge_state_gen_kwargs(self):
+        # test adjusting probability_threshold with ZnS:
+        zns_defect_gen, output = self._generate_and_test_no_warnings(
+            self.non_diagonal_ZnS, charge_state_gen_kwargs={"probability_threshold": 0.1}
+        )
+
+        assert self.zns_defect_gen_info not in output
+        for prev_string, new_string in [
+            (
+                "S_i_C3v          [-2,-1,0,+1,+2]",
+                "S_i_C3v          [-2,-1,0]      ",
+            ),
+            (
+                "S_i_Td_S2.35     [-2,-1,0,+1,+2]",
+                "S_i_Td_S2.35     [-2,-1,0]      ",
+            ),
+            (
+                "S_i_Td_Zn2.35    [-2,-1,0,+1,+2]",
+                "S_i_Td_Zn2.35    [-2,-1,0]      ",
+            ),
+            (
+                "S_Zn             [-4,-3,-2,-1,0,+1,+2]",
+                "S_Zn             [-4,-3,-2,-1,0]    ",  # reduced column width with less charge states
+            ),
+        ]:
+            assert prev_string not in output
+            assert new_string in output
+
+        self.zns_defect_gen_check(zns_defect_gen, check_info=False)
