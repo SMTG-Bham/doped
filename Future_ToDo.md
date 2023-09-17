@@ -19,6 +19,8 @@
     Could be useful as a validation / check of supercell size convergence, and for quantifying the
     strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a
     good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
+  - For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
+   This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
 - Just something to keep in mind; new defect generation code can apparently use oxidation states from
   `defect.defect_structure` and map to defect supercell. Not in our current subclass implementation of
   `Defect`. Is this useful info?
