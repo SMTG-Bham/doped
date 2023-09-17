@@ -204,7 +204,7 @@
     paper.
   - Note that charge states are guessed based on different factors, but these rely on auto-determined
     oxidation states and can fail in weird cases. As always please consider if these charge states are
-    reasonable for the defects in your system.
+    reasonable for the defects in your system. (i.e. low-symmetry, amphoteric, mixed-valence cases etc!)
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
