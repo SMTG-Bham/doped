@@ -302,7 +302,7 @@ def name_defect_entries(defect_entries, element_list=None):
         return full_defect_name.rsplit("_", split_number)[0]
 
     def get_matching_names(defect_naming_dict, defect_name):
-        return [name for name in defect_naming_dict if defect_name.startswith(name)]
+        return [name for name in defect_naming_dict if name.startswith(defect_name)]
 
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
