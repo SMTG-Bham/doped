@@ -6,7 +6,7 @@ import copy
 import warnings
 from functools import partial
 from itertools import chain
-from multiprocessing import Pool, Process, cpu_count
+from multiprocessing import Pool, Process, Queue, cpu_count
 from typing import Dict, List, Optional, Tuple, Type, Union, cast
 from unittest.mock import MagicMock
 
@@ -1035,25 +1035,45 @@ class DefectsGenerator(MSONable):
                 _bulk_oxi_states = {el.symbol: el.oxi_state for el in self.structure.composition.elements}
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
-                guess_oxi_process = Process(
-                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure,)
-                )
-                guess_oxi_process.start()
-                guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
-                # otherwise revert to all Defect oxi states being set to 0
+                queue: Queue = Queue()
+                guess_oxi_process_wout_max_sites = Process(
+                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure, True, queue)
+                )  # try without max sites first, if fails, try with max sites
+                guess_oxi_process_wout_max_sites.start()
+                guess_oxi_process_wout_max_sites.join(timeout=10)  # if still going, revert to using max
+                # sites
 
-                if guess_oxi_process.is_alive():
-                    _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
-                    warnings.warn(
-                        "\nOxidation states could not be guessed for the input structure. This is "
-                        "required for charge state guessing, so defects will still be generated but all "
-                        "charge states will be set to -1, 0, +1. You can manually edit these with the "
-                        "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
-                        "states of the input structure (e.g. using "
-                        "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
+                if guess_oxi_process_wout_max_sites.is_alive():
+                    guess_oxi_process_wout_max_sites.terminate()
+                    guess_oxi_process_wout_max_sites.join()
+
+                    guess_oxi_process = Process(
+                        target=_guess_and_set_struct_oxi_states,
+                        args=(self.primitive_structure, False, queue),
                     )
-                    guess_oxi_process.terminate()
-                    guess_oxi_process.join()
+                    guess_oxi_process.start()
+                    guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
+                    # otherwise revert to all Defect oxi states being set to 0
+
+                    if guess_oxi_process.is_alive():
+                        _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
+                        warnings.warn(
+                            "\nOxidation states could not be guessed for the input structure. This is "
+                            "required for charge state guessing, so defects will still be generated but "
+                            "all charge states will be set to -1, 0, +1. You can manually edit these "
+                            "with the add/remove_charge_states methods (see tutorials), or you can set "
+                            "the oxidation states of the input structure (e.g. using "
+                            "structure.add_oxidation_state_by_element()) and re-initialize "
+                            "DefectsGenerator()."
+                        )
+                        guess_oxi_process.terminate()
+                        guess_oxi_process.join()
+
+                if _bulk_oxi_states is not False:
+                    self.primitive_structure = queue.get()
+                    _bulk_oxi_states = {
+                        el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
+                    }
 
             pbar.update(10)  # 15% of progress bar
 
@@ -1163,7 +1183,7 @@ class DefectsGenerator(MSONable):
                 else:
                     # Generate interstitial sites using Voronoi tessellation
                     interstitial_gen_kwargs = self.interstitial_gen_kwargs.copy()
-                    interstitial_gen_kwargs.setdefault("stol", 0.31)  # avoid overwriting input dict
+                    interstitial_gen_kwargs.setdefault("stol", 0.32)  # avoid overwriting input dict
 
                     vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
                     tight_vig = VoronoiInterstitialGenerator(

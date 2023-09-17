@@ -167,7 +167,7 @@ O_i_D2d          [-2,-1,0]              [0.000,0.500,0.250]  4d
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_string = (
-            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 197 defect "
+            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 182 defect "
             "entries created."
         )
         self.lmno_defect_gen_info = (
@@ -1819,7 +1819,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )  # prim = conv cell in LMNO
 
         # explicitly test defect entries
-        assert len(lmno_defect_gen.defect_entries) == 197
+        assert len(lmno_defect_gen.defect_entries) == 182
         assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
         # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
         # between local and GH Actions
