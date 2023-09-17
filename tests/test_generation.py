@@ -199,28 +199,24 @@ O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
 
 Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
-Li_i_C1_Li1.75   [0,+1]             [0.199,0.303,0.444]  24e
 Li_i_C1_O1.72    [0,+1]             [0.248,0.480,0.249]  24e
 Li_i_C1_O1.78    [0,+1]             [0.017,0.261,0.250]  24e
 Li_i_C2_Li1.83   [0,+1]             [0.077,0.125,0.173]  12d
 Li_i_C2_Li1.84   [0,+1]             [0.151,0.375,0.401]  12d
 Li_i_C2_Li1.86   [0,+1]             [0.086,0.375,0.336]  12d
 Li_i_C3          [0,+1]             [0.497,0.497,0.497]  8c
-Mn_i_C1_Li1.75   [0,+1,+2,+3,+4]    [0.199,0.303,0.444]  24e
 Mn_i_C1_O1.72    [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
 Mn_i_C1_O1.78    [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
 Mn_i_C2_Li1.83   [0,+1,+2,+3,+4]    [0.077,0.125,0.173]  12d
 Mn_i_C2_Li1.84   [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
 Mn_i_C2_Li1.86   [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
 Mn_i_C3          [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
-Ni_i_C1_Li1.75   [0,+1,+2,+3,+4]    [0.199,0.303,0.444]  24e
 Ni_i_C1_O1.72    [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
 Ni_i_C1_O1.78    [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
 Ni_i_C2_Li1.83   [0,+1,+2,+3,+4]    [0.077,0.125,0.173]  12d
 Ni_i_C2_Li1.84   [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
 Ni_i_C2_Li1.86   [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
 Ni_i_C3          [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
-O_i_C1_Li1.75    [-2,-1,0]          [0.199,0.303,0.444]  24e
 O_i_C1_O1.72     [-2,-1,0]          [0.248,0.480,0.249]  24e
 O_i_C1_O1.78     [-2,-1,0]          [0.017,0.261,0.250]  24e
 O_i_C2_Li1.83    [-2,-1,0]          [0.077,0.125,0.173]  12d
@@ -602,10 +598,10 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
         self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
         self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
+        self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
 
         # TODO: test all input parameters set as attributes; extrinsic, interstitial_coords,
         #  interstitial/supercell gen kwargs, target_frac_coords, charge_state_gen_kwargs setting...
-        # TODO: test charge_state_gen_kwargs (use ZnS)
 
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
@@ -1807,7 +1803,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(lmno_defect_gen.defects["vacancies"]) == 5
         assert len(lmno_defect_gen.defects["substitutions"]) == 15
-        assert len(lmno_defect_gen.defects["interstitials"]) == 28
+        assert len(lmno_defect_gen.defects["interstitials"]) == 24
 
         # explicitly test some relevant defect attributes
         assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
@@ -1910,9 +1906,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
         self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
-    def zns_defect_gen_check(self, zns_defect_gen, generate_supercell=True):
+    def zns_defect_gen_check(self, zns_defect_gen, generate_supercell=True, check_info=True):
         self._general_defect_gen_check(zns_defect_gen)
-        assert self.zns_defect_gen_info in zns_defect_gen._defect_generator_info()
+        if check_info:
+            assert self.zns_defect_gen_info in zns_defect_gen._defect_generator_info()
         assert zns_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
 
@@ -1948,14 +1945,15 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert len(zns_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4  # 4x conv cell
 
         # explicitly test defect entries
-        assert len(zns_defect_gen.defect_entries) == 44
-        assert str(zns_defect_gen) == self.zns_defect_gen_string  # __str__()
-        assert (  # __repr__()
-            repr(zns_defect_gen)
-            == self.zns_defect_gen_string
-            + "\n---------------------------------------------------------\n"
-            + self.zns_defect_gen_info
-        )
+        if check_info:
+            assert len(zns_defect_gen.defect_entries) == 44
+            assert str(zns_defect_gen) == self.zns_defect_gen_string  # __str__()
+            assert (  # __repr__()
+                repr(zns_defect_gen)
+                == self.zns_defect_gen_string
+                + "\n---------------------------------------------------------\n"
+                + self.zns_defect_gen_info
+            )
 
         # explicitly test defect entry attributes
         assert (
@@ -2547,13 +2545,13 @@ Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
 Ag_i_C1_Ag2.04   [0,+1,+2]          [0.335,0.435,0.002]  4e
 Ag_i_C1_Ag2.05   [0,+1,+2]          [0.405,0.109,0.250]  4e
-Ag_i_C2_Ag2.38   [0,+1,+2]          [0.000,0.750,0.002]  2c
+Ag_i_C2_Ag2.02   [0,+1,+2]          [0.500,0.250,0.184]  2d
 Ag_i_C2_Ag2.48   [0,+1,+2]          [0.091,0.500,0.500]  2b
 Se_i_C1_Ag2.04   [-2,-1,0]          [0.335,0.435,0.002]  4e
 Se_i_C1_Ag2.05   [-2,-1,0]          [0.405,0.109,0.250]  4e
-Se_i_C2_Ag2.38   [-2,-1,0]          [0.000,0.750,0.002]  2c
+Se_i_C2_Ag2.02   [-2,-1,0]          [0.500,0.250,0.184]  2d
 Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
-    \n"""
+\n"""
                 "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
                 "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
                 "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
@@ -2563,3 +2561,54 @@ Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
         )
 
         assert ag2se_defect_gen._BilbaoCS_conv_cell_vector_mapping == [1, 0, 2]
+
+    def test_sb2si2te6(self):
+        # weird case where the oxidation state guessing with max_sites = -1 gives a different (bad) guess
+        # still a tricky case as we have rare Si+3 due to dumbbell formation
+
+        sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(self.sb2si2te6)
+        self._general_defect_gen_check(sb2si2te6_defect_gen)
+
+        assert (  # different charge states than when max_sites = -1 is used:
+            (
+                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Si         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+v_Sb         [-2,-1,0,+1]        [0.000,0.000,0.166]  6c
+v_Te         [-1,0,+1,+2]        [0.335,0.003,0.073]  18f
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_Sb            [0,+1,+2]                    [0.000,0.000,0.166]  6c
+Si_Te            [-2,-1,0,+1,+2,+3,+4,+5,+6]  [0.335,0.003,0.073]  18f
+Sb_Si            [-7,-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+Sb_Te            [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.335,0.003,0.073]  18f
+Te_Si            [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
+Te_Sb            [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.166]  6c
+
+Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_i_C1_Si2.20   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.179,0.359,0.167]  18f
+Si_i_C1_Si2.28   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.209,0.208,0.361]  18f
+Si_i_C1_Si2.39   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.001,0.336,0.243]  18f
+Si_i_C3_Si2.64   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.318]  6c
+Si_i_C3i         [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.000]  3a
+Sb_i_C1_Si2.20   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.179,0.359,0.167]  18f
+Sb_i_C1_Si2.28   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.209,0.208,0.361]  18f
+Sb_i_C1_Si2.39   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.001,0.336,0.243]  18f
+Sb_i_C3_Si2.64   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.318]  6c
+Sb_i_C3i         [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.000]  3a
+Te_i_C1_Si2.20   [-2,-1,0,+1,+2,+3,+4]        [0.179,0.359,0.167]  18f
+Te_i_C1_Si2.28   [-2,-1,0,+1,+2,+3,+4]        [0.209,0.208,0.361]  18f
+Te_i_C1_Si2.39   [-2,-1,0,+1,+2,+3,+4]        [0.001,0.336,0.243]  18f
+Te_i_C3_Si2.64   [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.318]  6c
+Te_i_C3i         [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
+\n"""
+                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
+                "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
+                "SiSbTe3.\n"
+                "Note that Wyckoff letters can depend on the ordering of elements in the "
+                "conventional standard structure, for which doped uses the spglib convention."
+            )
+            in output
+        )
