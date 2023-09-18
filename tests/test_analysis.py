@@ -826,7 +826,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         Test parsing of extrinsic F-on-O substitution in YTOS, w/Kumagai-Oba
         (eFNV) and Freysoldt (FNV) corrections.
         """
-        # first using Freysoldt (FNV) correction - gives error because anisotropic dielectric
+        # first using Freysoldt (FNV) correction
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
         # hide OUTCAR file:
         shutil.move(f"{defect_path}/OUTCAR.gz", f"{defect_path}/hidden_otcr.gz")
