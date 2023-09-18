@@ -1,6 +1,18 @@
 Change Log
 ==========
 
+v.2.0.5
+----------
+- Update oxi-state handling to:
+    - Use pre-assigned oxi states if present
+    - Handle `pymatgen` oxi-state guessing failures (non-integer oxi states, inaccurate oxi states with
+      max_sites, failures for extremely large systems etc)
+- Update default `probability_threshold` from 0.01 to 0.0075.
+- Account for rare possibility of user being on a non UTF-8 system.
+- Italicise "V" for vacancy in plotting.
+- SMTG-UCL -> SMTG-Bham
+- Tests and formatting updates.
+
 v.2.0.4
 ----------
 - Add supercell re-ordering tests for parsing
