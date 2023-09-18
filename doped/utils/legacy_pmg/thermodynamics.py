@@ -119,7 +119,9 @@ class DefectPhaseDiagram(MSONable):
         Returns:
             DefectPhaseDiagram object
         """
-        warnings.filterwarnings("ignore", "Use of properties is")
+        warnings.filterwarnings(
+            "ignore", "Use of properties is"
+        )  # `message` only needs to match start of message
         entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
         vbm = d["vbm"]
         band_gap = d["band_gap"]
