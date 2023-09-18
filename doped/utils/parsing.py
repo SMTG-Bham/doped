@@ -36,7 +36,9 @@ def get_vasprun(vasprun_path, **kwargs):
         "ignore", category=UnknownPotcarWarning
     )  # Ignore unknown POTCAR warnings when loading vasprun.xml
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
-    warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+    warnings.filterwarnings(
+        "ignore", message="No POTCAR file with matching TITEL fields"
+    )  # `message` only needs to match start of message
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
     except FileNotFoundError:
