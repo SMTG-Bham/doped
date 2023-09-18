@@ -763,9 +763,6 @@ class KumagaiCorrection(DefectCorrection):
         site_dict = self.metadata["pot_plot_data"]
         potalign = self.metadata["potalign"]
 
-        plt.figure()
-        plt.clf()
-
         distances, sample_region = [], []
         Vqb_list, Vpc_list, diff_list = [], [], []
         for _site_ind, _site_dict in site_dict.items():
@@ -783,6 +780,8 @@ class KumagaiCorrection(DefectCorrection):
                 sample_region.append(Vqb - Vpc)
 
         with plt.style.context(f"{os.path.dirname(__file__)}/../doped.mplstyle"):
+            plt.figure()
+            plt.clf()
             plt.plot(
                 distances,
                 Vqb_list,
