@@ -86,10 +86,10 @@ html_use_smartypants = True
 # html_show_sphinx = True
 
 html_theme_options = {
-    "repository_url": "https://github.com/SMTG-UCL/doped",
-    "github_repo": "https://github.com/SMTG-UCL/doped",  # renku
+    "repository_url": "https://github.com/SMTG-Bham/doped",
+    "github_repo": "https://github.com/SMTG-Bham/doped",  # renku
     "github_button": True,
-    "github_user": "SMTG-UCL", # Username
+    "github_user": "SMTG-Bham", # Username
     "description": "Python package for setting up, parsing and analysing ab-initio defect calculations",
     "repository_branch": "develop",
     "path_to_docs": "docs",
@@ -100,7 +100,7 @@ html_theme_options = {
 # Adding “Edit Source” links on your Sphinx theme
 html_context = {
     "display_github": True, # Integrate GitHub
-    "github_user": "SMTG-UCL", # Username
+    "github_user": "SMTG-Bham", # Username
     "github_repo": "doped", # Repo name
     "github_version": "master", # Version
     "conf_py_path": "/docs/", # Path in the checkout to the docs root
