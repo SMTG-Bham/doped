@@ -238,7 +238,7 @@ def defect_entry_from_paths(
                 if charge_state is None:
                     raise RuntimeError(
                         "Defect charge cannot be automatically determined as POTCARs have not been setup "
-                        "with pymatgen (see Step 2 at https://github.com/SMTG-UCL/doped#installation). "
+                        "with pymatgen (see Step 2 at https://github.com/SMTG-Bham/doped#installation). "
                         "Please specify defect charge manually using the `charge_state` argument, "
                         "or set up POTCARs with pymatgen."
                     ) from e
