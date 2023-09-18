@@ -5,7 +5,8 @@ Core functions and classes for defects in doped.
 
 import collections
 import contextlib
-from dataclasses import dataclass, field
+import warnings
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -118,7 +119,7 @@ class DefectEntry(thermo.DefectEntry):
         Post-initialization method, using super() and self.defect.
         """
         super().__post_init__()
-        self.name: str = self.defect.name if not self.name else self.name
+        self.name: str = self.name if self.name else self.defect.name
 
     @property  # bug fix for now, will PR and delete later
     def corrected_energy(self) -> float:
@@ -155,6 +156,15 @@ class DefectEntry(thermo.DefectEntry):
             DefectEntry object
         """
         return loadfn(filename)
+
+    def as_dict(self) -> dict:
+        """
+        Returns a dictionary representation of the DefectEntry object.
+        """
+        # ignore warning about oxidation states not summing to Structure charge:
+        warnings.filterwarnings("ignore", message=".*unset_charge.*")
+
+        return asdict(self)
 
 
 def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
