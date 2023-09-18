@@ -1,8 +1,8 @@
 doped
 =========
 
-.. image:: https://github.com/SMTG-UCL/doped/actions/workflows/test.yml/badge.svg
-   :target: https://github.com/SMTG-UCL/doped/actions
+.. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
+   :target: https://github.com/SMTG-Bham/doped/actions
 .. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
    :target: https://doped.readthedocs.io/en/latest/
 .. image:: https://img.shields.io/pypi/v/doped
@@ -12,10 +12,9 @@ doped
 .. image:: https://img.shields.io/pypi/dm/doped
    :target: https://pypi.org/project/doped
 
-.. image:: doped_v2_logo.png
-   :align: right
-   :width: 250
+.. raw:: html
 
+   <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_v2_logo.png" align="right" width="250" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 ``doped`` is a Python package for managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
@@ -70,11 +69,11 @@ the
 
 Summary GIF:
 
-.. image:: https://raw.githubusercontent.com/SMTG-UCL/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif
+.. image:: https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif
 
 ``SnB`` CLI Usage:
 
-.. image:: https://raw.githubusercontent.com/SMTG-UCL/ShakeNBreak/main/docs/SnB_CLI.gif
+.. image:: https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_CLI.gif
 
 .. raw:: html
 
@@ -181,4 +180,4 @@ Studies using ``doped``
    Contributing
    Code_Compatibility
    changelog_link
-   doped on GitHub <https://github.com/SMTG-UCL/doped>
+   doped on GitHub <https://github.com/SMTG-Bham/doped>
