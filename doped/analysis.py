@@ -137,6 +137,8 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 # TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
 #  (for later integration with `py-sc-fermi`).
 # TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
+# Note that new pymatgen Freysoldt correction requires input dielectric to be an array (list not allowed)
+# Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 
 
 def defect_entry_from_paths(

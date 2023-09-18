@@ -128,6 +128,7 @@
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and O-O in STO from Kanta?)).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
+  - Update parsing notebook to reflect preferred usage of eFNV correction (rather than FNV with LOCPOTs).
   - Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
     super-lean for some reason. Can use SMTG wiki stuff for this.
