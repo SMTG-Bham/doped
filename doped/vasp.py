@@ -103,7 +103,7 @@ class DefectDictSet(DictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -175,11 +175,26 @@ class DefectDictSet(DictSet):
                         del relax_set["INCAR"][key]
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
-        if relax_set["KPOINTS"].get("length") or kwargs.get("user_kpoints_settings", {}).get("length"):
+        if relax_set["KPOINTS"].get("length") or (
+            user_kpoints_settings is not None
+            and (
+                "length" in user_kpoints_settings
+                if isinstance(user_kpoints_settings, dict)
+                else "length" in user_kpoints_settings.as_dict()
+            )
+        ):
             relax_set["KPOINTS"].pop("reciprocal_density", None)
 
         self.config_dict = self.CONFIG = relax_set  # avoid bug in pymatgen 2023.5.10, PR'd and fixed in
         # later versions
+
+        # check POTCAR settings not in config dict format:
+        if isinstance(user_potcar_settings, dict):
+            if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":
+                # i.e. default
+                user_potcar_functional = user_potcar_settings.pop("POTCAR_FUNCTIONAL")
+            if "POTCAR" in user_potcar_settings:
+                user_potcar_settings = user_potcar_settings["POTCAR"]
 
         super(self.__class__, self).__init__(
             structure,
@@ -208,7 +223,7 @@ class DefectDictSet(DictSet):
                 # when writing VASP just resets this to 0 anyway:
                 incar_obj["NUPDOWN"] = (
                     "0  # If defect has multiple spin-polarised states (e.g. bipolarons) could "
-                    "also have triplet (NUPDOWN=2), but ΔE typically small."
+                    "also have triplet (NUPDOWN=2), but energy diff typically small."
                 )
 
         except Exception as e:
@@ -257,12 +272,12 @@ class DefectDictSet(DictSet):
         ):
             kpt_density = self.user_kpoints_settings.get("reciprocal_density", False)
 
-        if kpt_density and "doped" not in pmg_kpoints.comment:
+        if kpt_density and all(i not in pmg_kpoints.comment for i in ["doped", "ShakeNBreak"]):
             with contextlib.suppress(Exception):
                 assert np.prod(pmg_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
                 pmg_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
-        elif "doped" not in pmg_kpoints.comment:
+        elif all(i not in pmg_kpoints.comment for i in ["doped", "ShakeNBreak"]):
             pmg_kpoints.comment = "KPOINTS from doped"
 
         return pmg_kpoints
@@ -320,13 +335,27 @@ class DefectDictSet(DictSet):
         if not potcar_spec:
             self._check_user_potcars(unperturbed_poscar=True)
 
-        super().write_input(
-            output_dir,
-            make_dir_if_not_present=make_dir_if_not_present,
-            include_cif=include_cif,
-            potcar_spec=potcar_spec,
-            zip_output=zip_output,
-        )
+        try:
+            super().write_input(
+                output_dir,
+                make_dir_if_not_present=make_dir_if_not_present,
+                include_cif=include_cif,
+                potcar_spec=potcar_spec,
+                zip_output=zip_output,
+            )
+        except UnicodeEncodeError:
+            kpoints_settings = self.kpoints.as_dict()
+            kpoints_settings["comment"] = (
+                kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
+            )
+            self.user_kpoints_settings = Kpoints.from_dict(kpoints_settings)
+            super().write_input(
+                output_dir,
+                make_dir_if_not_present=make_dir_if_not_present,
+                include_cif=include_cif,
+                potcar_spec=potcar_spec,
+                zip_output=zip_output,
+            )
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -359,7 +388,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -1065,7 +1094,18 @@ class DefectRelaxSet(MSONable):
             if not kwargs.get("potcar_spec", False):
                 vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
             vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
-            vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
+            try:
+                vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
+            except UnicodeEncodeError:
+                # rare encoding error that can happen on some old HPCs, change Γ to Gamma and Å to Angstrom
+                # in KPOINTS comments
+                kpoints_settings = vasp_xxx_attribute.kpoints.as_dict()
+                kpoints_settings["comment"] = (
+                    kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
+                )
+                kpoints = Kpoints.from_dict(kpoints_settings)
+                kpoints.write_file(f"{output_dir}/KPOINTS")
+
             if self.user_potcar_functional is not None:  # for GH Actions testing
                 vasp_xxx_attribute.potcar.write_file(f"{output_dir}/POTCAR")
 
@@ -1620,7 +1660,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[dict] = None,
-        user_potcar_functional: Optional[UserPotcarFunctional] = "PBE",
+        user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
