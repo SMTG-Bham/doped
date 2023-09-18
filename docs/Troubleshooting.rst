@@ -18,7 +18,7 @@ message about the origin of the problem, it is likely to be an issue with your v
   pip install doped --upgrade
 
 If this does not solve your issue, please contact the developers through the ``GitHub``
-`Issues <https://github.com/SMTG-UCL/doped/issues>`_ page, or by email.
+`Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
 
 
 ``numpy`` Errors
@@ -54,4 +54,4 @@ For issues relating to the ``ShakeNBreak`` part of the defect calculation workfl
 
 .. NOTE::
     If you run into any issues using ``doped``, please contact the developers through the ``GitHub``
-    `Issues <https://github.com/SMTG-UCL/doped/issues>`_ page, or by email.
+    `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
