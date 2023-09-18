@@ -4,7 +4,7 @@
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
-<a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="275" src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/docs/doped_v2_logo.png"></a>`doped` is a python package for
+<a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="275" src="https://raw.githubusercontent.com/SMTG-UCL/doped/master/docs/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a python package for
 managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
 [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for
