@@ -120,13 +120,13 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=False,
         )
-        assert formatted_name == "$V_{Cd}^{0}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test with site number included
         formatted_name = plotting._format_defect_name(
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=True,
         )
-        assert formatted_name == "$V_{Cd_{1}}^{0}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test interstitial case with site number excluded
         formatted_name = plotting._format_defect_name(
@@ -159,13 +159,13 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=False,
         )
-        assert formatted_name == "$V_{Cd}^{0}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test uppercase vacancy (pymatgen default name) with site number included
         formatted_name = plotting._format_defect_name(
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=True,
         )
-        assert formatted_name == "$V_{Cd_{1}}^{0}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test substitution with site number excluded
         formatted_name = plotting._format_defect_name(
@@ -228,14 +228,14 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect_species="vac_4_P_-2",
             include_site_info_in_name=False,
         )
-        assert formatted_name == "$V_{P}^{-2}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{P}^{-2}$"
 
         # test vacancy with site number included, current doped format
         formatted_name = plotting._format_defect_name(
             defect_species="vac_4_P_-2",
             include_site_info_in_name=True,
         )
-        assert formatted_name == "$V_{P_{4}}^{-2}$"
+        assert formatted_name == "$\\it{V}\\!$ $_{P_{4}}^{-2}$"
 
         # check exceptions raised: invalid charge or defect_species
         # test error catching:
@@ -260,20 +260,20 @@ class DefectPlottingTestCase(unittest.TestCase):
         )
 
         defect_species_name_dict = {
-            "vac_Cd_mult32_0": "$V_{Cd}^{0}$",
-            "VSb_0": "$V_{Sb}^{0}$",
-            "VI_9": "$V_{I}^{+9}$",
-            "V_Sb_0": "$V_{Sb}^{0}$",
-            "V_I,_-2": "$V_{I}^{-2}$",
-            "V_I_-2": "$V_{I}^{-2}$",
-            "VacSb_2": "$V_{Sb}^{+2}$",
-            "VacI_2": "$V_{I}^{+2}$",
-            "Vac_Sb_3": "$V_{Sb}^{+3}$",
-            "Vac_I_1": "$V_{I}^{+1}$",
-            "VaSb_3": "$V_{Sb}^{+3}$",
-            "VaI_9": "$V_{I}^{+9}$",
-            "Va_Sb_10": "$V_{Sb}^{+10}$",
-            "Va_I_4": "$V_{I}^{+4}$",
+            "vac_Cd_mult32_0": "$\\it{V}\\!$ $_{Cd}^{0}$",
+            "VSb_0": "$\\it{V}\\!$ $_{Sb}^{0}$",
+            "VI_9": "$\\it{V}\\!$ $_{I}^{+9}$",
+            "V_Sb_0": "$\\it{V}\\!$ $_{Sb}^{0}$",
+            "V_I,_-2": "$\\it{V}\\!$ $_{I}^{-2}$",
+            "V_I_-2": "$\\it{V}\\!$ $_{I}^{-2}$",
+            "VacSb_2": "$\\it{V}\\!$ $_{Sb}^{+2}$",
+            "VacI_2": "$\\it{V}\\!$ $_{I}^{+2}$",
+            "Vac_Sb_3": "$\\it{V}\\!$ $_{Sb}^{+3}$",
+            "Vac_I_1": "$\\it{V}\\!$ $_{I}^{+1}$",
+            "VaSb_3": "$\\it{V}\\!$ $_{Sb}^{+3}$",
+            "VaI_9": "$\\it{V}\\!$ $_{I}^{+9}$",
+            "Va_Sb_10": "$\\it{V}\\!$ $_{Sb}^{+10}$",
+            "Va_I_4": "$\\it{V}\\!$ $_{I}^{+4}$",
             "i_Sb_1": "Sb$_i^{+1}$",
             "Sb_i_3": "Sb$_i^{+3}$",
             "iSb_8": "Sb$_i^{+8}$",
@@ -296,12 +296,12 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Sub_Ni_on_Li_mult32_0": "Ni$_{Li}^{0}$",
             "Sub_Ni_on_Li_mult32_+1": "Ni$_{Li}^{+1}$",
             "Sub_Ni_on_Li_mult32_2": "Ni$_{Li}^{+2}$",
-            "Vac_Li_mult32_-1": "$V_{Li}^{-1}$",
-            "Vac_Li_mult32_-2": "$V_{Li}^{-2}$",
-            "Vac_Li_mult32_0": "$V_{Li}^{0}$",
-            "Vac_Li_mult32_+1": "$V_{Li}^{+1}$",
-            "v_Cd_-1": "$V_{Cd}^{-1}$",
-            "v_Te_+2": "$V_{Te}^{+2}$",
+            "Vac_Li_mult32_-1": "$\\it{V}\\!$ $_{Li}^{-1}$",
+            "Vac_Li_mult32_-2": "$\\it{V}\\!$ $_{Li}^{-2}$",
+            "Vac_Li_mult32_0": "$\\it{V}\\!$ $_{Li}^{0}$",
+            "Vac_Li_mult32_+1": "$\\it{V}\\!$ $_{Li}^{+1}$",
+            "v_Cd_-1": "$\\it{V}\\!$ $_{Cd}^{-1}$",
+            "v_Te_+2": "$\\it{V}\\!$ $_{Te}^{+2}$",
             "Cd_i_C3v_+2": "Cd$_i^{+2}$",
             "Cd_i_m32_2": "Cd$_i^{+2}$",
             "Cd_i_Td_Cd2.83_+2": "Cd$_i^{+2}$",
@@ -326,7 +326,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             assert formatted_name == expected_name
 
         defect_species_w_site_info_name_dict = {
-            "vac_Cd_mult32_0": "$V_{Cd_{m32}}^{0}$",
+            "vac_Cd_mult32_0": "$\\it{V}\\!$ $_{Cd_{m32}}^{0}$",
             "Int_Li_mult64_-1": "Li$_{i_{m64}}^{-1}$",
             "Int_Li_mult64_-2": "Li$_{i_{m64}}^{-2}$",
             "Int_Li_mult64_0": "Li$_{i_{m64}}^{0}$",
@@ -342,13 +342,13 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Sub_Ni_on_Li_mult32_0": "Ni$_{Li_{m32}}^{0}$",
             "Sub_Ni_on_Li_mult32_1": "Ni$_{Li_{m32}}^{+1}$",
             "Sub_Ni_on_Li_mult32_2": "Ni$_{Li_{m32}}^{+2}$",
-            "Vac_Li_mult32_-1": "$V_{Li_{m32}}^{-1}$",
-            "Vac_Li_mult32_-2": "$V_{Li_{m32}}^{-2}$",
-            "Vac_Li_mult32_0": "$V_{Li_{m32}}^{0}$",
-            "Vac_Li_mult32_1": "$V_{Li_{m32}}^{+1}$",
-            "v_Cd_-1": "$V_{Cd}^{-1}$",
-            "v_Te_2": "$V_{Te}^{+2}$",
-            "v_Tea_2": "$V_{Te}^{+2}$",
+            "Vac_Li_mult32_-1": "$\\it{V}\\!$ $_{Li_{m32}}^{-1}$",
+            "Vac_Li_mult32_-2": "$\\it{V}\\!$ $_{Li_{m32}}^{-2}$",
+            "Vac_Li_mult32_0": "$\\it{V}\\!$ $_{Li_{m32}}^{0}$",
+            "Vac_Li_mult32_1": "$\\it{V}\\!$ $_{Li_{m32}}^{+1}$",
+            "v_Cd_-1": "$\\it{V}\\!$ $_{Cd}^{-1}$",
+            "v_Te_2": "$\\it{V}\\!$ $_{Te}^{+2}$",
+            "v_Tea_2": "$\\it{V}\\!$ $_{Te}^{+2}$",
             "Te_Cd_s32_2": "Te$_{Cd_{s32}}^{+2}$",
             "Te_Cd_s32c_2": "Te$_{Cd_{s32c}}^{+2}$",
             "Cd_Te_+2": "Cd$_{Te}^{+2}$",
@@ -356,9 +356,9 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Cd_i_C3v_+2": "Cd$_{i_{C3v}}^{+2}$",
             "Cd_i_Td_Te2.83_2": "Cd$_{i_{Td-Te2.83}}^{+2}$",
             "Te_i_Td_Cd2.83_-2": "Te$_{i_{Td-Cd2.83}}^{-2}$",
-            "v_O_C3v_0": "$V_{O_{C3v}}^{0}$",
-            "v_O_C3v_1": "$V_{O_{C3v}}^{+1}$",
-            "v_O_D4h_2": "$V_{O_{D4h}}^{+2}$",
+            "v_O_C3v_0": "$\\it{V}\\!$ $_{O_{C3v}}^{0}$",
+            "v_O_C3v_1": "$\\it{V}\\!$ $_{O_{C3v}}^{+1}$",
+            "v_O_D4h_2": "$\\it{V}\\!$ $_{O_{D4h}}^{+2}$",
             "Y_O_D4h_0": "Y$_{O_{D4h}}^{0}$",
             "Ti_Y_+2": "Ti$_{Y}^{+2}$",
             "Ti_O_D4h_0": "Ti$_{O_{D4h}}^{0}$",
@@ -367,8 +367,8 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Y_i_Cs_O1.71_-2": "Y$_{i_{Cs-O1.71}}^{-2}$",
             "Y_i_Cs_O1.95_2": "Y$_{i_{Cs-O1.95}}^{+2}$",
             "Y_i_D2d_0": "Y$_{i_{D2d}}^{0}$",
-            "v_O_C1_0": "$V_{O_{C1}}^{0}$",
-            "v_O_C3_8": "$V_{O_{C3}}^{+8}$",
+            "v_O_C1_0": "$\\it{V}\\!$ $_{O_{C1}}^{0}$",
+            "v_O_C3_8": "$\\it{V}\\!$ $_{O_{C3}}^{+8}$",
             "Li_i_C1_Li1.75_0": "Li$_{i_{C1-Li1.75}}^{0}$",
             "Li_i_C1_O1.72_1": "Li$_{i_{C1-O1.72}}^{+1}$",
             "Li_i_C1_O1.78_2": "Li$_{i_{C1-O1.78}}^{+2}$",
@@ -383,11 +383,11 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Cu_i_C3v_Ag1.80_0": "Cu$_{i_{C3v-Ag1.80}}^{0}$",
             "Te_i_C1_Cd2.71Te2.71Cd4.25j_-2": "Te$_{i_{C1-Cd2.71Te2.71Cd4.25j}}^{-2}$",
             "Te_i_C1_Cd2.71Te2.71Cd4.25l_-2": "Te$_{i_{C1-Cd2.71Te2.71Cd4.25l}}^{-2}$",
-            "v_Cd_C1_Te2.83Cd4.62Te5.42a_-1": "$V_{Cd_{C1-Te2.83Cd4.62Te5.42a}}^{-1}$",
-            "v_Cd_C1_Te2.83Cd4.62Te5.42b_-1": "$V_{Cd_{C1-Te2.83Cd4.62Te5.42b}}^{-1}$",
-            "v_Cd_C3v_Cd2.71_-1": "$V_{Cd_{C3v-Cd2.71}}^{-1}$",
-            "v_Cd_C3v_Te2.83Cd4.25_-1": "$V_{Cd_{C3v-Te2.83Cd4.25}}^{-1}$",
-            "v_Cd_C3v_Te2.83Cd4.62_-1": "$V_{Cd_{C3v-Te2.83Cd4.62}}^{-1}$",
+            "v_Cd_C1_Te2.83Cd4.62Te5.42a_-1": "$\\it{V}\\!$ $_{Cd_{C1-Te2.83Cd4.62Te5.42a}}^{-1}$",
+            "v_Cd_C1_Te2.83Cd4.62Te5.42b_-1": "$\\it{V}\\!$ $_{Cd_{C1-Te2.83Cd4.62Te5.42b}}^{-1}$",
+            "v_Cd_C3v_Cd2.71_-1": "$\\it{V}\\!$ $_{Cd_{C3v-Cd2.71}}^{-1}$",
+            "v_Cd_C3v_Te2.83Cd4.25_-1": "$\\it{V}\\!$ $_{Cd_{C3v-Te2.83Cd4.25}}^{-1}$",
+            "v_Cd_C3v_Te2.83Cd4.62_-1": "$\\it{V}\\!$ $_{Cd_{C3v-Te2.83Cd4.62}}^{-1}$",
         }
         for (
             defect_species,
