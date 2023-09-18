@@ -14,7 +14,7 @@ doped
 
 .. raw:: html
 
-   <img src="doped_v2_logo.png" align="right" width="250" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
+   <img src="_static/doped_v2_logo.png" align="right" width="250" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 ``doped`` is a Python package for managing solid-state defect calculations, with functionality to
 generate defect structures and relevant competing phases (for chemical potentials), interface with
