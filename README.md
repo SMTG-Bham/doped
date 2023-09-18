@@ -65,6 +65,7 @@ entirely refactored and rewritten, to work with the new
 
 ## Studies using `doped` (so far)
 
+- S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos [_Journal of Physical Chemistry C_](https://doi.org/10.26434/chemrxiv-2023-tqvh2) 2023
 - A. T. J. Nicolson et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA02429F) 2023
 - Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.2c02306) 2023
 - P. A. Hyde et al. [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.3c01510) 2023
@@ -77,3 +78,5 @@ entirely refactored and rewritten, to work with the new
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt [_Faraday Discussions_](https://doi.org/10.1039/D2FD00043A) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
+
+<!-- Update JPCC CSTX reference! Xinwei PRB? Kumagai paper (was used for defect generation) -->
