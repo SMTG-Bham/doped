@@ -76,7 +76,7 @@ the ``doped`` GitHub repository:
 
 .. code-block:: bash
 
-   git clone https://github.com/SMTG-UCL/doped
+   git clone https://github.com/SMTG-Bham/doped
 
 #. Navigate to root directory:
 
