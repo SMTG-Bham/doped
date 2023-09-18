@@ -36,6 +36,7 @@ from doped.plotting import _get_backend
 from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
 
 warnings.simplefilter("default")
+# `message` only needs to match start of message:
 warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
 warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 

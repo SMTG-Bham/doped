@@ -36,7 +36,7 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 _ignore_pmg_warnings()
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
-)  # currently rely on this so shouldn't show warning
+)  # currently rely on this so shouldn't show warning, `message` only needs to match start of message
 
 
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not

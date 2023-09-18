@@ -455,7 +455,9 @@ def defect_entry_from_paths(
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
 
-        # regardless, try parsing OUTCAR files first (quickest)
+        # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
+        # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
+        # etc) and also works regardless of isotropic/anisotropic)
         if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
             bulk_path, "OUTCAR"
         ):

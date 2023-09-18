@@ -49,7 +49,7 @@ _check_pmg_compatibility()
 
 
 def _ignore_pmg_warnings():
-    # globally ignore these POTCAR warnings
+    # globally ignore these POTCAR warnings; `message` only needs to match start of message
     warnings.filterwarnings("ignore", category=UnknownPotcarWarning)
     warnings.filterwarnings("ignore", category=BadInputSetWarning)
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")

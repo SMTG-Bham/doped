@@ -809,7 +809,7 @@ class DefectRelaxSet(MSONable):
 
         # ignore warning with "KPAR", in case it's Γ-only
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")
+            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
             return DefectDictSet(
                 self.defect_supercell,
                 charge_state=self.defect_entry.charge_state,
@@ -1057,7 +1057,7 @@ class DefectRelaxSet(MSONable):
 
         # ignore warning with "KPAR", in case it's Γ-only
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")
+            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
             return DefectDictSet(
                 bulk_supercell,
                 charge_state=0,
