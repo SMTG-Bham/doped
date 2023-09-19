@@ -183,9 +183,23 @@ def closest_site_info(defect_entry, n=1, element_list=None):
     return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_entry(defect_entry, element_list=None):
+def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
     """
     Get the doped/SnB defect name from DefectEntry object.
+
+    Args:
+        defect_entry (DefectEntry): DefectEntry object.
+        element_list (list):
+            Sorted list of elements in the host structure, so that
+            closest_site_info returns deterministic results (in case two
+            different elements located at the same distance from defect site).
+            Default is None.
+        symm_ops (list):
+            List of symmetry operations of the defect_entry.bulk_supercell
+            structure, to avoid re-calculating. Default is None (recalculates).
+
+    Returns:
+        str: Defect name.
     """
     defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
         sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
