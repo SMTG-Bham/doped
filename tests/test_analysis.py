@@ -13,7 +13,13 @@ import numpy as np
 from pymatgen.core.structure import Structure
 from test_vasp import _potcars_available
 
-from doped.analysis import DefectParser, defect_entry_from_paths
+from doped.analysis import (
+    DefectParser,
+    defect_entry_from_paths,
+    defect_from_structures,
+    defect_name_from_structures,
+)
+from doped.generation import DefectsGenerator, get_defect_name_from_defect
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
@@ -917,6 +923,45 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert len(user_warnings) == 1
         assert warning_message in str(user_warnings[0].message)
         os.remove("bulk_voronoi_nodes.json")
+
+
+class DopedParsingFunctionsTestCase(unittest.TestCase):
+    def setUp(self):
+        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
+        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
+        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
+        self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
+
+        # TODO: Try rattling the structures (and modifying symprec a little to test tolerance?)
+
+    def test_defect_name_from_structures(self):
+        # by proxy also tests defect_from_structures
+        for struct in [
+            self.prim_cdte,
+            self.ytos_bulk_supercell,
+            self.lmno_primitive,
+            self.non_diagonal_ZnS,
+        ]:
+            defect_gen = DefectsGenerator(struct)
+            for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
+                print(
+                    defect_from_structures(defect_entry.bulk_supercell, defect_entry.defect_supercell)[1],
+                    defect_entry.defect_supercell_site,
+                )
+                assert defect_name_from_structures(
+                    defect_entry.bulk_supercell, defect_entry.defect_supercell
+                ) == get_defect_name_from_defect(defect_entry.defect)
+
+                # Can't use defect.structure/defect.defect_structure because might be vacancy in a 1/2
+                # atom cell etc.:
+                # assert defect_name_from_structures(
+                #     defect_entry.defect.structure, defect_entry.defect.defect_structure
+                # ) == get_defect_name_from_defect(defect_entry.defect)
+
+    def tearDown(self):
+        if_present_rm("bulk_voronoi_nodes.json")
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
