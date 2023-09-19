@@ -235,7 +235,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None):
     )
     spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
     if spglib_point_group_symbol is not None:
-        point_group_symbol = spglib_point_group_symbol.replace(".", "")
+        point_group_symbol = spglib_point_group_symbol
     else:  # symm_ops approach failed, just use diagonal defect supercell approach:
         defect_diagonal_supercell = defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
@@ -271,7 +271,7 @@ def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
     )
     spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
     if spglib_point_group_symbol is not None:
-        point_group_symbol = spglib_point_group_symbol.replace(".", "")
+        point_group_symbol = spglib_point_group_symbol
     else:  # symm_ops approach failed, just use diagonal defect supercell approach:
         defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
@@ -513,7 +513,26 @@ def herm2sch(herm_symbol):
     """
     Convert from Hermann-Mauguin to Schoenflies.
     """
-    return _HERM2SCH.get(herm_symbol, None)
+    herm_symbol = herm_symbol.replace(".", "")
+    schoenflies = _HERM2SCH.get(herm_symbol, None)
+    if schoenflies is None:
+        # try rearranging, symbols in spglib can be rearranged vs _HERM2SCH dict
+        # get _HERM2SCH key that has the same characters as herm_symbol
+        # (i.e. same characters, but possibly in a different order)
+        from collections import Counter
+
+        def find_matching_key(input_str, input_dict):
+            input_str_counter = Counter(input_str)
+            for key in input_dict:
+                if Counter(key) == input_str_counter:
+                    return key
+            return None
+
+        herm_key = find_matching_key(herm_symbol, _HERM2SCH)
+        if herm_key is not None:
+            schoenflies = _HERM2SCH[herm_key]
+
+    return schoenflies
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
