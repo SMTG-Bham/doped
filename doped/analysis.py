@@ -141,6 +141,161 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 # Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 
 
+def defect_from_structures(bulk_supercell, defect_supercell):
+    """
+    Auto-determines the defect type and defect site from the supplied bulk and
+    defect structures, and returns a corresponding `Defect` object, the defect
+    site (in the bulk supercell), the guessed initial defect structure (before
+    relaxation), and the 'unrelaxed defect structure' (also before relaxation,
+    but with interstitials at their _final_ relaxed positions, and all bulk
+    atoms at their unrelaxed positions (for charge correction analysis)).
+
+    Args:
+        bulk_supercell (Structure):
+            Bulk supercell structure.
+        defect_supercell (Structure):
+            Defect structure to use for identifying the defect site and type.
+
+    Returns:
+        defect (Defect):
+            doped Defect object.
+        defect_site (Site):
+            pymatgen Site object of the defect site in the bulk supercell.
+        guessed_initial_defect_structure (Structure):
+            pymatgen Structure object of the guessed initial defect structure.
+        unrelaxed_defect_structure (Structure):
+            pymatgen Structure object of the unrelaxed defect structure.
+    """
+    try:
+        def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+    except RuntimeError as exc:
+        raise ValueError(
+            "Could not identify defect type from number of sites in structure: "
+            f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
+        ) from exc
+
+    # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
+    try:
+        (
+            bulk_site_idx,
+            defect_site_idx,
+            unrelaxed_defect_structure,
+        ) = get_defect_site_idxs_and_unrelaxed_structure(
+            bulk_supercell, defect_supercell, def_type, comp_diff
+        )
+
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Could not identify {def_type} defect site in defect structure. Try supplying the initial "
+            f"defect structure to DefectParser.from_paths()."
+        ) from exc
+
+    if def_type == "vacancy":
+        defect_site = bulk_supercell[bulk_site_idx]
+    else:
+        defect_site = defect_supercell[defect_site_idx]
+        unrelaxed_defect_structure[defect_site_idx]
+
+    if unrelaxed_defect_structure:
+        if def_type == "interstitial":
+            # get closest Voronoi site in bulk supercell to final interstitial site as this is
+            # likely to be the _initial_ interstitial site
+            try:
+                struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
+                if not StructureMatcher(
+                    stol=0.05,
+                    primitive_cell=False,
+                    scale=False,
+                    attempt_supercell=False,
+                    allow_subset=False,
+                ).fit(struc_and_node_dict["bulk_supercell"], bulk_supercell):
+                    warnings.warn(
+                        "Previous bulk_voronoi_nodes.json detected, but does not match current bulk "
+                        "supercell. Recalculating Voronoi nodes."
+                    )
+                    raise FileNotFoundError
+
+                voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
+
+            except FileNotFoundError:  # first time parsing
+                voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
+                struc_and_node_dict = {
+                    "bulk_supercell": bulk_supercell,
+                    "Voronoi nodes": voronoi_frac_coords,
+                }
+                dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
+                # parsing of multiple defects at once
+                print(
+                    "Saving parsed Voronoi sites (for interstitial site-matching) to "
+                    "bulk_voronoi_sites.json to speed up future parsing."
+                )
+
+            closest_node_frac_coords = min(
+                voronoi_frac_coords,
+                key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
+            )
+            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+            int_site = guessed_initial_defect_structure[defect_site_idx]
+            guessed_initial_defect_structure.remove_sites([defect_site_idx])
+            guessed_initial_defect_structure.insert(
+                defect_site_idx,  # Place defect at same position as in DFT calculation
+                int_site.species_string,
+                closest_node_frac_coords,
+                coords_are_cartesian=False,
+                validate_proximity=True,
+            )
+            guessed_initial_defect_structure[defect_site_idx]
+
+        else:
+            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+
+        # ensure unrelaxed_defect_structure ordered to match defect_structure, for appropriate charge
+        # correction mapping
+        unrelaxed_defect_structure = reorder_s1_like_s2(unrelaxed_defect_structure, defect_supercell)
+
+    else:
+        warnings.warn(
+            "Cannot determine the unrelaxed `initial_defect_structure`. Please ensure the "
+            "`initial_defect_structure` is indeed unrelaxed."
+        )
+
+    for_monty_defect = {  # initialise doped Defect object
+        "@module": "doped.core",
+        "@class": def_type.capitalize(),
+        "structure": bulk_supercell,
+        "site": defect_site,
+    }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
+    # as done during generation. Future work could try mapping the relaxed defect site back to the
+    # primitive cell, however interstitials will be tricky for this...
+    defect = MontyDecoder().process_decoded(for_monty_defect)
+
+    return defect, defect_site, guessed_initial_defect_structure, unrelaxed_defect_structure
+
+
+def defect_name_from_structures(bulk_structure, defect_structure):
+    # TODO: Test this using DefectsGenerator outputs
+    """
+    Get the doped/SnB defect name using the bulk and defect structures.
+
+    Args:
+        bulk_structure (Structure):
+            Bulk (pristine) structure.
+        defect_structure (Structure):
+            Defect structure.
+
+    Returns:
+        str: Defect name.
+    """
+    from doped.generation import get_defect_name_from_defect
+
+    defect, _, _, _ = defect_from_structures(bulk_structure, defect_structure)
+
+    # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
+    # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
+
+    return get_defect_name_from_defect(defect)
+
+
 def defect_entry_from_paths(
     defect_path,
     bulk_path,
@@ -286,111 +441,15 @@ def defect_entry_from_paths(
         defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
     else:
         defect_structure_for_ID = defect_structure.copy()
-    try:
-        def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_structure_for_ID)
-    except RuntimeError as exc:
-        raise ValueError(
-            "Could not identify defect type from number of sites in structure: "
-            f"{len(bulk_supercell)} in bulk vs. {len(defect_structure_for_ID)} in defect?"
-        ) from exc
 
-    # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
-    try:
-        (
-            bulk_site_idx,
-            defect_site_idx,
-            unrelaxed_defect_structure,
-        ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_supercell, defect_structure_for_ID, def_type, comp_diff
-        )
-
-    except RuntimeError as exc:
-        raise RuntimeError(
-            f"Could not identify {def_type} defect site in defect structure. Try supplying the initial "
-            f"defect structure to DefectParser.from_paths()."
-        ) from exc
-
-    if def_type == "vacancy":
-        defect_site = guessed_initial_defect_site = bulk_supercell[bulk_site_idx]
-    else:
-        defect_site = defect_structure_for_ID[defect_site_idx]
-        guessed_initial_defect_site = unrelaxed_defect_structure[defect_site_idx]
-
-    if unrelaxed_defect_structure:
-        if def_type == "interstitial":
-            # get closest Voronoi site in bulk supercell to final interstitial site as this is
-            # likely to be the _initial_ interstitial site
-            try:
-                struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
-                if not StructureMatcher(
-                    stol=0.05,
-                    primitive_cell=False,
-                    scale=False,
-                    attempt_supercell=False,
-                    allow_subset=False,
-                ).fit(struc_and_node_dict["bulk_supercell"], bulk_supercell):
-                    warnings.warn(
-                        "Previous bulk_voronoi_nodes.json detected, but does not "
-                        "match current bulk supercell. Recalculating Voronoi nodes."
-                    )
-                    raise FileNotFoundError
-
-                voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
-
-            except FileNotFoundError:  # first time parsing
-                voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
-                struc_and_node_dict = {
-                    "bulk_supercell": bulk_supercell,
-                    "Voronoi nodes": voronoi_frac_coords,
-                }
-                dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
-                # parsing of multiple defects at once
-                print(
-                    "Saving parsed Voronoi sites (for interstitial site-matching) to "
-                    "bulk_voronoi_sites.json to speed up future parsing."
-                )
-
-            closest_node_frac_coords = min(
-                voronoi_frac_coords,
-                key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
-            )
-            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-            int_site = guessed_initial_defect_structure[defect_site_idx]
-            guessed_initial_defect_structure.remove_sites([defect_site_idx])
-            guessed_initial_defect_structure.insert(
-                defect_site_idx,  # Place defect at same position as in DFT calculation
-                int_site.species_string,
-                closest_node_frac_coords,
-                coords_are_cartesian=False,
-                validate_proximity=True,
-            )
-            guessed_initial_defect_site = guessed_initial_defect_structure[defect_site_idx]
-
-        else:
-            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-
-        # ensure unrelaxed_defect_structure ordered to match defect_structure, for appropriate charge
-        # correction mapping
-        unrelaxed_defect_structure = reorder_s1_like_s2(
-            unrelaxed_defect_structure, defect_structure_for_ID
-        )
-        calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
-        calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-    else:
-        warnings.warn(
-            "Cannot determine the unrelaxed `initial_defect_structure`. Please ensure the "
-            "`initial_defect_structure` is indeed unrelaxed."
-        )
-
-    for_monty_defect = {  # initialise doped Defect object
-        "@module": "doped.core",
-        "@class": def_type.capitalize(),
-        "structure": bulk_supercell,
-        "site": guessed_initial_defect_site,
-    }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
-    # as done during generation. Future work could try mapping the relaxed defect site back to the
-    # primitive cell, however interstitials will be tricky for this...
-    defect = MontyDecoder().process_decoded(for_monty_defect)
+    (
+        defect,
+        defect_site,
+        guessed_initial_defect_structure,
+        unrelaxed_defect_structure,
+    ) = defect_from_structures(bulk_supercell, defect_structure_for_ID)
+    calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
+    calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
 
     if unrelaxed_defect_structure:
         # only do StructureMatcher test if unrelaxed structure exists
@@ -400,12 +459,12 @@ def defect_entry_from_paths(
         if not StructureMatcher(
             stol=0.05,
             comparator=ElementComparator(),
-        ).fit(test_defect_structure, guessed_initial_defect_structure):
+        ).fit(test_defect_structure, unrelaxed_defect_structure):
             warnings.warn(
                 f"Possible error in defect object matching. Determined defect: {defect.name} for defect "
                 f"at {defect_path} in bulk at {bulk_path} but unrelaxed structure (1st below) does not "
                 f"match defect.get_supercell_structure() (2nd below):"
-                f"\n{guessed_initial_defect_structure}\n{test_defect_structure}"
+                f"\n{unrelaxed_defect_structure}\n{test_defect_structure}"
             )
 
     defect_entry = DefectEntry(
