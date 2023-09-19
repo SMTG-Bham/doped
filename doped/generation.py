@@ -212,6 +212,42 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
+def get_defect_name_from_defect(defect, element_list=None, symm_ops=None):
+    """
+    Get the doped/SnB defect name from Defect object.
+
+    Args:
+        defect (Defect): Defect object.
+        element_list (list):
+            Sorted list of elements in the host structure, so that
+            closest_site_info returns deterministic results (in case two
+            different elements located at the same distance from defect site).
+            Default is None.
+        symm_ops (list):
+            List of symmetry operations of defect.structure, to avoid
+            re-calculating. Default is None (recalculates).
+
+    Returns:
+        str: Defect name.
+    """
+    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        defect.site.frac_coords, defect.structure, symm_ops=symm_ops
+    )
+    spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
+    if spglib_point_group_symbol is not None:
+        point_group_symbol = spglib_point_group_symbol.replace(".", "")
+    else:  # symm_ops approach failed, just use diagonal defect supercell approach:
+        defect_diagonal_supercell = defect.get_supercell_structure(
+            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
+            dummy_species=_dummy_species,
+        )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
+        # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
+        sga = _get_sga(defect_diagonal_supercell)
+        point_group_symbol = herm2sch(sga.get_point_group_symbol())
+
+    return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
+
+
 def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
     """
     Get the doped/SnB defect name from DefectEntry object.
@@ -355,8 +391,8 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure, to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of defect.structure (i.e. the primitive
+            structure), to avoid re-calculating. Default is None (recalculates).
 
     Returns:
         dict: Dictionary of {Name: DefectEntry} objects.
@@ -373,7 +409,9 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
             previous_entry = defect_naming_dict.pop(matching_names[0])
-            previous_entry_full_name = get_defect_name_from_entry(previous_entry, element_list, symm_ops)
+            previous_entry_full_name = get_defect_name_from_defect(
+                previous_entry.defect, element_list, symm_ops
+            )
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
             defect_naming_dict[previous_entry_name] = previous_entry
 
@@ -434,7 +472,7 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
 
     defect_naming_dict = {}
     for defect_entry in defect_entries:
-        full_defect_name = get_defect_name_from_entry(defect_entry, element_list, symm_ops)
+        full_defect_name = get_defect_name_from_defect(defect_entry.defect, element_list, symm_ops)
         split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
@@ -1451,10 +1489,10 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            bulk_supercell_sga = _get_sga(self.bulk_supercell)
-            bulk_supercell_symm_ops = bulk_supercell_sga.get_symmetry_operations(cartesian=False)
+            prim_sga = _get_sga(self.primitive_structure)
+            prim_symm_ops = prim_sga.get_symmetry_operations(cartesian=False)
             named_defect_dict = name_defect_entries(
-                defect_entry_list, element_list=self._element_list, symm_ops=bulk_supercell_symm_ops
+                defect_entry_list, element_list=self._element_list, symm_ops=prim_symm_ops
             )
             pbar.update(5)  # 95% of progress bar
             if not isinstance(pbar, MagicMock):
@@ -1991,8 +2029,8 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                         s[1].defect.defect_type.value,
                         element_list.index(
                             _first_and_second_element(
-                                get_defect_name_from_entry(
-                                    s[1],
+                                get_defect_name_from_defect(
+                                    s[1].defect,
                                     element_list=element_list,
                                     symm_ops=symm_ops,
                                 )
@@ -2000,15 +2038,17 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                         ),
                         element_list.index(
                             _first_and_second_element(
-                                get_defect_name_from_entry(
-                                    s[1],
+                                get_defect_name_from_defect(
+                                    s[1].defect,
                                     element_list=element_list,
                                     symm_ops=symm_ops,
                                 )
                             )[1]
                         ),
                         # name without charge:
-                        get_defect_name_from_entry(s[1], element_list=element_list, symm_ops=symm_ops),
+                        get_defect_name_from_defect(
+                            s[1].defect, element_list=element_list, symm_ops=symm_ops
+                        ),
                         s[1].charge_state,  # charge state
                     ),
                 )
