@@ -694,6 +694,10 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         assert defect_entry.wyckoff
         assert defect_entry.defect
         assert defect_entry.defect.wyckoff == defect_entry.wyckoff
+        # Commenting out as confirmed works but slows down tests (tested anyway with the defect_gen
+        # outputs):
+        # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
+        # defect_entry.defect)
         assert np.isclose(
             defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords
         ).all()
