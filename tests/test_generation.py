@@ -600,6 +600,47 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
         self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
 
+        self.sb2si2te6_defect_gen_info = (
+            """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Si         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+v_Sb         [-2,-1,0,+1]        [0.000,0.000,0.166]  6c
+v_Te         [-1,0,+1,+2]        [0.335,0.003,0.073]  18f
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_Sb            [0,+1,+2]                    [0.000,0.000,0.166]  6c
+Si_Te            [-2,-1,0,+1,+2,+3,+4,+5,+6]  [0.335,0.003,0.073]  18f
+Sb_Si            [-7,-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+Sb_Te            [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.335,0.003,0.073]  18f
+Te_Si            [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
+Te_Sb            [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.166]  6c
+
+Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_i_C1_Si2.20   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.179,0.359,0.167]  18f
+Si_i_C1_Si2.28   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.209,0.208,0.361]  18f
+Si_i_C1_Si2.39   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.001,0.336,0.243]  18f
+Si_i_C3_Si2.64   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.318]  6c
+Si_i_C3i_Te2.81  [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.000]  3a
+Sb_i_C1_Si2.20   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.179,0.359,0.167]  18f
+Sb_i_C1_Si2.28   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.209,0.208,0.361]  18f
+Sb_i_C1_Si2.39   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.001,0.336,0.243]  18f
+Sb_i_C3_Si2.64   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.318]  6c
+Sb_i_C3i_Te2.81  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.000]  3a
+Te_i_C1_Si2.20   [-2,-1,0,+1,+2,+3,+4]        [0.179,0.359,0.167]  18f
+Te_i_C1_Si2.28   [-2,-1,0,+1,+2,+3,+4]        [0.209,0.208,0.361]  18f
+Te_i_C1_Si2.39   [-2,-1,0,+1,+2,+3,+4]        [0.001,0.336,0.243]  18f
+Te_i_C3_Si2.64   [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.318]  6c
+Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
+            "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
+            "SiSbTe3.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the "
+            "conventional standard structure, for which doped uses the spglib convention."
+        )
+
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
         dumpfn(defect_gen, "test_defect_gen.json")
@@ -2688,49 +2729,8 @@ Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
         self._general_defect_gen_check(sb2si2te6_defect_gen)
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
 
-        assert (  # different charge states than when max_sites = -1 is used:
-            (
-                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
------------  ------------------  -------------------  ---------
-v_Si         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
-v_Sb         [-2,-1,0,+1]        [0.000,0.000,0.166]  6c
-v_Te         [-1,0,+1,+2]        [0.335,0.003,0.073]  18f
-
-Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Si_Sb            [0,+1,+2]                    [0.000,0.000,0.166]  6c
-Si_Te            [-2,-1,0,+1,+2,+3,+4,+5,+6]  [0.335,0.003,0.073]  18f
-Sb_Si            [-7,-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
-Sb_Te            [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.335,0.003,0.073]  18f
-Te_Si            [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
-Te_Sb            [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.166]  6c
-
-Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.20   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.179,0.359,0.167]  18f
-Si_i_C1_Si2.28   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.209,0.208,0.361]  18f
-Si_i_C1_Si2.39   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.001,0.336,0.243]  18f
-Si_i_C3_Si2.64   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.318]  6c
-Si_i_C3i_Te2.81  [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.20   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.179,0.359,0.167]  18f
-Sb_i_C1_Si2.28   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.209,0.208,0.361]  18f
-Sb_i_C1_Si2.39   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.001,0.336,0.243]  18f
-Sb_i_C3_Si2.64   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.318]  6c
-Sb_i_C3i_Te2.81  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.20   [-2,-1,0,+1,+2,+3,+4]        [0.179,0.359,0.167]  18f
-Te_i_C1_Si2.28   [-2,-1,0,+1,+2,+3,+4]        [0.209,0.208,0.361]  18f
-Te_i_C1_Si2.39   [-2,-1,0,+1,+2,+3,+4]        [0.001,0.336,0.243]  18f
-Te_i_C3_Si2.64   [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.318]  6c
-Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
-                "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
-                "SiSbTe3.\n"
-                "Note that Wyckoff letters can depend on the ordering of elements in the "
-                "conventional standard structure, for which doped uses the spglib convention."
-            )
-            in output
-        )
+        # different charge states than when max_sites = -1 is used:
+        assert self.sb2si2te6_defect_gen_info in output
 
     def test_charge_state_gen_kwargs(self):
         # test adjusting probability_threshold with ZnS:
@@ -2763,3 +2763,28 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             assert new_string in output
 
         self.zns_defect_gen_check(zns_defect_gen, check_info=False)
+
+        # test adjusting padding with Sb2S2Te6:
+        sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(
+            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}
+        )
+        self._general_defect_gen_check(sb2si2te6_defect_gen)
+        assert sb2si2te6_defect_gen.structure == self.sb2si2te6
+        assert self.sb2si2te6_defect_gen_info not in output  # changed
+
+        assert self.sb2si2te6_defect_gen_info.split("Substitutions")[1] in output  # after vacancies,
+        # the same
+
+        assert (  # different charge states than when max_sites = -1 is used:
+            (
+                """Vacancies    Guessed Charges        Conv. Cell Coords    Wyckoff
+-----------  ---------------------  -------------------  ---------
+v_Si         [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
+v_Sb         [-2,-1,0,+1,+2]        [0.000,0.000,0.166]  6c
+v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
+\n"""
+            )
+            in output
+        )
+
+        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {"padding": 2}  # check attribute set

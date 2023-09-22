@@ -176,6 +176,9 @@
   - Note that charge states are guessed based on different factors, but these rely on auto-determined
     oxidation states and can fail in weird cases. As always please consider if these charge states are
     reasonable for the defects in your system. (i.e. low-symmetry, amphoteric, mixed-valence cases etc!)
+    - Note cases where we expect default charge states to not be appropriate (e.g. mixed ionic-covalent systems, low-symmetry systems and/or with amphoteric species), often better to test more than necessary to be thorough! (And link Xinwei stuff) – i.e.
+      use your f*cking head!
+    - And particularly when you've calculated your initial set of defect results! E.g. with Sb2Se3, all antisites and interstitials amphoteric, so suggests you should re-check amphotericity for all vacancies
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
