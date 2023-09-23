@@ -1744,6 +1744,21 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         info_line = "Cd_i_C3v         [0]                    [0.625,0.625,0.625]  16e"
         assert info_line in repr(cdte_defect_gen)
 
+        # check removing neutral charge state still fine:
+        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
+        cdte_defect_gen.remove_charge_states("Cd_i", [0, +1])
+        self._general_defect_gen_check(cdte_defect_gen, charge_states_removed=True)
+
+        assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_+2" in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_C3v_0" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_0" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_0" not in cdte_defect_gen.defect_entries
+        #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
+        info_line = "Cd_i_C3v         [+2]                   [0.625,0.625,0.625]  16e"
+        assert info_line in repr(cdte_defect_gen)
+
     def test_cdte_no_generate_supercell_supercell_input(self):
         cdte_defect_gen, output = self._generate_and_test_no_warnings(
             self.cdte_bulk_supercell, generate_supercell=False
