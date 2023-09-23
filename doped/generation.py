@@ -915,7 +915,8 @@ class DefectsGenerator(MSONable):
         can be controlled by specifying keyword arguments with `supercell_gen_kwargs`,
         which are passed to the `get_sc_fromstruct()` function.
         Alternatively if `generate_supercell = False`, then no supercell is generated
-        and the input structure is used as the defect & bulk supercell.
+        and the input structure is used as the defect & bulk supercell. (Note this
+        may give a slightly different (but fully equivalent) set of coordinates).
 
         The algorithm for determining defect entry names is to use the pymatgen defect
         name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless
@@ -1602,10 +1603,13 @@ class DefectsGenerator(MSONable):
                     for defect_entry_name, defect_entry in self.defect_entries.items()
                     if defect_entry.defect.defect_type == defect_type
                 }
+                seen = set()
                 matching_type_names_wout_charge = [
                     defect_entry_name.rsplit("_", 1)[0]
                     for defect_entry_name in matching_defect_types
-                    if defect_entry_name.endswith("_0")  # one neutral defect entry per defect
+                    if defect_entry_name.rsplit("_", 1)[0] not in seen
+                    and not seen.add(defect_entry_name.rsplit("_", 1)[0])  # track unique defect names
+                    # w/out charge
                 ]
                 for defect_name in matching_type_names_wout_charge:
                     charges = [
@@ -1615,15 +1619,17 @@ class DefectsGenerator(MSONable):
                     ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
                     # convert list of strings to one string with comma-separated charges
                     charges = "[" + ",".join(charges) + "]"
-                    neutral_defect_entry = self.defect_entries[f"{defect_name}_0"]  # neutral, no +/- sign
-                    frac_coords_string = ",".join(
-                        f"{x:.3f}" for x in neutral_defect_entry.conv_cell_frac_coords
-                    )
+                    defect_entry = [
+                        entry
+                        for name, entry in self.defect_entries.items()
+                        if name.startswith(defect_name)
+                    ][0]
+                    frac_coords_string = ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
                     row = [
                         defect_name,
                         charges,
                         f"[{frac_coords_string}]",
-                        neutral_defect_entry.wyckoff,
+                        defect_entry.wyckoff,
                     ]
                     table.append(row)
                 info_string += (
