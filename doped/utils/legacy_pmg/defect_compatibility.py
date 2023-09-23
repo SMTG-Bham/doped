@@ -25,6 +25,10 @@ from doped.utils.legacy_pmg.corrections import (
 
 logger = logging.getLogger(__name__)
 
+# TODO: Implement our own compatibility checks, just checking the variance in the Freysoldt/Kumagai
+#  plots, and if it's above a certain error threshold, and also if it appears there are many charge
+#  carriers in the band edges. If computed bandfilling value is large warn the user about this?
+
 
 class DefectCompatibility(MSONable):
     """
