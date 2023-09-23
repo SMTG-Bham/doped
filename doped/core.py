@@ -7,18 +7,20 @@ import collections
 import contextlib
 import warnings
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects import core, thermo
-from pymatgen.analysis.defects.supercells import get_sc_fromstruct
+from pymatgen.analysis.defects import core, supercells, thermo
+from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.io.vasp.outputs import Locpot
 
 # TODO: Need to set the str and repr functions for these to give an informative output! Same for our
 #  parsing functions/classes
+# TODO: Add `get_kumagai_correction` method
 
 
 @dataclass
@@ -36,8 +38,6 @@ class DefectEntry(thermo.DefectEntry):
             pymatgen ComputedStructureEntry for the _defect_ supercell.
         sc_defect_frac_coords:
             The fractional coordinates of the defect in the supercell.
-            If None, structures attributes of the LOCPOT file are used to
-            automatically determine the defect location.
         bulk_entry:
             pymatgen ComputedEntry for the bulk supercell reference. Required
             for calculating the defect formation energy.
@@ -121,11 +121,30 @@ class DefectEntry(thermo.DefectEntry):
         super().__post_init__()
         self.name: str = self.name if self.name else self.defect.name
 
-    @property  # bug fix for now, will PR and delete later
+    def _check_if_multiple_finite_size_corrections(self):
+        """
+        Checks that there is no double counting of finite-size charge
+        corrections, in the defect_entry.corrections dict.
+        """
+        matching_finite_size_correction_keys = {
+            key
+            for key in self.corrections
+            if any(x in key for x in ["FNV", "freysoldt", "Freysoldt", "Kumagai", "kumagai"])
+        }
+        if len(matching_finite_size_correction_keys) > 1:
+            warnings.warn(
+                f"It appears there are multiple finite-size charge corrections in the corrections dict "
+                f"attribute for defect {self.name}. These are:"
+                f"\n{matching_finite_size_correction_keys}."
+                f"\nPlease ensure there is no double counting / duplication of energy corrections!"
+            )
+
+    @property
     def corrected_energy(self) -> float:
         """
         The energy of the defect entry with _all_ corrections applied.
         """
+        self._check_if_multiple_finite_size_corrections()
         return self.sc_entry.energy + sum(self.corrections.values())
 
     def to_json(self, filename: Optional[str] = None):
@@ -165,6 +184,84 @@ class DefectEntry(thermo.DefectEntry):
         warnings.filterwarnings("ignore", message=".*unset_charge.*")
 
         return asdict(self)
+
+    def get_freysoldt_correction(
+        self,
+        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+        defect_locpot: Optional[Union[str, Locpot, dict]] = None,
+        bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
+        plot: bool = False,
+        filename: Optional[str] = None,
+        axis=None,
+        **kwargs,
+    ) -> CorrectionResult:
+        """
+        Compute the _isotropic_ Freysoldt (FNV) correction for the
+        defect_entry.
+
+        The correction is added to the `defect_entry.corrections` dictionary
+        (to be used in following formation energy calculations).
+        If this correction is used, please cite Freysoldt's
+        original paper; 10.1103/PhysRevLett.102.016402.
+
+        Args:
+            dielectric (float or int or 3x1 matrix or 3x3 matrix):
+                Total dielectric constant of the host compound (including both
+                ionic and (high-frequency) electronic contributions). If None,
+                then the dielectric constant is taken from the `defect_entry`
+                `calculation_metadata` if available.
+            defect_locpot:
+                Path to the output VASP LOCPOT file from the defect supercell
+                calculation, or the corresponding pymatgen Locpot object, or
+                a dictionary of the planar-averaged potential.
+                If None, will try to use `defect_locpot` from the
+                `defect_entry` `calculation_metadata` if available.
+            bulk_locpot:
+                Path to the output VASP LOCPOT file from the bulk supercell
+                calculation, or the corresponding pymatgen Locpot object, or
+                a dictionary of the planar-averaged potential.
+                If None, will try to use `bulk_locpot` from the
+                `defect_entry` `calculation_metadata` if available.
+            plot (bool):
+                Whether to plot the FNV electrostatic potential plots (for
+                manually checking the behaviour of the charge correction here).
+            filename (str):
+                Filename to save the FNV electrostatic potential plots to.
+                If None, plots are not saved.
+            axis (int or None):
+                If int, then the FNV electrostatic potential plot along the
+                specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
+                the output charge correction is still that for _all_ axes.
+                If None, then all three axes are plotted.
+            **kwargs:
+                Additional kwargs to pass to
+                pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
+                (e.g. energy_cutoff, mad_tol, q_model, step).
+
+        Returns:
+            CorrectionResults (summary of the corrections applied and metadata), and
+            the matplotlib figure object (or axis object if axis specified) if `plot`
+            or `saved` is True.
+        """
+        from doped.utils.corrections import get_freysoldt_correction
+
+        fnv_correction_output = get_freysoldt_correction(
+            defect_entry=self,
+            dielectric=dielectric,
+            defect_locpot=defect_locpot,
+            bulk_locpot=bulk_locpot,
+            plot=plot,
+            filename=filename,
+            axis=axis,
+            **kwargs,
+        )
+        correction = (
+            fnv_correction_output if all(x is None for x in [plot, filename]) else fnv_correction_output[0]
+        )
+        self.corrections.update({"freysoldt_charge_correction": correction.correction_energy})
+        self._check_if_multiple_finite_size_corrections()
+        self.corrections_metadata.update({"freysoldt_charge_correction": correction.metadata.copy()})
+        return fnv_correction_output
 
 
 def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
@@ -375,7 +472,7 @@ class Defect(core.Defect):
             the defect supercell site and list of equivalent supercell sites.
         """
         if sc_mat is None:
-            sc_mat = get_sc_fromstruct(
+            sc_mat = supercells.get_sc_fromstruct(
                 self.structure,
                 min_atoms=min_atoms,
                 max_atoms=max_atoms,

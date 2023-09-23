@@ -7,33 +7,41 @@ package for managing and analysing defect calculations, with publication-
 quality outputs.
 
 The charge-correction methods implemented are:
-1) Freysoldt correction for isotropic systems. Includes:
-       a) PC energy
-       b) potential alignment by planar averaging.
-2) Extended Freysoldt or Kumagai correction for anistropic systems. Includes:
+1) Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic systems.
+   This is the recommended default as it works regardless of system (an)isotropy, has a more efficient
+   implementation and tends to be more robust in cases of small supercells.
+   Includes:
        a) anisotropic PC energy
        b) potential alignment by atomic site averaging outside Wigner Seitz radius
 
-If you use the corrections implemented in this module, cite
-   Freysoldt, Neugebauer, and Van de Walle,
-    Phys. Status Solidi B. 248, 1067-1076 (2011) for isotropic correction
-   Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for anisotropic correction
+2) Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV correction fails for some
+   reason. Includes:
+       a) point-charge (PC) energy
+       b) potential alignment by planar averaging
+
+If you use the corrections implemented in this module, cite:
+    Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for the eFNV correction
+    or
+    Freysoldt, Neugebauer, and Van de Walle, Phys. Status Solidi B. 248, 1067-1076 (2011) for FNV
 """
 
 import copy
 import itertools
+import os
 import warnings
 from math import erfc, exp
-from typing import Optional
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 from monty.json import MontyDecoder
+from pymatgen.analysis.defects.corrections import freysoldt
+from pymatgen.io.vasp.outputs import Locpot
 from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import DefectParser, _convert_dielectric_to_tensor
 from doped.plotting import _get_backend
-from doped.utils.legacy_pmg.corrections import FreysoldtCorrection, KumagaiCorrection
+from doped.utils.legacy_pmg.corrections import KumagaiCorrection
 
 warnings.simplefilter("default")
 # `message` only needs to match start of message:
@@ -65,129 +73,205 @@ def _monty_decode_nested_dicts(d):
                 print(f"Failed to decode {key} with error {exc}")
 
 
-def get_correction_freysoldt(
+def get_freysoldt_correction(
     defect_entry,
-    dielectric,
+    dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+    defect_locpot: Optional[Union[str, Locpot, dict]] = None,
+    bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
     plot: bool = False,
     filename: Optional[str] = None,
-    partflag="All",
     axis=None,
     **kwargs,
 ):
     """
-    Function to compute the isotropic Freysoldt correction for each defect.
-    If this correction is used, please reference Freysoldt's original paper.
-    doi: 10.1103/PhysRevLett.102.016402
+    Function to compute the _isotropic_ Freysoldt (FNV) correction for the
+    input defect_entry.
+
+    This function _does not_ add the correction to `defect_entry.corrections`
+    (but the defect_entry.get_freysoldt_correction method does).
+    If this correction is used, please cite Freysoldt's
+    original paper; 10.1103/PhysRevLett.102.016402.
+
     Args:
-        defect_entry: DefectEntry object with the following
-            keys stored in defect.calculation_metadata:
-                required:
-                    axis_grid (3 x NGX where NGX is the length of the NGX grid
-                    in the x,y and z axis directions. Same length as planar
-                    average lists):
-                        A list of 3 numpy arrays which contain the cartesian axis
-                        values (in angstroms) that correspond to each planar avg
-                        potential supplied.
-
-                    bulk_planar_averages (3 x NGX where NGX is the length of
-                    the NGX grid in the x,y and z axis directions.):
-                        A list of 3 numpy arrays which contain the planar averaged
-                        electrostatic potential for the bulk supercell.
-
-                    defect_planar_averages (3 x NGX where NGX is the length of
-                    the NGX grid in the x,y and z axis directions.):
-                        A list of 3 numpy arrays which contain the planar averaged
-                        electrostatic potential for the defective supercell.
-
-                    bulk_sc_structure (Structure) bulk structure corresponding to
-                        defect supercell structure (uses Lattice for charge correction)
-
-                    defect_frac_sc_coords (3 x 1 array) Fracitional coordinates of
-                        defect location in supercell structure
-                optional:
-                    'encut' : energy cutoff desired for Freysoldt correction
-                    'madetol' : madelung tolerance for Freysoldt correction
-                    'q_model' : Charge Model for Freysoldt correction
-                    'q_model' : Charge Model for Freysoldt correction
+        defect_entry:
+            DefectEntry object with the following for which to compute the
+            FNV finite-size charge correction. The correction will be added
+            to the `corrections` dictionary attribute (and thus used in any
+            following formation energy calculations).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            ionic + static contributions to dielectric constant
-        plot (bool): decides whether to plot electrostatic potential plots or not.
-        filename (str): if None, plots are not saved, if a string,
-            then the plot will be saved as '{filename}_{axis}.pdf'
-        partflag: four options for correction output:
-               'pc' for just point charge correction, or
-               'potalign' for just potalign correction, or
-               'All' for both (added together), or
-               'AllSplit' for individual parts split up (form is [PC, potterm, full])
+            Total dielectric constant of the host compound (including both
+            ionic and (high-frequency) electronic contributions). If None,
+            then the dielectric constant is taken from the `defect_entry`
+            `calculation_metadata` if available.
+        defect_locpot:
+            Path to the output VASP LOCPOT file from the defect supercell
+            calculation, or the corresponding pymatgen Locpot object, or
+            a dictionary of the planar-averaged potential.
+            If None, will try to use `defect_locpot` from the
+            `defect_entry` `calculation_metadata` if available.
+        bulk_locpot:
+            Path to the output VASP LOCPOT file from the bulk supercell
+            calculation, or the corresponding pymatgen Locpot object, or
+            a dictionary of the planar-averaged potential.
+            If None, will try to use `bulk_locpot` from the
+            `defect_entry` `calculation_metadata` if available.
+        plot (bool):
+            Whether to plot the FNV electrostatic potential plots (for
+            manually checking the behaviour of the charge correction here).
+        filename (str):
+            Filename to save the FNV electrostatic potential plots to.
+            If None, plots are not saved.
         axis (int or None):
-            if integer, then freysoldt correction is performed on the single axis specified.
-            If it is None, then averaging of the corrections for the three axes is used for the
-            correction.
+            If int, then the FNV electrostatic potential plot along the
+            specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
+            the output charge correction is still that for _all_ axes.
+            If None, then all three axes are plotted.
+        **kwargs:
+            Additional kwargs to pass to
+            pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
+            (e.g. energy_cutoff, mad_tol, q_model, step).
 
-    Returns Correction
+    Returns:
+        CorrectionResults (summary of the corrections applied and metadata), and
+        the matplotlib figure object (or axis object if axis specified) if `plot`
+        or `saved` is True.
     """
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
+    def _check_if_None_and_raise_error_if_so(var, var_name, display_name):
+        if var is None:
+            raise ValueError(
+                f"{var_name} (`{display_name}`) must be provided as an argument or be present in the "
+                "`defect_entry` `calculation_metadata`, neither of which is the case here!"
+            )
+
+    def get_and_check_metadata(entry, key, display_name):
+        value = entry.calculation_metadata.get(key, None)
+        _check_if_None_and_raise_error_if_so(value, display_name, key)
+        return value
+
+    dielectric = dielectric or get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
-    if partflag not in ["All", "AllSplit", "pc", "potalign"]:
+    defect_locpot = defect_locpot or get_and_check_metadata(defect_entry, "defect_locpot", "Defect LOCPOT")
+    bulk_locpot = bulk_locpot or get_and_check_metadata(defect_entry, "bulk_locpot", "Bulk LOCPOT")
+
+    def _check_if_str_and_get_Locpot(locpot):
+        if isinstance(locpot, str):
+            return Locpot.from_file(locpot)
+
+        if not isinstance(locpot, Locpot):
+            raise TypeError(
+                f"`locpot` input must be either a path to a LOCPOT file or a pymatgen Locpot object, "
+                f"but got {type(locpot)} instead."
+            )
+
+        return locpot
+
+    defect_locpot = _check_if_str_and_get_Locpot(defect_locpot)
+    bulk_locpot = _check_if_str_and_get_Locpot(bulk_locpot)
+
+    fnv_correction = freysoldt.get_freysoldt_correction(
+        q=defect_entry.charge_state,
+        dielectric=dielectric,
+        defect_locpot=defect_locpot,
+        bulk_locpot=bulk_locpot,
+        defect_frac_coords=defect_entry.sc_defect_frac_coords,
+        **kwargs,
+    )
+
+    if all(x is None for x in [plot, filename]):
+        return fnv_correction
+
+    _install_custom_font()
+
+    axis_label_dict = {0: "a", 1: "b", 2: "c"}
+    if axis is None:
+        fig, axs = plt.subplots(1, 3, sharey=True)
+        for direction in range(3):
+            plot_FNV(
+                fnv_correction.metadata["plot_data"][direction],
+                ax=axs[direction],
+                title=f"${axis_label_dict[direction]}$",
+            )
+    else:
+        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=f"${axis_label_dict[axis]}$")
+        # actually an axis object
+
+    if filename:
+        plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+
+    # TODO: Remove or change this if this function is used in our parsing loops
+    print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
+
+    return fnv_correction, fig
+
+
+def plot_FNV(plot_data, title=None, ax=None):
+    """
+    Plots the planar-averaged electrostatic potential against the long range
+    and short range models from the FNV correction method.
+
+    Code templated from the original PyCDT and new pymatgen.analysis.defects
+    implementations.
+
+
+    Args:
+        title (str): Title to be given to plot. Default is no title.
+        saved (bool): Whether to save file or not. If False then returns plot object.
+            If True then saves plot as   str(title) + "FreyplnravgPlot.pdf"
+        ax (matplotlib.axes.Axes): Axes object to plot on. If None, makes new figure.
+
+    Args:
+         plot_data (dict):
+            Dictionary of Freysoldt correction metadata to plot
+            (i.e. defect_entry.corrections_metadata["plot_data"][axis] where
+            axis is one of [0, 1, 2] specifying which axis to plot along (a, b, c)).
+         title (str): Title for the plot. Default is no title.
+    """
+    if not plot_data["pot_plot_data"]:
         raise ValueError(
-            f'{partflag} is incorrect potalign type. Must be "All", "AllSplit", "pc", or "potalign".'
+            "Input `plot_data` has no `pot_plot_data` entry. Cannot plot FNV potential "
+            "alignment before running correction!"
         )
 
-    q_model = defect_entry.calculation_metadata.get("q_model", None)
-    encut = defect_entry.calculation_metadata.get("encut", 520)
-    madetol = defect_entry.calculation_metadata.get("madetol", 0.0001)
+    x = plot_data["pot_plot_data"]["x"]
+    v_R = plot_data["pot_plot_data"]["Vr"]
+    dft_diff = plot_data["pot_plot_data"]["dft_diff"]
+    short_range = plot_data["pot_plot_data"]["short_range"]
+    check = plot_data["pot_plot_data"]["check"]
+    C = plot_data["pot_plot_data"]["shift"]
 
-    if not defect_entry.charge_state:
-        print("Charge is zero so charge correction is zero.")
-        return 0.0
+    with plt.style.context(f"{os.path.dirname(__file__)}/doped.mplstyle"):
+        if ax is None:
+            fig, ax = plt.subplots()
+        ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
+        ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
+        ax.plot(
+            x,
+            short_range,
+            c="green",
+            label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",  # noqa: ISC003
+        )
+        ax.axhline(C, color="k", linestyle="--", label=f"Alignment constant C = {C:.3f}")
 
-    template_defect = copy.deepcopy(defect_entry)
-    corr_class = FreysoldtCorrection(
-        dielectric, q_model=q_model, energy_cutoff=encut, madetol=madetol, axis=axis
-    )
-    f_corr_summ = corr_class.get_correction(template_defect)
+        tmpx = [x[i] for i in range(check[0], check[1])]
+        ax.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
 
-    if plot:
-        axis_labels = ["x", "y", "z"]
-        if axis is None:
-            ax_list = [[k, f"${axis_labels[k]}$-axis"] for k in corr_class.metadata["pot_plot_data"]]
-        else:
-            ax_list = [[axis, f"${axis_labels[axis]}$-axis"]]
+        ax.set_xlim(round(x[0]), round(x[-1]))
+        ymin = min(*v_R, *dft_diff, *short_range)
+        ymax = max(*v_R, *dft_diff, *short_range)
+        ax.set_ylim(-0.2 + ymin, 0.2 + ymax)
+        plt.xlabel(r"Distance along axis ($\AA$)")
+        plt.ylabel("Potential (V)")
+        ax.legend(loc=9)
+        ax.axhline(y=0, linewidth=0.2, color="black")
+        if title is not None:
+            ax.set_title(str(title))
+        ax.set_xlim(0, max(x))
 
-        for ax_key, ax_title in ax_list:
-            _install_custom_font()
-            p = corr_class.plot(ax_key, title=ax_title, saved=False)
-            if filename:
-                p.savefig(
-                    f"{filename}_{ax_title.replace('$','')}.pdf",
-                    bbox_inches="tight",
-                    transparent=True,
-                    backend=_get_backend("pdf"),
-                )
-            if kwargs.get("return_fig", False):  # for testing
-                return p
-            plt.show()
-
-    if partflag in ["AllSplit", "All"]:
-        freyval = np.sum(list(f_corr_summ.values()))
-    elif partflag == "pc":
-        freyval = f_corr_summ["freysoldt_electrostatic"]
-    elif partflag == "potalign":
-        freyval = f_corr_summ["freysoldt_potential_alignment"]
-
-    print(f"Final Freysoldt correction is {freyval:.3f} eV")
-
-    if partflag == "AllSplit":
-        freyval = [
-            f_corr_summ["freysoldt_electrostatic"],
-            f_corr_summ["freysoldt_potential_alignment"],
-            freyval,
-        ]
-
-    return freyval
+        return ax
 
 
 def get_correction_kumagai(
@@ -282,39 +366,6 @@ def get_correction_kumagai(
             kumagai_val,
         ]
     return kumagai_val
-
-
-def freysoldt_correction_from_paths(
-    defect_file_path,
-    bulk_file_path,
-    dielectric,
-    defect_charge,
-    plot=False,
-    filename: Optional[str] = None,
-    **kwargs,
-):
-    """
-    A function for performing the Freysoldt correction with a set of file paths.
-    If this correction is used, please reference Freysoldt's original paper.
-    doi: 10.1103/PhysRevLett.102.016402.
-
-    :param defect_file_path (str): file path to defect folder of interest
-    :param bulk_file_path (str): file path to bulk folder of interest
-    :param dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            ionic + static contributions to dielectric constant
-    :param charge (int): charge of defect structure of interest
-    :param plot (bool): decides whether to plot electrostatic potential plots or not.
-    :param filename (str): if None, plots are not saved, if a string,
-            then the plot will be saved as '{filename}_{axis}.pdf'
-    :return:
-        Dictionary of Freysoldt Correction for defect
-    """
-    dp = DefectParser.from_paths(defect_file_path, bulk_file_path, dielectric, defect_charge)
-    _ = dp.freysoldt_loader()
-    if plot:
-        print(dp.defect_entry.name)
-
-    return get_correction_freysoldt(dp.defect_entry, dielectric, plot=plot, filename=filename, **kwargs)
 
 
 def kumagai_correction_from_paths(
