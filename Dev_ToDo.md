@@ -115,7 +115,7 @@
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - `ShakeNBreak` related updates:
-  - Use doped naming conventions and functions and defect entry generation functions in `ShakeNBreak`.
+  - Use doped defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
   - Notebooks in `tests`; update or delete.
   - Test coverage?

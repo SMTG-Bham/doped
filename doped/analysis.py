@@ -19,7 +19,6 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.util.string import unicodeify
-from shakenbreak.input import _get_voronoi_nodes
 from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
@@ -218,6 +217,8 @@ def defect_from_structures(bulk_supercell, defect_supercell):
                 voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
 
             except FileNotFoundError:  # first time parsing
+                from shakenbreak.input import _get_voronoi_nodes
+
                 voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
                 struc_and_node_dict = {
                     "bulk_supercell": bulk_supercell,
@@ -1034,6 +1035,11 @@ class DefectParser:
     # `DefectParser` instances, so warnings detects each instance as a different source and
     # prints the warning multiple times. When we move to a single function call for all defects
     # (as described above), this can be removed.
+
+    # TODO: Add defect and bulk locpot (as paths) to metadata, and also load bulk locpot once when
+    #  looping through defects for expedited FNV parsing
+    # TODO: We've removed it from the FNV correction code itself, so check that charge correction is
+    #  skipped in analysis by default when charge state is zero
 
     def __init__(
         self,
