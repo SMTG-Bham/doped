@@ -186,21 +186,23 @@ def get_freysoldt_correction(
 
     _install_custom_font()
 
-    axis_label_dict = {0: "a", 1: "b", 2: "c"}
+    axis_label_dict = {0: r"$a$-axis", 1: r"$b$-axis", 2: r"$c$-axis"}
     if axis is None:
-        fig, axs = plt.subplots(1, 3, sharey=True)
+        fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
         for direction in range(3):
             plot_FNV(
                 fnv_correction.metadata["plot_data"][direction],
                 ax=axs[direction],
-                title=f"${axis_label_dict[direction]}$",
+                title=axis_label_dict[direction],
             )
     else:
-        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=f"${axis_label_dict[axis]}$")
+        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
         # actually an axis object
 
     if filename:
         plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+    else:
+        plt.show()
 
     # TODO: Remove or change this if this function is used in our parsing loops
     print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
@@ -216,19 +218,13 @@ def plot_FNV(plot_data, title=None, ax=None):
     Code templated from the original PyCDT and new pymatgen.analysis.defects
     implementations.
 
-
-    Args:
-        title (str): Title to be given to plot. Default is no title.
-        saved (bool): Whether to save file or not. If False then returns plot object.
-            If True then saves plot as   str(title) + "FreyplnravgPlot.pdf"
-        ax (matplotlib.axes.Axes): Axes object to plot on. If None, makes new figure.
-
     Args:
          plot_data (dict):
             Dictionary of Freysoldt correction metadata to plot
             (i.e. defect_entry.corrections_metadata["plot_data"][axis] where
             axis is one of [0, 1, 2] specifying which axis to plot along (a, b, c)).
          title (str): Title for the plot. Default is no title.
+         ax (matplotlib.axes.Axes): Axes object to plot on. If None, makes new figure.
     """
     if not plot_data["pot_plot_data"]:
         raise ValueError(
@@ -246,26 +242,28 @@ def plot_FNV(plot_data, title=None, ax=None):
     with plt.style.context(f"{os.path.dirname(__file__)}/doped.mplstyle"):
         if ax is None:
             fig, ax = plt.subplots()
-        ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
-        ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
-        ax.plot(
+        (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
+        (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
+        (line3,) = ax.plot(
             x,
             short_range,
             c="green",
             label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",  # noqa: ISC003
         )
-        ax.axhline(C, color="k", linestyle="--", label=f"Alignment constant C = {C:.3f}")
+        leg1 = ax.legend(handles=[line1, line2, line3], loc=9)  # middle top legend
+        ax.add_artist(leg1)  # so isn't overwritten with later legend call
 
+        line4 = ax.axhline(C, color="k", linestyle="--", label=f"Alignment constant C = {C:.3f}")
         tmpx = [x[i] for i in range(check[0], check[1])]
-        ax.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
+        poly_coll = ax.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
+        ax.legend(handles=[line4, poly_coll], loc=8)  # bottom middle legend
 
         ax.set_xlim(round(x[0]), round(x[-1]))
         ymin = min(*v_R, *dft_diff, *short_range)
         ymax = max(*v_R, *dft_diff, *short_range)
         ax.set_ylim(-0.2 + ymin, 0.2 + ymax)
-        plt.xlabel(r"Distance along axis ($\AA$)")
-        plt.ylabel("Potential (V)")
-        ax.legend(loc=9)
+        ax.set_xlabel(r"Distance along axis ($\AA$)")
+        ax.set_ylabel("Potential (V)")
         ax.axhline(y=0, linewidth=0.2, color="black")
         if title is not None:
             ax.set_title(str(title))
@@ -319,6 +317,8 @@ def get_correction_kumagai(
                'All' for both (added together), or
                'AllSplit' for individual parts split up (form is [PC, potterm, full])
     """
+    # TODO: If updating to use pydefect, need to add this to dependencies!
+
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
