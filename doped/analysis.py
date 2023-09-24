@@ -267,7 +267,7 @@ def defect_from_structures(bulk_supercell, defect_supercell):
         "site": defect_site,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
-    # primitive cell, however interstitials will be tricky for this...
+    # primitive cell, however interstitials will be very tricky for this...
     defect = MontyDecoder().process_decoded(for_monty_defect)
 
     return defect, defect_site, guessed_initial_defect_structure, unrelaxed_defect_structure
@@ -356,9 +356,12 @@ def defect_entry_from_paths(
     # add bulk simple properties
     bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
     if multiple:
-        warnings.warn(
-            f"Multiple `vasprun.xml` files found in bulk directory: {bulk_path}. Using "
-            f"{bulk_vr_path} to parse the calculation energy and metadata."
+        _multiple_files_warning(
+            "vasprun.xml",
+            bulk_path,
+            bulk_vr_path,
+            "parse the calculation energy and metadata.",
+            dir_type="bulk",
         )
     bulk_vr = get_vasprun(bulk_vr_path)
     bulk_supercell = bulk_vr.final_structure.copy()
@@ -369,9 +372,12 @@ def defect_entry_from_paths(
         multiple,
     ) = _get_output_files_and_check_if_multiple("vasprun.xml", defect_path)
     if multiple:
-        warnings.warn(
-            f"Multiple `vasprun.xml` files found in defect directory: {defect_path}. Using"
-            f" {defect_vr_path} to parse the calculation energy and metadata."
+        _multiple_files_warning(
+            "vasprun.xml",
+            defect_path,
+            defect_vr_path,
+            "parse the calculation energy and metadata.",
+            dir_type="defect",
         )
     defect_vr = get_vasprun(defect_vr_path)
 
@@ -634,7 +640,7 @@ def defect_entry_from_paths(
                 for key, val in dp.defect_entry.corrections.items()
                 if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
             )
-            if summed_corrections < 0:
+            if summed_corrections < -0.05:
                 warnings.warn(
                     f"The calculated finite-size charge corrections for defect at {defect_path} and bulk "
                     f"at {bulk_path} sum to a negative value of {summed_corrections:.3f}. This is likely "
@@ -928,105 +934,6 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
     )
 
 
-# def lany_zunger_corrected_defect_dict_from_freysoldt(defect_dict: dict):
-#     """
-#     Convert input parsed defect dictionary (presumably created using
-#     DefectParser) with Freysoldt charge corrections to the same parsed
-#     defect dictionary but with the Lany-Zunger charge correction (same potential
-#     alignment plus 0.65 * Makov-Payne image charge correction (same image charge correction as
-#     Freysoldt scheme)).
-#
-#     Args:
-#         defect_dict (dict):
-#             Dictionary of parsed defect calculations (presumably created
-#             using DefectParser (see tutorials)
-#             Must have 'freysoldt_meta' in defect.calculation_metadata for each charged defect (from
-#             DefectParser.freysoldt_loader())
-#
-#     Returns:
-#         Parsed defect dictionary with Lany-Zunger charge corrections.
-#     """
-#     from doped.utils.corrections import get_murphy_image_charge_correction
-#
-#     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
-#     # defect_dict to get the lattice and dielectric matrix
-#     lattice = random_defect_entry.bulk_structure.lattice.matrix
-#     dielectric = random_defect_entry.calculation_metadata["dielectric"]
-#     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
-#     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
-#     for defect_name, defect_entry in lz_corrected_defect_dict.items():
-#         if defect_entry.charge_state != 0:
-#             potalign = defect_entry.calculation_metadata["freysoldt_meta"][
-#                 "freysoldt_potential_alignment_correction"
-#             ]
-#             mp_pc_corr = lz_image_charge_corrections[abs(defect_entry.charge_state)]  # Makov-Payne PC
-#             correction
-#             defect_entry.calculation_metadata.update(
-#                 {
-#                     "Lany-Zunger_Corrections": {
-#                         "(Freysoldt)_Potential_Alignment_Correction": potalign,
-#                         "Makov-Payne_Image_Charge_Correction": mp_pc_corr,
-#                         "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * mp_pc_corr,
-#                         "Total_Lany-Zunger_Correction": potalign + 0.65 * mp_pc_corr,
-#                     }
-#                 }
-#             )
-#             defect_entry.corrections["charge_correction"] = defect_entry.calculation_metadata[
-#                 "Lany-Zunger_Corrections"
-#             ]["Total_Lany-Zunger_Correction"]
-#
-#         lz_corrected_defect_dict.update({defect_name: defect_entry})
-#     return lz_corrected_defect_dict
-#
-#
-# def lany_zunger_corrected_defect_dict_from_kumagai(defect_dict: dict):
-#     """
-#     Convert input parsed defect dictionary (presumably created using
-#     DefectParser) with Kumagai charge corrections to the same parsed
-#     defect dictionary but with the 'Lany-Zunger' charge correction
-#     (same potential alignment plus 0.65 * image charge correction.
-#
-#     Args:
-#         defect_dict (dict):
-#             Dictionary of parsed defect calculations (presumably created
-#             using DefectParser (see tutorials)
-#             Must have 'kumagai_meta' in defect.calculation_metadata for
-#             each charged defect (from DefectParser.kumagai_loader())
-#
-#     Returns:
-#         Parsed defect dictionary with Lany-Zunger charge corrections.
-#     """
-#     from doped.utils.corrections import get_murphy_image_charge_correction
-#
-#     random_defect_entry = list(defect_dict.values())[0]  # Just need any DefectEntry from
-#     # defect_dict to get the lattice and dielectric matrix
-#     lattice = random_defect_entry.bulk_structure.lattice.matrix
-#     dielectric = random_defect_entry.calculation_metadata["dielectric"]
-#     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
-#     lz_corrected_defect_dict = copy.deepcopy(defect_dict)
-#     for defect_name, defect_entry in lz_corrected_defect_dict.items():
-#         if defect_entry.charge_state != 0:
-#             potalign = defect_entry.calculation_metadata["kumagai_meta"][
-#             "kumagai_potential_alignment_correction"]
-#             makove_payne_pc_correction = lz_image_charge_corrections[abs(defect_entry.charge_state)]
-#             defect_entry.calculation_metadata.update(
-#                 {
-#                     "Lany-Zunger_Corrections": {
-#                         "(Kumagai)_Potential_Alignment_Correction": potalign,
-#                         "Makov-Payne_Image_Charge_Correction": makove_payne_pc_correction,
-#                         "Lany-Zunger_Scaled_Image_Charge_Correction": 0.65 * makove_payne_pc_correction,
-#                         "Total_Lany-Zunger_Correction": potalign + 0.65 * makove_payne_pc_correction,
-#                     }
-#                 }
-#             )
-#             defect_entry.corrections["charge_correction"] = defect_entry.calculation_metadata[
-#                 "Lany-Zunger_Corrections"
-#             ]["Total_Lany-Zunger_Correction"]
-#
-#         lz_corrected_defect_dict.update({defect_name: defect_entry})
-#     return lz_corrected_defect_dict
-
-
 class DefectParser:
     _delocalization_warning_printed = False  # class variable
     # ensures the verbose delocalization analysis warning is only printed once. Needs to be done
@@ -1038,8 +945,10 @@ class DefectParser:
 
     # TODO: Add defect and bulk locpot (as paths) to metadata, and also load bulk locpot once when
     #  looping through defects for expedited FNV parsing
-    # TODO: We've removed it from the FNV correction code itself, so check that charge correction is
+    # TODO: We've removed it from the FNV/eFNV correction code itself, so check that charge correction is
     #  skipped in analysis by default when charge state is zero
+    # TODO: Add comment/note somewhwere that the supercells should have equal definitions for both bulk
+    #  and defect
 
     def __init__(
         self,
@@ -1126,12 +1035,6 @@ class DefectParser:
             **kwargs,
         )
 
-    def _multiple_files_warning(self, file_type, directory, chosen_filepath, action, dir_type="bulk"):
-        warnings.warn(
-            f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using "
-            f"{chosen_filepath} to {action}"
-        )
-
     def freysoldt_loader(self, bulk_locpot=None):
         """
         Load metadata required for performing Freysoldt correction requires
@@ -1154,7 +1057,7 @@ class DefectParser:
                 "LOCPOT", self.defect_entry.calculation_metadata["bulk_path"]
             )
             if multiple:
-                self._multiple_files_warning(
+                _multiple_files_warning(
                     "LOCPOT",
                     self.defect_entry.calculation_metadata["bulk_path"],
                     bulk_locpot_path,
@@ -1167,7 +1070,7 @@ class DefectParser:
             "LOCPOT", self.defect_entry.calculation_metadata["defect_path"]
         )
         if multiple:
-            self._multiple_files_warning(
+            _multiple_files_warning(
                 "LOCPOT",
                 self.defect_entry.calculation_metadata["defect_path"],
                 defect_locpot_path,
@@ -1210,7 +1113,7 @@ class DefectParser:
                 "OUTCAR", self.defect_entry.calculation_metadata["bulk_path"]
             )
             if multiple:
-                self._multiple_files_warning(
+                _multiple_files_warning(
                     "OUTCAR",
                     self.defect_entry.calculation_metadata["bulk_path"],
                     bulk_outcar_path,
@@ -1225,7 +1128,7 @@ class DefectParser:
             "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
         )
         if multiple:
-            self._multiple_files_warning(
+            _multiple_files_warning(
                 "OUTCAR",
                 self.defect_entry.calculation_metadata["defect_path"],
                 defect_outcar_path,
@@ -1236,20 +1139,6 @@ class DefectParser:
 
         bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
         defect_atomic_site_averages = defect_outcar.electrostatic_potential
-
-        def _raise_incomplete_outcar_error(outcar_path, dir_type="bulk"):
-            raise ValueError(
-                f"Unable to parse atomic core potentials from {dir_type} `OUTCAR` at {outcar_path}. This "
-                f"can happen if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the "
-                f"calculation was finished prematurely with a `STOPCAR`. The Kumagai charge correction "
-                f"cannot be computed without this data!"
-            )
-
-        if not bulk_atomic_site_averages:
-            _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
-
-        if not defect_atomic_site_averages:
-            _raise_incomplete_outcar_error(defect_outcar_path, dir_type="defect")
 
         bulk_structure = self.defect_entry.bulk_entry.structure
         bulksites = [site.frac_coords for site in bulk_structure]
@@ -1291,14 +1180,14 @@ class DefectParser:
 
     def get_stdrd_metadata(self):
         """
-        Get metadata required for standard defect parsing.
+        Get standard defect calculation metadata.
         """
         if not self.bulk_vr:
             bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
                 "vasprun.xml", self.defect_entry.calculation_metadata["bulk_path"]
             )
             if multiple:
-                self._multiple_files_warning(
+                _multiple_files_warning(
                     "vasprun.xml",
                     self.defect_entry.calculation_metadata["bulk_path"],
                     bulk_vr_path,
@@ -1312,7 +1201,7 @@ class DefectParser:
                 "vasprun.xml", self.defect_entry.calculation_metadata["defect_path"]
             )
             if multiple:
-                self._multiple_files_warning(
+                _multiple_files_warning(
                     "vasprun.xml",
                     self.defect_entry.calculation_metadata["defect_path"],
                     defect_vr_path,
@@ -1556,3 +1445,10 @@ def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type
         + meta[f"{charge_correction_type}_potential_alignment_correction"]
     )
     defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
+
+
+def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type="bulk"):
+    warnings.warn(
+        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using "
+        f"{chosen_filepath} to {action}"
+    )

@@ -25,6 +25,7 @@ dependencies = [
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.2.0",
     "pandas",
+    "pydefect",  # for Kumagai (eFNV) correction
 ]
 
 [project.urls]
@@ -114,5 +115,5 @@ wrap-descriptions = 79
 
 [tool.codespell]
 ignore-words-list = """
-titel,te,bu,aack,unx,nd,efect
+titel,te,bu,aack,unx,nd,efect,vise
 """
