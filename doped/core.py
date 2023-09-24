@@ -16,11 +16,10 @@ from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.io.vasp.outputs import Locpot
+from pymatgen.io.vasp.outputs import Locpot, Outcar
 
 # TODO: Need to set the str and repr functions for these to give an informative output! Same for our
 #  parsing functions/classes
-# TODO: Add `get_kumagai_correction` method
 
 
 @dataclass
@@ -255,13 +254,78 @@ class DefectEntry(thermo.DefectEntry):
             axis=axis,
             **kwargs,
         )
-        correction = (
-            fnv_correction_output if all(x is None for x in [plot, filename]) else fnv_correction_output[0]
-        )
+        correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
         self.corrections.update({"freysoldt_charge_correction": correction.correction_energy})
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"freysoldt_charge_correction": correction.metadata.copy()})
         return fnv_correction_output
+
+    def get_kumagai_correction(
+        self,
+        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+        defect_outcar: Optional[Union[str, Outcar]] = None,
+        bulk_outcar: Optional[Union[str, Outcar]] = None,
+        plot: bool = False,
+        filename: Optional[str] = None,
+        **kwargs,
+    ):
+        """
+        Compute the Kumagai (eFNV) finite-size charge correction for the
+        defect_entry. Compatible with both isotropic/cubic and anisotropic
+        systems.
+
+        The correction is added to the `defect_entry.corrections` dictionary
+        (to be used in following formation energy calculations).
+        If this correction is used, please cite the Kumagai & Oba paper:
+        10.1103/PhysRevB.89.195205
+
+        Args:
+            dielectric (float or int or 3x1 matrix or 3x3 matrix):
+                Total dielectric constant of the host compound (including both
+                ionic and (high-frequency) electronic contributions). If None,
+                then the dielectric constant is taken from the `defect_entry`
+                `calculation_metadata` if available.
+            defect_outcar:
+                Path to the output VASP OUTCAR file from the defect supercell
+                calculation, or the corresponding pymatgen Outcar object.
+                If None, will try to use the `defect_supercell_site_potentials`
+                from the `defect_entry` `calculation_metadata` if available.
+            bulk_outcar:
+                Path to the output VASP OUTCAR file from the bulk supercell
+                calculation, or the corresponding pymatgen Outcar object.
+                If None, will try to use the `bulk_supercell_site_potentials`
+                from the `defect_entry` `calculation_metadata` if available.
+            plot (bool):
+                Whether to plot the Kumagai site potential plots (for
+                manually checking the behaviour of the charge correction here).
+            filename (str):
+                Filename to save the Kumagai site potential plots to.
+                If None, plots are not saved.
+            **kwargs:
+                Additional kwargs to pass to
+                pydefect.corrections.efnv_correction.ExtendedFnvCorrection
+                (e.g. charge, defect_region_radius, defect_coords).
+
+        Returns:
+            CorrectionResults (summary of the corrections applied and metadata), and
+            the matplotlib figure object if `plot` or `saved` is True.
+        """
+        from doped.utils.corrections import get_kumagai_correction
+
+        efnv_correction_output = get_kumagai_correction(
+            defect_entry=self,
+            dielectric=dielectric,
+            defect_outcar=defect_outcar,
+            bulk_outcar=bulk_outcar,
+            plot=plot,
+            filename=filename,
+            **kwargs,
+        )
+        correction = efnv_correction_output if not plot and filename is None else efnv_correction_output[0]
+        self.corrections.update({"kumagai_charge_correction": correction.correction_energy})
+        self._check_if_multiple_finite_size_corrections()
+        self.corrections_metadata.update({"kumagai_charge_correction": correction.metadata.copy()})
+        return efnv_correction_output
 
 
 def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
