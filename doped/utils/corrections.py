@@ -105,7 +105,8 @@ def get_freysoldt_correction(
     bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
     plot: bool = False,
     filename: Optional[str] = None,
-    axis=None,
+    axis: Optional[int] = None,
+    verbose: bool = True,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -149,6 +150,8 @@ def get_freysoldt_correction(
             specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
             the output charge correction is still that for _all_ axes.
             If None, then all three axes are plotted.
+        verbose (bool):
+            Whether to print the correction energy (default = True).
         **kwargs:
             Additional kwargs to pass to
             pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -205,8 +208,8 @@ def get_freysoldt_correction(
     else:
         plt.show()
 
-    # TODO: Remove or change this if this function is used in our parsing loops
-    print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
+    if verbose:
+        print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
 
     return fnv_correction, fig
 
@@ -280,6 +283,7 @@ def get_kumagai_correction(
     bulk_outcar: Optional[Union[str, Outcar]] = None,
     plot: bool = False,
     filename: Optional[str] = None,
+    verbose: bool = True,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -317,6 +321,8 @@ def get_kumagai_correction(
         filename (str):
             Filename to save the Kumagai site potential plots to.
             If None, plots are not saved.
+        verbose (bool):
+            Whether to print the correction energy (default = True).
         **kwargs:
             Additional kwargs to pass to
             pydefect.corrections.efnv_correction.ExtendedFnvCorrection
@@ -432,13 +438,16 @@ def get_kumagai_correction(
             rf"Avg. $\Delta V$ = {spp.ave_pot_diff:.3f} V",
         ]
         ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8)
+        ax.set_xlabel(f"Distance from defect ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
         spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
     else:
         spp.plt.show()
 
-    # TODO: Remove or change this if this function is used in our parsing loops
-    print(f"Calculated Kumagai (eFNV) correction is {kumagai_correction_result.correction_energy:.3f} eV")
+    if verbose:
+        print(
+            f"Calculated Kumagai (eFNV) correction is {kumagai_correction_result.correction_energy:.3f} eV"
+        )
 
     return kumagai_correction_result, fig
