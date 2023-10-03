@@ -9,6 +9,7 @@
   - Also see `Cs2SnTiI6` notebooks for template code for this.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
+- Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
 
 ## Post-processing / analysis / plotting
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
