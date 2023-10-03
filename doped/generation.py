@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects import core
+from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.generators import (
     AntiSiteGenerator,
     InterstitialGenerator,
@@ -38,6 +38,7 @@ from doped.core import (
     Substitution,
     Vacancy,
     _guess_and_set_struct_oxi_states,
+    doped_defect_from_pmg_defect,
 )
 from doped.utils.wyckoff import (
     _custom_round,
@@ -145,7 +146,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     If n is set, then it returns the nth closest site, where the nth site must
     be at least 0.02 Å further away than the n-1th site.
     """
-    if isinstance(defect_entry_or_defect, DefectEntry):
+    if isinstance(defect_entry_or_defect, (DefectEntry, thermo.DefectEntry)):
         defect = defect_entry_or_defect.defect
         # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
         defect_supercell_site = (
@@ -159,8 +160,11 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
         )
         defect_supercell = defect_entry_or_defect.sc_entry.structure
 
-    elif isinstance(defect_entry_or_defect, Defect):
-        defect = defect_entry_or_defect
+    elif isinstance(defect_entry_or_defect, (Defect, core.Defect)):
+        if isinstance(defect_entry_or_defect, core.Defect):
+            defect = doped_defect_from_pmg_defect(defect_entry_or_defect)  # convert to doped Defect
+        else:
+            defect = defect_entry_or_defect
         (
             defect_supercell,
             defect_supercell_site,

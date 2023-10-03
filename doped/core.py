@@ -651,6 +651,41 @@ class Defect(core.Defect):
         return loadfn(filename)
 
 
+def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
+    """
+    Create the corresponding doped Defect (Vacancy, Interstitial, Substitution)
+    from an input pymatgen Defect object.
+
+    Args:
+        defect:
+            pymatgen Defect object.
+        bulk_oxi_states:
+            Either a dict of bulk oxidation states to use, or a boolean. If True,
+            re-guesses the oxidation state of the defect (ignoring the pymatgen
+            Defect oxi_state attribute), otherwise uses the already-set oxi_state
+            (default = 0). Used in doped defect generation to make defect setup
+            more robust and efficient (particularly for odd input structures,
+            such as defect supercells etc).
+        **doped_kwargs:
+            Additional keyword arguments to define doped-specific attributes
+            (see class docstring).
+    """
+    # determine defect type:
+    if isinstance(defect, core.Vacancy):
+        defect_type = Vacancy
+    elif isinstance(defect, core.Substitution):
+        defect_type = Substitution
+    elif isinstance(defect, core.Interstitial):
+        defect_type = Interstitial
+    else:
+        raise TypeError(
+            f"Input defect must be a pymatgen Vacancy, Substitution or Interstitial object, "
+            f"not {type(defect)}."
+        )
+
+    return defect_type._from_pmg_defect(defect, bulk_oxi_states=bulk_oxi_states, **doped_kwargs)
+
+
 class Vacancy(core.Vacancy, Defect):
     def __init__(self, *args, **kwargs):
         """
