@@ -112,6 +112,7 @@
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
   - Some nice defect structure and eigenvalue analysis
   - GKFO correction
+- Add our `py-sc-fermi` plotting tools (e.g. from thesis). Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting. Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
