@@ -65,12 +65,12 @@ entirely refactored and rewritten, to work with the new
 
 ## Studies using `doped` (so far)
 
+- X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos [_Journal of Physical Chemistry C_](https://doi.org/10.26434/chemrxiv-2023-tqvh2) 2023
 - A. T. J. Nicolson et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA02429F) 2023
 - Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.2c02306) 2023
 - P. A. Hyde et al. [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.3c01510) 2023
 - J. Willis, K. B. Spooner, D. O. Scanlon. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/64c29140ce23211b20a787bb) 2023
-- X. Wang et al. [_arXiv_](https://arxiv.org/abs/2302.04901) 2023
 - J. Cen et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA00532A) 2023
 - J. Willis & R. Claes et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2023-lttnf) 2023
 - I. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon [_npj Computational Materials_](https://www.nature.com/articles/s41524-023-00973-1) 2023
