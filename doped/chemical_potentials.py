@@ -325,7 +325,8 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         # test api_key:
-        if api_key is not None:
+        if api_key is not None:  # TODO: Should test API key also when not explicitly set, but this will
+            # be avoided when we just update to make it compatible with both
             if len(api_key) == 32:
                 raise ValueError(
                     "You are trying to use the new Materials Project (MP) API which is not "

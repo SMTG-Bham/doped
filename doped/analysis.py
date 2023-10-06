@@ -855,7 +855,7 @@ def single_formation_energy_table(
         hide_cols: (list):
             List of columns to hide from the output. (default: None)
         show_key (bool):
-            Whether or not to print the table key at the bottom of the output. (default: True)
+            Whether to print the table key at the bottom of the output. (default: True)
 
     Returns:
         pandas DataFrame sorted by formation energy
