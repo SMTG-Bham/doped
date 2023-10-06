@@ -85,6 +85,15 @@ def get_defect_entry_from_defect(
     Generate doped DefectEntry object from a doped Defect object.
 
     This is used to describe a Defect with a specified simulation cell.
+
+    Args:
+        defect (Defect): doped/pymatgen Defect object.
+        defect_supercell (Structure): Defect supercell structure.
+        charge_state (int): Charge state of the defect.
+        dummy_species (DummySpecies): Dummy species used to keep track of defect
+
+    Returns:
+        DefectEntry: doped DefectEntry object.
     """
     defect_entry_structure = (
         defect_supercell.copy()
@@ -112,7 +121,13 @@ def get_defect_entry_from_defect(
 
 def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     """
-    Returns the corresponding defect dictionary key for a Defect object.
+    Get the corresponding defect dictionary key from the pymatgen DefectType.
+
+    Args:
+        defect_type (core.DefectType): pymatgen DefectType.
+
+    Returns:
+        str: Defect dictionary key.
     """
     if defect_type == core.DefectType.Vacancy:
         return "vacancies"
