@@ -927,12 +927,13 @@ class DefectsGenerator(MSONable):
         sites (or single interstitial site) can be manually specified using the
         `interstitial_coords` argument.
 
-        By default, supercells are generated for each defect using the pymatgen
-        `get_supercell_structure()` method, with `doped` default settings of
+        By default, supercells are generated for each defect using the doped
+        `get_supercell_structure()` method, with default settings of
         `min_length = 10` (minimum supercell length of 10 Å) and `min_atoms = 50`
         (minimum 50 atoms in supercell). If a different supercell is desired, this
         can be controlled by specifying keyword arguments with `supercell_gen_kwargs`,
-        which are passed to the `get_sc_fromstruct()` function.
+        which are passed to `get_supercell_structure()` (e.g. for a minimum supercell
+        length of 15 Å, use: `supercell_gen_kwargs = {'min_length': 15}`).
         Alternatively if `generate_supercell = False`, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
