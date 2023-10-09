@@ -2803,3 +2803,14 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
         )
 
         assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {"padding": 2}  # check attribute set
+
+    def test_unknown_oxi_states(self):
+        """
+        Test initialising DefectsGenerator with elements that don't have
+        tabulated ICSD oxidation states.
+        """
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
+        # Pt has no tabulated ICSD oxidation states via pymatgen
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
+        # Cali baby!
