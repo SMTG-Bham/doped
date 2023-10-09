@@ -3,6 +3,7 @@ Code to generate Defect objects and supercell structures for ab-initio
 calculations.
 """
 import copy
+import logging
 import warnings
 from functools import partial
 from itertools import chain
@@ -57,6 +58,9 @@ from doped.utils.wyckoff import (
 )
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
+
+core._logger.setLevel(logging.CRITICAL)  # avoid unnecessary pymatgen-analysis-defects warnings about
+# oxi states (already handled within doped)
 
 
 def _custom_formatwarning(
@@ -567,12 +571,12 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
         element_symbol (str): Element symbol.
 
     Returns:
-        dict: Dictionary of oxidation states and their probabilities.
+        dict: Dictionary of oxidation states (ints) and their probabilities (floats).
     """
     comp_obj = Composition(element_symbol)
     comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
     oxi_probabilities = {
-        k: v
+        k.oxi_state: v
         for k, v in comp_obj.oxi_prob.items()
         if k.element.symbol == element_symbol and k.oxi_state != 0
     }
@@ -716,7 +720,7 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
             keys and their probabilities as values.
     """
     return {
-        k.oxi_state: prob
+        k: prob
         for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
         if prob > 0.01  # at least 1% occurrence
     }
