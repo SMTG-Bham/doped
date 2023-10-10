@@ -398,6 +398,11 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
     # Reorder s1_structure so that it matches the ordering of s2_structure
     reordered_sites = [s1_structure[tmp[2]] for tmp in mapping]
+
+    # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
+    # otherwise) for the bulk):
+    warnings.filterwarnings("ignore", message="Not all sites have property")
+
     new_structure = Structure.from_sites(reordered_sites)
 
     assert len(new_structure) == len(s1_structure)
