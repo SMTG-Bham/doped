@@ -193,7 +193,10 @@ def defect_from_structures(bulk_supercell, defect_supercell):
         defect_site = bulk_supercell[bulk_site_idx]
     else:
         defect_site = defect_supercell[defect_site_idx]
-        unrelaxed_defect_structure[defect_site_idx]
+        # unrelaxed_defect_structure[defect_site_idx]  # TODO: I believe this was to check we now get the
+        # same result when using either of these as defect_site? Should double-check and then remove!
+        # I think we need to set unrelaxed defect site (to use for the Defect object generation) and
+        # relaxed defect site (to use for the DefectEntry generation, and thus charge correction)
 
     if unrelaxed_defect_structure:
         if def_type == "interstitial":
