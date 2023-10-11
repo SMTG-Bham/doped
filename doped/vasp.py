@@ -257,7 +257,14 @@ class DefectDictSet(DictSet):
         """
         Return Poscar object with comment.
         """
-        return Poscar(self.structure, comment=self.poscar_comment)
+        unsorted_poscar = Poscar(self.structure, comment=self.poscar_comment)
+
+        # check if POSCAR should be sorted:
+        if len(unsorted_poscar.site_symbols) == len(set(unsorted_poscar.site_symbols)):
+            # no duplicates, return poscar as is
+            return unsorted_poscar
+
+        return Poscar(self.structure, comment=self.poscar_comment, sort_structure=True)
 
     @property
     def kpoints(self):
@@ -1891,9 +1898,9 @@ class DefectsSet(MSONable):
 
     @staticmethod
     def _write_defect(args):
-        defect_species, defect_entry, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
+        defect_species, defect_relax_set, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
         defect_dir = os.path.join(output_dir, defect_species)
-        defect_entry.write_all(
+        defect_relax_set.write_all(
             defect_dir=defect_dir,
             unperturbed_poscar=unperturbed_poscar,
             vasp_gam=vasp_gam,
@@ -2022,14 +2029,14 @@ class DefectsSet(MSONable):
         args_list = [
             (
                 defect_species,
-                defect_entry,
+                defect_relax_set,
                 output_dir,
                 unperturbed_poscar,
                 vasp_gam,
                 bulk if i == 0 else False,  # only write bulk folder(s) for first defect
                 kwargs,
             )
-            for i, (defect_species, defect_entry) in enumerate(self.defect_sets.items())
+            for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
         ]
         with Pool(processes=processes or cpu_count() - 1) as pool:
             for _ in tqdm(

@@ -602,14 +602,16 @@ class Defect(core.Defect):
         if dummy_species is not None:
             sc_defect_struct.insert(len(self.structure * sc_mat), dummy_species, sc_site.frac_coords)
 
+        sorted_sc_defect_struct = sc_defect_struct.get_sorted_structure()  # ensure proper sorting
+
         return (
             (
-                sc_defect_struct,
+                sorted_sc_defect_struct,
                 sc_site,
                 equiv_sites,
             )
             if return_sites
-            else sc_defect_struct
+            else sorted_sc_defect_struct
         )
 
     def as_dict(self):
