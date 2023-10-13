@@ -104,6 +104,7 @@ Studies using ``doped``
 ========================
 
 - X\. Wang et al. `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
+- Y\. Kumagai et al. `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos `Journal of Physical Chemistry C`_ 2023
 - A\. T. J. Nicolson et al. `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
 - Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
