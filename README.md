@@ -66,6 +66,7 @@ entirely refactored and rewritten, to work with the new
 ## Studies using `doped` (so far)
 
 - X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
+- Y. Kumagai et al [_PRX Energy_](http://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos [_Journal of Physical Chemistry C_](https://doi.org/10.26434/chemrxiv-2023-tqvh2) 2023
 - A. T. J. Nicolson et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA02429F) 2023
 - Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.2c02306) 2023
