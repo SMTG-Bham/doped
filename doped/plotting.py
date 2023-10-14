@@ -138,6 +138,7 @@ def formation_energy_plot(
         )
 
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         if chempots and "facets" in chempots:
             if facets is None:
@@ -169,7 +170,6 @@ def formation_energy_plot(
                     filename=plot_filename,
                 )
                 figs.append(fig)
-                plt.show()  # show figure
 
             return figs[0] if len(figs) == 1 else figs
 
@@ -188,8 +188,7 @@ def formation_energy_plot(
             auto_labels=auto_labels,
             filename=filename,
         )
-        plt.show()  # show figure
-        return fig
+    return fig
 
 
 def _get_backend(save_format: str) -> Optional[str]:
