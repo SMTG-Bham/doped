@@ -139,8 +139,8 @@ class DefectDictSet(DictSet):
             **kwargs: Additional kwargs to pass to DictSet.
         """
         _ignore_pmg_warnings()
-        self.potcars = kwargs.pop("potcars", True)  # to allow testing on GH Actions
         self.charge_state = charge_state
+        self.potcars = self._check_user_potcars(unperturbed_poscar=True, snb=False)
         self.poscar_comment = (
             poscar_comment
             if poscar_comment is not None
@@ -325,7 +325,6 @@ class DefectDictSet(DictSet):
         """
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
-            self.potcars = False
             potcar_warning_string = (
                 "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
                 "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
