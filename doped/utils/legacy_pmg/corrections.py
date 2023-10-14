@@ -352,7 +352,7 @@ class FreysoldtCorrection(DefectCorrection):
 
         return self.pot_corr
 
-    def plot(self, axis, title=None, saved=False):
+    def plot(self, axis, title=None, saved=False, style_file=None):
         """
         Plots the planar average electrostatic potential against the Long range
         and short range models from Freysoldt. Must run perform_pot_corr or
@@ -363,11 +363,16 @@ class FreysoldtCorrection(DefectCorrection):
              title (str): Title to be given to plot. Default is no title.
              saved (bool): Whether to save file or not. If False then returns plot
                 object. If True then saves plot as   str(title) + "FreyplnravgPlot.pdf".
+             style_file (str):
+                Path to a mplstyle file to use for the plot. If None (default), uses
+                the default doped style (from doped/utils/doped.mplstyle).
         """
         if not self.metadata["pot_plot_data"]:
             raise ValueError("Cannot plot potential alignment before running correction!")
 
-        with plt.style.context(f"{os.path.dirname(__file__)}/../doped.mplstyle"):
+        style_file = style_file or f"{os.path.dirname(__file__)}/../doped.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        with plt.style.context(style_file):
             x = self.metadata["pot_plot_data"][axis]["x"]
             v_R = self.metadata["pot_plot_data"][axis]["Vr"]
             dft_diff = self.metadata["pot_plot_data"][axis]["dft_diff"]
@@ -751,7 +756,7 @@ class KumagaiCorrection(DefectCorrection):
         """
         return -0.25 / (volume * gamma**2.0)
 
-    def plot(self, title=None, saved=False):
+    def plot(self, title=None, saved=False, style_file=None):
         """
         Plots the AtomicSite electrostatic potential against the long and short
         range models from Kumagai and Oba (doi: 10.1103/PhysRevB.89.195205).
@@ -779,7 +784,9 @@ class KumagaiCorrection(DefectCorrection):
             if dist > sampling_radius:
                 sample_region.append(Vqb - Vpc)
 
-        with plt.style.context(f"{os.path.dirname(__file__)}/../doped.mplstyle"):
+        style_file = style_file or f"{os.path.dirname(__file__)}/../doped.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        with plt.style.context(style_file):
             plt.figure()
             plt.clf()
             plt.plot(
