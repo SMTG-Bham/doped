@@ -698,7 +698,8 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         )
         # test no unwanted structure reordering
         for structure in [
-            defect_gen.structure,
+            # defect_gen.structure,  # input structure can be unordered, fine as not directly used for
+            # POSCAR file generation
             defect_gen.primitive_structure,
             defect_gen.conventional_structure,
             defect_gen.bulk_supercell,
@@ -966,22 +967,18 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 defect_gen = DefectsGenerator(structure, **kwargs)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # spglib warning, ignored by default in doped but not here from setting 'always'
                 if min_image_distance is None:
-                    assert not non_ignored_warnings
+                    assert not w
                 else:
-                    assert len(non_ignored_warnings) == 1
-                    assert issubclass(non_ignored_warnings[-1].category, UserWarning)
+                    assert len(w) == 1
+                    assert issubclass(w[-1].category, UserWarning)
                     assert (
                         f"Input structure is <10 Å in at least one direction (minimum image distance ="
                         f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
                         f"calculations, but generate_supercell = False, so using input structure as "
-                        f"defect & bulk supercells. Caution advised!"
-                        in str(non_ignored_warnings[-1].message)
+                        f"defect & bulk supercells. Caution advised!" in str(w[-1].message)
                     )
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
@@ -1251,16 +1248,13 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             ["Cd"],
         ]:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 cdte_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert len(non_ignored_warnings) == 1
+                assert len(w) == 1
                 assert (
                     "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
                     "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
-                    in str(non_ignored_warnings[-1].message)
+                    in str(w[-1].message)
                 )
                 assert cdte_defect_gen.extrinsic == extrinsic_arg  # explicitly test extrinsic attribute
 
@@ -2584,14 +2578,11 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 N_diamond_defect_gen = DefectsGenerator(
                     self.N_doped_diamond_supercell, interstitial_gen_kwargs=False
                 )
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert len(non_ignored_warnings) == 1
+                assert len(w) == 1
                 assert (
                     "\nOxidation states could not be guessed for the input structure. This is "
                     "required for charge state guessing, so defects will still be generated but all "
@@ -2599,7 +2590,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                     "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
                     "states of the input structure (e.g. using "
                     "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
-                    in str(non_ignored_warnings[-1].message)
+                    in str(w[-1].message)
                 )
                 assert N_diamond_defect_gen.interstitial_gen_kwargs is False  # check attribute set
 
@@ -2859,4 +2850,9 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
         structures.
         """
         agsbte2_defect_gen, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        self._general_defect_gen_check(agsbte2_defect_gen)
+
+        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(
+            self.sqs_agsbte2, generate_supercell=False
+        )
         self._general_defect_gen_check(agsbte2_defect_gen)
