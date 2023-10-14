@@ -318,7 +318,7 @@ class DefectDictSet(DictSet):
         )
         self.user_kpoints_settings = Kpoints.from_dict(kpoints_settings)
 
-    def _check_user_potcars(self, unperturbed_poscar: bool = False) -> bool:
+    def _check_user_potcars(self, unperturbed_poscar: bool = False, snb: bool = False) -> bool:
         """
         Check and warn the user if POTCARs are not set up with pymatgen.
         """
@@ -333,9 +333,10 @@ class DefectDictSet(DictSet):
             )
             if unperturbed_poscar:
                 if self.charge_state != 0:
-                    warnings.warn(
-                        f"{potcar_warning_string}, so only (unperturbed) `POSCAR` and `KPOINTS` files "
-                        f"will be generated."
+                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
+                        # unperturbed in that case)
+                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
+                        f"`KPOINTS` files will be generated."
                     )
                     return False
 
@@ -357,6 +358,7 @@ class DefectDictSet(DictSet):
         include_cif: bool = False,
         potcar_spec: bool = False,
         zip_output: bool = False,
+        snb: bool = False,
     ):
         """
         Writes out all input to a directory. Refactored slightly from pymatgen
@@ -369,18 +371,21 @@ class DefectDictSet(DictSet):
                 folder as well. (default: True)
             make_dir_if_not_present (bool): Set to True if you want the
                 directory (and the whole path) to be created if it is not
-                present.
+                present. (default: True)
             include_cif (bool): Whether to write a CIF file in the output
-                directory for easier opening by VESTA.
+                directory for easier opening by VESTA. (default: False)
             potcar_spec (bool): Instead of writing the POTCAR, write a "POTCAR.spec".
                 This is intended to help sharing an input set with people who might
                 not have a license to specific Potcar files. Given a "POTCAR.spec",
                 the specific POTCAR file can be re-generated using pymatgen with the
-                "generate_potcar" function in the pymatgen CLI.
-            zip_output (bool): Whether to zip each VASP input file written to the output directory.
+                "generate_potcar" function in the pymatgen CLI. (default: False)
+            zip_output (bool): Whether to zip each VASP input file written to the
+                output directory. (default: False)
+            snb (bool): If input structures are from ShakeNBreak (so POSCARs aren't
+                'unperturbed'). (default: False)
         """
         if not potcar_spec:
-            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar)
+            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
         else:
             potcars = True
 
