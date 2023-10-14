@@ -59,6 +59,7 @@ class DefectDictSetTest(unittest.TestCase):
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
         aaa = AseAtomsAdaptor()
         self.agcu = aaa.get_structure(atoms)
+        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
             "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
@@ -118,8 +119,32 @@ class DefectDictSetTest(unittest.TestCase):
             assert set(dds.potcar.as_dict()["symbols"]) == {
                 default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
             }
+        else:
+            with self.assertRaises(ValueError) as e:
+                _test_pop = dds.potcar
+            assert f"No POTCAR for {dds.potcar_symbols[0]} with functional" in str(e.exception)
+            assert "Please set the PMG_VASP_PSP_DIR in .pmgrc.yaml." in str(e.exception)
+
+            if dds.charge_state != 0:
+                with self.assertRaises(ValueError) as e:
+                    _test_pop = dds.incar
+                assert (
+                    "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot "
+                    "be set"
+                ) in str(e.exception)
+            else:
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.resetwarnings()
+                    _test_pop = dds.incar
+                assert "NUPDOWN (i.e. spin state) INCAR flag cannot be set" in str(w[-1].message)
+                assert "As this is a neutral supercell, the INCAR file will be written" in str(
+                    w[-1].message
+                )
 
         assert dds.structure == struct
+        # test no unwanted structure reordering
+        assert len(Poscar(dds.structure).site_symbols) == len(set(Poscar(dds.structure).site_symbols))
+
         if "charge_state" not in dds_kwargs:
             assert dds.charge_state == 0
         else:
@@ -152,7 +177,7 @@ class DefectDictSetTest(unittest.TestCase):
                 struct, charge_state=charge_state, incar_check=kwargs.pop("incar_check", True), **kwargs
             )  # also tests dds.charge_state
         else:
-            if kwargs.pop("incar_check", True):
+            if kwargs.pop("incar_check", True) and charge_state != 0:  # charged defect INCAR
                 with self.assertRaises(ValueError) as e:
                     dds = self.defect_dict_set_defaults_check(
                         struct,
@@ -225,6 +250,7 @@ class DefectDictSetTest(unittest.TestCase):
             self.lmno_primitive,
             self.prim_cu,
             self.agcu,
+            self.sqs_agsbte2,
         ]:
             self.defect_dict_set_defaults_check(struct)
 
@@ -334,6 +360,7 @@ class DefectsSetTest(unittest.TestCase):
                 )
                 poscar = Poscar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POSCAR")
                 assert test_poscar.structure == poscar.structure
+                assert len(poscar.site_symbols) == len(set(poscar.site_symbols))
 
             if check_potcar_spec:
                 with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", encoding="utf-8") as file:
