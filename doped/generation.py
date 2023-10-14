@@ -671,7 +671,7 @@ def _charge_state_probability(
     }
     # product of charge_state_guessing_log["probability_factors"].values()
     charge_state_guessing_log["probability"] = (
-        np.product(list(charge_state_guessing_log["probability_factors"].values()))
+        np.prod(list(charge_state_guessing_log["probability_factors"].values()))
         if charge_state != 0
         else 1
     )  # always include neutral charge state

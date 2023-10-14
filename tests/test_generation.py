@@ -24,6 +24,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
 
@@ -693,6 +694,16 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             defect_entry_name in defect_gen
             for defect_entry_name in defect_gen.defect_entries  # __contains__()
         )
+        # test no unwanted structure reordering
+        for structure in [
+            defect_gen.structure,
+            defect_gen.primitive_structure,
+            defect_gen.conventional_structure,
+            defect_gen.bulk_supercell,
+        ]:
+            assert len(Poscar(structure).site_symbols) == len(
+                set(Poscar(structure).site_symbols)
+            )  # no duplicates
 
         assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
         if "substitutions" in defect_gen.defects:
@@ -721,6 +732,16 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                     defect.defect_structure.lattice.matrix,
                     defect_gen.primitive_structure.lattice.matrix,
                 )
+                # test no unwanted structure reordering
+                for structure in [
+                    defect.structure,
+                    # defect.defect_structure,  # defect structure can have reordered structure,
+                    # fine as not used for POSCAR file generation
+                    defect.conventional_structure,
+                ]:
+                    assert len(Poscar(structure).site_symbols) == len(
+                        set(Poscar(structure).site_symbols)
+                    )  # no duplicates
 
         for defect_name, defect_entry in defect_gen.defect_entries.items():
             self._check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed)
@@ -758,6 +779,17 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             defect_entry.defect.conventional_structure.lattice.matrix,
             reoriented_conv_structure.lattice.matrix,
         )
+        # test no unwanted structure reordering
+        for structure in [
+            defect_entry.defect_supercell,
+            defect_entry.bulk_supercell,
+            defect_entry.sc_entry.structure,
+            defect_entry.conventional_structure,
+        ]:
+            assert len(Poscar(structure).site_symbols) == len(
+                set(Poscar(structure).site_symbols)
+            )  # no duplicates
+
         # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
         # defect_entry.conventional_structure
         distance_matrix = np.linalg.norm(
@@ -847,7 +879,7 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                 charge_state = charge_state_dict["input_parameters"]["charge_state"]
                 try:
                     assert np.isclose(
-                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        np.prod(list(charge_state_dict["probability_factors"].values())),
                         charge_state_dict["probability"],
                     )
                 except AssertionError as e:
