@@ -936,7 +936,7 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                 defect_gen = DefectsGenerator(structure, **kwargs)
                 non_ignored_warnings = [
                     warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
+                ]  # spglib warning, ignored by default in doped but not here from setting 'always'
                 if min_image_distance is None:
                     assert not non_ignored_warnings
                 else:
