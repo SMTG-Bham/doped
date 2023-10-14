@@ -642,6 +642,8 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             "conventional standard structure, for which doped uses the spglib convention."
         )
 
+        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
+
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
         dumpfn(defect_gen, "test_defect_gen.json")
@@ -2843,6 +2845,18 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
         """
         cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
         # Pt has no tabulated ICSD oxidation states via pymatgen
+        self._general_defect_gen_check(cdte_defect_gen)
 
         cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
+        self._general_defect_gen_check(cdte_defect_gen)
         # Cali baby!
+
+    def test_agsbte2(self):
+        """
+        Test generating defects in a disordered supercell of AgSbTe2.
+
+        In particular, test that defect generation doesn't yield unsorted
+        structures.
+        """
+        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        self._general_defect_gen_check(agsbte2_defect_gen)
