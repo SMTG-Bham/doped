@@ -6,6 +6,7 @@ import filecmp
 import locale
 import os
 import unittest
+import warnings
 
 import numpy as np
 from ase.build import bulk, make_supercell
@@ -127,7 +128,10 @@ class DefectDictSetTest(unittest.TestCase):
         return dds
 
     def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
-        assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
+        if isinstance(kpt, int):
+            assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
+        else:
+            assert dds.kpoints.kpts == kpt
         if dds.potcars:
             assert dds.incar["NELECT"] == nelect
             assert dds.incar["NUPDOWN"] == nupdown
@@ -206,6 +210,49 @@ class DefectDictSetTest(unittest.TestCase):
                 user_kpoints_settings={"reciprocal_density": 200},
                 poscar_comment="Test pop",
             )
+
+    def test_file_writing_with_without_POTCARs(self):
+        """
+        Test the behaviour of the `DefectDictSet` attributes and
+        `.write_input()` method when `POTCAR`s are and are not available.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            dds = self.defect_dict_set_defaults_check(self.ytos_bulk_supercell.copy())
+            dds.write_input("YTOS_test_dir")
+            non_ignored_warnings = [
+                warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
+            ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting 'always'
+        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
+        # reciprocal_density = 100/Å⁻³ for YTOS
+
+        if not _potcars_available():
+            assert len(non_ignored_warnings) == 1
+            assert any(
+                (
+                    "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on "
+                    "setting this up). This is required to generate `POTCAR` and `INCAR` files (to set "
+                    "`NELECT` and `NUPDOWN`), so only (unperturbed) `POSCAR` and `KPOINTS` files will be "
+                    "generated.)"
+                )
+                in str(warning.message)
+                for warning in non_ignored_warnings
+            )
+            assert any(
+                (
+                    "NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; got "
+                    "error: No POTCAR for Mg with functional='PBE' found. Please set the "
+                    "PMG_VASP_PSP_DIR in .pmgrc.yaml."
+                )
+                in str(warning.message)
+                for warning in non_ignored_warnings
+            )
+
+        # check changing charge state
+        dds = self.defect_dict_set_defaults_check(self.ytos_bulk_supercell.copy(), charge_state=1)
+        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
+        # reciprocal_density = 100/Å⁻³ for YTOS
 
 
 class DefectsSetTest(unittest.TestCase):
