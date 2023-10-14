@@ -138,6 +138,7 @@ class DefectDictSet(DictSet):
                 fractional coordinates of initial site and charge state.
             **kwargs: Additional kwargs to pass to DictSet.
         """
+        _ignore_pmg_warnings()
         self.potcars = kwargs.pop("potcars", True)  # to allow testing on GH Actions
         self.charge_state = charge_state
         self.poscar_comment = (

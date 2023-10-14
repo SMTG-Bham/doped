@@ -144,48 +144,76 @@ class DefectDictSetTest(unittest.TestCase):
         dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell)
         self.kpts_nelect_nupdown_check(dds, 2, 570, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
+    def _generate_and_check_charged_dds(self, struct, charge_state, **kwargs):
+        # INCARs only generated for charged defects when POTCARs available:
+
+        if _potcars_available():
+            dds = self.defect_dict_set_defaults_check(
+                struct, charge_state=charge_state, incar_check=kwargs.pop("incar_check", True), **kwargs
+            )  # also tests dds.charge_state
+        else:
+            if kwargs.pop("incar_check", True):
+                with self.assertRaises(ValueError) as e:
+                    dds = self.defect_dict_set_defaults_check(
+                        struct,
+                        charge_state=charge_state,
+                        incar_check=kwargs.pop("incar_check", True),
+                        **kwargs,
+                    )  # also tests dds.charge_state
+                assert (
+                    "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be "
+                    "set" in str(e.exception)
+                )
+            dds = self.defect_dict_set_defaults_check(
+                struct, charge_state=charge_state, incar_check=kwargs.pop("incar_check", False), **kwargs
+            )  # also tests dds.charge_state
+
+        return dds
+
     def test_charged_defect_incar(self):
-        dds = self.defect_dict_set_defaults_check(
-            self.prim_cdte.copy(), charge_state=-2
-        )  # also tests dds.charge_state
-        self.kpts_nelect_nupdown_check(dds, 7, 20, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        dds = self._generate_and_check_charged_dds(self.prim_cdte.copy(), charge_state=1)
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
+        dds = self._generate_and_check_charged_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
         defect_entry = self.cdte_defect_gen["Te_Cd_-2"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
+        dds = self._generate_and_check_charged_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
-        dds = self.defect_dict_set_defaults_check(
+        dds = self._generate_and_check_charged_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=1,
             user_incar_settings=user_incar_settings,
         )
         self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
-        for k, v in user_incar_settings.items():
-            assert v == dds.incar[k]
+
+        if _potcars_available():
+            assert self.neutral_def_incar_min.items() <= dds.incar.items()
+            assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
+            for k, v in user_incar_settings.items():
+                assert v == dds.incar[k]
 
         # non-HSE settings:
-        gga_dds = self.defect_dict_set_defaults_check(
+        gga_dds = self._generate_and_check_charged_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=10,
             user_incar_settings={"LHFCALC": False},
         )
         self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
-        assert gga_dds.incar["LHFCALC"] is False
-        for k in self.hse06_incar_min:
-            if k not in ["LHFCALC", "GGA"]:
-                assert k not in gga_dds.incar
 
-        assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
+        if _potcars_available():
+            assert gga_dds.incar["LHFCALC"] is False
+            for k in self.hse06_incar_min:
+                if k not in ["LHFCALC", "GGA"]:
+                    assert k not in gga_dds.incar
+
+            assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
 
     def test_initialisation_for_all_structs(self):
         """
@@ -200,7 +228,9 @@ class DefectDictSetTest(unittest.TestCase):
         ]:
             self.defect_dict_set_defaults_check(struct)
 
-            self.defect_dict_set_defaults_check(struct, charge_state=np.random.randint(-5, 5))
+            self._generate_and_check_charged_dds(
+                self.ytos_bulk_supercell.copy(), charge_state=np.random.randint(-5, 5)
+            )
 
             DefectDictSet(
                 struct,
@@ -217,40 +247,21 @@ class DefectDictSetTest(unittest.TestCase):
         `.write_input()` method when `POTCAR`s are and are not available.
         """
         with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+            warnings.resetwarnings()
             dds = self.defect_dict_set_defaults_check(self.ytos_bulk_supercell.copy())
             dds.write_input("YTOS_test_dir")
-            non_ignored_warnings = [
-                warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-            ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting 'always'
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
         if not _potcars_available():
-            assert len(non_ignored_warnings) == 1
-            assert any(
-                (
-                    "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
-                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on "
-                    "setting this up). This is required to generate `POTCAR` and `INCAR` files (to set "
-                    "`NELECT` and `NUPDOWN`), so only (unperturbed) `POSCAR` and `KPOINTS` files will be "
-                    "generated.)"
-                )
-                in str(warning.message)
-                for warning in non_ignored_warnings
-            )
-            assert any(
-                (
-                    "NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; got "
-                    "error: No POTCAR for Mg with functional='PBE' found. Please set the "
-                    "PMG_VASP_PSP_DIR in .pmgrc.yaml."
-                )
-                in str(warning.message)
-                for warning in non_ignored_warnings
-            )
+            for test_warning_message in [
+                "NUPDOWN (i.e. spin state) INCAR flag cannot be set",
+                "POTCAR directory not set up with pymatgen",
+            ]:
+                assert any(test_warning_message in str(warning.message) for warning in w)
 
         # check changing charge state
-        dds = self.defect_dict_set_defaults_check(self.ytos_bulk_supercell.copy(), charge_state=1)
+        dds = self._generate_and_check_charged_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
