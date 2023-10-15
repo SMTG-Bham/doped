@@ -10,9 +10,10 @@ import warnings
 
 import numpy as np
 from ase.build import bulk, make_supercell
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
+from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
 from test_generation import if_present_rm
 
 from doped.generation import DefectsGenerator
@@ -320,7 +321,8 @@ class DefectDictSetTest(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy())  # fine for bulk prim
-            dds.write_input("YTOS_test_dir")
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
@@ -335,6 +337,70 @@ class DefectDictSetTest(unittest.TestCase):
         dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
+        self._write_and_check_dds_files(dds, output_dir="YTOS_test_dir")
+
+    def _write_and_check_dds_files(self, dds, **kwargs):
+        output_dir = kwargs.pop("output_dir", "test_pop")
+        dds.write_input(output_dir, **kwargs)
+
+        # print(output_dir)  # to help debug if tests fail
+        assert os.path.exists(output_dir)
+
+        if _potcars_available() or dds.charge_state == 0:  # INCARs should be written
+            # load INCAR and check it matches dds.incar
+            written_incar = Incar.from_file(f"{output_dir}/INCAR")
+            dds_incar_without_comments = dds.incar.copy()
+            dds_incar_without_comments["ICORELEVEL"] = 0
+            dds_incar_without_comments["ISYM"] = 0
+            dds_incar_without_comments["ALGO"] = "Normal"
+            dds_incar_without_comments.pop([k for k in dds.incar if k.startswith("#")][0])
+            assert written_incar == dds_incar_without_comments
+
+            with open(f"{output_dir}/INCAR") as f:
+                incar_lines = f.readlines()
+            for comment_string in [
+                "# May want to change NCORE, KPAR, AEXX, ENCUT",
+                "change to all if zhegv, fexcp/f or zbrent",
+                "needed if using the kumagai-oba",
+                "symmetry breaking extremely likely",
+            ]:
+                assert any(comment_string in line for line in incar_lines)
+
+        else:
+            assert not os.path.exists(f"{output_dir}/INCAR")
+
+        if _potcars_available():
+            written_potcar = Potcar.from_file(f"{output_dir}/POTCAR")
+            assert written_potcar == dds.potcar
+            assert len(written_potcar.symbols) == len(set(written_potcar.symbols))  # no duplicates
+        else:
+            assert not os.path.exists(f"{output_dir}/POTCAR")
+
+        written_kpoints = Kpoints.from_file(f"{output_dir}/KPOINTS")  # comment not parsed by pymatgen
+        with open(f"{output_dir}/KPOINTS") as f:
+            comment = f.readlines()[0].replace("\n", "")
+        if np.prod(dds.kpoints.kpts[0]) == 1:
+            assert comment == self.doped_gam_kpoint_comment
+        else:
+            assert comment == self.doped_std_kpoint_comment
+        for k, _v in written_kpoints.as_dict().items():
+            if k != "comment":
+                assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
+
+        if kwargs.get("unperturbed_poscar", True):
+            written_poscar = Poscar.from_file(f"{output_dir}/POSCAR")
+            assert str(written_poscar) == str(dds.poscar)  # POSCAR __eq__ fails for equal structures
+            assert written_poscar.structure == dds.structure
+            assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))  # no
+            # duplicates
+        else:
+            assert not os.path.exists(f"{output_dir}/POSCAR")
+
+        if kwargs.get("potcar_spec", False):
+            with open(f"{output_dir}/POTCAR.spec", encoding="utf-8") as file:
+                contents = file.readlines()
+            for i, line in enumerate(contents):
+                assert line in [f"{dds.potcar_symbols[i]}", f"{dds.potcar_symbols[i]}\n"]
 
 
 class DefectsSetTest(unittest.TestCase):
@@ -481,6 +547,26 @@ class DefectsSetTest(unittest.TestCase):
             user_incar_settings=self.cdte_custom_test_incar_settings,
         )
         self._general_defects_set_check(defects_set)
+
+        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+        # test no vasp_gam files written:
+        for folder in os.listdir("."):
+            assert not os.path.exists(f"{folder}/vasp_gam")
+
+        # test no (unperturbed) POSCAR files written:
+        for folder in os.listdir("."):
+            if os.path.isdir(folder) and "bulk" not in folder:
+                for subfolder in os.listdir(folder):
+                    assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
+
+        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
+
+        bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        structure_matcher = StructureMatcher(
+            comparator=ElementComparator(), primitive_cell=False
+        )  # ignore oxidation states
+        assert structure_matcher.fit(bulk_supercell, self.cdte_defect_gen.bulk_supercell)
+        # check_generated_vasp_inputs also checks bulk folders
 
         assert os.path.exists("CdTe_defects_generator.json")
         cdte_se_defect_gen.to_json("test_CdTe_defects_generator.json")
