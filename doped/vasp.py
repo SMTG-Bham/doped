@@ -535,7 +535,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
-            **kwargs: Additional kwargs to pass to DictSet().
+            **kwargs: Additional kwargs to pass to DefectDictSet().
 
         Attributes:
             vasp_gam (DefectDictSet):
@@ -608,7 +608,7 @@ class DefectRelaxSet(MSONable):
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
-            self.poscar_comment = (
+            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
                 f"{self.defect_supercell.formula} {'+' if self.charge_state > 0 else ''}"
                 f"{self.charge_state}"
             )
@@ -643,7 +643,7 @@ class DefectRelaxSet(MSONable):
             else:
                 name = self.defect_supercell.formula
 
-            self.poscar_comment = (
+            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
                 f"{name} {approx_coords} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
@@ -2078,6 +2078,9 @@ class DefectsSet(MSONable):
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
+        # TODO: If POTCARs not setup, warn and only write neutral defect folders, with INCAR, KPOINTS and
+        #  (if unperturbed_poscar) POSCAR? And bulk
+
         args_list = [
             (
                 defect_species,
