@@ -5,6 +5,7 @@ import contextlib
 import filecmp
 import locale
 import os
+import random
 import unittest
 import warnings
 
@@ -19,6 +20,7 @@ from test_generation import if_present_rm
 from doped.generation import DefectsGenerator
 from doped.vasp import (
     DefectDictSet,
+    DefectRelaxSet,
     DefectsSet,
     _test_potcar_functional_choice,
     default_defect_relax_set,
@@ -207,7 +209,14 @@ class DefectDictSetTest(unittest.TestCase):
             assert dds.charge_state == 0
         else:
             assert dds.charge_state == dds_kwargs["charge_state"]
-        assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
+        if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
+            "reciprocal_density", False
+        ):  # comment changed!
+            assert dds.kpoints.comment == self.doped_std_kpoint_comment.replace(
+                "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
+            )
+        else:
+            assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
 
     def _check_dds(self, dds, struct, **kwargs):
         # INCARs only generated for charged defects when POTCARs available:
@@ -428,17 +437,25 @@ class DefectDictSetTest(unittest.TestCase):
         if np.prod(dds.kpoints.kpts[0]) == 1:
             assert comment == self.doped_gam_kpoint_comment
         else:
-            assert comment == self.doped_std_kpoint_comment
-        for k, _v in written_kpoints.as_dict().items():
-            if k != "comment":
+            if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
+                "reciprocal_density", False
+            ):  # comment changed!
+                assert comment == self.doped_std_kpoint_comment.replace(
+                    "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
+                )
+            else:
+                assert comment == self.doped_std_kpoint_comment
+
+        for k in written_kpoints.as_dict():
+            if k not in ["comment", "usershift"]:  # user shift can be tuple or list and causes failure
                 assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
 
         if kwargs.get("unperturbed_poscar", True):
             written_poscar = Poscar.from_file(f"{output_dir}/POSCAR")
             assert str(written_poscar) == str(dds.poscar)  # POSCAR __eq__ fails for equal structures
             assert written_poscar.structure == dds.structure
-            assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))  # no
-            # duplicates
+            # no duplicates:
+            assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))
         else:
             assert not os.path.exists(f"{output_dir}/POSCAR")
 
@@ -450,6 +467,92 @@ class DefectDictSetTest(unittest.TestCase):
 
         if delete_dir:
             if_present_rm(output_dir)
+
+
+class DefectRelaxSetTest(unittest.TestCase):
+    def setUp(self):
+        # get setup attributes from DefectDictSetTest:
+        dds_test = DefectDictSetTest()
+        dds_test.setUp()
+        for attr in dir(dds_test):
+            if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
+                setattr(self, attr, getattr(dds_test, attr))
+        self.dds_test = dds_test
+
+        self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
+        self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
+
+    def tearDown(self):
+        # get tearDown from DefectDictSetTest:
+        dds_test = DefectDictSetTest()
+        dds_test.tearDown()
+
+    def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
+        dds_test_list = [
+            (defect_relax_set.vasp_gam, "vasp_gam"),
+            (defect_relax_set.vasp_std, "vasp_std"),
+            (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
+            (defect_relax_set.vasp_ncl, "vasp_ncl"),
+        ]
+        dds_bulk_test_list = [
+            (defect_relax_set.bulk_vasp_gam, "bulk_vasp_gam"),
+            (defect_relax_set.bulk_vasp_std, "bulk_vasp_std"),
+            (defect_relax_set.bulk_vasp_ncl, "bulk_vasp_ncl"),
+        ]
+        if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
+            # std INCAR to be more computationally efficient
+            dds_bulk_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
+
+        for defect_dict_set, type in dds_test_list:
+            print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+            self.dds_test._check_dds(
+                defect_dict_set,
+                defect_relax_set.defect_supercell,
+                charge_state=defect_relax_set.charge_state,
+                **kwargs,
+            )
+            self.dds_test._write_and_check_dds_files(defect_dict_set)
+            self.dds_test._write_and_check_dds_files(
+                defect_dict_set, output_dir=f"{defect_relax_set.defect_entry.name}"
+            )
+            self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+            if defect_relax_set.charge_state == 0:
+                self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+                # TODO: Test defect_relax_set -> defect_dict_set attributes here
+
+        for defect_dict_set, type in dds_bulk_test_list:
+            print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+            self.dds_test._check_dds(
+                defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
+            )
+            self.dds_test._write_and_check_dds_files(defect_dict_set)
+            self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+            self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+
+    def test_initialisation_and_writing(self):
+        """
+        Test the initialisation of DefectRelaxSet for a range of
+        `DefectEntry`s.
+        """
+        # randomly choose 10 defect entries from the cdte_defect_gen dict:
+        defect_entries = random.sample(list(self.cdte_defect_gen.values()), 10)
+
+        for defect_entry in defect_entries:
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry)
+            self._general_defect_relax_set_check(drs)
+
+            custom_drs = DefectRelaxSet(
+                defect_entry,
+                user_incar_settings={"ENCUT": 350},
+                user_potcar_functional="PBE_52",
+                user_potcar_settings={"Cu": "Cu_pv"},
+                user_kpoints_settings={"reciprocal_density": 200},
+                poscar_comment="Test pop",
+            )
+            self._general_defect_relax_set_check(custom_drs)
+
+            # TODO: Test initialising with the structures as well
 
 
 class DefectsSetTest(unittest.TestCase):
@@ -561,6 +664,7 @@ class DefectsSetTest(unittest.TestCase):
                     )
 
     def _general_defects_set_check(self, defects_set, **kwargs):
+        # TODO: Use function above!
         for defect_relax_set in defects_set.defect_sets.values():
             dds_test_list = [
                 defect_relax_set.vasp_gam,
