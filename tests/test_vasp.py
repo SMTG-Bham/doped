@@ -30,6 +30,7 @@ from doped.vasp import (
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
 #  jsons etc.
+# TODO: All warnings and errors tested?
 
 
 def _potcars_available() -> bool:
@@ -504,55 +505,143 @@ class DefectRelaxSetTest(unittest.TestCase):
             dds_bulk_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
 
         for defect_dict_set, type in dds_test_list:
-            print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
-            self.dds_test._check_dds(
-                defect_dict_set,
-                defect_relax_set.defect_supercell,
-                charge_state=defect_relax_set.charge_state,
-                **kwargs,
-            )
-            self.dds_test._write_and_check_dds_files(defect_dict_set)
-            self.dds_test._write_and_check_dds_files(
-                defect_dict_set, output_dir=f"{defect_relax_set.defect_entry.name}"
-            )
-            self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
-            if defect_relax_set.charge_state == 0:
-                self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
-                # TODO: Test defect_relax_set -> defect_dict_set attributes here
+            if defect_dict_set is not None:
+                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                self.dds_test._check_dds(
+                    defect_dict_set,
+                    defect_relax_set.defect_supercell,
+                    charge_state=defect_relax_set.charge_state,
+                    **kwargs,
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set)
+                self.dds_test._write_and_check_dds_files(
+                    defect_dict_set, output_dir=f"{defect_relax_set.defect_entry.name}"
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                if defect_relax_set.charge_state == 0:
+                    self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+                    # TODO: Test defect_relax_set -> defect_dict_set attributes here
 
         for defect_dict_set, type in dds_bulk_test_list:
-            print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
-            self.dds_test._check_dds(
-                defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
-            )
-            self.dds_test._write_and_check_dds_files(defect_dict_set)
-            self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
-            self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+            if defect_dict_set is not None:
+                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                self.dds_test._check_dds(
+                    defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
 
     def test_initialisation_and_writing(self):
         """
         Test the initialisation of DefectRelaxSet for a range of
         `DefectEntry`s.
         """
-        # randomly choose 10 defect entries from the cdte_defect_gen dict:
-        defect_entries = random.sample(list(self.cdte_defect_gen.values()), 10)
-
-        for defect_entry in defect_entries:
-            print(f"Randomly testing {defect_entry.name}")
-            drs = DefectRelaxSet(defect_entry)
-            self._general_defect_relax_set_check(drs)
-
-            custom_drs = DefectRelaxSet(
-                defect_entry,
-                user_incar_settings={"ENCUT": 350},
-                user_potcar_functional="PBE_52",
-                user_potcar_settings={"Cu": "Cu_pv"},
-                user_kpoints_settings={"reciprocal_density": 200},
-                poscar_comment="Test pop",
+        # test initialising DefectRelaxSet with our generation-tests materials, and writing files to disk
+        defect_gen_test_list = [
+            (self.cdte_defect_gen, "CdTe defect_gen"),
+            (DefectsGenerator(self.sqs_agsbte2), "SQS AgSbTe2 defect_gen"),
+        ]
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "ytos_defect_gen_supercell",
+            "lmno_defect_gen",
+            "cu_defect_gen",
+            "agcu_defect_gen",
+            "cd_i_supercell_defect_gen",
+        ]:
+            defect_gen_test_list.append(
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
             )
-            self._general_defect_relax_set_check(custom_drs)
+
+        for defect_gen, defect_gen_name in defect_gen_test_list:
+            print(f"Initialising and testing:{defect_gen_name}")
+            # randomly choose 10 defect entries from the defect_gen dict:
+            defect_entries = random.sample(list(defect_gen.values()), 3)
+
+            for defect_entry in defect_entries:
+                print(f"Randomly testing {defect_entry.name}")
+                drs = DefectRelaxSet(defect_entry)
+                self._general_defect_relax_set_check(drs)
+
+                custom_drs = DefectRelaxSet(
+                    defect_entry,
+                    user_incar_settings={"ENCUT": 350},
+                    user_potcar_functional="PBE_52",
+                    user_potcar_settings={"Cu": "Cu_pv"},
+                    user_kpoints_settings={"reciprocal_density": 200},
+                    poscar_comment="Test pop",
+                )
+                self._general_defect_relax_set_check(custom_drs)
 
             # TODO: Test initialising with the structures as well
+            # TODO: Test file writing, default folder naming
+
+    def test_default_kpoints_soc_handling(self):
+        """
+        Check vasp_std created when necessary, and not when vasp_gam converged.
+        """
+        defect_gen_test_list = [
+            (self.cdte_defect_gen, "CdTe defect_gen"),
+        ]
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "lmno_defect_gen",
+            "agcu_defect_gen",
+            "cd_i_supercell_defect_gen",
+        ]:
+            defect_gen_test_list.append(
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+            )
+
+        for defect_gen, defect_gen_name in defect_gen_test_list:
+            print(f"Testing:{defect_gen_name}")
+            # randomly choose 10 defect entries from the defect_gen dict:
+            defect_entries = random.sample(list(defect_gen.values()), 10)
+
+            for defect_entry in defect_entries:
+                print(f"Randomly testing {defect_entry.name}")
+                drs = DefectRelaxSet(defect_entry)
+                if defect_gen_name in [
+                    "CdTe defect_gen",
+                    "ytos_defect_gen",
+                    "agcu_defect_gen",
+                    "cd_i_supercell_defect_gen",
+                ]:
+                    assert drs.vasp_std
+                    assert drs.bulk_vasp_std
+                    assert drs.vasp_nkred_std
+
+                    if (
+                        _potcars_available()
+                    ):  # needed because bulk NKRED pulls NKRED values from defect nkred
+                        # std INCAR to be more computationally efficient
+                        assert drs.bulk_vasp_nkred_std
+
+                    assert drs.vasp_ncl
+                    assert drs.bulk_vasp_ncl
+
+                else:  # no SOC nor >vasp_gam for LMNO
+                    assert not drs.vasp_std
+                    assert not drs.bulk_vasp_std
+                    assert not drs.vasp_nkred_std
+
+                    if _potcars_available():
+                        assert not drs.bulk_vasp_nkred_std
+
+                    assert not drs.vasp_ncl
+                    assert not drs.bulk_vasp_ncl
+
+                # Test manually turning on soc:
+
+                # custom_drs = DefectRelaxSet(
+                #     defect_entry,
+                #     user_incar_settings={"ENCUT": 350},
+                #     user_potcar_functional="PBE_52",
+                #     user_potcar_settings={"Cu": "Cu_pv"},
+                #     user_kpoints_settings={"reciprocal_density": 200},
+                #     poscar_comment="Test pop",
+                # )
 
 
 class DefectsSetTest(unittest.TestCase):
