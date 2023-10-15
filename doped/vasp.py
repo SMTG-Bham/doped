@@ -250,7 +250,7 @@ class DefectDictSet(DictSet):
                 f"NELECT) of charged defect supercells. Got error:\n{e}"
             )
 
-        if "KPAR" in incar_obj and self.user_kpoints_settings.get("comment", "").startswith("Γ-only"):
+        if "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
             # check KPAR setting is reasonable for number of KPOINTS
             warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
             incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"

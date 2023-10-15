@@ -14,7 +14,7 @@ from ase.build import bulk, make_supercell
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
+from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_generation import if_present_rm
 
 from doped.generation import DefectsGenerator
@@ -26,11 +26,12 @@ from doped.vasp import (
     default_defect_relax_set,
     default_potcar_dict,
     scaled_ediff,
+    singleshot_incar_settings,
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
 #  jsons etc.
-# TODO: All warnings and errors tested?
+# TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
 
 
 def _potcars_available() -> bool:
@@ -324,6 +325,32 @@ class DefectDictSetTest(unittest.TestCase):
 
             assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
 
+    def test_bad_incar_setting(self):
+        with warnings.catch_warnings(record=True) as w:
+            # warnings.resetwarnings()  # neither of these should've been called previously
+            dds = DefectDictSet(
+                self.prim_cdte.copy(),
+                user_incar_settings={"Whoops": "lol", "KPAR": 7},
+                user_kpoints_settings={"reciprocal_density": 1},  # gamma only babyyy
+            )
+
+        assert any(
+            "Cannot find Whoops from your user_incar_settings in the list of INCAR flags"
+            in str(warning.message)
+            for warning in w
+        )
+        assert any(warning.category == BadIncarWarning for warning in w)
+        assert any(
+            "KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(warning.message)
+            for warning in w
+        )
+        assert "1  # only one k-point" in dds.incar["KPAR"]  # pmg makes it lowercase and can change
+        # gamma symbol
+
+        self.kpts_nelect_nupdown_check(dds, 1, 17, 1)  # reciprocal_density = 1/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+
     def test_initialisation_for_all_structs(self):
         """
         Test the initialisation of DefectDictSet for a range of structure
@@ -409,6 +436,10 @@ class DefectDictSetTest(unittest.TestCase):
             dds_incar_without_comments["ICORELEVEL"] = 0
             dds_incar_without_comments["ISYM"] = 0
             dds_incar_without_comments["ALGO"] = "Normal"
+            if "KPAR" in dds_incar_without_comments and isinstance(
+                dds_incar_without_comments["KPAR"], str
+            ):
+                dds_incar_without_comments["KPAR"] = int(dds_incar_without_comments["KPAR"][0])
             dds_incar_without_comments.pop([k for k in dds.incar if k.startswith("#")][0])
             assert written_incar == dds_incar_without_comments
 
@@ -435,17 +466,16 @@ class DefectDictSetTest(unittest.TestCase):
         written_kpoints = Kpoints.from_file(f"{output_dir}/KPOINTS")  # comment not parsed by pymatgen
         with open(f"{output_dir}/KPOINTS") as f:
             comment = f.readlines()[0].replace("\n", "")
-        if np.prod(dds.kpoints.kpts[0]) == 1:
+        if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
+            "reciprocal_density", False
+        ):  # comment changed!
+            assert comment == self.doped_std_kpoint_comment.replace(
+                "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
+            )
+        elif np.prod(dds.kpoints.kpts[0]) == 1:
             assert comment == self.doped_gam_kpoint_comment
         else:
-            if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
-                "reciprocal_density", False
-            ):  # comment changed!
-                assert comment == self.doped_std_kpoint_comment.replace(
-                    "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
-                )
-            else:
-                assert comment == self.doped_std_kpoint_comment
+            assert comment == self.doped_std_kpoint_comment
 
         for k in written_kpoints.as_dict():
             if k not in ["comment", "usershift"]:  # user shift can be tuple or list and causes failure
@@ -504,6 +534,45 @@ class DefectRelaxSetTest(unittest.TestCase):
             # std INCAR to be more computationally efficient
             dds_bulk_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
 
+        def _check_drs_dds_attribute_transfer(parent_drs, child_dds):
+            child_incar_settings = child_dds.user_incar_settings.copy()
+            if "KPAR" in child_incar_settings and "KPAR" not in parent_drs.user_incar_settings:
+                assert child_incar_settings.pop("KPAR") == 2
+                assert parent_drs.vasp_std
+            if "LSORBIT" in child_incar_settings and "LSORBIT" not in parent_drs.user_incar_settings:
+                assert child_incar_settings.pop("LSORBIT") is True
+                for k, v in singleshot_incar_settings.items():
+                    assert child_incar_settings.pop(k) == v
+                assert parent_drs.soc
+            if any("NKRED" in k for k in child_incar_settings) and not any(
+                "NKRED" in k for k in parent_drs.user_incar_settings
+            ):
+                for k in list(child_incar_settings.keys()):
+                    if "NKRED" in k:
+                        assert child_incar_settings.pop(k) in [2, 3]
+                assert parent_drs.vasp_nkred_std
+            if "NSW" in child_incar_settings and "NSW" not in parent_drs.user_incar_settings:
+                for k, v in singleshot_incar_settings.items():  # bulk singleshots
+                    assert child_incar_settings.pop(k) == v
+
+            assert parent_drs.user_incar_settings == child_incar_settings
+            assert parent_drs.user_potcar_functional == child_dds.user_potcar_functional
+            assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
+            if isinstance(child_dds.user_kpoints_settings, Kpoints):
+                assert (
+                    child_dds.user_kpoints_settings.as_dict()
+                    == Kpoints()
+                    .from_dict(
+                        {
+                            "comment": "Γ-only KPOINTS from doped",
+                            "generation_style": "Gamma",
+                        }
+                    )
+                    .as_dict()
+                )
+            else:
+                assert parent_drs.user_kpoints_settings == child_dds.user_kpoints_settings
+
         for defect_dict_set, type in dds_test_list:
             if defect_dict_set is not None:
                 print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
@@ -520,7 +589,8 @@ class DefectRelaxSetTest(unittest.TestCase):
                 self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
                 if defect_relax_set.charge_state == 0:
                     self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
-                    # TODO: Test defect_relax_set -> defect_dict_set attributes here
+
+                _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
 
         for defect_dict_set, type in dds_bulk_test_list:
             if defect_dict_set is not None:
@@ -531,6 +601,8 @@ class DefectRelaxSetTest(unittest.TestCase):
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
                 self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
                 self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+
+                _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
 
     def test_initialisation_and_writing(self):
         """
@@ -564,6 +636,14 @@ class DefectRelaxSetTest(unittest.TestCase):
                 drs = DefectRelaxSet(defect_entry)
                 self._general_defect_relax_set_check(drs)
 
+                def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
+                    assert parent_drs.defect_entry == input_defect_entry
+                    assert parent_drs.defect_supercell == input_defect_entry.defect_supercell
+                    assert parent_drs.charge_state == input_defect_entry.charge_state
+                    assert parent_drs.bulk_supercell == input_defect_entry.bulk_supercell
+
+                _check_drs_defect_entry_attribute_transfer(drs, defect_entry)
+
                 custom_drs = DefectRelaxSet(
                     defect_entry,
                     user_incar_settings={"ENCUT": 350},
@@ -573,9 +653,11 @@ class DefectRelaxSetTest(unittest.TestCase):
                     poscar_comment="Test pop",
                 )
                 self._general_defect_relax_set_check(custom_drs)
+                _check_drs_defect_entry_attribute_transfer(custom_drs, defect_entry)
 
             # TODO: Test initialising with the structures as well
             # TODO: Test file writing, default folder naming
+            # TODO: Explicitly check some poscar comments? For DS, DRS and DDS
 
     def test_default_kpoints_soc_handling(self):
         """
