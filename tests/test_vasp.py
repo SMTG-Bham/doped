@@ -43,11 +43,17 @@ def _potcars_available() -> bool:
         return False
 
 
-def _check_potcar_dir_not_setup_warning_error(message):
-    return all(
-        x in str(message)
-        for x in ["POTCAR directory not set up with pymatgen", "so `POTCAR` files will not be generated."]
-    )
+def _check_potcar_dir_not_setup_warning_error(dds, message, unperturbed_poscar=True):
+    if unperturbed_poscar and dds.charge_state != 0:
+        ending_string = "so only '(unperturbed) `POSCAR` and `KPOINTS` files will be generated."
+
+    elif not unperturbed_poscar and dds.charge_state != 0:  # only KPOINTS can be written so no good
+        ending_string = "so no input files will be generated."
+
+    else:
+        ending_string = "so `POTCAR` files will not be generated."
+
+    return all(x in str(message) for x in ["POTCAR directory not set up with pymatgen", ending_string])
 
 
 def _check_no_potcar_available_warning_error(symbol, message):
@@ -171,7 +177,9 @@ class DefectDictSetTest(unittest.TestCase):
                     warnings.resetwarnings()
                     dds.write_input("test_pop")
 
-                assert any(_check_potcar_dir_not_setup_warning_error(warning.message) for warning in w)
+                assert any(
+                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
+                )
                 assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
                 assert any(
                     _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
@@ -182,7 +190,9 @@ class DefectDictSetTest(unittest.TestCase):
                     warnings.resetwarnings()
                     dds.write_input("test_pop", unperturbed_poscar=False)
 
-                assert any(_check_potcar_dir_not_setup_warning_error(warning.message) for warning in w)
+                assert any(
+                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
+                )
                 assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
                 assert any(
                     _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
@@ -232,27 +242,39 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             assert not dds.potcars
 
-    def test_neutral_defect_incar(self):
+    def test_neutral_defect_dict_set(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy())  # fine for bulk prim input as well
         # reciprocal_density = 100/Å⁻³ for prim CdTe:
         self.kpts_nelect_nupdown_check(dds, 7, 18, 0)
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, potcar_spec=True)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell)
         # reciprocal_density = 100/Å⁻³ for CdTe supercell:
         self.kpts_nelect_nupdown_check(dds, 2, 570, 0)
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, potcar_spec=True)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def test_charged_defect_incar(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy(), charge_state=1)  # fine w/bulk prim
         self.kpts_nelect_nupdown_check(dds, 7, 17, 0)  # 100/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_-2"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
@@ -264,6 +286,8 @@ class DefectDictSetTest(unittest.TestCase):
             user_incar_settings=user_incar_settings,
         )
         self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         if _potcars_available():
             assert self.neutral_def_incar_min.items() <= dds.incar.items()
@@ -279,6 +303,8 @@ class DefectDictSetTest(unittest.TestCase):
             user_incar_settings={"LHFCALC": False},
         )
         self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         if _potcars_available():
             assert gga_dds.incar["LHFCALC"] is False
@@ -300,9 +326,15 @@ class DefectDictSetTest(unittest.TestCase):
             self.agcu,
             self.sqs_agsbte2,
         ]:
-            self._generate_and_check_dds(struct)  # fine for a bulk primitive input as well
+            dds = self._generate_and_check_dds(struct)  # fine for a bulk primitive input as well
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
+
             # charged_dds:
             self._generate_and_check_dds(struct, charge_state=np.random.randint(-5, 5))
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
             DefectDictSet(
                 struct,
@@ -312,6 +344,9 @@ class DefectDictSetTest(unittest.TestCase):
                 user_kpoints_settings={"reciprocal_density": 200},
                 poscar_comment="Test pop",
             )
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
 
     def test_file_writing_with_without_POTCARs(self):
         """
@@ -323,6 +358,7 @@ class DefectDictSetTest(unittest.TestCase):
             dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy())  # fine for bulk prim
             self._write_and_check_dds_files(dds)
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
@@ -338,9 +374,19 @@ class DefectDictSetTest(unittest.TestCase):
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
         self._write_and_check_dds_files(dds, output_dir="YTOS_test_dir")
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def _write_and_check_dds_files(self, dds, **kwargs):
         output_dir = kwargs.pop("output_dir", "test_pop")
+        delete_dir = kwargs.pop("delete_dir", True)  # delete directory after testing?
+
+        if not kwargs.get("unperturbed_poscar", True) and dds.charge_state != 0:
+            # error with charged defect and unperturbed_poscar=False
+            with self.assertRaises(ValueError) as e:
+                dds.write_input(output_dir, **kwargs)
+            assert _check_potcar_dir_not_setup_warning_error(dds, e.exception, unperturbed_poscar=False)
+            return
+
         dds.write_input(output_dir, **kwargs)
 
         # print(output_dir)  # to help debug if tests fail
@@ -401,6 +447,9 @@ class DefectDictSetTest(unittest.TestCase):
                 contents = file.readlines()
             for i, line in enumerate(contents):
                 assert line in [f"{dds.potcar_symbols[i]}", f"{dds.potcar_symbols[i]}\n"]
+
+        if delete_dir:
+            if_present_rm(output_dir)
 
 
 class DefectsSetTest(unittest.TestCase):
