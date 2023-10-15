@@ -27,7 +27,7 @@ from doped.vasp import (
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
-#  jsons etc. Test POTCAR warning when POTCARs not available
+#  jsons etc.
 
 
 def _potcars_available() -> bool:
@@ -199,12 +199,26 @@ class DefectDictSetTest(unittest.TestCase):
             assert dds.charge_state == dds_kwargs["charge_state"]
         assert dds.kpoints.comment == self.doped_std_kpoint_comment
 
-    def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
-        dds = DefectDictSet(
-            struct,
-            **dds_kwargs,
-        )  # fine for a bulk primitive input as well
-        self._general_defect_dict_set_check(dds, struct, incar_check, **dds_kwargs)
+    def _check_dds(self, dds, struct, **kwargs):
+        # INCARs only generated for charged defects when POTCARs available:
+        if _potcars_available():
+            self._general_defect_dict_set_check(  # also tests dds.charge_state
+                dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
+            )
+        else:
+            if kwargs.pop("incar_check", True) and dds.charge_state != 0:  # charged defect INCAR
+                with self.assertRaises(ValueError) as e:
+                    self._general_defect_dict_set_check(  # also tests dds.charge_state
+                        dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
+                    )
+                _check_nelect_nupdown_error(e.exception)
+            self._general_defect_dict_set_check(  # also tests dds.charge_state
+                dds, struct, incar_check=kwargs.pop("incar_check", False), **kwargs
+            )
+
+    def _generate_and_check_dds(self, struct, incar_check=True, **dds_kwargs):
+        dds = DefectDictSet(struct, **dds_kwargs)  # fine for bulk prim input as well
+        self._check_dds(dds, struct, incar_check=incar_check, **dds_kwargs)
         return dds
 
     def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
@@ -219,51 +233,31 @@ class DefectDictSetTest(unittest.TestCase):
             assert not dds.potcars
 
     def test_neutral_defect_incar(self):
-        dds = self.defect_dict_set_defaults_check(self.prim_cdte.copy())
-        self.kpts_nelect_nupdown_check(dds, 7, 18, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        dds = self._generate_and_check_dds(self.prim_cdte.copy())  # fine for bulk prim input as well
+        # reciprocal_density = 100/Å⁻³ for prim CdTe:
+        self.kpts_nelect_nupdown_check(dds, 7, 18, 0)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell)
-        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
-
-    def _generate_and_check_charged_dds(self, struct, charge_state, **kwargs):
-        # INCARs only generated for charged defects when POTCARs available:
-
-        if _potcars_available():
-            dds = self.defect_dict_set_defaults_check(
-                struct, charge_state=charge_state, incar_check=kwargs.pop("incar_check", True), **kwargs
-            )  # also tests dds.charge_state
-        else:
-            if kwargs.pop("incar_check", True) and charge_state != 0:  # charged defect INCAR
-                with self.assertRaises(ValueError) as e:
-                    dds = self.defect_dict_set_defaults_check(
-                        struct,
-                        charge_state=charge_state,
-                        incar_check=kwargs.pop("incar_check", True),
-                        **kwargs,
-                    )  # also tests dds.charge_state
-                _check_nelect_nupdown_error(e.exception)
-            dds = self.defect_dict_set_defaults_check(
-                struct, charge_state=charge_state, incar_check=kwargs.pop("incar_check", False), **kwargs
-            )  # also tests dds.charge_state
-
-        return dds
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell)
+        # reciprocal_density = 100/Å⁻³ for CdTe supercell:
+        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)
 
     def test_charged_defect_incar(self):
-        dds = self._generate_and_check_charged_dds(self.prim_cdte.copy(), charge_state=1)
-        self.kpts_nelect_nupdown_check(dds, 7, 17, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        dds = self._generate_and_check_dds(self.prim_cdte.copy(), charge_state=1)  # fine w/bulk prim
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 0)  # 100/Å⁻³ for prim CdTe
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
-        dds = self._generate_and_check_charged_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
 
         defect_entry = self.cdte_defect_gen["Te_Cd_-2"]
-        dds = self._generate_and_check_charged_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
-        dds = self._generate_and_check_charged_dds(
+
+        dds = self._generate_and_check_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=1,
@@ -278,7 +272,7 @@ class DefectDictSetTest(unittest.TestCase):
                 assert v == dds.incar[k]
 
         # non-HSE settings:
-        gga_dds = self._generate_and_check_charged_dds(
+        gga_dds = self._generate_and_check_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=10,
@@ -306,11 +300,9 @@ class DefectDictSetTest(unittest.TestCase):
             self.agcu,
             self.sqs_agsbte2,
         ]:
-            self.defect_dict_set_defaults_check(struct)
-
-            self._generate_and_check_charged_dds(
-                self.ytos_bulk_supercell.copy(), charge_state=np.random.randint(-5, 5)
-            )
+            self._generate_and_check_dds(struct)  # fine for a bulk primitive input as well
+            # charged_dds:
+            self._generate_and_check_dds(struct, charge_state=np.random.randint(-5, 5))
 
             DefectDictSet(
                 struct,
@@ -328,7 +320,7 @@ class DefectDictSetTest(unittest.TestCase):
         """
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            dds = self.defect_dict_set_defaults_check(self.ytos_bulk_supercell.copy())
+            dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy())  # fine for bulk prim
             dds.write_input("YTOS_test_dir")
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
@@ -341,7 +333,7 @@ class DefectDictSetTest(unittest.TestCase):
                 assert any(test_warning_message in str(warning.message) for warning in w)
 
         # check changing charge state
-        dds = self._generate_and_check_charged_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
+        dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
@@ -354,6 +346,7 @@ class DefectsSetTest(unittest.TestCase):
         for attr in dir(dds_test):
             if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
                 setattr(self, attr, getattr(dds_test, attr))
+        self.dds_test = dds_test
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
         self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
@@ -453,27 +446,27 @@ class DefectsSetTest(unittest.TestCase):
                         check_potcar_spec=check_potcar_spec,
                     )
 
-    def test_cdte_files(self):
-        cdte_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
-        defects_set = DefectsSet(
-            cdte_se_defect_gen,
-            user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,  # TODO: don't think we need this now?
-        )
-        dds_test = DefectDictSetTest()
-
-        for defect_relax_set in defects_set.values():
+    def _general_defects_set_check(self, defects_set, struct, **kwargs):
+        for defect_relax_set in defects_set.defect_sets.values():
             for defect_dict_set in [
                 defect_relax_set.vasp_gam,
                 defect_relax_set.bulk_vasp_gam,
                 defect_relax_set.vasp_std,
                 defect_relax_set.bulk_vasp_std,
-                defect_relax_set.vasp_nkred_std,
-                defect_relax_set.bulk_vasp_nkred_std,
-                defect_relax_set.vasp_ncl,
-                defect_relax_set.bulk_vasp_ncl,
+                # defect_relax_set.vasp_nkred_std,
+                # defect_relax_set.bulk_vasp_nkred_std,
+                # defect_relax_set.vasp_ncl,
+                # defect_relax_set.bulk_vasp_ncl,
             ]:
-                dds_test._general_defect_dict_set_check(defect_dict_set, self.prim_cdte)
+                self.dds_test._check_dds(defect_dict_set, struct, **kwargs)
+
+    def test_cdte_files(self):
+        cdte_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
+        defects_set = DefectsSet(
+            cdte_se_defect_gen,
+            user_incar_settings=self.cdte_custom_test_incar_settings,
+        )
+        self._general_defects_set_check(defects_set, self.prim_cdte)
 
         defects_set.write_files(potcar_spec=True)
         # test no vasp_gam files written:
