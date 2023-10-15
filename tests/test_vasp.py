@@ -614,8 +614,8 @@ class DefectRelaxSetTest(unittest.TestCase):
 
                     if (
                         _potcars_available()
-                    ):  # needed because bulk NKRED pulls NKRED values from defect nkred
-                        # std INCAR to be more computationally efficient
+                    ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be
+                        # more computationally efficient
                         assert drs.bulk_vasp_nkred_std
 
                     assert drs.vasp_ncl
@@ -632,16 +632,44 @@ class DefectRelaxSetTest(unittest.TestCase):
                     assert not drs.vasp_ncl
                     assert not drs.bulk_vasp_ncl
 
-                # Test manually turning on soc:
+        # Test manually turning off SOC and making vasp_gam converged:
+        defect_entries = random.sample(list(self.cdte_defect_gen.values()), 5)
 
-                # custom_drs = DefectRelaxSet(
-                #     defect_entry,
-                #     user_incar_settings={"ENCUT": 350},
-                #     user_potcar_functional="PBE_52",
-                #     user_potcar_settings={"Cu": "Cu_pv"},
-                #     user_kpoints_settings={"reciprocal_density": 200},
-                #     poscar_comment="Test pop",
-                # )
+        for defect_entry in defect_entries:
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry, soc=False, user_kpoints_settings={"reciprocal_density": 50})
+            assert not drs.vasp_std
+            assert not drs.bulk_vasp_std
+            assert not drs.vasp_nkred_std
+
+            if (
+                _potcars_available()
+            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
+                # computationally efficient
+                assert not drs.bulk_vasp_nkred_std
+
+            assert not drs.vasp_ncl
+            assert not drs.bulk_vasp_ncl
+
+        # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
+        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
+        defect_entries = random.sample(list(defect_gen.values()), 5)
+
+        for defect_entry in defect_entries:
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry, soc=True, user_kpoints_settings={"reciprocal_density": 200})
+            assert drs.vasp_std
+            assert drs.bulk_vasp_std
+            assert drs.vasp_nkred_std
+
+            if (
+                _potcars_available()
+            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
+                # computationally efficient
+                assert drs.bulk_vasp_nkred_std
+
+            assert drs.vasp_ncl
+            assert drs.bulk_vasp_ncl
 
 
 class DefectsSetTest(unittest.TestCase):
