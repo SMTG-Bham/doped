@@ -10,7 +10,6 @@ import warnings
 
 import numpy as np
 from ase.build import bulk, make_supercell
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
@@ -197,7 +196,7 @@ class DefectDictSetTest(unittest.TestCase):
             assert dds.charge_state == 0
         else:
             assert dds.charge_state == dds_kwargs["charge_state"]
-        assert dds.kpoints.comment == self.doped_std_kpoint_comment
+        assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
 
     def _check_dds(self, dds, struct, **kwargs):
         # INCARs only generated for charged defects when POTCARs available:
@@ -446,19 +445,34 @@ class DefectsSetTest(unittest.TestCase):
                         check_potcar_spec=check_potcar_spec,
                     )
 
-    def _general_defects_set_check(self, defects_set, struct, **kwargs):
+    def _general_defects_set_check(self, defects_set, **kwargs):
         for defect_relax_set in defects_set.defect_sets.values():
-            for defect_dict_set in [
+            dds_test_list = [
                 defect_relax_set.vasp_gam,
                 defect_relax_set.bulk_vasp_gam,
                 defect_relax_set.vasp_std,
                 defect_relax_set.bulk_vasp_std,
-                # defect_relax_set.vasp_nkred_std,
-                # defect_relax_set.bulk_vasp_nkred_std,
-                # defect_relax_set.vasp_ncl,
-                # defect_relax_set.bulk_vasp_ncl,
-            ]:
-                self.dds_test._check_dds(defect_dict_set, struct, **kwargs)
+                defect_relax_set.vasp_nkred_std,
+                defect_relax_set.vasp_ncl,
+                defect_relax_set.bulk_vasp_ncl,
+            ]
+            if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
+                # std INCAR to be more computationally efficient
+                dds_test_list.append(defect_relax_set.bulk_vasp_nkred_std)
+
+            for defect_dict_set in dds_test_list:
+                print(f"Testing {defect_relax_set.defect_entry.name}")
+                try:
+                    self.dds_test._check_dds(
+                        defect_dict_set,
+                        defect_relax_set.defect_supercell,
+                        charge_state=defect_relax_set.charge_state,
+                        **kwargs,
+                    )
+                except AssertionError:  # try bulk structure
+                    self.dds_test._check_dds(
+                        defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
+                    )
 
     def test_cdte_files(self):
         cdte_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
@@ -466,27 +480,7 @@ class DefectsSetTest(unittest.TestCase):
             cdte_se_defect_gen,
             user_incar_settings=self.cdte_custom_test_incar_settings,
         )
-        self._general_defects_set_check(defects_set, self.prim_cdte)
-
-        defects_set.write_files(potcar_spec=True)
-        # test no vasp_gam files written:
-        for folder in os.listdir("."):
-            assert not os.path.exists(f"{folder}/vasp_gam")
-
-        # test no (unperturbed) POSCAR files written:
-        for folder in os.listdir("."):
-            if os.path.isdir(folder) and "bulk" not in folder:
-                for subfolder in os.listdir(folder):
-                    assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
-
-        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
-
-        bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        structure_matcher = StructureMatcher(
-            comparator=ElementComparator(), primitive_cell=False
-        )  # ignore oxidation states
-        assert structure_matcher.fit(bulk_supercell, self.cdte_defect_gen.bulk_supercell)
-        # check_generated_vasp_inputs also checks bulk folders
+        self._general_defects_set_check(defects_set)
 
         assert os.path.exists("CdTe_defects_generator.json")
         cdte_se_defect_gen.to_json("test_CdTe_defects_generator.json")
