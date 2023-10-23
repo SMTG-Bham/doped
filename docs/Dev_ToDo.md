@@ -140,7 +140,7 @@
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
     with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
     and/or if it's known from other work for your chosen functional etc.)
-  - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
+  - Add notes about polaron finding (use SnB and/or MAGMOMs. Any other advice to add? See Abdullah/Dan chat and YouTube tutorial, should have note about setting `MAGMOM`s for defects somewhere). `doped` can't do automatically because far too much defect/material-specific dependence.
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
