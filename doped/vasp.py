@@ -65,8 +65,10 @@ default_defect_relax_set = deep_dict_update(
 )  # only POTCAR settings, not set in other *Set.yamls
 singleshot_incar_settings = {
     "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
-    "NSW": 0,  # no ionic relaxation"
-    "IBRION": -1,  # no ionic relaxation"
+    "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
+    "IBRION": -1,  # no ionic relaxation
+    "NSW": 0,  # no ionic relaxation
+    "POTIM": None,  # no ionic relaxation, remove to avoid confusion
 }
 
 
@@ -167,16 +169,6 @@ class DefectDictSet(DictSet):
                         BadIncarWarning,
                     )
             relax_set["INCAR"].update(user_incar_settings)
-
-            if (
-                "EDIFFG" not in user_incar_settings
-                and relax_set["INCAR"]["IBRION"] == -1
-                and relax_set["INCAR"]["NSW"] == 0
-            ):
-                # singlepoint calc, remove EDIFFG & POTIM from INCAR to avoid confusion:
-                for key in ["EDIFFG", "POTIM"]:
-                    if key in relax_set["INCAR"]:
-                        del relax_set["INCAR"][key]
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if relax_set["KPOINTS"].get("length") or (
