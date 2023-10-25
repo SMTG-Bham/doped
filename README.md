@@ -73,11 +73,9 @@ entirely refactored and rewritten, to work with the new
 - P. A. Hyde et al. [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.3c01510) 2023
 - J. Willis, K. B. Spooner, D. O. Scanlon. [_Applied Physics Letters_](https://doi.org/10.1063/5.0170552) 2023
 - J. Cen et al. [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA00532A) 2023
-- J. Willis & R. Claes et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2023-lttnf) 2023
+- J. Willis & R. Claes et al. [_Chem Mater_](https://doi.org/10.1021/acs.chemmater.3c01628) 2023
 - I. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon [_npj Computational Materials_](https://www.nature.com/articles/s41524-023-00973-1) 2023
 - Y. T. Huang & S. R. Kavanagh et al. [_Nature Communications_](https://www.nature.com/articles/s41467-022-32669-3) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt [_Faraday Discussions_](https://doi.org/10.1039/D2FD00043A) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
-
-<!-- Update JPCC CSTX reference! Xinwei PRB? Kumagai paper (was used for defect generation) -->
