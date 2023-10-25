@@ -111,7 +111,7 @@ Studies using ``doped``
 - P\. A. Hyde et al. `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.3c01510>`_ 2023
 - J\. Willis, K. B. Spooner, D. O. Scanlon. `Applied Physics Letters <https://doi.org/10.1063/5.0170552>`__ 2023
 - J\. Cen et al. `Journal of Materials Chemistry A`_ 2023
-- J\. Willis & R. Claes et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2023-lttnf>`__ 2023
+- J\. Willis & R. Claes et al. `Chem Mater <https://doi.org/10.1021/acs.chemmater.3c01628>`__ 2023
 - I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon `npj Computational Materials`_ 2023
 - Y\. T. Huang & S. R. Kavanagh et al. `Nature Communications`_ 2022
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt `Faraday Discussions`_ 2022
