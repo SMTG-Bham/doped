@@ -24,29 +24,28 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
-from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.advanced_transformations import _proj
 from tabulate import tabulate
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.utils.wyckoff import (
+    _custom_round,
+    _frac_coords_sort_func,
+    _get_equiv_frac_coords_in_primitive,
+    _get_sga,
+    _rotate_and_get_supercell_matrix,
     _round_floats,
+    _vectorized_custom_round,
     get_BCS_conventional_structure,
+    get_conv_cell_site,
     get_primitive_structure,
+    get_wyckoff,
     get_wyckoff_label_and_equiv_coord_list,
 )
-
-# TODO: For specifying interstitial sites, will want to be able to specify as either primitive or
-#  supercell coords in this case, so will need functions for transforming between primitive and
-#  supercell defect structures (will want this for defect parsing as well). Defectivator has functions
-#  that do some of this. This will be tricky (SSX trickay you might say) for relaxed interstitials ->
-#  get symmetry-equivalent positions of relaxed interstitial position in unrelaxed bulk (easy pal,
-#  tf you mean 'tricky'??)
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -121,57 +120,75 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry, n=1, r=5):
+def closest_site_info(defect_entry, n=1, element_list=None):
     """
     Return the element and distance (rounded to 2 decimal places) of the
     closest site to defect_entry.sc_defect_frac_coords in
     defect_entry.sc_entry.structure, with distance > 0.01 (i.e. so not the site
-    itself), and if there are multiple elements with the same distance, sort
-    alphabetically and return the first one.
+    itself), and if there are multiple elements with the same distance, sort by
+    order of appearance of elements in the composition, then alphabetically and
+    return the first one.
 
     If n is set, then it returns the nth closest site, where the nth site must be at least
     0.02 Å further away than the n-1th site.
     """
+    if element_list is None:
+        element_list = [  # host elements
+            el.symbol for el in defect_entry.defect.structure.composition.elements
+        ]
+        element_list += sorted(
+            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ]
+        )
+
+    # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
+    defect_site = (
+        defect_entry.defect_supercell_site
+        if hasattr(defect_entry, "defect_supercell_site")
+        else PeriodicSite("X", defect_entry.sc_defect_frac_coords, defect_entry.sc_entry.structure.lattice)
+    )
     site_distances = sorted(
         [
             (
-                site.distance_and_image_from_frac_coords(defect_entry.sc_defect_frac_coords)[0],
-                site,
+                site.distance(defect_site),
+                site.specie.symbol,
             )
             for site in defect_entry.sc_entry.structure.sites
-            if site.distance_and_image_from_frac_coords(defect_entry.sc_defect_frac_coords)[0] > 0.01
+            if site.distance(defect_site) > 0.01
         ],
-        key=lambda x: (round(x[0], 2), x[1].specie.symbol),
+        key=lambda x: (_custom_round(x[0]), element_list.index(x[1]), x[1]),
     )
 
-    # prune site_distances to remove any tuples with distances <0.02 Å greater than the previous
-    # entry:
+    # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
     site_distances = [
         site_distances[i]
         for i in range(len(site_distances))
         if i == 0
-        or site_distances[i][0] - site_distances[i - 1][0] > 0.02
-        or site_distances[i][1].specie.symbol != site_distances[i - 1][1].specie.symbol
+        or abs(site_distances[i][0] - site_distances[i - 1][0]) > 0.02
+        or site_distances[i][1] != site_distances[i - 1][1]
     ]
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return f"{closest_site.specie.symbol}{min_distance:.2f}"
+    return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_entry(defect_entry):
+def get_defect_name_from_entry(defect_entry, element_list=None):
     """
     Get the doped/SnB defect name from DefectEntry object.
     """
     defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
         sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-        dummy_species="X",
+        dummy_species=_dummy_species,
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = SpacegroupAnalyzer(defect_diagonal_supercell, symprec=1e-2)
+    sga = _get_sga(defect_diagonal_supercell)
     return (
         f"{defect_entry.defect.name}_{herm2sch(sga.get_point_group_symbol())}"
-        f"_{closest_site_info(defect_entry)}"
+        f"_{closest_site_info(defect_entry, element_list=element_list)}"
     )
 
 
@@ -183,6 +200,7 @@ def _get_neutral_defect_entry(
     conventional_structure,
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
+    symm_ops,
 ):
     (
         dummy_defect_supercell,
@@ -190,7 +208,7 @@ def _get_neutral_defect_entry(
         equivalent_supercell_sites,
     ) = defect.get_supercell_structure(
         sc_mat=supercell_matrix,
-        dummy_species="X",  # keep track of the defect frac coords in the supercell
+        dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
         target_frac_coords=target_frac_coords,
         return_sites=True,
     )
@@ -209,12 +227,32 @@ def _get_neutral_defect_entry(
         neutral_defect_entry.defect.conventional_structure
     ) = conventional_structure
 
-    wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
-        defect_entry=neutral_defect_entry,
-        wyckoff_dict=wyckoff_label_dict,
-    )
+    try:
+        wyckoff_label, conv_cell_sites = get_wyckoff(
+            get_conv_cell_site(neutral_defect_entry).frac_coords,
+            conventional_structure,
+            symm_ops,
+            equiv_sites=True,
+        )
+        conv_cell_coord_list = [
+            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.to_unit_cell().frac_coords), 1))
+            for site in conv_cell_sites
+        ]
+
+    except Exception as e:  # (slightly) less efficient algebraic matching:
+        try:
+            wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
+                defect_entry=neutral_defect_entry,
+                wyckoff_dict=wyckoff_label_dict,
+            )
+            conv_cell_coord_list = _vectorized_custom_round(
+                np.mod(_vectorized_custom_round(conv_cell_coord_list), 1)
+            ).tolist()
+        except Exception as e2:
+            raise e2 from e
+
+    # sort array with _frac_coords_sort_func:
     conv_cell_coord_list.sort(key=_frac_coords_sort_func)
-    conv_cell_coord_list = np.round(conv_cell_coord_list, 5)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
     neutral_defect_entry.conv_cell_frac_coords = (
@@ -232,7 +270,7 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
-def name_defect_entries(defect_entries):
+def name_defect_entries(defect_entries, element_list=None):
     """
     Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
     objects, where the names are set according to the default doped algorithm;
@@ -262,16 +300,16 @@ def name_defect_entries(defect_entries):
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
             previous_entry = defect_naming_dict.pop(matching_names[0])
-            previous_entry_full_name = get_defect_name_from_entry(previous_entry)
+            previous_entry_full_name = get_defect_name_from_entry(previous_entry, element_list)
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
             defect_naming_dict[previous_entry_name] = previous_entry
 
         return defect_naming_dict
 
     def append_closest_site_info(name, entry, n):
-        return name + closest_site_info(entry, n=n)
+        return name + closest_site_info(entry, n=n, element_list=element_list)
 
-    def handle_multiple_matches(defect_naming_dict, full_defect_name, defect_entry):
+    def handle_multiple_matches(defect_naming_dict, full_defect_name, defect_entry, element_list=None):
         n = 2
         while True:
             for name in list(defect_naming_dict.keys()):
@@ -323,7 +361,7 @@ def name_defect_entries(defect_entries):
 
     defect_naming_dict = {}
     for defect_entry in defect_entries:
-        full_defect_name = get_defect_name_from_entry(defect_entry)
+        full_defect_name = get_defect_name_from_entry(defect_entry, element_list)
         split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
@@ -365,22 +403,6 @@ def herm2sch(herm_symbol):
     Convert from Hermann-Mauguin to Schoenflies.
     """
     return _HERM2SCH.get(herm_symbol, None)
-
-
-def _frac_coords_sort_func(coords):
-    """
-    Sorting function to apply on an iterable of fractional coordinates, where
-    entries are sorted by the number of x, y, z that are (almost) equal (i.e.
-    between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
-    x, y and z.
-    """
-    num_equals = sum(
-        np.isclose(coords[i], coords[j], atol=1e-3)
-        for i in range(len(coords))
-        for j in range(i + 1, len(coords))
-    )
-    magnitude = round(np.linalg.norm(coords), 4)
-    return (-num_equals, magnitude, *np.abs(np.round(coords, 4)))
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
@@ -752,7 +774,8 @@ class DefectsGenerator(MSONable):
         to be the most reliable), which can be controlled using the
         `interstitial_gen_kwargs` argument (passed as keyword arguments to the
         `VoronoiInterstitialGenerator` class). Alternatively, a list of interstitial
-        sites can be manually specified using the `interstitial_coords` argument.
+        sites (or single interstitial site) can be manually specified using the
+        `interstitial_coords` argument.
 
         By default, supercells are generated for each defect using the pymatgen
         `get_supercell_structure()` method, with `doped` default settings of
@@ -798,10 +821,15 @@ class DefectsGenerator(MSONable):
                 extrinsic element(s) to substitute in; as a string or list.
                 In both cases, all possible extrinsic interstitials are generated.
             interstitial_coords (List):
-                List of fractional coordinates (in the primitive cell) to use as
-                interstitial defect sites. Default (when interstitial_coords not
-                specified) is to automatically generate interstitial sites using
-                Voronoi tessellation.
+                List of fractional coordinates (corresponding to the input structure),
+                or a single set of fractional coordinates, to use as interstitial
+                defect site(s). Default (when interstitial_coords not specified) is
+                to automatically generate interstitial sites using Voronoi tessellation.
+                The input interstitial_coords are converted to
+                DefectsGenerator.prim_interstitial_coords, which are the corresponding
+                fractional coordinates in DefectsGenerator.primitive_structure (which
+                is used for defect generation), sorted according to the doped
+                _frac_coords_sort_func.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
@@ -850,7 +878,17 @@ class DefectsGenerator(MSONable):
         self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
-        self.interstitial_coords = interstitial_coords if interstitial_coords is not None else []
+        if interstitial_coords is not None:
+            # if a single list or array, convert to list of lists
+            self.interstitial_coords = (
+                [interstitial_coords]
+                if not isinstance(interstitial_coords[0], (list, tuple, np.ndarray))
+                else interstitial_coords  # ensure list of lists
+            )
+        else:
+            self.interstitial_coords = []
+
+        self.prim_interstitial_coords = None
         self.generate_supercell = generate_supercell
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
@@ -878,7 +916,7 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = SpacegroupAnalyzer(self.structure, symprec=1e-2)
+            sga = _get_sga(self.structure)
 
             prim_struct = get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
@@ -926,31 +964,6 @@ class DefectsGenerator(MSONable):
                     b - _proj(b, c),
                 ]
             )
-
-            def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
-                """
-                Rotates the input prim_struct to match the target_struct
-                orientation, and returns the supercell matrix to convert from
-                the rotated prim_struct to the target_struct.
-                """
-                # first rotate primitive structure to match target structure:
-                mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
-                rotation_matrix = mapping[1]
-                if np.allclose(rotation_matrix, -1 * np.eye(3)):
-                    # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
-                    # equivalent to no rotation. Just use the identity matrix instead.
-                    rotation_matrix = np.eye(3)
-                    supercell_matrix = -1 * mapping[2]
-                else:
-                    supercell_matrix = mapping[2]
-                rotation_symmop = SymmOp.from_rotation_and_translation(
-                    rotation_matrix=rotation_matrix.T
-                )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
-                # stability
-                output_prim_struct = prim_struct.copy()
-                output_prim_struct.apply_operation(rotation_symmop)
-                clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
-                return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
             if np.min(np.linalg.norm(length_vecs, axis=1)) >= self.supercell_gen_kwargs.get(
                 "min_length", 10
@@ -1043,7 +1056,8 @@ class DefectsGenerator(MSONable):
                     f"the host structure, so do not need to be specified as 'extrinsic' in "
                     f"DefectsGenerator(). These will be ignored."
                 )
-            extrinsic_elements = [el for el in extrinsic_elements if el not in host_element_list]
+            # sort extrinsic elements alphabetically for deterministic ordering in output:
+            extrinsic_elements = sorted([el for el in extrinsic_elements if el not in host_element_list])
 
             substitution_generator_obj = SubstitutionGenerator()
             if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
@@ -1074,17 +1088,26 @@ class DefectsGenerator(MSONable):
 
             # Interstitials:
             pbar.set_description("Generating interstitials")
-            element_list = host_element_list + extrinsic_elements  # all elements in system
+            self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_coords:
-                # For the moment, this assumes interstitial_sites
-                insertions = {el: self.interstitial_coords for el in element_list}
-                interstitial_generator_obj = InterstitialGenerator(**self.interstitial_gen_kwargs)
-                interstitial_generator = interstitial_generator_obj.generate(
-                    self.primitive_structure, insertions=insertions
-                )
-                self.defects["interstitials"] = [
-                    Interstitial._from_pmg_defect(inter) for inter in interstitial_generator
-                ]
+                # map interstitial coords to primitive structure, and get multiplicities
+                sga = _get_sga(self.structure)
+                symm_ops = sga.get_symmetry_operations(cartesian=False)
+                self.prim_interstitial_coords = []
+
+                for interstitial_frac_coords in self.interstitial_coords:
+                    prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                        interstitial_frac_coords,
+                        self.structure,
+                        self.primitive_structure,
+                        symm_ops,
+                        equiv_coords=True,
+                    )
+                    self.prim_interstitial_coords.append(
+                        (prim_inter_coords, len(equiv_coords), equiv_coords)
+                    )
+
+                sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
 
             else:
                 # Generate interstitial sites using Voronoi tessellation
@@ -1141,11 +1164,18 @@ class DefectsGenerator(MSONable):
                             if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
                                 matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
 
-                    # take the site with the lower multiplicity (higher symmetry):
+                    # take the site with the lower multiplicity (higher symmetry), and most ideal site
+                    # according to _frac_coords_sort_func if multiplicities equal:
                     output_sites_mul_and_equiv_fpos.append(
                         min(
                             [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
-                            key=lambda cand_site_mul_and_equiv_fpos: cand_site_mul_and_equiv_fpos[1],
+                            key=lambda cand_site_mul_and_equiv_fpos: (
+                                cand_site_mul_and_equiv_fpos[1],
+                                # return the minimum _frac_coords_sort_func for all equiv fpos:
+                                *_frac_coords_sort_func(
+                                    sorted(cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func)[0]
+                                ),
+                            ),
                         )
                     )
 
@@ -1158,21 +1188,31 @@ class DefectsGenerator(MSONable):
                         (ideal_cand_site, multiplicity, sorted_equiv_fpos)
                     )
 
-                self.defects["interstitials"] = []
-                ig = InterstitialGenerator(
-                    self.interstitial_gen_kwargs.get("min_dist", 0.9),
-                )  # pmg defects default
-                for el in element_list:
-                    cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
+            self.defects["interstitials"] = []
+            ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
+            for el in self._element_list:
+                inter_generator = ig.generate(
+                    self.primitive_structure,
+                    insertions={el: cand_sites},
+                    multiplicities={el: multiplicity},
+                    equivalent_positions={el: equiv_fpos},
+                )
+                self.defects["interstitials"].extend(
+                    [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
+                )
 
-                    inter_generator = ig.generate(
-                        self.primitive_structure,
-                        insertions={el: cand_sites},
-                        multiplicities={el: multiplicity},
-                        equivalent_positions={el: equiv_fpos},
-                    )
-                    self.defects["interstitials"].extend(
-                        [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
+                # check if any manually-specified interstitials were skipped due to min_dist and warn user:
+                if self.interstitial_coords and len(self.interstitial_coords) > len(
+                    self.defects["interstitials"]
+                ):
+                    warnings.warn(
+                        f"\nNote that some manually-specified interstitial sites were skipped due to "
+                        f"being too close to host lattice sites (minimum distance = `min_dist` = "
+                        f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some reason "
+                        f"you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
+                        f"Å), or just use the default Voronoi tessellation algorithm for generating "
+                        f"interstials (by not setting the `interstitial_coords` argument)."
                     )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
@@ -1191,6 +1231,9 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
+            sga = _get_sga(self.conventional_structure)
+            symm_ops = sga.get_symmetry_operations(cartesian=False)
+
             # process defects into defect entries:
             partial_func = partial(
                 _get_neutral_defect_entry,
@@ -1200,6 +1243,7 @@ class DefectsGenerator(MSONable):
                 conventional_structure=self.conventional_structure,
                 _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict=wyckoff_label_dict,
+                symm_ops=symm_ops,
             )
 
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
@@ -1250,7 +1294,7 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            named_defect_dict = name_defect_entries(defect_entry_list)
+            named_defect_dict = name_defect_entries(defect_entry_list, element_list=self._element_list)
             pbar.update(5)  # 95% of progress bar
             if not isinstance(pbar, MagicMock):
                 _pbar_increment_per_defect = max(
@@ -1278,46 +1322,11 @@ class DefectsGenerator(MSONable):
 
                 pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
-            # Sort defect entries for deterministic behaviour (for output and when reloading)
-            def _first_and_second_element(defect_name):  # for sorting purposes
-                if defect_name.startswith("v"):
-                    return (defect_name.split("_")[1], defect_name.split("_")[1])
-                if defect_name.split("_")[1] == "i":
-                    return (defect_name.split("_")[0], defect_name.split("_")[0])
-
-                return (
-                    defect_name.split("_")[0],
-                    defect_name.split("_")[1],
-                )
-
-            # sort defect entries by defect type (vacancies, substitutions, interstitials),
-            # then by order of appearance of elements in the primitive structure composition,
-            # then alphabetically, then (for defect entries of the same type) sort by charge state:
-            self.defect_entries = dict(
-                sorted(
-                    self.defect_entries.items(),
-                    key=lambda s: (
-                        s[1].defect.defect_type.value,
-                        element_list.index(_first_and_second_element(s[0])[0]),
-                        element_list.index(_first_and_second_element(s[0])[1]),
-                        s[0].rsplit("_", 1)[0],  # name without charge
-                        s[1].charge_state,  # charge state
-                    ),
-                )
+            # sort defects and defect entries for deterministic behaviour:
+            self.defects = _sort_defects(self.defects, element_list=self._element_list)
+            self.defect_entries = _sort_defect_entries(
+                self.defect_entries, element_list=self._element_list
             )
-            # sort defects in the same way:
-            self.defects = {
-                defect_type: sorted(
-                    defect_list,
-                    key=lambda d: (
-                        element_list.index(_first_and_second_element(d.name)[0]),
-                        element_list.index(_first_and_second_element(d.name)[1]),
-                        d.name,  # bare name without charge
-                        _frac_coords_sort_func(d.conv_cell_frac_coords),
-                    ),
-                )
-                for defect_type, defect_list in self.defects.items()
-            }
 
             # remove oxidation states from structures (causes deprecation warnings and issues with
             # comparison tests, also only added from oxi state guessing in defect generation so no extra
@@ -1436,6 +1445,10 @@ class DefectsGenerator(MSONable):
             )
             self.defect_entries[defect_entry.name] = defect_entry
 
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
+
     def remove_charge_states(self, defect_entry_name: str, charge_states: list):
         """
         Remove `DefectEntry`s with the specified charge states from
@@ -1460,6 +1473,10 @@ class DefectsGenerator(MSONable):
                 and name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
             ]:
                 del self.defect_entries[defect_entry_name_to_remove]
+
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def as_dict(self):
         """
@@ -1668,8 +1685,20 @@ class DefectsGenerator(MSONable):
         defects_key = _defect_dict_key_from_pmg_type(value.defect.defect_type)
         if defects_key not in self.defects:
             self.defects[defects_key] = []
-        if value.defect not in self.defects[defects_key]:
-            self.defects[defects_key].append(value.defect)
+        try:
+            if value.defect not in self.defects[defects_key]:
+                self.defects[defects_key].append(value.defect)
+        except ValueError as value_err:
+            if "You need at least" not in value_err.args[0]:
+                raise value_err
+
+            # just test based on names instead
+            if value.defect.name not in [defect.name for defect in self.defects[defects_key]]:
+                self.defects[defects_key].append(value.defect)
+
+        # sort defects and defect entries for deterministic behaviour:
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def __delitem__(self, key):
         """
@@ -1725,6 +1754,140 @@ class DefectsGenerator(MSONable):
         )
 
 
+def _first_and_second_element(defect_name):
+    """
+    Return a tuple of the first and second element in the defect name.
+
+    For sorting purposes.
+    """
+    if defect_name.startswith("v"):
+        return (defect_name.split("_")[1], defect_name.split("_")[1])
+    if defect_name.split("_")[1] == "i":
+        return (defect_name.split("_")[0], defect_name.split("_")[0])
+
+    return (
+        defect_name.split("_")[0],
+        defect_name.split("_")[1],
+    )
+
+
+def _sort_defect_entries(defect_entries_dict, element_list=None):
+    """
+    Sort defect entries for deterministic behaviour (for output and when
+    reloading DefectsGenerator objects, and with DefectPhaseDiagram entries
+    (particularly for deterministic plotting behaviour)).
+
+    Sorts defect entries by defect type (vacancies, substitutions,
+    interstitials), then by order of appearance of elements in the composition,
+    then alphabetically, then (for defect entries of the same type) sort by
+    charge state.
+    """
+    if element_list is None:
+        host_element_list = None
+        extrinsic_element_list = []
+        for defect_entry in defect_entries_dict.values():
+            if host_element_list is None:  # first iteration
+                host_element_list = [
+                    el.symbol for el in defect_entry.defect.structure.composition.elements
+                ]
+            extrinsic_element_list.extend(
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in host_element_list
+            )
+
+        # sort extrinsic elements alphabetically for deterministic ordering in output:
+        extrinsic_element_list = sorted(
+            [el for el in extrinsic_element_list if el not in host_element_list]
+        )
+        element_list = host_element_list + extrinsic_element_list
+
+    try:
+        return dict(
+            sorted(
+                defect_entries_dict.items(),
+                key=lambda s: (
+                    s[1].defect.defect_type.value,
+                    element_list.index(_first_and_second_element(s[0])[0]),
+                    element_list.index(_first_and_second_element(s[0])[1]),
+                    s[0].rsplit("_", 1)[0],  # name without charge
+                    s[1].charge_state,  # charge state
+                ),
+            )
+        )
+    except ValueError as value_err:
+        # possibly defect entries with names not in doped format, try sorting without using name:
+        try:
+            return dict(
+                sorted(
+                    defect_entries_dict.items(),
+                    key=lambda s: (
+                        s[1].defect.defect_type.value,
+                        element_list.index(
+                            _first_and_second_element(
+                                get_defect_name_from_entry(
+                                    s[1],
+                                    element_list=element_list,
+                                )
+                            )[0]
+                        ),
+                        element_list.index(
+                            _first_and_second_element(
+                                get_defect_name_from_entry(
+                                    s[1],
+                                    element_list=element_list,
+                                )
+                            )[1]
+                        ),
+                        get_defect_name_from_entry(s[1], element_list=element_list),  # name without charge
+                        s[1].charge_state,  # charge state
+                    ),
+                )
+            )
+        except ValueError:
+            raise value_err
+
+
+def _sort_defects(defects_dict, element_list=None):
+    """
+    Sort defect objects for deterministic behaviour (for output and when
+    reloading DefectsGenerator objects.
+
+    Sorts defects by defect type (vacancies, substitutions, interstitials),
+    then by order of appearance of elements in the composition, then
+    alphabetically, then according to _frac_coords_sort_func.
+    """
+    if element_list is None:
+        all_elements = []
+        host_element_list = None
+
+        for _defect_type, defect_list in defects_dict.items():
+            for defect in defect_list:
+                if host_element_list is None:  # first iteration
+                    host_element_list = [el.symbol for el in defect.structure.composition.elements]
+                all_elements.extend(el.symbol for el in defect.defect_structure.composition.elements)
+        extrinsic_element_list = list(set(all_elements) - set(host_element_list))
+
+        # sort extrinsic elements alphabetically for deterministic ordering in output:
+        extrinsic_element_list = sorted(
+            [el for el in extrinsic_element_list if el not in host_element_list]
+        )
+        element_list = host_element_list + extrinsic_element_list
+
+    return {
+        defect_type: sorted(
+            defect_list,
+            key=lambda d: (
+                element_list.index(_first_and_second_element(d.name)[0]),
+                element_list.index(_first_and_second_element(d.name)[1]),
+                d.name,  # bare name without charge
+                _frac_coords_sort_func(d.conv_cell_frac_coords),
+            ),
+        )
+        for defect_type, defect_list in defects_dict.items()
+    }
+
+
 def _get_interstitial_candidate_sites(args):
     """
     Return a list of cand_sites_mul_and_equiv_fpos for interstitials in the
@@ -1740,7 +1903,7 @@ def _get_interstitial_candidate_sites(args):
     return [*interstitial_generator._get_candidate_sites(structure)]
 
 
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License) 🙌
+# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
 _PTG_IDS = [
     ("C1", "1", 1),
     ("Ci", "-1", 2),

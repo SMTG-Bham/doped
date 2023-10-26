@@ -62,15 +62,15 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
 
    .. code-block:: yaml
 
-      PMG_DEFAULT_FUNCTIONAL: PBE_54  # whatever functional label your POTCARs have
+      PMG_DEFAULT_FUNCTIONAL: PBE  # whatever functional label your POTCARs have
 
    Note the Materials Project API key is required for determining the necessary competing phases to calculate in order to determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy MP API, with your unique key available at: https://legacy.materialsproject.org/open.
 
 
 Developer Installation
 -----------------------
-If you want to use the example files from the tutorials, you will need to clone the ``doped`` GitHub
-repository:
+If you want to use the example files from the tutorials or run the package tests, you will need to clone
+the ``doped`` GitHub repository:
 
 #. Download the ``doped`` source code using the command:
 
