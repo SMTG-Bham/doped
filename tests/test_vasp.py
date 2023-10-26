@@ -17,13 +17,27 @@ from doped.generation import DefectsGenerator
 from doped.vasp import (
     DefectDictSet,
     DefectsSet,
+    _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
     scaled_ediff,
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
-#  jsons etc
+#  jsons etc. Test POTCAR warning when POTCARs not available
+
+
+def _potcars_available() -> bool:
+    """
+    Check if the POTCARs are available for the tests (i.e. testing locally).
+
+    If not (testing on GitHub Actions), POTCAR testing will be skipped.
+    """
+    try:
+        _test_potcar_functional_choice("PBE")
+        return True
+    except ValueError:
+        return False
 
 
 class DefectDictSetTest(unittest.TestCase):
@@ -65,8 +79,7 @@ class DefectDictSetTest(unittest.TestCase):
     def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
         dds = DefectDictSet(
             struct,
-            potcars=False,  # to allow testing on GH Actions - comment out when testing
-            # locally to recheck this functionality!
+            potcars=_potcars_available(),  # to allow testing on GH Actions
             **dds_kwargs,
         )  # fine for a bulk primitive input as well
         if incar_check:
@@ -240,9 +253,12 @@ class DefectsSetTest(unittest.TestCase):
             # load the Incar, Poscar and Kpoints and check it matches the previous:
             test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
             incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
-            # remove NELECT and NUPDOWN from test_incar to allow testing without POTCARs on GH Actions:
-            test_incar.pop("NELECT", None)
-            test_incar.pop("NUPDOWN", None)  # remove when testing locally to recheck this functionality!
+            # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
+            # locally)), otherwise pop from test_incar:
+            if not _potcars_available():  # to allow testing on GH Actions
+                test_incar.pop("NELECT", None)
+                test_incar.pop("NUPDOWN", None)
+
             assert test_incar == incar
 
             if check_poscar:
@@ -254,7 +270,7 @@ class DefectsSetTest(unittest.TestCase):
                 assert test_poscar.structure == poscar.structure
 
             if check_potcar_spec:
-                with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec") as file:
+                with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", encoding="utf-8") as file:
                     contents = file.readlines()
                     assert contents[0] in ["Cd", "Cd\n"]
                     assert contents[1] in ["Te", "Te\n"]
@@ -318,12 +334,13 @@ class DefectsSetTest(unittest.TestCase):
         # check_generated_vasp_inputs also checks bulk folders
 
         assert os.path.exists("CdTe_defects_generator.json")
-        self.cdte_defect_gen.to_json("test_CdTe_defects_generator.json")
-        filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
+        cdte_se_defect_gen.to_json("test_CdTe_defects_generator.json")
+        assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
+
         # test vasp_nkred_std: same as vasp_std except for NKRED
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
@@ -367,17 +384,17 @@ class DefectsSetTest(unittest.TestCase):
         self.tearDown()
         defects_set = DefectsSet(
             {k: v for k, v in self.cdte_defect_gen.items() if "v_Te" in k},
-            user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_sv_GW"},
+            user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_GW"},
             user_kpoints_settings={"reciprocal_density": 500},
             user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True, vasp_gam=True)  # include vasp_gam to compare POTCAR.spec
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_gam"):
-                with open(f"{folder}/vasp_gam/POTCAR.spec") as file:
+                with open(f"{folder}/vasp_gam/POTCAR.spec", encoding="utf-8") as file:
                     contents = file.readlines()
                     assert contents[0] in ["Cd_sv_GW", "Cd_sv_GW\n"]
-                    assert contents[1] in ["Te_sv_GW", "Te_sv_GW\n"]
+                    assert contents[1] in ["Te_GW", "Te_GW\n"]
 
                 for subfolder in ["vasp_std", "vasp_nkred_std", "vasp_ncl"]:
                     kpoints = Kpoints.from_file(f"{folder}/{subfolder}/KPOINTS")

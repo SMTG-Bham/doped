@@ -8,27 +8,240 @@ https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
 """
 
 import os
+from typing import Optional
 
 import numpy as np
-from ase.utils import basestring
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
+from pymatgen.util.coord import pbc_diff
 from sympy import Eq, simplify, solve, symbols
 
 
-def _round_floats(obj):
+def _round_floats(obj, places=5):
     """
-    Recursively round floats in a dictionary to 5 decimal places.
+    Recursively round floats in a dictionary to `places` decimal places.
     """
     if isinstance(obj, float):
-        return round(obj, 5) + 0.0
+        return _custom_round(obj, places) + 0.0
     if isinstance(obj, dict):
-        return {k: _round_floats(v) for k, v in obj.items()}
+        return {k: _round_floats(v, places) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [_round_floats(x) for x in obj]
+        return [_round_floats(x, places) for x in obj]
     return obj
+
+
+def _custom_round(number: float, decimals: int = 3):
+    """
+    Custom rounding function that rounds numbers to a specified number of
+    decimals, if that rounded number is within 0.15*10^(-decimals) of the
+    original number, else rounds to [decimals+1] decimals.
+
+    Primarily because float rounding with pymatgen/numpy
+    can give cell coordinates of 0.5001 instead of 0.5
+    etc, but also can have coordinates of e.g. 0.6125
+    that should not be rounded to 0.613.
+
+    Args:
+        number (float): The number to round
+        decimals (int):
+            The number of decimals to round to (default: 3)
+
+    Returns:
+        float: The rounded number
+    """
+    rounded_number = round(number, decimals)
+    if abs(rounded_number - number) < 0.15 * float(10) ** (-decimals):
+        return rounded_number
+
+    return round(number, decimals + 1)
+
+
+_vectorized_custom_round = np.vectorize(_custom_round)
+
+
+def _frac_coords_sort_func(coords):
+    """
+    Sorting function to apply on an iterable of fractional coordinates, where
+    entries are sorted by the number of x, y, z that are (almost) equal (i.e.
+    between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
+    x, y and z.
+    """
+    coords_for_sorting = _vectorized_custom_round(
+        np.mod(_vectorized_custom_round(coords), 1)
+    )  # to unit cell
+    num_equals = sum(
+        np.isclose(coords_for_sorting[i], coords_for_sorting[j], atol=1e-3)
+        for i in range(len(coords_for_sorting))
+        for j in range(i + 1, len(coords_for_sorting))
+    )
+    magnitude = _custom_round(np.linalg.norm(coords_for_sorting))
+    return (-num_equals, magnitude, *np.abs(coords_for_sorting))
+
+
+def _get_sga(struct, symprec=0.01):
+    """
+    Get a SpacegroupAnalyzer object of the input structure, dynamically
+    adjusting symprec if needs be.
+    """
+    sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
+    if sga.get_symmetry_dataset() is not None:
+        return sga
+
+    for trial_symprec in [0.1, 0.001, 1, 0.0001]:  # go one up first, then down, then criss-cross (cha cha)
+        sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)  # go one up first
+        if sga.get_symmetry_dataset() is not None:
+            return sga
+
+    raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
+
+
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
+    """
+    Get all equivalent sites of the input fractional coordinates in struct.
+    """
+    if symm_ops is None:
+        sga = _get_sga(struct)
+        symm_ops = sga.get_symmetry_operations()
+
+    dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
+    struct_with_x = struct.copy()
+    struct_with_x.sites += [dummy_site]
+
+    x_sites = []
+    for symm_op in symm_ops:
+        transformed_struct = struct_with_x.copy()
+        transformed_struct.apply_operation(symm_op, fractional=True)
+        x_site = transformed_struct[-1].to_unit_cell()
+        # if pbc_diff norm is >0.01 for all other sites in x_sites, add x_site to x_sites:
+        if (
+            all(
+                np.linalg.norm(pbc_diff(x_site.frac_coords, other_x_site.frac_coords)) > 0.01
+                for other_x_site in x_sites
+            )
+            or not x_sites
+        ):
+            x_sites.append(x_site)
+
+    return x_sites
+
+
+def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
+    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops)
+    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites)
+    return sga_with_all_X.get_symmetry_dataset(), unique_sites
+
+
+def _get_sga_with_all_X(struct, unique_sites):
+    """
+    Add all sites in unique_sites to a _copy_ of struct and return
+    SpacegroupAnalyzer of this new structure.
+    """
+    struct_with_all_X = struct.copy()
+    struct_with_all_X.sites += unique_sites
+    return _get_sga(struct_with_all_X)
+
+
+def _get_equiv_frac_coords_in_primitive(
+    frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True
+):
+    """
+    Get an equivalent fractional coordinates of frac_coords in supercell, in
+    the primitive cell.
+
+    Also returns a list of equivalent fractional coords in the primitive cell
+    if equiv_coords is True.
+    """
+    unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops)
+    sga_with_all_X = _get_sga_with_all_X(supercell, unique_sites)
+
+    prim_with_all_X = get_primitive_structure(sga_with_all_X, ignored_species=["X"])
+
+    # ensure matched to primitive structure:
+    rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+    primitive_with_all_X = rotated_struct * matrix
+
+    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
+    s2_like_s1 = sm.get_s2_like_s1(primitive, primitive_with_all_X)
+    s2_really_like_s1 = Structure.from_sites(
+        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
+            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
+                site.specie,
+                site.frac_coords,
+                primitive.lattice,
+                to_unit_cell=True,
+            )
+            for site in s2_like_s1.sites
+        ]
+    )
+
+    prim_coord_list = [
+        _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
+        for site in s2_really_like_s1.sites
+        if site.specie.symbol == "X"
+    ]
+
+    return (  # sort with _frac_coords_sort_func
+        sorted(prim_coord_list, key=_frac_coords_sort_func)[0]
+        if equiv_coords
+        else sorted(prim_coord_list, key=_frac_coords_sort_func)[0],
+        prim_coord_list,
+    )
+
+
+def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
+    """
+    Rotates the input prim_struct to match the target_struct orientation, and
+    returns the supercell matrix to convert from the rotated prim_struct to the
+    target_struct.
+    """
+    # first rotate primitive structure to match target structure:
+    mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
+    rotation_matrix = mapping[1]
+    if np.allclose(rotation_matrix, -1 * np.eye(3)):
+        # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
+        # equivalent to no rotation. Just use the identity matrix instead.
+        rotation_matrix = np.eye(3)
+        supercell_matrix = -1 * mapping[2]
+    else:
+        supercell_matrix = mapping[2]
+    rotation_symmop = SymmOp.from_rotation_and_translation(
+        rotation_matrix=rotation_matrix.T
+    )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
+    # stability
+    output_prim_struct = prim_struct.copy()
+    output_prim_struct.apply_operation(rotation_symmop)
+    clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
+    return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
+
+
+def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False):
+    """
+    Get the Wyckoff label of the input fractional coordinates in the input
+    structure. If the symmetry operations of the structure have already been
+    computed, these can be input as a list to speed up the calculation.
+
+    Args:
+        frac_coords:
+            Fractional coordinates of the site to get the Wyckoff label of.
+        struct:
+            pymatgen Structure object for which frac_coords corresponds to.
+        symm_ops:
+            List of pymatgen SymmOps of the structure. If None (default),
+            will recompute these from the input struct.
+        equiv_sites:
+            If True, also returns a list of equivalent sites in struct.
+    """
+    symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        frac_coords, struct, symm_ops
+    )
+    conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
+    multiplicity = int(conv_cell_factor * len(unique_sites))
+    wyckoff_label = f"{multiplicity}{symm_dataset['wyckoffs'][-1]}"
+
+    return wyckoff_label, unique_sites if equiv_sites else wyckoff_label
 
 
 def _struc_sorting_func(struct):
@@ -38,32 +251,34 @@ def _struc_sorting_func(struct):
     summed magnitude of all x coordinates, then y coordinates, then z
     coordinates.
     """
+    struct_for_sorting = Structure.from_dict(_round_floats(struct.as_dict(), 3))
+
     # get summed magnitudes of x=y=z coords:
-    matching_coords = struct.frac_coords[  # Find the coordinates where x = y = z:
-        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
-        & (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
+    matching_coords = struct_for_sorting.frac_coords[  # Find the coordinates where x = y = z:
+        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
+        & (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
     ]
     xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = struct.frac_coords[
-        (struct.frac_coords[:, 0] == struct.frac_coords[:, 1])
-        | (struct.frac_coords[:, 1] == struct.frac_coords[:, 2])
-        | (struct.frac_coords[:, 0] == struct.frac_coords[:, 2])
+    matching_coords = struct_for_sorting.frac_coords[
+        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
+        | (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
+        | (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 2])
     ]
     xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     return (
-        np.sum(struct.frac_coords),
+        np.sum(struct_for_sorting.frac_coords),
         xyz_sum_magnitudes,
         xy_sum_magnitudes,
-        np.sum(struct.frac_coords[:, 0]),
-        np.sum(struct.frac_coords[:, 1]),
-        np.sum(struct.frac_coords[:, 2]),
+        np.sum(struct_for_sorting.frac_coords[:, 0]),
+        np.sum(struct_for_sorting.frac_coords[:, 1]),
+        np.sum(struct_for_sorting.frac_coords[:, 2]),
     )
 
 
-def get_primitive_structure(sga):
+def get_primitive_structure(sga, ignored_species: Optional[list] = None):
     """
     Get a consistent/deterministic primitive structure from a
     SpacegroupAnalyzer object.
@@ -73,15 +288,32 @@ def get_primitive_structure(sga):
     conventions/definitions, take the one with the lowest summed norm of the
     fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
     (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
+
+    If ignored_species is set, then the sorting function used to determine the
+    ideal primitive structure will ignore sites with species in
+    ignored_species.
     """
     possible_prim_structs = []
     for _i in range(4):
         struct = sga.get_primitive_standard_structure()
         possible_prim_structs.append(struct)
-        sga = SpacegroupAnalyzer(struct, symprec=1e-2)
+        sga = _get_sga(struct, sga._symprec)  # use same symprec
 
-    possible_prim_structs = sorted(possible_prim_structs, key=_struc_sorting_func)
-    return Structure.from_dict(_round_floats(possible_prim_structs[0].as_dict()))
+    if ignored_species is not None:
+        pruned_possible_prim_structs = [
+            Structure.from_sites([site for site in struct if site.specie.symbol not in ignored_species])
+            for struct in possible_prim_structs
+        ]
+    else:
+        pruned_possible_prim_structs = possible_prim_structs
+
+    # sort and return indices:
+    sorted_indices = sorted(
+        range(len(pruned_possible_prim_structs)),
+        key=lambda i: _struc_sorting_func(pruned_possible_prim_structs[i]),
+    )
+
+    return Structure.from_dict(_round_floats(possible_prim_structs[sorted_indices[0]].as_dict()))
 
 
 def get_spglib_conv_structure(sga):
@@ -102,7 +334,7 @@ def get_spglib_conv_structure(sga):
     for _i in range(4):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
-        sga = SpacegroupAnalyzer(sga.get_primitive_standard_structure(), symprec=1e-2)
+        sga = _get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
 
     possible_conv_structs_and_sgas = sorted(
         possible_conv_structs_and_sgas, key=lambda x: _struc_sorting_func(x[0])
@@ -133,7 +365,7 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     """
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
-    sga = SpacegroupAnalyzer(struc_wout_oxi, symprec=1e-2)
+    sga = _get_sga(struc_wout_oxi)
     conventional_structure, conv_sga = get_spglib_conv_structure(sga)
 
     wyckoff_label_dict = get_wyckoff_dict_from_sgn(conv_sga.get_space_group_number())
@@ -201,7 +433,7 @@ def get_conv_cell_site(defect_entry):
     prim_struct_with_X.remove_oxidation_states()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
-    sga = SpacegroupAnalyzer(bulk_prim_structure)
+    sga = _get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
@@ -241,7 +473,7 @@ def get_conv_cell_site(defect_entry):
     # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
     # initialisation)
     conv_cell_site.to_unit_cell()
-    conv_cell_site.frac_coords = np.round(conv_cell_site.frac_coords, 5)
+    conv_cell_site.frac_coords = _vectorized_custom_round(conv_cell_site.frac_coords)
 
     return conv_cell_site
 
@@ -269,7 +501,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     number.
     """
     datafile = _get_wyckoff_datafile()
-    with open(datafile) as f:
+    with open(datafile, encoding="utf-8") as f:
         wyckoff = _read_wyckoff_datafile(sgn, f)
 
     wyckoff_label_coords_dict = {}
@@ -324,7 +556,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                     "must be provided."
                 )
             # get sgn from primitive unit cell of bulk structure:
-            sgn = SpacegroupAnalyzer(defect_entry.defect.structure).get_space_group_number()
+            sgn = _get_sga(defect_entry.defect.structure).get_space_group_number()
 
         wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
 
@@ -365,7 +597,8 @@ def get_wyckoff_label_and_equiv_coord_list(
                 # convert coords in subbed_coord_list to unit cell, by rounding to 5 decimal places and
                 # then modding by 1:
                 subbed_coord_list = [
-                    np.mod(np.round(coord_array, 4), 1) for coord_array in subbed_coord_list
+                    _vectorized_custom_round(np.mod(_vectorized_custom_round(coord_array, 5), 1))
+                    for coord_array in subbed_coord_list
                 ]
                 return label, subbed_coord_list
 
@@ -500,7 +733,7 @@ def _read_wyckoff_datafile(spacegroup, f, setting=None):
     """
     if isinstance(spacegroup, int):
         pass
-    elif isinstance(spacegroup, basestring):
+    elif isinstance(spacegroup, str):
         spacegroup = " ".join(spacegroup.strip().split())
     else:
         raise ValueError("`spacegroup` must be of type int or str")

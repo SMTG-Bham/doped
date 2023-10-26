@@ -14,6 +14,9 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 
+# TODO: Need to set the str and repr functions for these to give an informative output! Same for our
+#  parsing functions/classes
+
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -331,8 +334,8 @@ class Defect(core.Defect):
 
         else:
             # sort by distance from target_frac_coords, then by magnitude of fractional coordinates:
-            sc_x_site = sorted(
-                sc_structure_w_all_defect_sites,
+            sc_site = sorted(
+                equiv_sites,
                 key=lambda site: (
                     round(
                         np.linalg.norm(site.frac_coords - np.array(target_frac_coords)),
@@ -344,9 +347,6 @@ class Defect(core.Defect):
                     round(np.abs(site.frac_coords[2]), 4),
                 ),
             )[0]
-            sc_site = PeriodicSite(
-                self.site.specie, sc_x_site.frac_coords, sc_x_site.lattice
-            ).to_unit_cell()
 
         sc_defect = self.__class__(
             structure=self.structure * sc_mat, site=sc_site, oxi_state=self.oxi_state
