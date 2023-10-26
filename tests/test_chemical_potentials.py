@@ -198,7 +198,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
         assert Path("input.dat").is_file()
 
-        with open("input.dat") as file:
+        with open("input.dat", encoding="utf-8") as file:
             contents = file.readlines()
 
         # assert these lines are in the file:
@@ -217,7 +217,46 @@ class ChemPotsTestCase(unittest.TestCase):
         assert (
             "1 Zr 2 O -10.951109995000005\n" not in contents
         )  # shouldn't be included as is a higher energy polymorph of the bulk phase
-        assert not any("2 Zr 1 O" in i for i in contents)  # non-bordering phase
+        assert all("2 Zr 1 O" not in i for i in contents)  # non-bordering phase
+
+    def test_latex_table(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+
+        with self.assertRaises(ValueError):
+            cpa.to_LaTeX_table(columns="M")
+
+        string = cpa.to_LaTeX_table(columns=1)
+        assert (
+            string[28:209]
+            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
+            "are included"
+        )
+        assert len(string) == 586
+        assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\"
+        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
+
+        string = cpa.to_LaTeX_table(columns=2)
+        assert (
+            string[28:209]
+            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
+            "are included"
+        )
+        assert (
+            string.split("hline")[1]
+            == "\nFormula & k-mesh & $\\Delta E_f$ (eV) & Formula & k-mesh & $\\Delta E_f$ (eV)\\\\ \\"
+        )
+
+        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 &"
+        assert len(string) == 579
+
+        cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        cpa_csv.from_csv(self.csv_path)
+        with self.assertRaises(ValueError):
+            cpa_csv.to_LaTeX_table(columns=2)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
@@ -446,15 +485,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
         assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS") as file:
+        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "2 1 1\n"
 
-        with open(f"{path1}/POTCAR.spec") as file:
+        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[0] == "Zr_sv\n"
 
-        with open(f"{path1}/INCAR") as file:
+        with open(f"{path1}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
@@ -471,22 +510,22 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS") as file:
+        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[0] == "pymatgen with grid density = 911 / number of atoms\n"
             assert contents[3] == "4 4 4\n"
 
-        with open(f"{path1}/POTCAR.spec") as file:
+        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
-        with open(f"{path1}/INCAR") as file:
+        with open(f"{path1}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
         path2 = "competing_phases/O2_EaH_0/vasp_std"
         assert Path(path2).is_dir()
-        with open(f"{path2}/KPOINTS") as file:
+        with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "1 1 1\n"
 

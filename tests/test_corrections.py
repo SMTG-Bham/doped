@@ -10,6 +10,7 @@ import os
 import tarfile
 from shutil import copyfile
 
+import matplotlib as mpl
 import numpy as np
 from monty.tempfile import ScratchDir
 from pymatgen.core.sites import PeriodicSite
@@ -25,7 +26,8 @@ from doped.utils.corrections import (
     kumagai_correction_from_paths,
 )
 
-test_files_dir = os.path.join(os.path.dirname(__file__), "data/corrections_test_files")
+test_files_dir = os.path.join(os.path.dirname(__file__), "data/charge_correction_tests")
+mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
 class FilePathCorrectionsTest(PymatgenTest):
@@ -41,9 +43,9 @@ class FilePathCorrectionsTest(PymatgenTest):
             tar = tarfile.open("test_path_files.tar.gz")
             tar.extractall()
             tar.close()
-            blocpot = Locpot.from_file(os.path.join(test_files_dir, "bLOCPOT.gz"))
+            blocpot = Locpot.from_file(os.path.join(test_files_dir, "bulk_LOCPOT.gz"))
             blocpot.write_file("test_path_files/bulk/LOCPOT")
-            dlocpot = Locpot.from_file(os.path.join(test_files_dir, "dLOCPOT.gz"))
+            dlocpot = Locpot.from_file(os.path.join(test_files_dir, "defect_LOCPOT.gz"))
             dlocpot.write_file("test_path_files/sub_1_Sb_on_Ga/charge_2/LOCPOT")
 
             fcc = freysoldt_correction_from_paths(
@@ -96,7 +98,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             "axis_grid": axisdata,
             "bulk_planar_averages": bldata,
             "defect_planar_averages": dldata,
-            "initial_defect_structure": ids,
+            "defect_structure": ids,
             "defect_frac_sc_coords": struct.sites[0].frac_coords,
             "bulk_sc_structure": struct,
         }

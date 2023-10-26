@@ -1,6 +1,38 @@
 Change Log
 ==========
 
+v.2.0.4
+----------
+- Add supercell re-ordering tests for parsing
+- Ensure final _relaxed_ defect site (for interstitials and substitutions) is used for finite-size
+  charge corrections
+- Consolidate functions and input sets with `ShakeNBreak`
+- Update defect generation tests
+- Use more efficient Wyckoff determination code
+
+v.2.0.3
+----------
+- Sort defect entries in ``DefectPhaseDiagram`` for deterministic behaviour (particularly for plotting).
+- Tests updates (archive test plots, update extrinsic generation tests etc).
+- Avoid long stacklevel issue which cropped up in ``python3.8`` tests for ``SnB``
+- Update PDF figure `savefig` settings, and add `_get_backend` function.
+
+v.2.0.2
+----------
+- Refactor `_check_user_potcars()` to `DefectDictSet` rather than `DefectRelaxSet`, and add `write_input
+  ()` method (which runs `_check_user_potcars()` first).
+- Update defect generation tests
+- Add troubleshooting docs page and update tips docs page
+
+v.2.0.1
+----------
+- Update naming handling in ``DefectPhaseDiagram`` to be more robust/flexible, following failure case
+  noted by @utf 🙌
+- Ensure package data files are correctly included in the package distribution, again noted by @utf 🙌
+- Updates to chemical potentials code.
+- Refactoring of site-matching code.
+- Tests updates and code cleanup.
+
 v.2.0.0
 ----------
 - Major overhaul to rebase onto the new `pymatgen` defects code (`>v2022.7.25`).
