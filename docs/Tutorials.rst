@@ -13,3 +13,4 @@ tutorials:
    dope_workflow_example
    dope_parsing_example
    dope_chemical_potentials
+   interface_py_sc_fermi
