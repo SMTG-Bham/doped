@@ -1,16 +1,18 @@
-from dataclasses import dataclass, field
-from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from copy import deepcopy
-from typing import List, Dict, Union, Tuple, Optional
-from scipy.spatial import Delaunay, ConvexHull
-from tqdm import tqdm
-import pandas as pd
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
 import numpy as np
+import pandas as pd
+from scipy.spatial import ConvexHull, Delaunay
+from tqdm import tqdm
+
+from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 
 try:
-    from py_sc_fermi.dos import DOS
-    from py_sc_fermi.defect_system import DefectSystem
     from py_sc_fermi.defect_species import DefectSpecies
+    from py_sc_fermi.defect_system import DefectSystem
+    from py_sc_fermi.dos import DOS
 except ImportError:
     raise ImportError(
         "Please install py-sc-fermi via `pip install py-sc-fermi` to use this functionality."
@@ -18,7 +20,8 @@ except ImportError:
 
 
 def _get_label_and_charge(name: str) -> tuple:
-    """Extracts the label and charge from a defect name string.
+    """
+    Extracts the label and charge from a defect name string.
 
     Args:
         name (str): Name of the defect.
@@ -38,7 +41,9 @@ class FermiSolver:
     bulk_vasprun: str
 
     def __post_init__(self) -> None:
-        """Initializes additional attributes after dataclass instantiation."""
+        """
+        Initializes additional attributes after dataclass instantiation.
+        """
         self.bulk_dos = DOS.from_vasprun(self.bulk_vasprun)
         self.volume = self.defect_phase_diagram.entries[0].defect.structure.volume
 
@@ -58,7 +63,9 @@ class FermiSolver:
         return defect
 
     def _generate_defect_system(self, temperature: float, chemical_potentials: dict) -> DefectSystem:
-        """Generates a DefectSystem object from the DefectPhaseDiagram and a set of chemical potentials.
+        """
+        Generates a DefectSystem object from the DefectPhaseDiagram and a set
+        of chemical potentials.
 
         Args:
             temperature (float): Temperature in K.
@@ -97,8 +104,10 @@ class FermiSolver:
     def defect_system_from_chemical_potentials(
         self, chemical_potentials: dict, temperature: float = 300.0
     ) -> DefectSystem:
-        """Updates the energies of the DefectSystem with a new set of chemical potentials."""
-
+        """
+        Updates the energies of the DefectSystem with a new set of chemical
+        potentials.
+        """
         defect_system = self._generate_defect_system(
             temperature=temperature, chemical_potentials=chemical_potentials
         )
@@ -120,12 +129,13 @@ class FermiSolver:
         exceptions: List[str] = [],
     ) -> pd.DataFrame:
         """
-        Scans a range of temperatures and saves the concentration_dict() to a DataFrame.
+        Scans a range of temperatures and returns the concentration_dict() as a
+        DataFrame.
 
         Args:
             temp_range (List[float]): List of temperatures to scan.
             fix_concentration_temp (float, optional): The temperature at which to fix concentrations. Defaults to None.
-            level (str, optional): The level at which to fix concentrations. Defaults to "DefectChargeState".
+            level (str, optional): The level at which to fix concentrations. Defaults to "DefectSpecies".
             exceptions (List[str], optional): List of species or charge states to exclude from fixing. Defaults to None.
 
         Returns:
@@ -157,7 +167,8 @@ class FermiSolver:
         return pd.merge(concentration_df, fermi_level_df, on="Temperature")
 
     def _get_concentrations(self, defect_system: DefectSystem):
-        """_summary_
+        """
+        _summary_.
 
         Args:
             defect_system (DefectSystem): _description_
@@ -165,7 +176,6 @@ class FermiSolver:
         Returns:
             _type_: _description_
         """
-
         conc_dict = defect_system.concentration_dict()
 
         concentration_data = []
@@ -197,10 +207,12 @@ class FermiSolver:
         n_points: int,
         temp: float = 300.0,
         anneal_temp: Optional[float] = None,
-        level: str = "DefectChargeState",
+        level: str = "DefectSpecies",
         exceptions: List[str] = [],
     ) -> pd.DataFrame:
-        """Scans a range of chemical potentials and saves the concentration_dict() to a DataFrame.
+        """
+        Scans a range of chemical potentials and returns the
+        concentration_dict() as a DataFrame.
 
         Args:
             chem_pot_start (dict): Dictionary of starting chemical potentials.
@@ -227,7 +239,7 @@ class FermiSolver:
                 )
             else:
                 updated_system = self.generate_annealed_defect_system(
-                    mu = chem_pot_interpolated,
+                    mu=chem_pot_interpolated,
                     annealing_temperature=anneal_temp,
                     target_temperature=temp,
                     level=level,
@@ -244,11 +256,7 @@ class FermiSolver:
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
 
-        return pd.merge(
-            concentration_df,
-            fermi_level_df,
-            on=["Interpolation_Parameter"]
-        )
+        return pd.merge(concentration_df, fermi_level_df, on=["Interpolation_Parameter"])
 
     def generate_annealed_defect_system(
         self,
@@ -288,57 +296,68 @@ class FermiSolver:
             elif level == "DefectChargeState":
                 for k, v in defect_species.charge_states.items():
                     key = f"{defect_species.name}_{int(k)}"
-                    if key in [k for k in fixed_concs.keys()]:
+                    if key in list(fixed_concs.keys()):
                         v.fix_concentration(fixed_concs[key] / 1e24 * self.volume)
 
         target_system = self.update_defect_system_temperature(initial_system, target_temperature)
         return target_system
 
     def chempot_grid(self, chemical_potentials, num_points=10, num_points_along_edge=5):
-        """generate a grid of chemical potentials.
+        """
+        Generate a grid of chemical potentials.
 
         Args:
             chemical_potenials ([type]): [description]
         """
-        return ChemicalPotentialGrid(chemical_potentials, num_points_along_edge=num_points_along_edge, num_points=num_points).get_grid()
+        return ChemicalPotentialGrid(
+            chemical_potentials, num_points_along_edge=num_points_along_edge, num_points=num_points
+        ).get_grid()
 
     def grid_solve(
-        self, chempot_grid, temperature=300.0, anneal_temperature=None, level="DefectSpecies", exceptions=[]
+        self,
+        chempot_grid,
+        temperature=300.0,
+        anneal_temperature=None,
+        level="DefectSpecies",
+        exceptions=[],
     ):
         """
         Args:
-            chempot_grid (_type_): _description_
+            chempot_grid (_type_): _description_.
 
         Returns:
             _type_: _description_
         """
         all_concentration_data = []
         all_fermi_level_data = []
-        for i, row in tqdm(chempot_grid.iterrows()):
-            row.drop(["is_vertex", "facet"], inplace=True)
+        for _i, row in tqdm(chempot_grid.iterrows()):
+            row = row.drop(["is_vertex", "facet"])
             chemical_potentials = row.to_dict()
 
             if anneal_temperature:
-                live_system = self.generate_annealed_defect_system(chemical_potentials, anneal_temperature, temperature, level, exceptions)
+                live_system = self.generate_annealed_defect_system(
+                    chemical_potentials, anneal_temperature, temperature, level, exceptions
+                )
 
             else:
-                live_system = self.defect_system_from_chemical_potentials(chemical_potentials, temperature=temperature)
+                live_system = self.defect_system_from_chemical_potentials(
+                    chemical_potentials, temperature=temperature
+                )
 
             concentration_data, fermi_level_data = self._get_concentrations(live_system)
             [d.update(chemical_potentials) for d in concentration_data]
             [d.update(chemical_potentials) for d in fermi_level_data]
             all_concentration_data.extend(concentration_data)
             all_fermi_level_data.extend(fermi_level_data)
-            
+
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
 
         return pd.merge(
             concentration_df,
             fermi_level_df,
-            on=["Temperature"] + list(chemical_potentials.keys()),
+            on=["Temperature", *list(chemical_potentials.keys())],
         )
-
 
 
 @dataclass
@@ -356,7 +375,9 @@ class ChemicalPotentialGrid:
         self._generate_internal_grid()
 
     def _initialize_vertices(self):
-        vertices = [np.array(list(facet.values())) for facet in self.chemical_potentials["facets"].values()]
+        vertices = [
+            np.array(list(facet.values())) for facet in self.chemical_potentials["facets"].values()
+        ]
         return np.array(vertices)
 
     def _generate_grid_from_vertices(self):
@@ -371,9 +392,9 @@ class ChemicalPotentialGrid:
         distance_covered = 0
 
         total_perimeter = sum(
-            np.linalg.norm(self.vertices[simplex[i]] - self.vertices[simplex[j]]) 
-            for simplex in hull.simplices 
-            for i in range(len(simplex)) 
+            np.linalg.norm(self.vertices[simplex[i]] - self.vertices[simplex[j]])
+            for simplex in hull.simplices
+            for i in range(len(simplex))
             for j in range(i + 1, len(simplex))
         )
 
@@ -385,16 +406,16 @@ class ChemicalPotentialGrid:
                     point1 = self.vertices[simplex[i]]
                     point2 = self.vertices[simplex[j]]
                     edge_length = np.linalg.norm(point2 - point1)
-                    
+
                     num_points_on_edge = int(
-                        np.floor((distance_covered + edge_length) / spacing) 
+                        np.floor((distance_covered + edge_length) / spacing)
                         - np.floor(distance_covered / spacing)
                     )
-                    
+
                     if num_points_on_edge > 0:
                         edge_points = np.linspace(point1, point2, num_points_on_edge + 2)[1:-1]
                         grid_points.extend(edge_points)
-                    
+
                     distance_covered += edge_length
 
         self.grid_points = np.array(grid_points)
@@ -433,6 +454,8 @@ class ChemicalPotentialGrid:
         vertices_df["facet"] = self.chemical_potentials["facets"].keys()
 
         df = pd.concat([grid_df, internal_grid_df, vertices_df], ignore_index=True)
-        grid_df = df.drop_duplicates(subset=list(list(self.chemical_potentials["facets"].values())[0].keys()) + ["is_vertex"])
+        grid_df = df.drop_duplicates(
+            subset=[*list(list(self.chemical_potentials["facets"].values())[0].keys()), "is_vertex"]
+        )
 
         return grid_df
