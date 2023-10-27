@@ -5,7 +5,7 @@
 ## Chemical potential
 - Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
-- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
+- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?)
   - Also see `Cs2SnTiI6` notebooks for template code for this.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
@@ -28,7 +28,7 @@
     For interstitials, should be based off just the Wyckoff number of the final relaxed site.
     Should make this a parsed defect property, defined relative to the conventional cell (so they
     actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
-    and have this automatically plug-and-play with `py-sc-fermi`. Already have the site analysis /
+    and have this automatically plug-and-play with `py-sc-fermi` (can do by setting `spin_degeneracy` and `config_degeneracy` properties, and use this in `py-sc-fermi` `interface` code). Already have the site analysis /
     Wyckoff matching code for this.
   - See `pydefect` and pmg `finder.py` for tools for this.
   - For complex defects, this is future work, and should be done manually (note in docs and give
@@ -112,7 +112,7 @@
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
   - Some nice defect structure and eigenvalue analysis
   - GKFO correction
-- Add our `py-sc-fermi` plotting tools (e.g. from thesis). Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting. Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
+- Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting. Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
