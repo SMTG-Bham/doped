@@ -413,14 +413,19 @@ def get_kumagai_correction(
             defect_entry, "bulk_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
         )
 
+    defect_supercell = defect_entry.sc_entry.structure.copy()
+    defect_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     defect_calc_results_for_eFNV = CalcResults(
-        structure=defect_entry.sc_entry.structure,
+        structure=defect_supercell,
         energy=np.inf,
         magnetization=np.inf,
         potentials=defect_site_potentials,
     )
+
+    bulk_supercell = defect_entry.bulk_entry.structure.copy()
+    bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     bulk_calc_results_for_eFNV = CalcResults(
-        structure=defect_entry.bulk_entry.structure,
+        structure=bulk_supercell,
         energy=np.inf,
         magnetization=np.inf,
         potentials=bulk_site_potentials,

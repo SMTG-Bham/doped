@@ -119,7 +119,18 @@ class DefectEntry(thermo.DefectEntry):
         Post-initialization method, using super() and self.defect.
         """
         super().__post_init__()
-        self.name: str = self.name or self.defect.name
+        if not self.name:
+            # try get using doped functions:
+            try:
+                from doped.generation import get_defect_name_from_defect
+
+                name_wout_charge = get_defect_name_from_defect(self.defect)
+            except Exception:
+                name_wout_charge = self.defect.name
+
+            self.name: str = (
+                f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+            )
 
     def _check_if_multiple_finite_size_corrections(self):
         """
