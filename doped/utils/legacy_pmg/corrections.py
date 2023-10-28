@@ -7,6 +7,8 @@ pymatgen-analysis-defects package takes place.
 
 Implementation of defect correction methods.
 """
+# TODO: Can tank this module now? Currently only used in `defect_compatibility`
+
 
 import logging
 import math
@@ -34,10 +36,10 @@ logger = logging.getLogger(__name__)
 
 def _get_defect_structure_from_calc_metadata(calculation_metadata):
     keys = [
-        "unrelaxed_defect_structure",
-        "guessed_initial_defect_structure",
         "defect_structure",
         "final_defect_structure",
+        "unrelaxed_defect_structure",
+        "guessed_initial_defect_structure",
     ]
 
     for key in keys:
@@ -151,7 +153,7 @@ class FreysoldtCorrection(DefectCorrection):
                     np.array(entry.calculation_metadata["defect_planar_averages"][ax])
                 )
 
-        defect_structure = _get_defect_structure_from_calc_metadata(entry.calculation_metadata)
+        defect_structure = entry.sc_entry.structure
         lattice = defect_structure.lattice.copy()
         defect_frac_sc_coords = entry.sc_defect_frac_coords
 
@@ -478,7 +480,7 @@ class KumagaiCorrection(DefectCorrection):
         bulk_atomic_site_averages = entry.calculation_metadata["bulk_atomic_site_averages"]
         defect_atomic_site_averages = entry.calculation_metadata["defect_atomic_site_averages"]
         site_matching_indices = entry.calculation_metadata["site_matching_indices"]
-        defect_structure = _get_defect_structure_from_calc_metadata(entry.calculation_metadata)
+        defect_structure = entry.sc_entry.structure
         defect_frac_sc_coords = entry.sc_defect_frac_coords
 
         lattice = defect_structure.lattice

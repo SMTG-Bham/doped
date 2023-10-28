@@ -99,7 +99,7 @@ def _check_if_str_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
             return get_locpot(locpot_or_outcar)
         return get_outcar(locpot_or_outcar)
 
-    if not isinstance(locpot_or_outcar, [Locpot, Outcar]):
+    if not isinstance(locpot_or_outcar, (Locpot, Outcar)):
         raise TypeError(
             f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
             f"{obj_type.upper()[0]+obj_type[1:]} object, object, but got {type(locpot_or_outcar)} instead."
@@ -173,7 +173,8 @@ def get_freysoldt_correction(
         or `saved` is True.
     """
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
-    _monty_decode_nested_dicts(defect_entry.calculation_metadata)
+    if hasattr(defect_entry, "calculation_metadata"):
+        _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
     dielectric = dielectric or _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
@@ -195,6 +196,9 @@ def get_freysoldt_correction(
         **kwargs,
     )
 
+    if verbose:
+        print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
+
     if not plot and filename is None:
         return fnv_correction
 
@@ -215,9 +219,6 @@ def get_freysoldt_correction(
 
     if filename:
         plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
-
-    if verbose:
-        print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
 
     return fnv_correction, fig
 
@@ -258,6 +259,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         if ax is None:
+            plt.clf()  # clear figures first
             fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
         (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
@@ -267,13 +269,13 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
             c="green",
             label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",  # noqa: ISC003
         )
-        leg1 = ax.legend(handles=[line1, line2, line3], loc=9)  # middle top legend
+        leg1 = ax.legend(handles=[line1, line2, line3], loc=9, framealpha=0.5)  # middle top legend
         ax.add_artist(leg1)  # so isn't overwritten with later legend call
 
         line4 = ax.axhline(C, color="k", linestyle="--", label=f"Alignment constant C = {C:.3f} V")
         tmpx = [x[i] for i in range(check[0], check[1])]
         poly_coll = ax.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
-        ax.legend(handles=[line4, poly_coll], loc=8)  # bottom middle legend
+        ax.legend(handles=[line4, poly_coll], loc=8, framealpha=0.5)  # bottom middle legend
 
         ax.set_xlim(round(x[0]), round(x[-1]))
         ymin = min(*v_R, *dft_diff, *short_range)
@@ -358,7 +360,8 @@ def get_kumagai_correction(
     from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
 
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
-    _monty_decode_nested_dicts(defect_entry.calculation_metadata)
+    if hasattr(defect_entry, "calculation_metadata"):
+        _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
     dielectric = dielectric or _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
@@ -392,16 +395,14 @@ def get_kumagai_correction(
         bulk_outcar = _check_if_str_and_get_pmg_obj(bulk_outcar, obj_type="outcar")
         if bulk_outcar.electrostatic_potential is None:
             _raise_incomplete_outcar_error(bulk_outcar, dir_type="bulk")
-        bulk_site_potentials = -1 * np.array(bulk_outcar.site_potentials)
+        bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
     else:
         bulk_site_potentials = _get_and_check_metadata(
             defect_entry, "bulk_supercell_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
         )
 
     defect_calc_results_for_eFNV = CalcResults(
-        structure=defect_entry.calculation_metadata.get(
-            "unrelaxed_defect_structure", defect_entry.sc_entry.structure
-        ),
+        structure=defect_entry.sc_entry.structure,
         energy=np.inf,
         magnetization=np.inf,
         potentials=defect_site_potentials,
@@ -418,13 +419,18 @@ def get_kumagai_correction(
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=defect_entry.sc_defect_frac_coords,
+        defect_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect coords (except for vacancies)
         **kwargs,
     )
     kumagai_correction_result = CorrectionResult(
         correction_energy=efnv_correction.correction_energy,
         metadata={"pydefect_ExtendedFnvCorrection": efnv_correction},
     )
+
+    if verbose:
+        print(
+            f"Calculated Kumagai (eFNV) correction is {kumagai_correction_result.correction_energy:.3f} eV"
+        )
 
     if not plot and filename is None:
         return kumagai_correction_result
@@ -438,6 +444,7 @@ def get_kumagai_correction(
     style_file = style_file or f"{os.path.dirname(__file__)}/doped.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
+        plt.clf()  # clear figures first
         spp.construct_plot()
         fig = spp.plt.gcf()
         ax = fig.gca()
@@ -456,15 +463,11 @@ def get_kumagai_correction(
         labels += [
             rf"Avg. $\Delta V$ = {spp.ave_pot_diff:.3f} V",
         ]
-        ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8)
+        ax.legend_.remove()
+        ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8, framealpha=0.5)
         ax.set_xlabel(f"Distance from defect ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
         spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
-
-    if verbose:
-        print(
-            f"Calculated Kumagai (eFNV) correction is {kumagai_correction_result.correction_energy:.3f} eV"
-        )
 
     return kumagai_correction_result, fig
