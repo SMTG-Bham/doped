@@ -1470,18 +1470,9 @@ class DefectParser:
         """
         # TODO: Update this to now just use our updated corrections code, then delete
         #  `defect_compatibility` (but still want to have checks about compatibility...)
-        # Set potalign so pymatgen can calculate bandfilling for 'neutral' defects
-        # (possible for resonant dopants etc.)
-        # if (
-        #     self.defect_entry.charge_state == 0
-        #     and "potalign" not in self.defect_entry.calculation_metadata
-        # ):
-        #     self.defect_entry.calculation_metadata["potalign"] = 0
-        #
         # self.defect_entry = self.compatibility.process_entry(self.defect_entry)
 
-        # TODO: Currently this is no bandfilling, and also no proper checks on correction variance,
-        #  will need to update
+        # TODO: Currently this has no proper checks on correction variance, will need to update
 
         # try run Kumagai (eFNV) correction if required info available:
         if (
