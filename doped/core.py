@@ -185,6 +185,23 @@ class DefectEntry(thermo.DefectEntry):
 
         return asdict(self)
 
+    def _check_correction_error_and_return_output(
+        self, correction_output, correction_error, return_correction_error=False, type="FNV"
+    ):
+        if return_correction_error:
+            return correction_output, correction_error
+
+        if correction_error > 0.05:  # greater than 50 meV error in charge correction, warn the user
+            warnings.warn(
+                f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
+                f"charge correction for defect {self.name} is {correction_error:.2f} eV. You may "
+                f"want to check the accuracy of the correction by plotting the site potential "
+                f"differences (using `defect_entry.get"
+                f"_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with `plot=True`)."
+            )
+
+        return correction_output
+
     def get_freysoldt_correction(
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
@@ -193,6 +210,7 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = False,
         filename: Optional[str] = None,
         axis=None,
+        return_correction_error: bool = False,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -235,6 +253,11 @@ class DefectEntry(thermo.DefectEntry):
                 specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
                 the output charge correction is still that for _all_ axes.
                 If None, then all three axes are plotted.
+            return_correction_error (bool):
+                If True, also returns the average standard deviation of the
+                planar-averaged potential difference times the defect charge
+                (which gives an estimate of the error range of the correction
+                energy). Default is False.
             **kwargs:
                 Additional kwargs to pass to
                 pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -269,7 +292,20 @@ class DefectEntry(thermo.DefectEntry):
         self.corrections.update({"freysoldt_charge_correction": correction.correction_energy})
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"freysoldt_charge_correction": correction.metadata.copy()})
-        return fnv_correction_output
+
+        # check accuracy of correction:
+        correction_error = np.mean(
+            [
+                np.sqrt(
+                    correction.metadata["plot_data"][i]["pot_corr_uncertainty_md"]["stats"]["variance"]
+                )
+                for i in [0, 1, 2]
+            ]
+        ) * abs(self.charge_state)
+
+        return self._check_correction_error_and_return_output(
+            fnv_correction_output, correction_error, return_correction_error, type="FNV"
+        )
 
     def get_kumagai_correction(
         self,
@@ -359,18 +395,9 @@ class DefectEntry(thermo.DefectEntry):
 
         # correction energy error can be estimated from standard error of the mean:
         correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
-        if return_correction_error:
-            return efnv_correction_output, correction_error
-
-        if correction_error > 0.05:  # greater than 50 meV error in charge correction, warn the user
-            warnings.warn(
-                f"Estimated error in the Kumagai (eFNV) charge correction for defect {self.name} is "
-                f"{correction_error:.2f} eV. You may want to check the accuracy of the correction "
-                f"by plotting the site potential differences (using "
-                f"`defect_entry.get_kumagai_correction()` with `plot=True`)."
-            )
-
-        return efnv_correction_output
+        return self._check_correction_error_and_return_output(
+            efnv_correction_output, correction_error, return_correction_error, type="eFNV"
+        )
 
 
 def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
