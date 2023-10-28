@@ -74,8 +74,6 @@
     colour just different linestyles? (or something similar)
 - Previous `pymatgen` issues, fixed?
   - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?
-  - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
-    addition to `num_hole` and `num_electron`)
   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think about how we want to refactor the `DefectPhaseDiagram` object!
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
@@ -132,6 +130,7 @@
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Update parsing notebook to reflect preferred usage of eFNV correction (rather than FNV with LOCPOTs).
   - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check, and note this in the tutorial
+  - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute.
   - Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
     super-lean for some reason. Can use SMTG wiki stuff for this.
