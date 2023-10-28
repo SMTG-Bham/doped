@@ -99,7 +99,7 @@ def _check_if_str_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
             return get_locpot(locpot_or_outcar)
         return get_outcar(locpot_or_outcar)
 
-    if not isinstance(locpot_or_outcar, (Locpot, Outcar)):
+    if not isinstance(locpot_or_outcar, (Locpot, Outcar, dict)):
         raise TypeError(
             f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
             f"{obj_type.upper()[0]+obj_type[1:]} object, object, but got {type(locpot_or_outcar)} instead."
@@ -140,14 +140,16 @@ def get_freysoldt_correction(
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding pymatgen Locpot object, or
-            a dictionary of the planar-averaged potential.
-            If None, will try to use `defect_locpot` from the
+            a dictionary of the planar-averaged potential in the form:
+            {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
+            If None, will try to use `defect_locpot_dict` from the
             `defect_entry` `calculation_metadata` if available.
         bulk_locpot:
             Path to the output VASP LOCPOT file from the bulk supercell
             calculation, or the corresponding pymatgen Locpot object, or
-            a dictionary of the planar-averaged potential.
-            If None, will try to use `bulk_locpot` from the
+            a dictionary of the planar-averaged potential in the form:
+            {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
+            If None, will try to use `bulk_locpot_dict` from the
             `defect_entry` `calculation_metadata` if available.
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
@@ -176,13 +178,14 @@ def get_freysoldt_correction(
     if hasattr(defect_entry, "calculation_metadata"):
         _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
-    dielectric = dielectric or _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
+    if dielectric is None:
+        dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     defect_locpot = defect_locpot or _get_and_check_metadata(
-        defect_entry, "defect_locpot", "Defect LOCPOT"
+        defect_entry, "defect_locpot_dict", "Defect LOCPOT"
     )
-    bulk_locpot = bulk_locpot or _get_and_check_metadata(defect_entry, "bulk_locpot", "Bulk LOCPOT")
+    bulk_locpot = bulk_locpot or _get_and_check_metadata(defect_entry, "bulk_locpot_dict", "Bulk LOCPOT")
 
     defect_locpot = _check_if_str_and_get_pmg_obj(defect_locpot, obj_type="locpot")
     bulk_locpot = _check_if_str_and_get_pmg_obj(bulk_locpot, obj_type="locpot")
@@ -192,6 +195,7 @@ def get_freysoldt_correction(
         dielectric=dielectric,
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
+        lattice=defect_entry.sc_entry.structure.lattice if isinstance(defect_locpot, dict) else None,
         defect_frac_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect location in supercell
         **kwargs,
     )
@@ -324,12 +328,12 @@ def get_kumagai_correction(
         defect_outcar:
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `defect_supercell_site_potentials`
+            If None, will try to use the `defect_site_potentials`
             from the `defect_entry` `calculation_metadata` if available.
         bulk_outcar:
             Path to the output VASP OUTCAR file from the bulk supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `bulk_supercell_site_potentials`
+            If None, will try to use the `bulk_site_potentials`
             from the `defect_entry` `calculation_metadata` if available.
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
@@ -363,7 +367,8 @@ def get_kumagai_correction(
     if hasattr(defect_entry, "calculation_metadata"):
         _monty_decode_nested_dicts(defect_entry.calculation_metadata)
 
-    dielectric = dielectric or _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
+    if dielectric is None:
+        dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     def _raise_incomplete_outcar_error(outcar, dir_type="bulk"):
@@ -388,7 +393,7 @@ def get_kumagai_correction(
         defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
     else:
         defect_site_potentials = _get_and_check_metadata(
-            defect_entry, "defect_supercell_site_potentials", "Defect OUTCAR (for atomic site potentials)"
+            defect_entry, "defect_site_potentials", "Defect OUTCAR (for atomic site potentials)"
         )
 
     if bulk_outcar is not None:
@@ -398,7 +403,7 @@ def get_kumagai_correction(
         bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
     else:
         bulk_site_potentials = _get_and_check_metadata(
-            defect_entry, "bulk_supercell_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
+            defect_entry, "bulk_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
         )
 
     defect_calc_results_for_eFNV = CalcResults(
