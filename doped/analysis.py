@@ -644,13 +644,24 @@ def defect_entry_from_paths(
                 if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
             )
             if summed_corrections < -0.05:
-                warnings.warn(
-                    f"The calculated finite-size charge corrections for defect at {defect_path} and bulk "
-                    f"at {bulk_path} sum to a negative value of {summed_corrections:.3f}. This is likely "
-                    f"due to some error or mismatch in the defect and bulk calculations, as the defect "
-                    f"charge correction energy should (almost always) be positive. Please double-check "
-                    f"your calculations and parsed results!"
+                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
+                # affecting the potential alignment)
+                # how anisotropic is the dielectric?
+                how_aniso = np.diag(
+                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
                 )
+                if np.allclose(how_aniso, 0, atol=0.05):
+                    warnings.warn(
+                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
+                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
+                        f"relatively isotropic dielectrics (as is the case here) this is usually "
+                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
+                        f"charge occupying the band edge states and not localised at the defect), "
+                        f"affecting the potential alignment, or some error/mismatch in the defect and "
+                        f"bulk calculations. If this defect species is not stable in the formation "
+                        f"energy diagram then this warning can usually be ignored, but if it is, "
+                        f"you should double-check your calculations and parsed results!"
+                    )
 
     return dp.defect_entry
 
