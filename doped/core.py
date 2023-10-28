@@ -212,13 +212,15 @@ class DefectEntry(thermo.DefectEntry):
             defect_locpot:
                 Path to the output VASP LOCPOT file from the defect supercell
                 calculation, or the corresponding pymatgen Locpot object, or
-                a dictionary of the planar-averaged potential.
+                a dictionary of the planar-averaged potential in the form:
+                {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
                 If None, will try to use `defect_locpot` from the
                 `defect_entry` `calculation_metadata` if available.
             bulk_locpot:
                 Path to the output VASP LOCPOT file from the bulk supercell
                 calculation, or the corresponding pymatgen Locpot object, or
-                a dictionary of the planar-averaged potential.
+                a dictionary of the planar-averaged potential in the form:
+                {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
                 If None, will try to use `bulk_locpot` from the
                 `defect_entry` `calculation_metadata` if available.
             plot (bool):
@@ -243,6 +245,14 @@ class DefectEntry(thermo.DefectEntry):
             or `saved` is True.
         """
         from doped.utils.corrections import get_freysoldt_correction
+
+        if dielectric is None:
+            dielectric = self.calculation_metadata.get("dielectric", None)
+        if dielectric is None:
+            raise ValueError(
+                "No dielectric constant provided, either as a function argument or in "
+                "defect_entry.calculation_metadata."
+            )
 
         fnv_correction_output = get_freysoldt_correction(
             defect_entry=self,
@@ -311,6 +321,14 @@ class DefectEntry(thermo.DefectEntry):
             the matplotlib figure object if `plot` or `saved` is True.
         """
         from doped.utils.corrections import get_kumagai_correction
+
+        if dielectric is None:
+            dielectric = self.calculation_metadata.get("dielectric", None)
+        if dielectric is None:
+            raise ValueError(
+                "No dielectric constant provided, either as a function argument or in "
+                "defect_entry.calculation_metadata."
+            )
 
         efnv_correction_output = get_kumagai_correction(
             defect_entry=self,

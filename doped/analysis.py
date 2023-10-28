@@ -16,7 +16,7 @@ import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
@@ -24,10 +24,11 @@ from pymatgen.util.string import unicodeify
 from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
-from doped.core import DefectEntry, Interstitial, Substitution, Vacancy
+from doped.core import DefectEntry
 from doped.generation import get_defect_name_from_entry
 from doped.plotting import _format_defect_name
-from doped.utils.legacy_pmg.defect_compatibility import DefectCompatibility
+
+# from doped.utils.legacy_pmg.defect_compatibility import DefectCompatibility
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
     _get_output_files_and_check_if_multiple,
@@ -124,7 +125,9 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 #  KPOINTS/INCAR/POTCAR/POSCAR (size) settings for all defects in the supplied defect_dict
 #  are compatible, if not throw warnings and say what the differences are. Should recommend
 #  using this in the example notebook if a user has parsed the defects individually (rather
-#  than with the single looping function described below):
+#  than with the single looping function described below). Also check that the same type of
+#  correction was used in each case (FNV vs eFNV). If isotropic, shouldn't really matter, but
+#  worth warning user as best to be consistent, and could give some unexpected behaviour
 # TODO: Add a function that loops over all the defects in a directory (with `defect_dir = .`,
 #  and `subfolder = vasp_ncl` options) and parses them all (use `SnB` defect-name-matching
 #  function?), returning a dictionary of defect entries, with the defect name as the key. (i.e.
@@ -531,22 +534,6 @@ def defect_entry_from_paths(
 
     calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
     calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-
-    if unrelaxed_defect_structure:
-        # only do StructureMatcher test if unrelaxed structure exists
-        test_defect_structure = defect.get_supercell_structure(
-            min_atoms=len(bulk_supercell), max_atoms=len(bulk_supercell)
-        )
-        if not StructureMatcher(
-            stol=0.05,
-            comparator=ElementComparator(),
-        ).fit(test_defect_structure, unrelaxed_defect_structure):
-            warnings.warn(
-                f"Possible error in defect object matching. Determined defect: {defect.name} for defect "
-                f"at {defect_path} in bulk at {bulk_path} but unrelaxed structure (1st below) does not "
-                f"match defect.get_supercell_structure() (2nd below):"
-                f"\n{unrelaxed_defect_structure}\n{test_defect_structure}"
-            )
 
     defect_entry = DefectEntry(
         # pmg attributes:
@@ -1038,7 +1025,7 @@ class DefectParser:
     def __init__(
         self,
         defect_entry,
-        compatibility=None,
+        # compatibility=None,
         defect_vr=None,
         bulk_vr=None,
     ):
@@ -1048,22 +1035,22 @@ class DefectParser:
         Args:
             defect_entry (DefectEntry):
                 doped DefectEntry
-            compatibility (DefectCompatibility):
-                Compatibility class instance for performing charge correction compatibility analysis on
-                the defect entry.
+            # compatibility (DefectCompatibility):
+            #     Compatibility class instance for performing charge correction compatibility analysis on
+            #     the defect entry.
             defect_vr (Vasprun): pymatgen Vasprun object for the defect supercell calculation
             bulk_vr (Vasprun): pymatgen Vasprun object for the reference bulk supercell calculation
         """
         self.defect_entry: DefectEntry = defect_entry
-        self.compatibility = compatibility or DefectCompatibility(
-            plnr_avg_var_tol=0.01,
-            plnr_avg_minmax_tol=0.3,
-            atomic_site_var_tol=0.025,
-            atomic_site_minmax_tol=0.3,
-            tot_relax_tol=5.0,
-            defect_tot_relax_tol=5.0,
-            use_bandfilling=False,  # don't include bandfilling by default
-        )
+        # self.compatibility = compatibility or DefectCompatibility(
+        #     plnr_avg_var_tol=0.01,
+        #     plnr_avg_minmax_tol=0.3,
+        #     atomic_site_var_tol=0.025,
+        #     atomic_site_minmax_tol=0.3,
+        #     tot_relax_tol=5.0,
+        #     defect_tot_relax_tol=5.0,
+        #     use_bandfilling=False,  # don't include bandfilling by default
+        # )
         self.defect_vr = defect_vr
         self.bulk_vr = bulk_vr
 
@@ -1120,24 +1107,36 @@ class DefectParser:
             **kwargs,
         )
 
-    def freysoldt_loader(self, bulk_locpot=None):
+    def freysoldt_loader(self, bulk_locpot_dict=None):
         """
-        Load metadata required for performing Freysoldt correction requires
-        "bulk_path" and "defect_path" to be loaded to DefectEntry
-        calculation_metadata dict. Can read gunzipped "LOCPOT.gz" files as
-        well.
+        Load metadata required for performing Freysoldt correction (i.e. LOCPOT
+        planar-averaged potential dictionary).
+
+        Requires "bulk_path" and "defect_path" to be present in
+        DefectEntry.calculation_metadata, and VASP LOCPOT files to be
+        present in these directories. Can read compressed "LOCPOT.gz"
+        files. The bulk_locpot_dict can be supplied if already parsed,
+        for expedited parsing of multiple defects.
+
+        Saves the `bulk_locpot_dict` and `defect_locpot_dict` dictionaries
+        (containing the planar-averaged electrostatic potentials along each
+        axis direction) to the DefectEntry.calculation_metadata dict, for
+        use with DefectEntry.get_freysoldt_correction().
 
         Args:
-            bulk_locpot (Locpot): Add bulk Locpot object for expedited parsing.
-                If None, will load from file path variable bulk_path
-        Return:
-            bulk_locpot object for reuse by another defect entry (for expedited parsing)
+            bulk_locpot_dict (dict): Planar-averaged potential dictionary
+                for bulk supercell, if already parsed. If None (default),
+                will load from LOCPOT(.gz) file in
+                defect_entry.calculation_metadata["bulk_path"]
+
+        Returns:
+            bulk_locpot_dict for reuse in parsing other defect entries
         """
         if not self.defect_entry.charge_state:
-            # don't need to load locpots if charge is zero
-            return
+            # no charge correction if charge is zero
+            return None
 
-        if not bulk_locpot:
+        if not bulk_locpot_dict:
             bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple(
                 "LOCPOT", self.defect_entry.calculation_metadata["bulk_path"]
             )
@@ -1150,6 +1149,7 @@ class DefectParser:
                     dir_type="bulk",
                 )
             bulk_locpot = get_locpot(bulk_locpot_path)
+            bulk_locpot_dict = {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
 
         defect_locpot_path, multiple = _get_output_files_and_check_if_multiple(
             "LOCPOT", self.defect_entry.calculation_metadata["defect_path"]
@@ -1163,37 +1163,48 @@ class DefectParser:
                 dir_type="defect",
             )
         defect_locpot = get_locpot(defect_locpot_path)
-
-        axis_grid = [defect_locpot.get_axis_grid(i) for i in range(3)]
-        bulk_planar_averages = [bulk_locpot.get_average_along_axis(i) for i in range(3)]
-        defect_planar_averages = [defect_locpot.get_average_along_axis(i) for i in range(3)]
+        defect_locpot_dict = {str(k): defect_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
 
         self.defect_entry.calculation_metadata.update(
             {
-                "axis_grid": axis_grid,
-                "bulk_planar_averages": bulk_planar_averages,
-                "defect_planar_averages": defect_planar_averages,
-                "defect_frac_sc_coords": self.defect_entry.sc_defect_frac_coords,
+                "bulk_locpot_dict": bulk_locpot_dict,
+                "defect_locpot_dict": defect_locpot_dict,
             }
         )
 
-    def kumagai_loader(self, bulk_outcar=None):
+        return bulk_locpot_dict
+
+    def kumagai_loader(self, bulk_site_potentials=None):
         """
-        Load metadata required for performing Kumagai correction requires
-        "bulk_path" and "defect_path" to be loaded to DefectEntry
-        calculation_metadata dict.
+        Load metadata required for performing Kumagai correction (i.e. atomic
+        site potentials from the OUTCAR files).
+
+        Requires "bulk_path" and "defect_path" to be present in
+        DefectEntry.calculation_metadata, and VASP OUTCAR files to be
+        present in these directories. Can read compressed "OUTCAR.gz"
+        files. The bulk_site_potentials can be supplied if already
+        parsed, for expedited parsing of multiple defects.
+
+        Saves the `bulk_site_potentials` and `defect_site_potentials`
+        lists (containing the atomic site electrostatic potentials, from
+        -1*np.array(Outcar.electrostatic_potential)) to
+        DefectEntry.calculation_metadata, for use with
+        DefectEntry.get_kumagai_correction().
 
         Args:
-            bulk_outcar (Outcar): Add bulk Outcar object for expedited parsing.
-                If None, will load from file path variable bulk_path
-        Return:
-            bulk_outcar object for reuse by another defect entry (for expedited parsing)
+            bulk_site_potentials (dict): Atomic site potentials for the
+                bulk supercell, if already parsed. If None (default), will
+                load from OUTCAR(.gz) file in
+                defect_entry.calculation_metadata["bulk_path"]
+
+        Returns:
+            bulk_site_potentials for reuse in parsing other defect entries
         """
         if not self.defect_entry.charge_state:
             # don't need to load outcars if charge is zero
-            return
+            return None
 
-        if not bulk_outcar:
+        if not bulk_site_potentials:
             bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
                 "OUTCAR", self.defect_entry.calculation_metadata["bulk_path"]
             )
@@ -1206,8 +1217,6 @@ class DefectParser:
                     dir_type="bulk",
                 )
             bulk_outcar = get_outcar(bulk_outcar_path)
-        else:
-            bulk_outcar_path = bulk_outcar.filename
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
             "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
@@ -1222,46 +1231,51 @@ class DefectParser:
             )
         defect_outcar = get_outcar(defect_outcar_path)
 
-        bulk_atomic_site_averages = bulk_outcar.electrostatic_potential
-        defect_atomic_site_averages = defect_outcar.electrostatic_potential
+        bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
+        defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
 
-        bulk_structure = self.defect_entry.bulk_entry.structure
-        bulksites = [site.frac_coords for site in bulk_structure]
-
-        defect_structure = self.defect_entry.calculation_metadata["unrelaxed_defect_structure"]
-        initsites = [site.frac_coords for site in defect_structure]
-
-        distmatrix = bulk_structure.lattice.get_all_distances(
-            bulksites, initsites  # TODO: Should be able to take this from the defect ID functions?
-        )  # first index of this list is bulk index
-        min_dist_with_index = [
-            [
-                min(distmatrix[bulk_index]),
-                int(bulk_index),
-                int(distmatrix[bulk_index].argmin()),
-            ]
-            for bulk_index in range(len(distmatrix))
-        ]  # list of [min dist, bulk ind, defect ind]
-
-        site_matching_indices = []
-        if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
-            for mindist, bulk_index, defect_index in min_dist_with_index:
-                if mindist < 0.5:
-                    site_matching_indices.append([bulk_index, defect_index])
-
-        elif isinstance(self.defect_entry.defect, Substitution):
-            for mindist, bulk_index, defect_index in min_dist_with_index:
-                species_match = bulk_structure[bulk_index].specie == defect_structure[defect_index].specie
-                if mindist < 0.5 and species_match:
-                    site_matching_indices.append([bulk_index, defect_index])
+        # Old code: (TODO: If pydefect code can satisfactorily deal with tricky/distorted cases,
+        #  then can remove, otherwise need to update to use our improved site-matching functions for this)
+        # bulk_structure = self.defect_entry.bulk_entry.structure
+        # bulksites = [site.frac_coords for site in bulk_structure]
+        #
+        # defect_structure = self.defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+        # initsites = [site.frac_coords for site in defect_structure]
+        #
+        # distmatrix = bulk_structure.lattice.get_all_distances(
+        #     bulksites, initsites  # TODO: Should be able to take this from the defect ID functions?
+        # )  # first index of this list is bulk index
+        # min_dist_with_index = [
+        #     [
+        #         min(distmatrix[bulk_index]),
+        #         int(bulk_index),
+        #         int(distmatrix[bulk_index].argmin()),
+        #     ]
+        #     for bulk_index in range(len(distmatrix))
+        # ]  # list of [min dist, bulk ind, defect ind]
+        #
+        # site_matching_indices = []
+        # if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
+        #     for mindist, bulk_index, defect_index in min_dist_with_index:
+        #         if mindist < 0.5:
+        #             site_matching_indices.append([bulk_index, defect_index])
+        #
+        # elif isinstance(self.defect_entry.defect, Substitution):
+        #     for mindist, bulk_index, defect_index in min_dist_with_index:
+        #         species_match = bulk_structure[bulk_index].specie == defect_structure[
+        #         defect_index].specie
+        #         if mindist < 0.5 and species_match:
+        #             site_matching_indices.append([bulk_index, defect_index])
 
         self.defect_entry.calculation_metadata.update(
             {
-                "bulk_atomic_site_averages": bulk_atomic_site_averages,
-                "defect_atomic_site_averages": defect_atomic_site_averages,
-                "site_matching_indices": site_matching_indices,
+                "bulk_site_potentials": bulk_site_potentials,
+                "defect_site_potentials": defect_site_potentials,
+                # "site_matching_indices": site_matching_indices,
             }
         )
+
+        return bulk_site_potentials
 
     def get_stdrd_metadata(self):
         """
@@ -1454,15 +1468,41 @@ class DefectParser:
         """
         Get defect corrections and warn if likely to be inappropriate.
         """
+        # TODO: Update this to now just use our updated corrections code, then delete
+        #  `defect_compatibility` (but still want to have checks about compatibility...)
         # Set potalign so pymatgen can calculate bandfilling for 'neutral' defects
         # (possible for resonant dopants etc.)
-        if (
-            self.defect_entry.charge_state == 0
-            and "potalign" not in self.defect_entry.calculation_metadata
-        ):
-            self.defect_entry.calculation_metadata["potalign"] = 0
+        # if (
+        #     self.defect_entry.charge_state == 0
+        #     and "potalign" not in self.defect_entry.calculation_metadata
+        # ):
+        #     self.defect_entry.calculation_metadata["potalign"] = 0
+        #
+        # self.defect_entry = self.compatibility.process_entry(self.defect_entry)
 
-        self.defect_entry = self.compatibility.process_entry(self.defect_entry)
+        # TODO: Currently this is no bandfilling, and also no proper checks on correction variance,
+        #  will need to update
+
+        # try run Kumagai (eFNV) correction if required info available:
+        if (
+            self.defect_entry.calculation_metadata.get("bulk_site_potentials", None) is not None
+            and self.defect_entry.calculation_metadata.get("defect_site_potentials", None) is not None
+        ):
+            self.defect_entry.get_kumagai_correction(verbose=False)
+
+        elif self.defect_entry.calculation_metadata.get(
+            "bulk_locpot_dict"
+        ) and self.defect_entry.calculation_metadata.get("defect_locpot_dict"):
+            self.defect_entry.get_freysoldt_correction(verbose=False)
+
+        else:
+            raise ValueError(
+                "No charge correction performed! Missing required metadata in "
+                "defect_entry.calculation_metadata ('bulk/defect_site_potentials' for Kumagai ("
+                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) - these "
+                "are loaded with either the kumagai_loader() or freysoldt_loader() methods for "
+                "DefectParser."
+            )
 
         if "delocalization_meta" in self.defect_entry.calculation_metadata:
             delocalization_meta = self.defect_entry.calculation_metadata["delocalization_meta"]
@@ -1490,26 +1530,27 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                     warnings.warn(message=general_delocalization_warning)  # should only print once
                     DefectParser._delocalization_warning_printed = True  # don't print again
 
-        if "num_hole_vbm" in self.defect_entry.calculation_metadata and (
-            (self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata["num_hole_vbm"])
-            or (
-                self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata["num_elec_cbm"]
-            )
-        ):
-            num_holes = self.defect_entry.calculation_metadata["num_hole_vbm"]
-            num_electrons = self.defect_entry.calculation_metadata["num_elec_cbm"]
-            warnings.warn(
-                f"Eigenvalue analysis has determined that `num_hole_vbm` (= {num_holes}) or "
-                f"`num_elec_cbm` (= {num_electrons}) is significant (>2.1) for "
-                f"{self.defect_entry.name} with charge {self.defect_entry.charge_state}:+, "
-                f"indicating that there are many free charges in this defect supercell "
-                f"calculation and so the defect charge correction is unlikely to be accurate."
-            )
+        # if "num_hole_vbm" in self.defect_entry.calculation_metadata and (
+        #     (self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata["num_hole_vbm"])
+        #     or (
+        #         self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata[
+        #         "num_elec_cbm"]
+        #     )
+        # ):
+        #     num_holes = self.defect_entry.calculation_metadata["num_hole_vbm"]
+        #     num_electrons = self.defect_entry.calculation_metadata["num_elec_cbm"]
+        #     warnings.warn(
+        #         f"Eigenvalue analysis has determined that `num_hole_vbm` (= {num_holes}) or "
+        #         f"`num_elec_cbm` (= {num_electrons}) is significant (>2.1) for "
+        #         f"{self.defect_entry.name} with charge {self.defect_entry.charge_state}:+, "
+        #         f"indicating that there are many free charges in this defect supercell "
+        #         f"calculation and so the defect charge correction is unlikely to be accurate."
+        #     )
 
-        if "freysoldt_meta" in self.defect_entry.calculation_metadata:
-            _update_defect_entry_charge_corrections(self.defect_entry, "freysoldt")
-        elif "kumagai_meta" in self.defect_entry.calculation_metadata:
-            _update_defect_entry_charge_corrections(self.defect_entry, "kumagai")
+        # if "freysoldt_meta" in self.defect_entry.calculation_metadata:
+        #     _update_defect_entry_charge_corrections(self.defect_entry, "freysoldt")
+        # elif "kumagai_meta" in self.defect_entry.calculation_metadata:
+        #     _update_defect_entry_charge_corrections(self.defect_entry, "kumagai")
         if (
             self.defect_entry.charge_state != 0
             and (not self.defect_entry.corrections or sum(self.defect_entry.corrections.values())) == 0
