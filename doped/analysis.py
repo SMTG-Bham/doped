@@ -15,7 +15,9 @@ import numpy as np
 import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.util.string import unicodeify
@@ -140,26 +142,43 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 # Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 
 
-def defect_from_structures(bulk_supercell, defect_supercell):
+def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=False):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
-    defect structures, and returns a corresponding `Defect` object, the defect
-    site (in the bulk supercell), the guessed initial defect structure (before
-    relaxation), and the 'unrelaxed defect structure' (also before relaxation,
-    but with interstitials at their _final_ relaxed positions, and all bulk
-    atoms at their unrelaxed positions (for charge correction analysis)).
+    defect structures, and returns a corresponding `Defect` object.
+
+    If `return_all_info` is set to true, then also returns:
+    - _relaxed_ defect site in the defect supercell
+    - the defect site in the bulk supercell
+    - defect site index in the defect supercell
+    - bulk site index (index of defect site in bulk supercell)
+    - guessed initial defect structure (before relaxation)
+    - 'unrelaxed defect structure' (also before relaxation, but with interstitials at their
+      final _relaxed_ positions, and all bulk atoms at their unrelaxed positions).
 
     Args:
         bulk_supercell (Structure):
             Bulk supercell structure.
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
+        return_all_info (bool):
+            If True, returns additional python objects related to the
+            site-matching, listed above. (Default = False)
 
     Returns:
         defect (Defect):
             doped Defect object.
+        If `return_all_info` is True, then also:
         defect_site (Site):
-            pymatgen Site object of the defect site in the bulk supercell.
+            pymatgen Site object of the _relaxed_ defect site in the defect supercell.
+        defect_site_in_bulk (Site):
+            pymatgen Site object of the defect site in the bulk supercell
+            (i.e. unrelaxed vacancy/substitution site, or final _relaxed_ interstitial
+            site for interstitials).
+        defect_site_index (int):
+            index of defect site in defect supercell (None for vacancies)
+        bulk_site_index (int):
+            index of defect site in bulk supercell (None for interstitials)
         guessed_initial_defect_structure (Structure):
             pymatgen Structure object of the guessed initial defect structure.
         unrelaxed_defect_structure (Structure):
@@ -190,9 +209,15 @@ def defect_from_structures(bulk_supercell, defect_supercell):
         ) from exc
 
     if def_type == "vacancy":
-        defect_site = bulk_supercell[bulk_site_idx]
-    else:
+        defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
+    elif def_type == "substitution":
         defect_site = defect_supercell[defect_site_idx]
+        site_in_bulk = bulk_supercell[bulk_site_idx]  # this is with orig (substituted) element
+        defect_site_in_bulk = PeriodicSite(
+            defect_site.species, site_in_bulk.frac_coords, site_in_bulk.lattice
+        )
+    else:
+        defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
         # unrelaxed_defect_structure[defect_site_idx]  # TODO: I believe this was to check we now get the
         # same result when using either of these as defect_site? Should double-check and then remove!
         # I think we need to set unrelaxed defect site (to use for the Defect object generation) and
@@ -200,8 +225,8 @@ def defect_from_structures(bulk_supercell, defect_supercell):
 
     if unrelaxed_defect_structure:
         if def_type == "interstitial":
-            # get closest Voronoi site in bulk supercell to final interstitial site as this is
-            # likely to be the _initial_ interstitial site
+            # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
+            # the _initial_ interstitial site
             try:
                 struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
                 if not StructureMatcher(
@@ -253,8 +278,7 @@ def defect_from_structures(bulk_supercell, defect_supercell):
         else:
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
 
-        # ensure unrelaxed_defect_structure ordered to match defect_structure, for appropriate charge
-        # correction mapping
+        # ensure unrelaxed_defect_structure ordered to match defect_structure:
         unrelaxed_defect_structure = reorder_s1_like_s2(unrelaxed_defect_structure, defect_supercell)
 
     else:
@@ -263,17 +287,29 @@ def defect_from_structures(bulk_supercell, defect_supercell):
             "`initial_defect_structure` is indeed unrelaxed."
         )
 
-    for_monty_defect = {  # initialise doped Defect object
+    for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
+        # substitutions differs from defect_site)
         "@module": "doped.core",
         "@class": def_type.capitalize(),
         "structure": bulk_supercell,
-        "site": defect_site,
+        "site": defect_site_in_bulk,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
     defect = MontyDecoder().process_decoded(for_monty_defect)
 
-    return defect, defect_site, guessed_initial_defect_structure, unrelaxed_defect_structure
+    if not return_all_info:
+        return defect
+
+    return (
+        defect,
+        defect_site,
+        defect_site_in_bulk,
+        defect_site_idx,
+        bulk_site_idx,
+        guessed_initial_defect_structure,
+        unrelaxed_defect_structure,
+    )
 
 
 def defect_name_from_structures(bulk_structure, defect_structure):
@@ -292,7 +328,7 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     """
     from doped.generation import get_defect_name_from_defect
 
-    defect, _, _, _ = defect_from_structures(bulk_structure, defect_structure)
+    defect = defect_from_structures(bulk_structure, defect_structure)
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
     # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
@@ -445,19 +481,54 @@ def defect_entry_from_paths(
     calculation_metadata["defect_structure"] = defect_structure
 
     # identify defect site, structural information, and create defect object:
-    # Can specify initial defect structure (to help find the defect site if
-    # multiple relaxations were required, else use from defect relaxation OUTCAR):
-    if initial_defect_structure:
-        defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
-    else:
-        defect_structure_for_ID = defect_structure.copy()
+    # Can specify initial defect structure (to help find the defect site if we have a very very
+    # distorted final structure), but regardless try using the final structure (from defect OUTCAR) first:
+    try:
+        (
+            defect,
+            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            defect_site_index,
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+        ) = defect_from_structures(bulk_supercell, defect_structure.copy(), return_all_info=True)
 
-    (
-        defect,
-        defect_site,
-        guessed_initial_defect_structure,
-        unrelaxed_defect_structure,
-    ) = defect_from_structures(bulk_supercell, defect_structure_for_ID)
+    except RuntimeError:
+        if initial_defect_structure:
+            defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
+            (
+                defect,
+                defect_site_in_initial_struct,
+                defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+                # w/interstitials
+                defect_site_index,  # in this initial_defect_structure
+                bulk_site_index,
+                guessed_initial_defect_structure,
+                unrelaxed_defect_structure,
+            ) = defect_from_structures(bulk_supercell, defect_structure_for_ID, return_all_info=True)
+
+            # then try get defect_site in final structure:
+            # need to check that this is the correct defect site, and hasn't been reordered/changed
+            # compared to the initial_defect_structure used here, check same element and distance
+            # reasonable:
+            defect_site = defect_site_in_initial_struct
+
+            if defect.defect_type != core.DefectType.Vacancy:
+                final_defect_site = defect_structure[defect_site_index]
+                if (
+                    defect_site_in_initial_struct.species.elements[0].symbol
+                    == final_defect_site.species.elements[0].symbol
+                ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
+                    defect_site = final_defect_site
+
+                    if defect.defect_type == core.DefectType.Interstitial:
+                        pass
+
+        else:
+            raise
+
     calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
     calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
 
@@ -479,13 +550,13 @@ def defect_entry_from_paths(
 
     defect_entry = DefectEntry(
         # pmg attributes:
-        defect=defect,
+        defect=defect,  # this corresponds to _unrelaxed_ defect
         charge_state=charge_state,
         sc_entry=defect_vr.get_computed_entry(),
-        sc_defect_frac_coords=defect_site.frac_coords,
+        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
         bulk_entry=bulk_vr.get_computed_entry(),
         # doped attributes:
-        defect_supercell_site=defect_site,
+        defect_supercell_site=defect_site,  # _relaxed_ defect site
         defect_supercell=defect_vr.final_structure,
         bulk_supercell=bulk_vr.final_structure,
         calculation_metadata=calculation_metadata,

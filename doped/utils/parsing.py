@@ -140,8 +140,17 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     vacancies/substitutions, and the pristine bulk structure with the _final_
     relaxed interstitial site for interstitials.
 
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species and code efficiency/robustness improvements.
+    Initially contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
+    refactored for extrinsic species and code efficiency/robustness improvements.
+
+    Returns:
+        bulk_site_idx: index of the site in the bulk structure that corresponds
+            to the defect site in the defect structure
+        defect_site_idx: index of the defect site in the defect structure
+        unrelaxed_defect_structure: pristine defect supercell structure for
+            vacancies/substitutions (i.e. pristine bulk with unrelaxed vacancy/
+            substitution), or the pristine bulk structure with the _final_
+            relaxed interstitial site for interstitials.
     """
 
     def get_species_from_composition_diff(composition_diff, el_change):
@@ -177,8 +186,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             )[0]
 
         if len(site_matches.shape) == 0:
-            # # if there are any other matches with a distance within unique_tolerance of the located
-            # # site then unique matching failed
+            # if there are any other matches with a distance within unique_tolerance of the located site
+            # then unique matching failed
             if (
                 len(distance_matrix[distance_matrix < distance_matrix[site_matches] * unique_tolerance])
                 > 1
