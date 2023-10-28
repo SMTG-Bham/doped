@@ -1159,7 +1159,7 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure = primitive_structure
                 self.supercell_matrix = pmg_supercell_matrix
 
-            self.bulk_supercell = self.primitive_structure * self.supercell_matrix
+            self.bulk_supercell = (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
             # check that generated supercell is >10 Å in each direction:
             if (
                 np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1))
