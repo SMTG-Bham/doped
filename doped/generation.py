@@ -46,8 +46,8 @@ from doped.utils.wyckoff import (
     _frac_coords_sort_func,
     _get_equiv_frac_coords_in_primitive,
     _get_sga,
+    _get_supercell_matrix_and_possibly_rotate_prim,
     _get_symm_dataset_of_struc_with_all_equiv_sites,
-    _rotate_and_get_supercell_matrix,
     _round_floats,
     _vectorized_custom_round,
     get_BCS_conventional_structure,
@@ -1133,9 +1133,10 @@ class DefectsGenerator(MSONable):
                 ):
                     # input structure has fewer or same number of atoms as pmg supercell or
                     # generate_supercell=False, so use input structure:
-                    self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
-                        primitive_structure, self.structure
-                    )
+                    (
+                        self.primitive_structure,
+                        self.supercell_matrix,
+                    ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
                 else:
                     self.primitive_structure = primitive_structure
                     self.supercell_matrix = pmg_supercell_matrix
@@ -1149,9 +1150,10 @@ class DefectsGenerator(MSONable):
                     f"small for accurate defect calculations, but generate_supercell = False, so "
                     f"using input structure as defect & bulk supercells. Caution advised!"
                 )
-                self.primitive_structure, self.supercell_matrix = _rotate_and_get_supercell_matrix(
-                    primitive_structure, self.structure
-                )
+                (
+                    self.primitive_structure,
+                    self.supercell_matrix,
+                ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
 
             else:
                 self.primitive_structure = primitive_structure
