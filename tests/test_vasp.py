@@ -30,8 +30,10 @@ from doped.vasp import (
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
-#  jsons etc.
+#  jsons etc. See AgSbTe2 testing in `doped_generation` notebook -> add tests for all these combos
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
+# TODO: Randomly test writing files for a defect entry in N_diamond_defect_gen.json, as the input structure
+# for this is unordered (but POSCAR site symbols output should be ordered)
 
 
 def _potcars_available() -> bool:
