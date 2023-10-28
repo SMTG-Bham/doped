@@ -45,6 +45,7 @@ from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from shakenbreak.plotting import _install_custom_font
 
+from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.plotting import _format_defect_name, _get_backend
 from doped.utils.parsing import get_locpot, get_outcar
@@ -362,6 +363,12 @@ def get_kumagai_correction(
     from pydefect.analyzer.calc_results import CalcResults
     from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
     from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+
+    # vise suppresses `UserWarning`s, so need to reset
+    warnings.simplefilter("default")
+    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+    _ignore_pmg_warnings()
 
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     if hasattr(defect_entry, "calculation_metadata"):
