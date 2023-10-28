@@ -19,6 +19,16 @@ If you use the corrections implemented in this module, cite:
     Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for the eFNV correction
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Status Solidi B. 248, 1067-1076 (2011) for FNV
+
+Note:
+Ideally, the "defect site" used for all charge corrections should actually be the centre of the localised
+charge in the defect supercell. Usually this coincides with the defect site, but not always (e.g.
+vacancy where the charge localises as a polaron on a neighbouring atom etc.). For sufficiently large
+supercells this is usually fine, as the defect and centre-of-charge sites are close enough that any
+resulting quantitative error in the correction is negligible. However, in cases where we have large
+finite-size correction values, this can be significant. If some efficient methods for determining the
+centroid of charge difference between bulk/defect LOCPOTs (for FNV) or bulk/defect site potentials (for
+eFNV) were developed, they should be used here.
 """
 
 import logging
@@ -181,7 +191,7 @@ def get_freysoldt_correction(
         dielectric=dielectric,
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
-        defect_frac_coords=defect_entry.sc_defect_frac_coords,
+        defect_frac_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect location in supercell
         **kwargs,
     )
 
