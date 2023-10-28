@@ -27,8 +27,6 @@ from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.generation import get_defect_name_from_entry
 from doped.plotting import _format_defect_name
-
-# from doped.utils.legacy_pmg.defect_compatibility import DefectCompatibility
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
     _get_output_files_and_check_if_multiple,
@@ -381,7 +379,9 @@ def defect_entry_from_paths(
             calculation, you should use this tag to point to a bulk bandstructure
             calculation instead.
             If None, will use self.defect_entry.calculation_metadata["bulk_path"].
-        **kwargs: Additional keyword arguments to pass to `DefectParser()`.
+        **kwargs:
+            Additional keyword arguments to pass to `DefectParser()` (such as
+             `error_tolerance`). See `DefectParser()` docstring for more details.
 
     Return:
         Parsed `DefectEntry` object.
@@ -560,7 +560,7 @@ def defect_entry_from_paths(
         defect_entry,
         defect_vr=defect_vr,
         bulk_vr=bulk_vr,
-        **kwargs,  # in case user wants to specify `DefectCompatibility()`
+        **kwargs,
     )
     if return_dp:
         return dp
@@ -692,8 +692,7 @@ def defect_entry_from_paths(
                 skip_corrections = True
 
         if not skip_corrections:
-            # Check compatibility of defect corrections with loaded metadata, and apply
-            dp.run_compatibility()
+            dp.apply_corrections()
 
             # check that charge corrections are not negative
             summed_corrections = sum(
@@ -1007,27 +1006,17 @@ chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at 
 
 
 class DefectParser:
-    _delocalization_warning_printed = False  # class variable
-    # ensures the verbose delocalization analysis warning is only printed once. Needs to be done
-    # this way because the current workflow is to create a `DefectParser` object for each
-    # defect, and then warning originates from the `run_compatibility()` method of different
-    # `DefectParser` instances, so warnings detects each instance as a different source and
-    # prints the warning multiple times. When we move to a single function call for all defects
-    # (as described above), this can be removed.
-
-    # TODO: Add defect and bulk locpot (as paths) to metadata, and also load bulk locpot once when
-    #  looping through defects for expedited FNV parsing
-    # TODO: We've removed it from the FNV/eFNV correction code itself, so check that charge correction is
-    #  skipped in analysis by default when charge state is zero
-    # TODO: Add comment/note somewhwere that the supercells should have equal definitions for both bulk
+    # TODO: Load bulk locpot once when looping through defects for expedited FNV parsing
+    # TODO: Test that charge correction is by default when charge state is zero
+    # TODO: Add comment/note somewhere that the supercells should have equal definitions for both bulk
     #  and defect
 
     def __init__(
         self,
         defect_entry,
-        # compatibility=None,
         defect_vr=None,
         bulk_vr=None,
+        error_tolerance: float = 0.05,
     ):
         """
         Parse a single Defect object.
@@ -1035,24 +1024,18 @@ class DefectParser:
         Args:
             defect_entry (DefectEntry):
                 doped DefectEntry
-            # compatibility (DefectCompatibility):
-            #     Compatibility class instance for performing charge correction compatibility analysis on
-            #     the defect entry.
-            defect_vr (Vasprun): pymatgen Vasprun object for the defect supercell calculation
-            bulk_vr (Vasprun): pymatgen Vasprun object for the reference bulk supercell calculation
+            defect_vr (Vasprun):
+                pymatgen Vasprun object for the defect supercell calculation
+            bulk_vr (Vasprun):
+                pymatgen Vasprun object for the reference bulk supercell calculation
+            error_tolerance (float):
+                If the estimated error in the charge correction is greater than
+                this value (in eV), then a warning is raised. (default: 0.05 eV)
         """
         self.defect_entry: DefectEntry = defect_entry
-        # self.compatibility = compatibility or DefectCompatibility(
-        #     plnr_avg_var_tol=0.01,
-        #     plnr_avg_minmax_tol=0.3,
-        #     atomic_site_var_tol=0.025,
-        #     atomic_site_minmax_tol=0.3,
-        #     tot_relax_tol=5.0,
-        #     defect_tot_relax_tol=5.0,
-        #     use_bandfilling=False,  # don't include bandfilling by default
-        # )
         self.defect_vr = defect_vr
         self.bulk_vr = bulk_vr
+        self.error_tolerance = error_tolerance
 
     @classmethod
     def from_paths(
@@ -1464,27 +1447,21 @@ class DefectParser:
         }
         self.defect_entry.calculation_metadata.update(gap_calculation_metadata)
 
-    def run_compatibility(self):
+    def apply_corrections(self):
         """
         Get defect corrections and warn if likely to be inappropriate.
         """
-        # TODO: Update this to now just use our updated corrections code, then delete
-        #  `defect_compatibility` (but still want to have checks about compatibility...)
-        # self.defect_entry = self.compatibility.process_entry(self.defect_entry)
-
-        # TODO: Currently this has no proper checks on correction variance, will need to update
-
         # try run Kumagai (eFNV) correction if required info available:
         if (
             self.defect_entry.calculation_metadata.get("bulk_site_potentials", None) is not None
             and self.defect_entry.calculation_metadata.get("defect_site_potentials", None) is not None
         ):
-            self.defect_entry.get_kumagai_correction(verbose=False)
+            self.defect_entry.get_kumagai_correction(verbose=False, error_tolerance=self.error_tolerance)
 
         elif self.defect_entry.calculation_metadata.get(
             "bulk_locpot_dict"
         ) and self.defect_entry.calculation_metadata.get("defect_locpot_dict"):
-            self.defect_entry.get_freysoldt_correction(verbose=False)
+            self.defect_entry.get_freysoldt_correction(verbose=False, error_tolerance=self.error_tolerance)
 
         else:
             raise ValueError(
@@ -1495,63 +1472,15 @@ class DefectParser:
                 "DefectParser."
             )
 
-        if "delocalization_meta" in self.defect_entry.calculation_metadata:
-            delocalization_meta = self.defect_entry.calculation_metadata["delocalization_meta"]
-            if (
-                "plnr_avg" in delocalization_meta and not delocalization_meta["plnr_avg"]["is_compatible"]
-            ) or (
-                "atomic_site" in delocalization_meta
-                and not delocalization_meta["atomic_site"]["is_compatible"]
-            ):
-                specific_delocalized_warning = (
-                    f"Delocalization analysis has indicated that {self.defect_entry.name} with "
-                    f"charge {self.defect_entry.charge_state:+} may not be compatible with the chosen "
-                    f"charge correction."
-                )
-                warnings.warn(message=specific_delocalized_warning)
-                if not self._delocalization_warning_printed:
-                    general_delocalization_warning = """
-Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
-accurate total energies. Recommended to look at the correction plots (i.e. run
-`get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.corrections`) to visually determine if the charge
-correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic
-correction). You can also change the DefectCompatibility() tolerance settings via the
-`compatibility` parameter in `DefectParser.from_paths()`."""
-                    warnings.warn(message=general_delocalization_warning)  # should only print once
-                    DefectParser._delocalization_warning_printed = True  # don't print again
-
-        # if "num_hole_vbm" in self.defect_entry.calculation_metadata and (
-        #     (self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata["num_hole_vbm"])
-        #     or (
-        #         self.compatibility.free_chg_cutoff < self.defect_entry.calculation_metadata[
-        #         "num_elec_cbm"]
-        #     )
-        # ):
-        #     num_holes = self.defect_entry.calculation_metadata["num_hole_vbm"]
-        #     num_electrons = self.defect_entry.calculation_metadata["num_elec_cbm"]
-        #     warnings.warn(
-        #         f"Eigenvalue analysis has determined that `num_hole_vbm` (= {num_holes}) or "
-        #         f"`num_elec_cbm` (= {num_electrons}) is significant (>2.1) for "
-        #         f"{self.defect_entry.name} with charge {self.defect_entry.charge_state}:+, "
-        #         f"indicating that there are many free charges in this defect supercell "
-        #         f"calculation and so the defect charge correction is unlikely to be accurate."
-        #     )
-
-        # if "freysoldt_meta" in self.defect_entry.calculation_metadata:
-        #     _update_defect_entry_charge_corrections(self.defect_entry, "freysoldt")
-        # elif "kumagai_meta" in self.defect_entry.calculation_metadata:
-        #     _update_defect_entry_charge_corrections(self.defect_entry, "kumagai")
         if (
             self.defect_entry.charge_state != 0
             and (not self.defect_entry.corrections or sum(self.defect_entry.corrections.values())) == 0
         ):
             warnings.warn(
-                f"No charge correction computed for {self.defect_entry.name} with "
-                f"charge {self.defect_entry.charge_state:+}, indicating problems with the "
-                f"required data for the charge correction (i.e. dielectric constant, "
-                f"LOCPOT files for Freysoldt correction, OUTCAR (with ICORELEVEL = 0) "
-                f"for Kumagai correction etc)."
+                f"No charge correction computed for {self.defect_entry.name} with charge"
+                f" {self.defect_entry.charge_state:+}, indicating problems with the required data for "
+                f"the charge correction (i.e. dielectric constant, LOCPOT files for Freysoldt "
+                f"correction, OUTCAR (with ICORELEVEL = 0) for Kumagai correction etc)."
             )
 
 
