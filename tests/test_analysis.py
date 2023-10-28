@@ -13,12 +13,7 @@ import numpy as np
 from pymatgen.core.structure import Structure
 from test_vasp import _potcars_available
 
-from doped.analysis import (
-    DefectParser,
-    defect_entry_from_paths,
-    defect_from_structures,
-    defect_name_from_structures,
-)
+from doped.analysis import defect_entry_from_paths, defect_from_structures, defect_name_from_structures
 from doped.generation import DefectsGenerator, get_defect_name_from_defect
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
@@ -51,15 +46,6 @@ class DopedParsingTestCase(unittest.TestCase):
             [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
-
-        self.general_delocalization_warning = """
-Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
-accurate total energies. Recommended to look at the correction plots (i.e. run
-`get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.corrections`) to visually determine if the charge
-correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic
-correction). You can also change the DefectCompatibility() tolerance settings via the
-`compatibility` parameter in `DefectParser.from_paths()`."""
 
     def tearDown(self):
         if_present_rm("bulk_voronoi_nodes.json")
@@ -151,12 +137,19 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
+            skip_corrections=True,
         )
         assert ytos_F_O_1.charge_state == 1
-        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0031, atol=1e-3)
-        # assert np.isclose(ytos_F_O_1.uncorrected_energy, -0.0852, atol=1e-3)
+        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0852, atol=1e-3)  # uncorrected energy
+
+        ytos_F_O_1 = defect_entry_from_paths(  # with corrections this time
+            f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
+            f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+            self.ytos_dielectric,
+        )
+        assert np.isclose(ytos_F_O_1.get_ediff(), 0.04176070572680146, atol=1e-3)  # corrected energy
         correction_dict = {
-            "kumagai_charge_correction": 0.08214,
+            "kumagai_charge_correction": 0.12699488572686776,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(ytos_F_O_1.corrections[correction_name], correction_energy, atol=1e-3)
@@ -171,8 +164,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         """
         Test skipping of charge corrections and warnings.
         """
-        DefectParser._delocalization_warning_printed = False  # reset class variable, so test is
-        # independent of what tests have been run before
         defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         fake_aniso_dielectric = [1, 2, 3]
 
@@ -197,7 +188,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"supercells!" in str(w[-1].message)
             )
 
-        # assert np.isclose(parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2_fake_aniso.get_ediff() - sum(parsed_v_cd_m2_fake_aniso.corrections.values()),
+            7.661,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.379714081555262, atol=1e-3)
 
         # test no warnings when skip_corrections is True
@@ -211,7 +206,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
             assert len(w) == 0
 
-        # assert np.isclose(parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2_fake_aniso.get_ediff() - sum(parsed_v_cd_m2_fake_aniso.corrections.values()),
+            7.661,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 7.661, atol=1e-3)
         assert parsed_v_cd_m2_fake_aniso.corrections == {}
 
@@ -231,13 +230,21 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
             )
             assert (
-                f"Delocalization analysis has indicated that {parsed_int_Te_2_fake_aniso.name} with "
-                f"charge +2 may not be compatible with the chosen charge correction." in str(w[1].message)
+                f"Estimated error in the Kumagai (eFNV) charge correction for defect "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is than the "
+                f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
+                f"by plotting the site potential differences (using "
+                f"`defect_entry.get_kumagai_correction()` with `plot=True`). If this error is not "
+                f"acceptable (and this charge state is reasonable), you likely need to use a larger "
+                f"supercell for the defect calculations." in str(w[1].message)
             )
-            assert self.general_delocalization_warning in str(w[2].message)
 
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.926, atol=1e-3)
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.991240009587045, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -247,11 +254,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 dielectric=self.cdte_dielectric,
                 charge_state=2,
             )
-        assert (
-            len(w) == 1
-        )  # no charge correction warning with iso dielectric, parsing from OUTCARs, but multiple
-        # OUTCARs present -> warning
-        # assert np.isclose(parsed_int_Te_2.uncorrected_energy, -7.105, atol=1e-3)
+        assert len(w) == 1  # no charge correction warning with iso dielectric, parsing from OUTCARs,
+        # but multiple OUTCARs present -> warning
         assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
 
         # test warning when only OUTCAR present but no core level info (ICORELEVEL != 0)
@@ -267,7 +271,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 1,
                 "-> Charge corrections will not be applied for this defect.",
             )
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -7.105, atol=1e-3)
 
         # test warning when no core level info in OUTCAR (ICORELEVEL != 0), but LOCPOT
@@ -288,11 +296,15 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "dielectric. This could lead to significant errors for very anisotropic systems and/or "
                 "relatively small supercells!",
             )
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
+
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(
             parsed_int_Te_2_fake_aniso.get_ediff(), -4.771092998459437, atol=1e-3
-        )  # -4.734 with old
-        # voronoi frac coords
+        )  # -4.734 with old voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -325,7 +337,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 in str(w[0].message)
             )
 
-        # assert np.isclose(parsed_v_cd_m2.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()), 7.661, atol=3e-3
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2.get_ediff(), 7.661, atol=1e-3)
         assert parsed_v_cd_m2.corrections == {}
 
@@ -345,7 +359,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
             assert len(w) == 0
 
-        # assert np.isclose(parsed_v_cd_0.uncorrected_energy, 4.166, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_0.get_ediff() - sum(parsed_v_cd_0.corrections.values()), 4.166, atol=3e-3
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_0.get_ediff(), 4.166, atol=1e-3)
 
     def _check_no_icorelevel_warning_int_te(self, dielectric, warnings, num_warnings, action):
@@ -383,15 +399,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert all(issubclass(warning.category, UserWarning) for warning in w)
 
     def test_multiple_outcars(self):
-        DefectParser._delocalization_warning_printed = False  # reset class variable, so test is
-        # independent of what tests have been run before
         shutil.copyfile(
             f"{self.CDTE_BULK_DATA_DIR}/OUTCAR.gz",
             f"{self.CDTE_BULK_DATA_DIR}/another_OUTCAR.gz",
         )
         fake_aniso_dielectric = [1, 2, 3]
         with warnings.catch_warnings(record=True) as w:
-            self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 4)
+            self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
             assert (
                 f"Multiple `OUTCAR` files found in bulk directory: {self.CDTE_BULK_DATA_DIR}. Using"
                 f" {self.CDTE_BULK_DATA_DIR}/OUTCAR.gz to parse core levels and compute the Kumagai ("
@@ -403,7 +417,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz to parse core levels and "
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[1].message)
             )
-            # other two warnings are delocalization warnings, already tested
+            # other warnings is charge correction error warning, already tested
 
         with warnings.catch_warnings(record=True) as w:
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
@@ -519,7 +533,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
                 atol=0.1,  # now slightly off because using int()
-                # difference)
             )
 
         # test 3x1 array
@@ -669,7 +682,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         )
 
         assert np.isclose(te_i_2_ent.get_ediff(), -6.2009, atol=1e-3)
-        # assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
+        assert np.isclose(
+            te_i_2_ent.get_ediff() - sum(te_i_2_ent.corrections.values()), -7.105, atol=3e-3
+        )  # uncorrected energy
         correction_dict = {"kumagai_charge_correction": 0.9038318161163628}
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
@@ -714,7 +729,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 )
 
         assert np.isclose(te_cd_1_ent.get_ediff(), -2.6676, atol=1e-3)
-        # assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
+        assert np.isclose(
+            te_cd_1_ent.get_ediff() - sum(te_cd_1_ent.corrections.values()), -2.906, atol=3e-3
+        )  # uncorrected energy
         correction_dict = {
             "kumagai_charge_correction": 0.23840982963691623,
         }
@@ -802,11 +819,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             # on GH Actions (otherwise test auto-charge determination if POTCARs available)
         )
 
-        assert np.isclose(int_F_minus1_ent.get_ediff(), 0.767, atol=1e-3)
-        # assert np.isclose(int_F_minus1_ent.uncorrected_energy, 0.7515, atol=1e-3)
-        correction_dict = {
-            "kumagai_charge_correction": 0.0155169495708003,
-        }
+        assert np.isclose(int_F_minus1_ent.get_ediff(), 0.7478967131628451, atol=1e-3)
+        assert np.isclose(
+            int_F_minus1_ent.get_ediff() - sum(int_F_minus1_ent.corrections.values()), 0.751, atol=3e-3
+        )  # uncorrected energy
+        correction_dict = {"kumagai_charge_correction": -0.0036182568370900017}
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(
                 int_F_minus1_ent.corrections[correction_name],
@@ -867,7 +884,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
     def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
         assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)
-        # assert np.isclose(F_O_1_ent.uncorrected_energy, -0.08523418000004312, atol=1e-3)
         correction_test_dict = {correction_name: correction}
         for correction_name, correction_energy in correction_test_dict.items():
             assert np.isclose(F_O_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
