@@ -216,6 +216,48 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
 
+def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
+    """
+    Determines the supercell transformation matrix to convert from the
+    primitive structure to the target structure. The supercell matrix is
+    defined to be T in `T*P = S` where P and S.
+
+    are the primitive and supercell lattice matrices respectively.
+    Equivalently, multiplying `prim_struct * T` will give the target_struct.
+
+    First tries to determine a simple (integer) transformation matrix with no
+    basis set rotation required. If that fails, then defaults to using
+    _rotate_and_get_supercell_matrix.
+
+    Args:
+        prim_struct: pymatgen Structure object of the primitive cell.
+        target_struct: pymatgen Structure object of the target cell.
+
+    Returns:
+        prim_struct: rotated primitive structure, if needed.
+        supercell_matrix: supercell transformation matrix to convert from the
+            primitive structure to the target structure.
+    """
+    try:
+        # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
+        transformation_matrix = np.rint(
+            target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
+        )
+        if not np.allclose(
+            (prim_struct * transformation_matrix).lattice.matrix,
+            target_struct.lattice.matrix,
+            rtol=5e-3,
+        ):
+            raise ValueError  # if non-integer transformation matrix
+
+        return prim_struct, transformation_matrix
+
+    except ValueError:  # if non-integer transformation matrix
+        prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(prim_struct, target_struct)
+
+    return prim_struct, transformation_matrix
+
+
 def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False):
     """
     Get the Wyckoff label of the input fractional coordinates in the input
