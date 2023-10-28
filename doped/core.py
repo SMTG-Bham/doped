@@ -201,8 +201,8 @@ class DefectEntry(thermo.DefectEntry):
         ):  # greater than 50 meV error in charge correction, warn the user
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {correction_error:.2f} eV (i.e. which is "
-                f"than the `error_tolerance`: {error_tolerance:.2f} eV). You may want to check the "
+                f"charge correction for defect {self.name} is {correction_error:.3f} eV (i.e. which is "
+                f"than the `error_tolerance`: {error_tolerance:.3f} eV). You may want to check the "
                 f"accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). If this error is not acceptable (and this charge state is reasonable), "
@@ -270,7 +270,7 @@ class DefectEntry(thermo.DefectEntry):
                 energy). Default is False.
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
-                this value (in eV), then a warning is raised.
+                this value (in eV), then a warning is raised. (default: 0.05 eV)
             **kwargs:
                 Additional kwargs to pass to
                 pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -374,7 +374,7 @@ class DefectEntry(thermo.DefectEntry):
                 energy). Default is False.
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
-                this value (in eV), then a warning is raised.
+                this value (in eV), then a warning is raised. (default: 0.05 eV)
             **kwargs:
                 Additional kwargs to pass to
                 pydefect.corrections.efnv_correction.ExtendedFnvCorrection
