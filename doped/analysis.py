@@ -1451,6 +1451,9 @@ class DefectParser:
         """
         Get defect corrections and warn if likely to be inappropriate.
         """
+        if not self.defect_entry.charge_state:  # no charge correction if charge is zero
+            return
+
         # try run Kumagai (eFNV) correction if required info available:
         if (
             self.defect_entry.calculation_metadata.get("bulk_site_potentials", None) is not None
