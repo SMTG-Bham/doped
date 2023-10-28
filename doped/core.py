@@ -17,6 +17,7 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
+from scipy.stats import sem
 
 # TODO: Need to set the str and repr functions for these to give an informative output! Same for our
 #  parsing functions/classes
@@ -118,7 +119,7 @@ class DefectEntry(thermo.DefectEntry):
         Post-initialization method, using super() and self.defect.
         """
         super().__post_init__()
-        self.name: str = self.name if self.name else self.defect.name
+        self.name: str = self.name or self.defect.name
 
     def _check_if_multiple_finite_size_corrections(self):
         """
@@ -277,6 +278,7 @@ class DefectEntry(thermo.DefectEntry):
         bulk_outcar: Optional[Union[str, Outcar]] = None,
         plot: bool = False,
         filename: Optional[str] = None,
+        return_correction_error: bool = False,
         **kwargs,
     ):
         """
@@ -311,6 +313,11 @@ class DefectEntry(thermo.DefectEntry):
             filename (str):
                 Filename to save the Kumagai site potential plots to.
                 If None, plots are not saved.
+            return_correction_error (bool):
+                If True, also returns the standard error of the mean of the
+                sampled site potential differences times the defect charge
+                (which gives an estimate of the error range of the correction
+                energy). Default is False.
             **kwargs:
                 Additional kwargs to pass to
                 pydefect.corrections.efnv_correction.ExtendedFnvCorrection
@@ -343,6 +350,26 @@ class DefectEntry(thermo.DefectEntry):
         self.corrections.update({"kumagai_charge_correction": correction.correction_energy})
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"kumagai_charge_correction": correction.metadata.copy()})
+
+        # check accuracy of correction:
+        efnv_corr_obj = correction.metadata["pydefect_ExtendedFnvCorrection"]
+        sampled_pot_diff_array = np.array(
+            [s.diff_pot for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
+        )
+
+        # correction energy error can be estimated from standard error of the mean:
+        correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        if return_correction_error:
+            return efnv_correction_output, correction_error
+
+        if correction_error > 0.05:  # greater than 50 meV error in charge correction, warn the user
+            warnings.warn(
+                f"Estimated error in the Kumagai (eFNV) charge correction for defect {self.name} is "
+                f"{correction_error:.2f} eV. You may want to check the accuracy of the correction "
+                f"by plotting the site potential differences (using "
+                f"`defect_entry.get_kumagai_correction()` with `plot=True`)."
+            )
+
         return efnv_correction_output
 
 
