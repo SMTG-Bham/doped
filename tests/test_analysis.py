@@ -973,7 +973,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
 
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.cdte_corrections_dir = os.path.join(self.module_path, "data/charge_correction_tests/CdTe")
+        self.cdte_corrections_dir = os.path.join(self.module_path, "data/CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.cdte_corrections_dir}/v_Cd_-2_vasp_gam"
         self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
