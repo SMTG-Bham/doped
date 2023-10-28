@@ -186,18 +186,27 @@ class DefectEntry(thermo.DefectEntry):
         return asdict(self)
 
     def _check_correction_error_and_return_output(
-        self, correction_output, correction_error, return_correction_error=False, type="FNV"
+        self,
+        correction_output,
+        correction_error,
+        return_correction_error=False,
+        type="FNV",
+        error_tolerance=0.05,
     ):
         if return_correction_error:
             return correction_output, correction_error
 
-        if correction_error > 0.05:  # greater than 50 meV error in charge correction, warn the user
+        if (
+            correction_error > error_tolerance
+        ):  # greater than 50 meV error in charge correction, warn the user
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {correction_error:.2f} eV. You may "
-                f"want to check the accuracy of the correction by plotting the site potential "
-                f"differences (using `defect_entry.get"
-                f"_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with `plot=True`)."
+                f"charge correction for defect {self.name} is {correction_error:.2f} eV (i.e. which is "
+                f"than the `error_tolerance`: {error_tolerance:.2f} eV). You may want to check the "
+                f"accuracy of the correction by plotting the site potential differences (using "
+                f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
+                f"`plot=True`). If this error is not acceptable (and this charge state is reasonable), "
+                f"you likely need to use a larger supercell for the defect calculations."
             )
 
         return correction_output
@@ -211,6 +220,7 @@ class DefectEntry(thermo.DefectEntry):
         filename: Optional[str] = None,
         axis=None,
         return_correction_error: bool = False,
+        error_tolerance: float = 0.05,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -258,6 +268,9 @@ class DefectEntry(thermo.DefectEntry):
                 planar-averaged potential difference times the defect charge
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
+            error_tolerance (float):
+                If the estimated error in the charge correction is greater than
+                this value (in eV), then a warning is raised.
             **kwargs:
                 Additional kwargs to pass to
                 pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -304,7 +317,11 @@ class DefectEntry(thermo.DefectEntry):
         ) * abs(self.charge_state)
 
         return self._check_correction_error_and_return_output(
-            fnv_correction_output, correction_error, return_correction_error, type="FNV"
+            fnv_correction_output,
+            correction_error,
+            return_correction_error,
+            type="FNV",
+            error_tolerance=error_tolerance,
         )
 
     def get_kumagai_correction(
@@ -315,6 +332,7 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = False,
         filename: Optional[str] = None,
         return_correction_error: bool = False,
+        error_tolerance: float = 0.05,
         **kwargs,
     ):
         """
@@ -354,6 +372,9 @@ class DefectEntry(thermo.DefectEntry):
                 sampled site potential differences times the defect charge
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
+            error_tolerance (float):
+                If the estimated error in the charge correction is greater than
+                this value (in eV), then a warning is raised.
             **kwargs:
                 Additional kwargs to pass to
                 pydefect.corrections.efnv_correction.ExtendedFnvCorrection
@@ -396,7 +417,11 @@ class DefectEntry(thermo.DefectEntry):
         # correction energy error can be estimated from standard error of the mean:
         correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
         return self._check_correction_error_and_return_output(
-            efnv_correction_output, correction_error, return_correction_error, type="eFNV"
+            efnv_correction_output,
+            correction_error,
+            return_correction_error,
+            type="eFNV",
+            error_tolerance=error_tolerance,
         )
 
 
