@@ -43,8 +43,6 @@ def if_present_rm(path):
 #  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data
 
-# TODO: Test correction error returned
-
 
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
@@ -870,7 +868,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 dielectric=self.ytos_dielectric,
                 charge_state=None if _potcars_available() else -1,  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-                error_tolerance=0.00001,
+                error_tolerance=0.001,
             )
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
@@ -890,6 +888,22 @@ class DopedParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent.get_kumagai_correction(error_tolerance=0.001)
         assert "Estimated error in the Kumagai (eFNV)" in str(w[0].message)
+
+        # test returning correction error:
+        corr, corr_error = int_F_minus1_ent.get_kumagai_correction(return_correction_error=True)
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+        assert np.isclose(corr_error, 0.003, atol=1e-3)
+
+        # test returning correction error with plot:
+        corr, fig, corr_error = int_F_minus1_ent.get_kumagai_correction(
+            return_correction_error=True, plot=True
+        )
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+        assert np.isclose(corr_error, 0.003, atol=1e-3)
+
+        # test just correction returned with plot = False and return_correction_error = False:
+        corr = int_F_minus1_ent.get_kumagai_correction()
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
 
     def test_extrinsic_substitution_parsing_and_freysoldt_and_kumagai(self):
         """
@@ -941,6 +955,20 @@ class DopedParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             F_O_1_ent.get_freysoldt_correction(error_tolerance=0.00001)
         assert "Estimated error in the Freysoldt (FNV)" in str(w[0].message)
+
+        # test returning correction error:
+        corr, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True)
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
+        assert np.isclose(corr_error, 0.000, atol=1e-3)
+
+        # test returning correction error with plot:
+        corr, fig, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True, plot=True)
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
+        assert np.isclose(corr_error, 0.000, atol=1e-3)
+
+        # test just correction returned with plot = False and return_correction_error = False:
+        corr = F_O_1_ent.get_freysoldt_correction()
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
 
         # move OUTCAR file back to original:
         shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
