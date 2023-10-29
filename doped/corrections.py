@@ -378,21 +378,6 @@ def get_kumagai_correction(
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
-    def _raise_incomplete_outcar_error(outcar, dir_type="bulk"):
-        """
-        Raise error about supplied OUTCAR not having atomic core potential
-        info.
-
-        Input outcar is either a path or a pymatgen Outcar object
-        """
-        outcar_info = f"OUTCAR at {outcar}" if isinstance(outcar, str) else "OUTCAR object"
-        raise ValueError(
-            f"Unable to parse atomic core potentials from {dir_type} {outcar_info}. This can happen if "
-            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
-            f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
-            f"without this data!"
-        )
-
     if defect_outcar is not None:
         defect_outcar = _check_if_str_and_get_pmg_obj(defect_outcar, obj_type="outcar")
         if defect_outcar.electrostatic_potential is None:
@@ -488,3 +473,18 @@ def get_kumagai_correction(
         spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
 
     return kumagai_correction_result, fig
+
+
+def _raise_incomplete_outcar_error(outcar, dir_type="bulk"):
+    """
+    Raise error about supplied OUTCAR not having atomic core potential info.
+
+    Input outcar is either a path or a pymatgen Outcar object
+    """
+    outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, str) else "`OUTCAR` object"
+    raise ValueError(
+        f"Unable to parse atomic core potentials from {dir_type} {outcar_info}. This can happen if "
+        f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
+        f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
+        f"without this data!"
+    )
