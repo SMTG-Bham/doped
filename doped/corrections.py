@@ -173,7 +173,7 @@ def get_freysoldt_correction(
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
         the matplotlib figure object (or axis object if axis specified) if `plot`
-        or `saved` is True.
+        is True.
     """
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     if hasattr(defect_entry, "calculation_metadata"):
@@ -274,13 +274,13 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
             c="green",
             label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",  # noqa: ISC003
         )
-        leg1 = ax.legend(handles=[line1, line2, line3], loc=9, framealpha=0.5)  # middle top legend
+        leg1 = ax.legend(handles=[line1, line2, line3], loc=9)  # middle top legend
         ax.add_artist(leg1)  # so isn't overwritten with later legend call
 
         line4 = ax.axhline(C, color="k", linestyle="--", label=f"Alignment constant C = {C:.3f} V")
         tmpx = [x[i] for i in range(check[0], check[1])]
         poly_coll = ax.fill_between(tmpx, -100, 100, facecolor="red", alpha=0.15, label="Sampling region")
-        ax.legend(handles=[line4, poly_coll], loc=8, framealpha=0.5)  # bottom middle legend
+        ax.legend(handles=[line4, poly_coll], loc=8)  # bottom middle legend
 
         ax.set_xlim(round(x[0]), round(x[-1]))
         ymin = min(*v_R, *dft_diff, *short_range)
@@ -354,7 +354,7 @@ def get_kumagai_correction(
 
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
-        the matplotlib figure object if `plot` or `saved` is True.
+        the matplotlib figure object if `plot` is True.
     """
     # suppress pydefect INFO messages
     from vise import user_settings  #
@@ -466,7 +466,7 @@ def get_kumagai_correction(
             rf"Avg. $\Delta V$ = {spp.ave_pot_diff:.3f} V",
         ]
         ax.legend_.remove()
-        ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8, framealpha=0.5)
+        ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8)
         ax.set_xlabel(f"Distance from defect ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
