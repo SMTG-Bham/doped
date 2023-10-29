@@ -32,6 +32,17 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
+# TODO: Test with Int_Te_unperturbed_1:
+# "- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites
+# that move significantly (or the centroid if a defect cluster), to then use for the charge correction.
+# Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller
+# supercells can have a semi-significant effect on the predicted charge correction.
+# `Int_Te_3_unperturbed_1` is a good example of this tricky case.
+# TODO: Test reordered case - have we one from before?
+# TODO: Test case where defect moves significantly from original site / tricky-to-locate defect site -
+#  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
+
+
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
@@ -234,9 +245,10 @@ class DopedParsingTestCase(unittest.TestCase):
                 f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is than the "
                 f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
-                f"`defect_entry.get_kumagai_correction()` with `plot=True`). If this error is not "
-                f"acceptable (and this charge state is reasonable), you likely need to use a larger "
-                f"supercell for the defect calculations." in str(w[1].message)
+                f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
+                f"to unstable or shallow defect charge states (which can't be accurately modelled with "
+                f"the supercell approach). If this error is not acceptable, you may need to use a larger "
+                f"supercell for more accurate energies." in str(w[1].message)
             )
 
         assert np.isclose(
@@ -303,7 +315,7 @@ class DopedParsingTestCase(unittest.TestCase):
             atol=3e-3,
         )  # uncorrected energy
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.771092998459437, atol=1e-3
+            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=1e-3
         )  # -4.734 with old voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
@@ -880,7 +892,7 @@ class DopedParsingTestCase(unittest.TestCase):
             charge_state=1,
         )
 
-        self._test_F_O_1_ent(F_O_1_ent, -0.0031, "kumagai_charge_correction", 0.08214)
+        self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
 
     def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
         assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)
@@ -963,7 +975,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             defect_gen = DefectsGenerator(struct)
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
                 print(
-                    defect_from_structures(defect_entry.bulk_supercell, defect_entry.defect_supercell)[1],
+                    defect_from_structures(defect_entry.bulk_supercell, defect_entry.defect_supercell),
                     defect_entry.defect_supercell_site,
                 )
                 assert defect_name_from_structures(

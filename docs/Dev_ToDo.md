@@ -72,15 +72,14 @@
   - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
+- Automate `pydefect` shallow defect analysis? At least have notebook showing how to manually do this (Adair's done before?).
 - Previous `pymatgen` issues, fixed?
-  - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?
   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think about how we want to refactor the `DefectPhaseDiagram` object!
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
   (and note this behaviour in examples/docs)
-- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites that move significantly (or the centroid if a defect cluster), to then use for the charge correction. Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller supercells can have a semi-significant effect on the predicted charge correction. `Int_Te_3_unperturbed_1` is a good example of this tricky case.
-- Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone
+- Change formation energy plotting and tabulation to `DefectPhaseDiagram` methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots?

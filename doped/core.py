@@ -216,9 +216,10 @@ class DefectEntry(thermo.DefectEntry):
                 f"than the `error_tolerance`: {error_tolerance:.3f} eV). You may want to check the "
                 f"accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
-                f"`plot=True`). If this error is not acceptable (and this charge state is reasonable), "
-                f"you likely need to use a larger supercell for the defect calculations."
-            )
+                f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
+                f"which can't be accurately modelled with the supercell approach). If this error is not "
+                f"acceptable, you may need to use a larger supercell for more accurate energies."
+            )  # TODO: Link docs mention of shallow defects / false charge states here when ready
 
         return correction_output
 
@@ -292,7 +293,7 @@ class DefectEntry(thermo.DefectEntry):
             the matplotlib figure object (or axis object if axis specified) if `plot`
             or `saved` is True.
         """
-        from doped.utils.corrections import get_freysoldt_correction
+        from doped.corrections import get_freysoldt_correction
 
         if dielectric is None:
             dielectric = self.calculation_metadata.get("dielectric", None)
@@ -395,7 +396,7 @@ class DefectEntry(thermo.DefectEntry):
             CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object if `plot` or `saved` is True.
         """
-        from doped.utils.corrections import get_kumagai_correction
+        from doped.corrections import get_kumagai_correction
 
         if dielectric is None:
             dielectric = self.calculation_metadata.get("dielectric", None)

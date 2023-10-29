@@ -12,7 +12,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.testing import PymatgenTest
 
 from doped.core import DefectEntry, Vacancy
-from doped.utils.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
