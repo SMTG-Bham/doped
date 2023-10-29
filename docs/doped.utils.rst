@@ -12,14 +12,6 @@ Subpackages
 Submodules
 ----------
 
-doped.utils.corrections module
-------------------------------
-
-.. automodule:: doped.utils.corrections
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 doped.utils.parsing module
 --------------------------
 
