@@ -43,7 +43,6 @@ def if_present_rm(path):
 #  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data
 
-# TODO: Test error tolerance customisation (both at top level and DefectEntry level)
 # TODO: Test correction error returned
 
 
@@ -836,7 +835,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=None if _potcars_available() else -1  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )
-        assert len([warning for warning in w if isinstance(warning.category, UserWarning)]) == 0
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
 
         assert np.isclose(int_F_minus1_ent.get_ediff(), 0.7478967131628451, atol=1e-3)
         assert np.isclose(
@@ -871,7 +870,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 dielectric=self.ytos_dielectric,
                 charge_state=None if _potcars_available() else -1,  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-                error_tolerance=0.001,
+                error_tolerance=0.00001,
             )
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
@@ -886,7 +885,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent.get_kumagai_correction()  # default error tolerance, no warning
-        assert len([warning for warning in w if isinstance(warning.category, UserWarning)]) == 0
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
 
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent.get_kumagai_correction(error_tolerance=0.001)
@@ -901,14 +900,48 @@ class DopedParsingTestCase(unittest.TestCase):
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
         # hide OUTCAR file:
         shutil.move(f"{defect_path}/OUTCAR.gz", f"{defect_path}/hidden_otcr.gz")
+
         # parse with no transformation.json or explicitly-set-charge:
-        F_O_1_ent = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-            dielectric=self.ytos_dielectric,
-            charge_state=None if _potcars_available() else 1  # to allow testing
-            # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else 1  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+            )  # check no correction error warning with default tolerance:
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+
+        # test error_tolerance setting:
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else 1,  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+                error_tolerance=0.00001,
+            )  # check no correction error warning with default tolerance:
+
+        assert any(
+            f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
+            f"0.000 eV (i.e. which is than the `error_tolerance`: 0.000 eV). You may want to check the "
+            f"accuracy of the correction by plotting the site potential differences (using "
+            f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due to "
+            f"unstable or shallow defect charge states (which can't be accurately modelled with the "
+            f"supercell approach). If this error is not acceptable, you may need to use a larger "
+            f"supercell for more accurate energies." in str(warning.message)
+            for warning in w
         )
+
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent.get_freysoldt_correction()  # default error tolerance, no warning
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent.get_freysoldt_correction(error_tolerance=0.00001)
+        assert "Estimated error in the Freysoldt (FNV)" in str(w[0].message)
+
         # move OUTCAR file back to original:
         shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
 
