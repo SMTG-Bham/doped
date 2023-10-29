@@ -41,6 +41,7 @@ def if_present_rm(path):
 # TODO: Test reordered case - have we one from before?
 # TODO: Test case where defect moves significantly from original site / tricky-to-locate defect site -
 #  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
+# TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data
 
 
 class DopedParsingTestCase(unittest.TestCase):
