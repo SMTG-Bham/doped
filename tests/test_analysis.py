@@ -826,14 +826,17 @@ class DopedParsingTestCase(unittest.TestCase):
         correction.
         """
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
+
         # parse with no transformation.json or explicitly-set-charge:
-        int_F_minus1_ent = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-            dielectric=self.ytos_dielectric,
-            charge_state=None if _potcars_available() else -1  # to allow testing
-            # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-        )
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else -1  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+            )
+        assert len([warning for warning in w if isinstance(warning.category, UserWarning)]) == 0
 
         assert np.isclose(int_F_minus1_ent.get_ediff(), 0.7478967131628451, atol=1e-3)
         assert np.isclose(
@@ -859,6 +862,35 @@ class DopedParsingTestCase(unittest.TestCase):
         )  # approx match, not exact because relaxed bulk supercell
 
         os.remove("bulk_voronoi_nodes.json")
+
+        # test error_tolerance setting:
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else -1,  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+                error_tolerance=0.001,
+            )
+        assert (
+            f"Estimated error in the Kumagai (eFNV) charge correction for defect "
+            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is than the `error_tolerance`: 0.001 "
+            f"eV). You may want to check the accuracy of the correction by plotting the site "
+            f"potential differences (using `defect_entry.get_kumagai_correction()` with "
+            f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
+            f"which can't be accurately modelled with the supercell approach). If this error is not "
+            f"acceptable, you may need to use a larger supercell for more accurate energies."
+            in str(w[0].message)
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent.get_kumagai_correction()  # default error tolerance, no warning
+        assert len([warning for warning in w if isinstance(warning.category, UserWarning)]) == 0
+
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent.get_kumagai_correction(error_tolerance=0.001)
+        assert "Estimated error in the Kumagai (eFNV)" in str(w[0].message)
 
     def test_extrinsic_substitution_parsing_and_freysoldt_and_kumagai(self):
         """
