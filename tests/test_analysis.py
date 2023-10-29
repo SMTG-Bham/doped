@@ -18,6 +18,8 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_outcar,
+    get_vasprun,
 )
 
 
@@ -32,16 +34,7 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# TODO: Test with Int_Te_unperturbed_1:
-# "- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites
-# that move significantly (or the centroid if a defect cluster), to then use for the charge correction.
-# Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller
-# supercells can have a semi-significant effect on the predicted charge correction.
-# `Int_Te_3_unperturbed_1` is a good example of this tricky case.
 # TODO: Test reordered case - have we one from before? - Pretty sure this shouldn't be any issue now
-# TODO: Test case where defect moves significantly from original site / tricky-to-locate defect site -
-#  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these. Test
-#  these with both FNV/eFNV corrections.
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
 # TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
 #  cases (no warning in those cases 'cause anisotropic)
@@ -1052,6 +1045,70 @@ class DopedParsingTestCase(unittest.TestCase):
         assert len(user_warnings) == 1
         assert warning_message in str(user_warnings[0].message)
         os.remove("bulk_voronoi_nodes.json")
+
+    def test_tricky_relaxed_interstitial_corrections_kumagai(self):
+        """
+        Test the eFNV correction performance with tricky-to-locate relaxed
+        interstitial sites (Te_i^+1 ground-state and metastable from Kavanagh
+        et al.
+
+        2022 doi.org/10.1039/D2FD00043A).
+        """
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+
+        def _make_calc_results(directory) -> CalcResults:
+            vasprun = get_vasprun(f"{directory}/vasprun.xml.gz")
+            outcar = get_outcar(f"{directory}/OUTCAR.gz")
+            return CalcResults(
+                structure=vasprun.final_structure,
+                energy=outcar.final_energy,
+                magnetization=outcar.total_mag or 0.0,
+                potentials=[-p for p in outcar.electrostatic_potential],
+                electronic_conv=vasprun.converged_electronic,
+                ionic_conv=vasprun.converged_ionic,
+            )
+
+        bulk_calc_results = _make_calc_results(f"{self.CDTE_BULK_DATA_DIR}")
+
+        for name, correction_energy in [
+            ("Int_Te_3_Unperturbed_1", 0.2974374231312522),
+            ("Int_Te_3_1", 0.3001740745077274),
+        ]:
+            print("Testing", name)
+            defect_calc_results = _make_calc_results(f"{self.CDTE_EXAMPLE_DIR}/{name}/vasp_ncl")
+            raw_efnv = make_efnv_correction(
+                +1, defect_calc_results, bulk_calc_results, self.cdte_dielectric
+            )
+
+            Te_i_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/{name}/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+            )
+
+            efnv_w_doped_site = make_efnv_correction(
+                +1,
+                defect_calc_results,
+                bulk_calc_results,
+                self.cdte_dielectric,
+                defect_coords=Te_i_ent.sc_defect_frac_coords,
+            )
+
+            assert np.isclose(raw_efnv.correction_energy, efnv_w_doped_site.correction_energy, atol=1e-3)
+            assert np.isclose(raw_efnv.correction_energy, sum(Te_i_ent.corrections.values()), atol=1e-3)
+            assert np.isclose(raw_efnv.correction_energy, correction_energy, atol=1e-3)
+
+            efnv_w_fcked_site = make_efnv_correction(
+                +1,
+                defect_calc_results,
+                bulk_calc_results,
+                self.cdte_dielectric,
+                defect_coords=Te_i_ent.sc_defect_frac_coords + 0.1,  # shifting to wrong defect site
+                # affects correction as expected (~0.02 eV = 7% in this case)
+            )
+            assert not np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-3)
+            assert np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-1)
 
 
 class DopedParsingFunctionsTestCase(unittest.TestCase):
