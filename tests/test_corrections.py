@@ -29,8 +29,6 @@ mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
 
-# TODO: Test verbose options here
-
 
 class FiniteSizeChargeCorrectionTest(PymatgenTest):
     """
@@ -156,6 +154,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     v_Cd_dict: Dict[Any, Any]
     v_Cd_dpd: DefectPhaseDiagram
     F_O_1_entry: DefectEntry
+    Te_i_2_ent: DefectEntry
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -191,6 +190,12 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             # (otherwise test auto-charge determination if POTCARs available)
         )
 
+        cls.Te_i_2_ent = analysis.defect_entry_from_paths(
+            defect_path=f"{cls.cdte_example_dir}/Int_Te_3_2/vasp_ncl",
+            bulk_path=f"{cls.cdte_example_dir}/CdTe_Bulk/vasp_ncl",
+            dielectric=9.13,
+        )
+
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
         filename="v_Cd_-2_FNV_plot.png",
@@ -201,7 +206,33 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test FNV correction plotting.
         """
-        return get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)
+        return get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)[1]
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="v_Cd_-2_FNV_plot_custom.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_freysoldt_custom(self):
+        """
+        Test FNV correction plotting, with customisation.
+        """
+        from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+
+        _corr, fig = get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)
+
+        # add logo to fig:
+        doped_logo = mpl.pyplot.imread(f"{module_path}/../docs/doped_v2_logo.png")
+        im = OffsetImage(doped_logo, zoom=0.05)
+        ab = AnnotationBbox(im, (1, 0.3), xycoords="axes fraction", box_alignment=(1.1, -0.1))
+        fig.gca().add_artist(ab)
+
+        # now only show the c-axis subplot (which was the last axis and so has the logo) from the figure:
+        fig.axes[0].set_visible(False)
+        fig.axes[1].set_visible(False)
+
+        return fig
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -213,4 +244,34 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test eFNV correction plotting.
         """
-        return get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
+        return get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)[1]
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="F_O_+1_eFNV_plot_custom.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_kumagai_custom(self):
+        """
+        Test eFNV correction plotting, with figure customisation.
+        """
+        _corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
+        # add shading to left part of plot (10 Angstrom on):
+        ax = fig.gca()
+        ax.axvspan(10, 100, alpha=0.2, color="purple")
+
+        return fig
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="Te_i_+2_eFNV_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_kumagai_Te_i_2(self):
+        """
+        Test eFNV correction plotting with Te_i^+2 (slightly trickier defect
+        case).
+        """
+        return self.Te_i_2_ent.get_kumagai_correction(plot=True)[1]
