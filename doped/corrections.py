@@ -260,7 +260,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     check = plot_data["pot_plot_data"]["check"]
     C = plot_data["pot_plot_data"]["shift"]
 
-    style_file = style_file or f"{os.path.dirname(__file__)}/doped.mplstyle"
+    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         if ax is None:
@@ -443,7 +443,7 @@ def get_kumagai_correction(
         title=f"{_format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
-    style_file = style_file or f"{os.path.dirname(__file__)}/doped.mplstyle"
+    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         plt.clf()  # clear figures first
