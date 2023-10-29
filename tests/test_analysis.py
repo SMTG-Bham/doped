@@ -38,10 +38,13 @@ def if_present_rm(path):
 # Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller
 # supercells can have a semi-significant effect on the predicted charge correction.
 # `Int_Te_3_unperturbed_1` is a good example of this tricky case.
-# TODO: Test reordered case - have we one from before?
+# TODO: Test reordered case - have we one from before? - Pretty sure this shouldn't be any issue now
 # TODO: Test case where defect moves significantly from original site / tricky-to-locate defect site -
-#  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
-# TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data
+#  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these. Test
+#  these with both FNV/eFNV corrections.
+# TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
+# TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
+#  cases (no warning in those cases 'cause anisotropic)
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -674,6 +677,7 @@ class DopedParsingTestCase(unittest.TestCase):
         Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
         correction.
         """
+        if_present_rm("bulk_voronoi_nodes.json")
         with patch("builtins.print") as mock_print:
             for i in os.listdir(self.CDTE_EXAMPLE_DIR):
                 if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
