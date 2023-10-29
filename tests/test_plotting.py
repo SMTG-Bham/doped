@@ -16,7 +16,7 @@ from test_vasp import _potcars_available
 
 from doped import analysis, plotting
 from doped.core import DefectEntry
-from doped.utils.corrections import get_correction_freysoldt, get_correction_kumagai
+from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -93,7 +93,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test FNV correction plotting.
         """
-        return get_correction_freysoldt(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True, return_fig=True)
+        return get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -105,9 +105,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test eFNV correction plotting.
         """
-        return get_correction_kumagai(
-            self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True, return_fig=True
-        )
+        return get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
 
 
 class DefectPlottingTestCase(unittest.TestCase):

@@ -1183,6 +1183,8 @@ class DefectParser:
         Returns:
             bulk_site_potentials for reuse in parsing other defect entries
         """
+        from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
+
         if not self.defect_entry.charge_state:
             # don't need to load outcars if charge is zero
             return None
@@ -1213,6 +1215,12 @@ class DefectParser:
                 dir_type="defect",
             )
         defect_outcar = get_outcar(defect_outcar_path)
+
+        if bulk_outcar.electrostatic_potential is None:
+            _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
+
+        if defect_outcar.electrostatic_potential is None:
+            _raise_incomplete_outcar_error(defect_outcar_path, dir_type="defect")
 
         bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
         defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
