@@ -43,6 +43,9 @@ def if_present_rm(path):
 #  Int_Te above works? Need to check that Kumagai code can identify the defect site fine for these
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data
 
+# TODO: Test error tolerance customisation (both at top level and DefectEntry level)
+# TODO: Test correction error returned
+
 
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):

@@ -205,6 +205,8 @@ class DefectEntry(thermo.DefectEntry):
         error_tolerance=0.05,
     ):
         if return_correction_error:
+            if isinstance(correction_output, tuple):  # correction_output may be a tuple, so amalgamate:
+                return (*correction_output, correction_error)
             return correction_output, correction_error
 
         if (
@@ -291,12 +293,13 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object (or axis object if axis specified) if `plot`
-            or `saved` is True.
+            is True, and the estimated charge correction error if
+            `return_correction_error` is True.
         """
         from doped.corrections import get_freysoldt_correction
 
         if dielectric is None:
-            dielectric = self.calculation_metadata.get("dielectric", None)
+            dielectric = self.calculation_metadata.get("dielectric")
         if dielectric is None:
             raise ValueError(
                 "No dielectric constant provided, either as a function argument or in "
@@ -394,12 +397,13 @@ class DefectEntry(thermo.DefectEntry):
 
         Returns:
             CorrectionResults (summary of the corrections applied and metadata), and
-            the matplotlib figure object if `plot` or `saved` is True.
+            the matplotlib figure object if `plot` is True, and the estimated charge
+            correction error if `return_correction_error` is True.
         """
         from doped.corrections import get_kumagai_correction
 
         if dielectric is None:
-            dielectric = self.calculation_metadata.get("dielectric", None)
+            dielectric = self.calculation_metadata.get("dielectric")
         if dielectric is None:
             raise ValueError(
                 "No dielectric constant provided, either as a function argument or in "
