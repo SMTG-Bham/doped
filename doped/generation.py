@@ -289,9 +289,15 @@ def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
     Returns:
         str: Defect name.
     """
-    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect_entry.defect_supercell_site.frac_coords, defect_entry.bulk_supercell, symm_ops=symm_ops
-    )
+    try:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            defect_entry.defect_supercell_site.frac_coords, defect_entry.bulk_supercell, symm_ops=symm_ops
+        )
+    except AttributeError:  # possibly pymatgen DefectEntry object without defect_supercell_site set
+        return get_defect_name_from_defect(
+            defect_entry.defect, element_list=element_list, symm_ops=symm_ops
+        )
+
     spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
