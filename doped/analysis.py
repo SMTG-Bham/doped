@@ -425,11 +425,13 @@ def defect_entry_from_paths(
         else:
             potcar_symbols = [titel.split()[1] for titel in defect_vr.potcar_symbols]
             potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
-            neutral_defect_dict_set = DefectDictSet(
-                defect_vr.structures[-1],
-                charge_state=0,
-                user_potcar_settings=potcar_settings,
-            )
+            with warnings.catch_warnings():  # ignore POTCAR warnings if not available
+                warnings.simplefilter("ignore", UserWarning)
+                neutral_defect_dict_set = DefectDictSet(
+                    defect_vr.structures[-1],
+                    charge_state=0,
+                    user_potcar_settings=potcar_settings,
+                )
             try:
                 auto_charge = -1 * (defect_nelect - neutral_defect_dict_set.nelect)
 
@@ -456,9 +458,8 @@ def defect_entry_from_paths(
             and abs(auto_charge) < 5
         ):
             warnings.warn(
-                f"Auto-determined defect charge q={int(auto_charge):+} does not match "
-                f"specified charge q={int(charge_state):+}. Will continue with specified "
-                f"charge_state, but beware!"
+                f"Auto-determined defect charge q={int(auto_charge):+} does not match specified charge "
+                f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
             )
         elif charge_state is None and auto_charge is not None:
             charge_state = auto_charge
