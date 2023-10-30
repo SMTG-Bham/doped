@@ -158,7 +158,7 @@ class DefectPhaseDiagram(MSONable):
                 Values are float numbers equal to the atomic chemical potential for that element.
              fermi_level (float):  Value corresponding to the electron chemical potential.
                 If "vbm" is supplied in calculation_metadata dict, then fermi_level is referenced to
-                the VBM.  "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
+                the VBM. If "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
                 referenced to the
                 calculation's absolute Kohn-Sham potential (and should include the vbm value provided
                 by a band structure calculation).
