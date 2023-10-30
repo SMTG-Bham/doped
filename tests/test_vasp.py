@@ -130,9 +130,12 @@ class DefectDictSetTest(unittest.TestCase):
 
     def _general_defect_dict_set_check(self, dds, struct, incar_check=True, **dds_kwargs):
         if incar_check:
-            print("Checking:", dds.incar)
             expected_incar_settings = self.neutral_def_incar_min.copy()
             expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
+            expected_incar_settings.update(dds.user_incar_settings)
+            expected_incar_settings_w_none_vals = expected_incar_settings.copy()
+            # remove any entries where value is None:
+            expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
             assert expected_incar_settings.items() <= dds.incar.items()
             if dds.incar.get("NSW", 0) > 0:
                 assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
@@ -142,9 +145,8 @@ class DefectDictSetTest(unittest.TestCase):
             for k, v in default_defect_relax_set["INCAR"].items():
                 if k in [
                     "EDIFF_PER_ATOM",
-                    *list(self.neutral_def_incar_min.keys()),
-                    *list(self.hse06_incar_min.keys()),
-                    "EDIFFG",  # removed with singleshot_incar_settings
+                    *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
+                    # -> None in singleshot calcs
                 ]:  # already tested
                     continue
 
@@ -174,8 +176,10 @@ class DefectDictSetTest(unittest.TestCase):
             ]:
                 assert "PBE" in potcar_functional
 
+            potcar_settings = default_potcar_dict["POTCAR"].copy()
+            potcar_settings.update(dds.user_potcar_settings)
             assert set(dds.potcar.as_dict()["symbols"]) == {
-                default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
+                potcar_settings[el_symbol] for el_symbol in dds.structure.symbol_set
             }
         else:
             assert not dds.potcars
@@ -579,9 +583,10 @@ class DefectRelaxSetTest(unittest.TestCase):
                     assert child_incar_settings.pop(k) == v
 
             assert parent_drs.user_incar_settings == child_incar_settings
-            assert (
-                parent_drs.user_potcar_functional == child_dds.user_potcar_functional
-                or str(parent_drs.user_potcar_functional) == str(child_dds.user_potcar_functional)[:3]
+            assert parent_drs.user_potcar_functional == child_dds.user_potcar_functional or str(
+                parent_drs.user_potcar_functional[:3]
+            ) == str(
+                child_dds.user_potcar_functional
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
             if isinstance(child_dds.user_kpoints_settings, Kpoints):
@@ -655,7 +660,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             )
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
-            print(f"Initialising and testing:{defect_gen_name}")
+            print(f"Initialising and testing: {defect_gen_name}")
             # randomly choose 10 defect entries from the defect_gen dict:
             defect_entries = random.sample(list(defect_gen.values()), 3)
 
@@ -792,7 +797,10 @@ class DefectsSetTest(unittest.TestCase):
         self.dds_test = dds_test
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
-        self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
+
+        # Note this is different to above: (for testing against pre-generated input files with these
+        # settings):
+        self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
 
         # Get the current locale setting
         self.original_locale = locale.getlocale(locale.LC_CTYPE)  # should be UTF-8
@@ -936,9 +944,12 @@ class DefectsSetTest(unittest.TestCase):
         for folder in os.listdir("."):
             if os.path.isdir(folder) and "bulk" not in folder:
                 for subfolder in os.listdir(folder):
+                    print(f"Testing {folder}/{subfolder}/POSCAR doesn't exist:")
                     assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
+        print("Checking vasp_ncl files")  # TODO: Move this back
+        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
         structure_matcher = StructureMatcher(
@@ -952,10 +963,13 @@ class DefectsSetTest(unittest.TestCase):
         assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
+        print("Checking vasp_gam files")
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
+        print("Checking vasp_std files")
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
 
         # test vasp_nkred_std: same as vasp_std except for NKRED
+        print("Checking NKRED vasp_std files")
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
                 assert filecmp.cmp(f"{folder}/vasp_nkred_std/KPOINTS", f"{folder}/vasp_std/KPOINTS")
@@ -964,17 +978,17 @@ class DefectsSetTest(unittest.TestCase):
                 std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
                 nkred_incar.pop("NKRED", None)
                 assert nkred_incar == std_incar
-        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
         # test unperturbed POSCARs and all bulk
+        print("Checking unperturbed POSCARs and all bulk")
         defects_set = DefectsSet(
             self.cdte_defect_gen,
             user_incar_settings=self.cdte_custom_test_incar_settings,
             user_potcar_functional=None,  # TODO: don't think we need this now?
         )
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, bulk="all", vasp_gam=True)
-        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=True)  # tests vasp_gam
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
         self.check_generated_vasp_inputs(vasp_type="vasp_nkred_std", check_poscar=False, bulk=True)
 
         # test DefectDictSet objects:
