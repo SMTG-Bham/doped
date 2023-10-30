@@ -2607,6 +2607,21 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert "_i_" not in output  # no interstitials generated
 
         self._general_defect_gen_check(N_diamond_defect_gen)
+
+        # save reduced defect gen to json
+        # edit to only 3 defects / 9 defect entries
+        N_diamond_defect_gen.defects = {
+            "vacancies": N_diamond_defect_gen.defects["vacancies"][0:2],
+            "substitutions": N_diamond_defect_gen.defects["substitutions"][0:1],
+        }
+        N_diamond_defect_gen.defect_entries = {
+            k: v
+            for k, v in N_diamond_defect_gen.defect_entries.items()
+            if any(
+                i in k
+                for i in ["v_C_C1_C1.54C2.52C2.95a", "v_C_C1_C1.54C2.52C2.95b", "N_C_C1_C1.54C2.52C2.95s"]
+            )
+        }
         N_diamond_defect_gen.to_json(f"{self.data_dir}/N_diamond_defect_gen.json")  # test in test_vasp.py
 
     def compare_doped_charges(self, tld_stable_charges, defect_gen):
