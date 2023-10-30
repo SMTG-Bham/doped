@@ -258,7 +258,7 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     return prim_struct, transformation_matrix
 
 
-def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False):
+def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False, symprec=0.01):
     """
     Get the Wyckoff label of the input fractional coordinates in the input
     structure. If the symmetry operations of the structure have already been
@@ -274,9 +274,11 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
             will recompute these from the input struct.
         equiv_sites:
             If True, also returns a list of equivalent sites in struct.
+        symprec:
+            Symmetry precision for SpacegroupAnalyzer.
     """
     symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        frac_coords, struct, symm_ops
+        frac_coords, struct, symm_ops, symprec=symprec
     )
     conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
     multiplicity = int(conv_cell_factor * len(unique_sites))
