@@ -399,6 +399,13 @@ class DefectDictSet(DictSet):
                     potcar_spec=potcar_spec,
                     zip_output=zip_output,
                 )
+            except ValueError as e:
+                if str(e).startswith("NELECT") and potcar_spec:
+                    with zopen(os.path.join(output_dir, "POTCAR.spec"), "wt") as pot_spec_file:
+                        pot_spec_file.write("\n".join(self.potcar_symbols))
+
+                    self.kpoints.write_file(f"{output_dir}/KPOINTS")
+                    self.poscar.write_file(f"{output_dir}/POSCAR")
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
             os.makedirs(output_dir, exist_ok=True)
