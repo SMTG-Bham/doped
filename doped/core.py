@@ -2,7 +2,9 @@
 Core functions and classes for defects in doped.
 """
 
+
 import collections
+import contextlib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -155,6 +157,34 @@ class DefectEntry(thermo.DefectEntry):
         return loadfn(filename)
 
 
+def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
+    """
+    Tries to guess (and set) the oxidation states of the input structure.
+    """
+    if try_without_max_sites:
+        with contextlib.suppress(Exception):
+            structure.add_oxidation_state_by_guess()
+            # check all oxidation states are whole numbers:
+            if all(specie.oxi_state.is_integer() for specie in structure.species):
+                if queue is not None:
+                    queue.put(structure)
+                return
+
+    # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
+    try:
+        structure.add_oxidation_state_by_guess(max_sites=-1)
+        # check oxi_states assigned and not all zero
+        if all(specie.oxi_state == 0 for specie in structure.species) or not all(
+            specie.oxi_state.is_integer() for specie in structure.species
+        ):
+            structure.add_oxidation_state_by_guess()
+    except Exception:
+        structure.add_oxidation_state_by_guess()
+
+    if queue is not None:
+        queue.put(structure)
+
+
 class Defect(core.Defect):
     """
     Doped Defect object.
@@ -201,7 +231,8 @@ class Defect(core.Defect):
             structure=structure,
             site=site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=multiplicity,
-            oxi_state=oxi_state,
+            oxi_state=0,  # set oxi_state in more efficient and robust way below (crashes for large
+            # input structures)
             equivalent_sites=[site.to_unit_cell() for site in equivalent_sites]
             if equivalent_sites is not None
             else None,
@@ -209,6 +240,11 @@ class Defect(core.Defect):
             angle_tolerance=angle_tolerance,
             user_charges=user_charges,
         )  # core attributes
+
+        if oxi_state is None:
+            self._set_oxi_state()
+        else:
+            self.oxi_state = oxi_state
 
         self.conventional_structure: Optional[Structure] = doped_kwargs.get("conventional_structure", None)
         self.conv_cell_frac_coords: Optional[np.ndarray] = doped_kwargs.get("conv_cell_frac_coords", None)
@@ -220,14 +256,31 @@ class Defect(core.Defect):
         )
         self.wyckoff: Optional[str] = doped_kwargs.get("wyckoff", None)
 
+    def _set_oxi_state(self):
+        # only try guessing bulk oxi states if not already set:
+        if not (
+            all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
+            and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
+        ):
+            _guess_and_set_struct_oxi_states(self.structure)
+
+        self.oxi_state = self._guess_oxi_state()
+
     @classmethod
-    def _from_pmg_defect(cls, defect: core.Defect, **doped_kwargs) -> "Defect":
+    def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
         """
         Create a doped Defect from a pymatgen Defect object.
 
         Args:
             defect:
                 pymatgen Defect object.
+            bulk_oxi_states:
+                Either a dict of bulk oxidation states to use, or a boolean. If True,
+                re-guesses the oxidation state of the defect (ignoring the pymatgen
+                Defect oxi_state attribute), otherwise uses the already-set oxi_state
+                (default = 0). Used in doped defect generation to make defect setup
+                more robust and efficient (particularly for odd input structures,
+                such as defect supercells etc).
             **doped_kwargs:
                 Additional keyword arguments to define doped-specific attributes
                 (see class docstring).
@@ -247,11 +300,15 @@ class Defect(core.Defect):
             ):
                 doped_kwargs[doped_attr] = getattr(defect, doped_attr)
 
+        if isinstance(bulk_oxi_states, dict):
+            # set oxidation states, as these are removed in pymatgen defect generation
+            defect.structure.add_oxidation_state_by_element(bulk_oxi_states)
+
         return cls(
             structure=defect.structure,
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
-            oxi_state=defect.oxi_state,
+            oxi_state=defect.oxi_state if not bulk_oxi_states else None,
             equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
             if defect.equivalent_sites is not None
             else None,
