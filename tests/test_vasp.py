@@ -825,6 +825,7 @@ class DefectsSetTest(unittest.TestCase):
         vasp_type="vasp_gam",
         check_poscar=True,
         check_potcar_spec=False,
+        check_incar=None,
         single_defect_dir=False,
         bulk=True,
     ):
@@ -835,21 +836,23 @@ class DefectsSetTest(unittest.TestCase):
             vasp_type="vasp_gam",
             check_poscar=True,
             check_potcar_spec=False,
+            check_incar=True,
         ):
             # print(f"{generated_dir}/{folder}")  # to help debug if tests fail
             assert os.path.exists(f"{generated_dir}/{folder}")
             assert os.path.exists(f"{generated_dir}/{folder}/{vasp_type}")
 
             # load the Incar, Poscar and Kpoints and check it matches the previous:
-            test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
-            incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
-            # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
-            # locally)), otherwise pop from test_incar:
-            if not _potcars_available():  # to allow testing on GH Actions
-                test_incar.pop("NELECT", None)
-                test_incar.pop("NUPDOWN", None)
+            if check_incar:
+                test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
+                incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
+                # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
+                # locally)), otherwise pop from test_incar:
+                if not _potcars_available():  # to allow testing on GH Actions
+                    test_incar.pop("NELECT", None)
+                    test_incar.pop("NUPDOWN", None)
 
-            assert test_incar == incar
+                assert test_incar == incar
 
             if check_poscar:
                 test_poscar = Poscar.from_file(
@@ -875,6 +878,9 @@ class DefectsSetTest(unittest.TestCase):
         if data_dir is None:
             data_dir = self.cdte_data_dir
 
+        if check_incar is None:
+            check_incar = _potcars_available()
+
         if single_defect_dir:
             _check_single_vasp_dir(
                 data_dir=data_dir,
@@ -883,6 +889,7 @@ class DefectsSetTest(unittest.TestCase):
                 vasp_type=vasp_type,
                 check_poscar=check_poscar,
                 check_potcar_spec=check_potcar_spec,
+                check_incar=check_incar,
             )
 
         else:
@@ -895,6 +902,7 @@ class DefectsSetTest(unittest.TestCase):
                         vasp_type=vasp_type,
                         check_poscar=check_poscar,
                         check_potcar_spec=check_potcar_spec,
+                        check_incar=check_incar,
                     )
 
     def _general_defects_set_check(self, defects_set, **kwargs):
@@ -935,16 +943,26 @@ class DefectsSetTest(unittest.TestCase):
         )
         self._general_defects_set_check(defects_set)
 
-        defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+
+            # test no (unperturbed) POSCAR files written:
+            for folder in os.listdir("."):
+                if os.path.isdir(folder) and "bulk" not in folder:
+                    for subfolder in os.listdir(folder):
+                        assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
+
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(
+                    potcar_spec=True
+                )  # INCAR ValueError for charged defects if POTCARs not
+                # available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+
         # test no vasp_gam files written:
         for folder in os.listdir("."):
             assert not os.path.exists(f"{folder}/vasp_gam")
-
-        # test no (unperturbed) POSCAR files written:
-        for folder in os.listdir("."):
-            if os.path.isdir(folder) and "bulk" not in folder:
-                for subfolder in os.listdir(folder):
-                    assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
 
@@ -961,7 +979,8 @@ class DefectsSetTest(unittest.TestCase):
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
         print("Checking vasp_gam files")
-        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests
+        # vasp_gam
         print("Checking vasp_std files")
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
 
@@ -984,7 +1003,6 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             self.cdte_defect_gen,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,  # TODO: don't think we need this now?
         )
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, bulk="all", vasp_gam=True)
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=True)  # tests vasp_gam
@@ -1033,7 +1051,6 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             single_defect_entry,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,  # TODO: don't think we need this now?
         )
         defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
 
@@ -1049,6 +1066,7 @@ class DefectsSetTest(unittest.TestCase):
             data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
             vasp_type="vasp_std",
             check_poscar=True,
+            check_potcar_spec=True,
             single_defect_dir=True,
         )
         self.check_generated_vasp_inputs(  # vasp_ncl
@@ -1056,6 +1074,7 @@ class DefectsSetTest(unittest.TestCase):
             data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
             vasp_type="vasp_ncl",
             check_poscar=True,
+            check_potcar_spec=True,
             single_defect_dir=True,
         )
 
@@ -1077,7 +1096,6 @@ class DefectsSetTest(unittest.TestCase):
             defects_set = DefectsSet(
                 single_defect_entry,
                 user_incar_settings=self.cdte_custom_test_incar_settings,
-                user_potcar_functional=None,  # TODO: don't think we need this now?
             )
             defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
             locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
@@ -1094,6 +1112,7 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
                 vasp_type="vasp_std",
                 check_poscar=True,
+                check_potcar_spec=True,
                 single_defect_dir=True,
             )
             self.check_generated_vasp_inputs(  # vasp_ncl
@@ -1101,6 +1120,7 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
                 vasp_type="vasp_ncl",
                 check_poscar=True,
+                check_potcar_spec=True,
                 single_defect_dir=True,
             )
 
@@ -1116,9 +1136,15 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             defect_entry_list,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,  # TODO: don't think we need this now?
         )
-        defects_set.write_files(potcar_spec=True)
+
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(potcar_spec=True)  # INCAR ValueError for charged defects if
+                # POTCARs not available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
 
         for defect_entry in defect_entry_list:
             for vasp_type in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:  # no vasp_gam by default
@@ -1127,7 +1153,8 @@ class DefectsSetTest(unittest.TestCase):
                     data_dir=f"{self.cdte_data_dir}/{defect_entry.name}",
                     vasp_type=vasp_type,
                     single_defect_dir=True,
-                    check_poscar=False,
+                    check_poscar=not _potcars_available(),
+                    check_potcar_spec=True,
                 )
 
     def test_initialise_and_write_all_defect_gens(self):
@@ -1144,9 +1171,15 @@ class DefectsSetTest(unittest.TestCase):
             defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
             defects_set = DefectsSet(
                 defect_gen,
-                user_potcar_functional=None,  # TODO: don't think we need this now?
             )
-            defects_set.write_files(potcar_spec=True)
+            if _potcars_available():
+                defects_set.write_files()
+            else:
+                with self.assertRaises(ValueError):
+                    defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
+                    # available and unperturbed_poscar=False
+                defects_set.write_files(unperturbed_poscar=True)
+
             self.tearDown()  # delete generated folders each time
 
 
