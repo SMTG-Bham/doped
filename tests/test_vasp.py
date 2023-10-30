@@ -661,7 +661,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
             print(f"Initialising and testing: {defect_gen_name}")
-            # randomly choose 10 defect entries from the defect_gen dict:
+            # randomly choose 3 defect entries from the defect_gen dict:
             defect_entries = random.sample(list(defect_gen.values()), 3)
 
             for defect_entry in defect_entries:
@@ -935,7 +935,7 @@ class DefectsSetTest(unittest.TestCase):
         )
         self._general_defects_set_check(defects_set)
 
-        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+        defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
         # test no vasp_gam files written:
         for folder in os.listdir("."):
             assert not os.path.exists(f"{folder}/vasp_gam")
@@ -948,8 +948,6 @@ class DefectsSetTest(unittest.TestCase):
                     assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
-        print("Checking vasp_ncl files")  # TODO: Move this back
-        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
         structure_matcher = StructureMatcher(
@@ -978,6 +976,9 @@ class DefectsSetTest(unittest.TestCase):
                 std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
                 nkred_incar.pop("NKRED", None)
                 assert nkred_incar == std_incar
+
+        print("Checking vasp_ncl files")
+        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
         # test unperturbed POSCARs and all bulk
         print("Checking unperturbed POSCARs and all bulk")
