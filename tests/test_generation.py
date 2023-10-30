@@ -2786,11 +2786,12 @@ Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
         # still a tricky case as we have rare Si+3 due to dumbbell formation
 
         sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(self.sb2si2te6)
-        self._general_defect_gen_check(sb2si2te6_defect_gen)
-        assert sb2si2te6_defect_gen.structure == self.sb2si2te6
 
         # different charge states than when max_sites = -1 is used:
         assert self.sb2si2te6_defect_gen_info in output
+
+        assert sb2si2te6_defect_gen.structure == self.sb2si2te6
+        self._general_defect_gen_check(sb2si2te6_defect_gen)
 
     def test_charge_state_gen_kwargs(self):
         # test adjusting probability_threshold with ZnS:
