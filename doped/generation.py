@@ -190,7 +190,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             _equivalent_supercell_sites,
         ) = defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
+            dummy_species="X",  # keep track of the defect frac coords in the supercell
             return_sites=True,
         )
     else:
@@ -235,7 +235,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_defect(defect, element_list=None, symm_ops=None):
+def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, symprec=0.01):
     """
     Get the doped/SnB defect name from Defect object.
 
@@ -249,12 +249,14 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None):
         symm_ops (list):
             List of symmetry operations of defect.structure, to avoid
             re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for spglib. Default is 0.01.
 
     Returns:
         str: Defect name.
     """
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords, defect.structure, symm_ops=symm_ops
+        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
     spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
     if spglib_point_group_symbol is not None:
@@ -262,16 +264,18 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None):
     else:  # symm_ops approach failed, just use diagonal defect supercell approach:
         defect_diagonal_supercell = defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species=_dummy_species,
+            dummy_species="X",
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell)
+        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
         point_group_symbol = herm2sch(sga.get_point_group_symbol())
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
 
 
-def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
+def get_defect_name_from_entry(
+    defect_entry, element_list=None, symm_ops=None, unrelaxed=False, symprec=None
+):
     """
     Get the doped/SnB defect name from DefectEntry object.
 
@@ -285,29 +289,57 @@ def get_defect_name_from_entry(defect_entry, element_list=None, symm_ops=None):
         symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
             structure, to avoid re-calculating. Default is None (recalculates).
+        unrelaxed (bool):
+            If True, determines the site symmetry using the defect site _in the
+            unrelaxed bulk supercell_, otherwise uses the defect supercell to
+            determine the site symmetry. Default is False.
+        symprec (float):
+            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
+            0.2 for relaxed (to account for residual structural noise).
 
     Returns:
         str: Defect name.
     """
+    supercell = defect_entry.bulk_supercell if unrelaxed else defect_entry.defect_supercell
+    if symprec is None:
+        symprec = 0.01 if unrelaxed else 0.2  # relaxed structures likely have structural noise
+
+    # TODO: This only works for relaxed defect structures if they have a diagonal supercell expansion!!
+    #  (I think, need to test with some non-diagonal supercells - use some relaxed ZnS structures from
+    #  Savya)(If so, update docstrings to match)
+    # TODO: Update get_defect_name_from_defect too? Or at least warn/fail if unrelaxed=True and
+    #  AttributeError
+
     try:
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords, defect_entry.bulk_supercell, symm_ops=symm_ops
+            defect_entry.defect_supercell_site.frac_coords, supercell, symm_ops=symm_ops, symprec=symprec
         )
     except AttributeError:  # possibly pymatgen DefectEntry object without defect_supercell_site set
         return get_defect_name_from_defect(
-            defect_entry.defect, element_list=element_list, symm_ops=symm_ops
+            defect_entry.defect, element_list=element_list, symm_ops=symm_ops, symprec=symprec
         )
 
-    spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
+    spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])  # site_symmetry_symbols[-1] also
+    # works for unrelaxed defects, but sometimes the "defect supercell site" is not the true centre of
+    # mass of the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc), so
+    # use 'pointgroup' output
+
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
     else:  # symm_ops approach failed, just use diagonal defect supercell approach:
+        if not unrelaxed:
+            raise RuntimeError(
+                "Site symmetry could not be determined using the defect supercell, and so the relaxed "
+                "site symmetry cannot be determined (set unrelaxed=True to obtain the unrelaxed site "
+                "symmetry)."
+            )
+
         defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species=_dummy_species,
+            dummy_species="X",
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell)
+        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
         point_group_symbol = herm2sch(sga.get_point_group_symbol())
 
     return (
@@ -332,7 +364,7 @@ def _get_neutral_defect_entry(
         equivalent_supercell_sites,
     ) = defect.get_supercell_structure(
         sc_mat=supercell_matrix,
-        dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
+        dummy_species="X",  # keep track of the defect frac coords in the supercell
         target_frac_coords=target_frac_coords,
         return_sites=True,
     )
@@ -1925,7 +1957,7 @@ class DefectsGenerator(MSONable):
         # check supercell
         defect_supercell = value.defect.get_supercell_structure(
             sc_mat=self.supercell_matrix,
-            dummy_species=_dummy_species,  # keep track of the defect frac coords in the supercell
+            dummy_species="X",  # keep track of the defect frac coords in the supercell
             target_frac_coords=self.target_frac_coords,
         )
         defect_entry = get_defect_entry_from_defect(
