@@ -944,7 +944,6 @@ class DefectsSetTest(unittest.TestCase):
         for folder in os.listdir("."):
             if os.path.isdir(folder) and "bulk" not in folder:
                 for subfolder in os.listdir(folder):
-                    print(f"Testing {folder}/{subfolder}/POSCAR doesn't exist:")
                     assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
