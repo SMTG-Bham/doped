@@ -672,33 +672,21 @@ class DopedParsingTestCase(unittest.TestCase):
         """
         if_present_rm("bulk_voronoi_nodes.json")
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    defect_charge = int(i[-2:].replace("_", ""))
-                    # parse with no transformation.json:
-                    te_i_2_ent = defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CDTE_BULK_DATA_DIR,
-                        dielectric=self.cdte_dielectric,
-                        charge_state=None if _potcars_available() else defect_charge
-                        # to allow testing
-                        # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-                    )
+            te_i_2_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=self.cdte_dielectric,
+                charge_state=None if _potcars_available() else +2
+                # to allow testing on GH Actions (otherwise test auto-charge determination if POTCARs
+                # available)
+            )
 
         mock_print.assert_called_once_with(
             "Saving parsed Voronoi sites (for interstitial site-matching) "
             "to bulk_voronoi_sites.json to speed up future parsing."
         )
 
-        assert np.isclose(te_i_2_ent.get_ediff(), -6.2009, atol=1e-3)
-        assert np.isclose(
-            te_i_2_ent.get_ediff() - sum(te_i_2_ent.corrections.values()), -7.105, atol=3e-3
-        )  # uncorrected energy
-        correction_dict = {"kumagai_charge_correction": 0.9038318161163628}
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
-
+        self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
         # assert auto-determined interstitial site is correct
         # initial position is: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
@@ -707,17 +695,14 @@ class DopedParsingTestCase(unittest.TestCase):
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    defect_charge = int(i[-2:].replace("_", ""))
-                    # parse with no transformation.json:
-                    te_i_2_ent = defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CDTE_BULK_DATA_DIR,
-                        dielectric=self.cdte_dielectric,
-                        charge_state=defect_charge,
-                    )
+            te_i_2_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=self.cdte_dielectric,
+                charge_state=+2
+                # to allow testing on GH Actions (otherwise test auto-charge determination if POTCARs
+                # available)
+            )
 
         mock_print.assert_not_called()
         os.remove("bulk_voronoi_nodes.json")
@@ -738,15 +723,7 @@ class DopedParsingTestCase(unittest.TestCase):
                     charge_state=defect_charge,
                 )
 
-        assert np.isclose(te_cd_1_ent.get_ediff(), -2.6676, atol=1e-3)
-        assert np.isclose(
-            te_cd_1_ent.get_ediff() - sum(te_cd_1_ent.corrections.values()), -2.906, atol=3e-3
-        )  # uncorrected energy
-        correction_dict = {
-            "kumagai_charge_correction": 0.23840982963691623,
-        }
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(te_cd_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
+        self._check_defect_entry_corrections(te_cd_1_ent, -2.6676, 0.23840982963691623)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
@@ -832,18 +809,9 @@ class DopedParsingTestCase(unittest.TestCase):
             )
         assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
 
-        assert np.isclose(int_F_minus1_ent.get_ediff(), 0.7478967131628451, atol=1e-3)
-        assert np.isclose(
-            int_F_minus1_ent.get_ediff() - sum(int_F_minus1_ent.corrections.values()), 0.751, atol=3e-3
-        )  # uncorrected energy
-        correction_dict = {"kumagai_charge_correction": -0.0036182568370900017}
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(
-                int_F_minus1_ent.corrections[correction_name],
-                correction_energy,
-                atol=1e-3,
-            )
-
+        correction_dict = self._check_defect_entry_corrections(
+            int_F_minus1_ent, 0.7478967131628451, -0.0036182568370900017
+        )
         # assert auto-determined interstitial site is correct
         assert np.isclose(
             int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords(
@@ -901,6 +869,18 @@ class DopedParsingTestCase(unittest.TestCase):
         # test just correction returned with plot = False and return_correction_error = False:
         corr = int_F_minus1_ent.get_kumagai_correction()
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+
+    def _check_defect_entry_corrections(self, defect_entry, ediff, correction):
+        assert np.isclose(defect_entry.get_ediff(), ediff, atol=0.001)
+        assert np.isclose(
+            defect_entry.get_ediff() - sum(defect_entry.corrections.values()),
+            ediff - correction,
+            atol=0.003,
+        )
+        correction_dict = {"kumagai_charge_correction": correction}
+        for correction_name, correction_energy in correction_dict.items():
+            assert np.isclose(defect_entry.corrections[correction_name], correction_energy, atol=0.001)
+        return correction_dict
 
     def test_extrinsic_substitution_parsing_and_freysoldt_and_kumagai(self):
         """
