@@ -1065,6 +1065,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 defect_path=f"{self.CDTE_EXAMPLE_DIR}/{name}/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
             )
 
             efnv_w_doped_site = make_efnv_correction(
