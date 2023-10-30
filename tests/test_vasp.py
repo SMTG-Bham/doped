@@ -177,7 +177,7 @@ class DefectDictSetTest(unittest.TestCase):
                 assert "PBE" in potcar_functional
 
             potcar_settings = default_potcar_dict["POTCAR"].copy()
-            potcar_settings.update(dds.user_potcar_settings)
+            potcar_settings.update(dds.user_potcar_settings or {})
             assert set(dds.potcar.as_dict()["symbols"]) == {
                 potcar_settings[el_symbol] for el_symbol in dds.structure.symbol_set
             }
