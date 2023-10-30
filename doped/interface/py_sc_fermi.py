@@ -35,11 +35,11 @@ def _get_label_and_charge(name: str) -> tuple:
 @dataclass
 class FermiSolver:
     defect_phase_diagram: DefectPhaseDiagram
-    bulk_vasprun: str
+    dos_vasprun: str
 
     def __post_init__(self) -> None:
         """Initializes additional attributes after dataclass instantiation."""
-        self.bulk_dos = DOS.from_vasprun(self.bulk_vasprun)
+        self.bulk_dos = DOS.from_vasprun(self.dos_vasprun)
         self.volume = self.defect_phase_diagram.entries[0].defect.structure.volume
 
     def _defect_picker(self, name: str):  # Type hint should represent the actual type of the return value
@@ -111,25 +111,37 @@ class FermiSolver:
         nu_defect_system.temperature = temperature
         return nu_defect_system
 
-    def scan_temperature_and_save(
+    def scan_temperature(
         self,
         chemical_potentials: dict,
         temperature_range: List[float],
-        anneal_temperature: float = None,
-        level: str = "DefectSpecies",
+        anneal_temperature: Optional[float] = None,
+        fix_defect_species: bool = True,
         exceptions: List[str] = [],
+        file_name: str = None,
     ) -> pd.DataFrame:
         """
         Scans a range of temperatures and saves the concentration_dict() to a DataFrame.
 
         Args:
             temp_range (List[float]): List of temperatures to scan.
-            fix_concentration_temp (float, optional): The temperature at which to fix concentrations. Defaults to None.
-            level (str, optional): The level at which to fix concentrations. Defaults to "DefectChargeState".
-            exceptions (List[str], optional): List of species or charge states to exclude from fixing. Defaults to None.
+            anneal_temperature (float): if set, this will carry out a preliminary
+              high temperature fermi-energy solution, and fix the defect concentrations
+              to the high temperature values before recalculating at lower T
+            fix_defect_species (bool): if annealing temperature is set, this sets
+              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
+              to their high temperature values, or whether the DefectChargeStates
+              are fixed. If in doubt, leave as default value.
+            exceptions (list): if annealing_temperature is set, this lists the
+              defects to be excluded from the high-temperature concentration fixing
+              this may be important in systems with highly mobile defects that are
+              not expected to be "frozen-in"
+            file name (str): if set, will save a csv file containing results to
+              `file_name`
 
         Returns:
-            pd.DataFrame: DataFrame containing concentrations at different temperatures in long format.
+            pd.DataFrame: DataFrame containing concentrations at different 
+            temperatures in long format.
         """
         all_concentration_data = []
         all_fermi_level_data = []
@@ -144,8 +156,8 @@ class FermiSolver:
                     mu=chemical_potentials,
                     annealing_temperature=anneal_temperature,
                     target_temperature=temp,
-                    level=level,
                     exceptions=exceptions,
+                    fix_defect_species=fix_defect_species,
                 )
 
             concentration_data, fermi_level_data = self._get_concentrations(updated_system)
@@ -154,7 +166,13 @@ class FermiSolver:
 
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
-        return pd.merge(concentration_df, fermi_level_df, on="Temperature")
+
+        all_data = pd.merge(concentration_df, fermi_level_df, on="Temperature")
+
+        if file_name is not None:
+            all_data.to(file_name)
+
+        return all_data
 
     def _get_concentrations(self, defect_system: DefectSystem):
         """_summary_
@@ -190,25 +208,43 @@ class FermiSolver:
 
         return concentration_data, fermi_level_data
 
-    def interpolate_chemical_potentials_and_save(
+    def interpolate_chemical_potentials(
         self,
         chem_pot_start: dict,
         chem_pot_end: dict,
         n_points: int,
-        temp: float = 300.0,
-        anneal_temp: Optional[float] = None,
-        level: str = "DefectChargeState",
+        temperature: float = 300.0,
+        anneal_temperature: Optional[float] = None,
+        fix_defect_species: bool = True,
         exceptions: List[str] = [],
+        file_name: str = None,
     ) -> pd.DataFrame:
-        """Scans a range of chemical potentials and saves the concentration_dict() to a DataFrame.
+        """Linearly interpolates between two dictionaries of chemical potentials
+        and returns a dataframe containing all the concentration data. We can
+        then optionally saves the data to a csv.
 
         Args:
             chem_pot_start (dict): Dictionary of starting chemical potentials.
             chem_pot_end (dict): Dictionary of ending chemical potentials.
-            n_points (int): Number of points to scan.
+            n_points (int): Number of points in the linear interpolation
+            temperature (float): temperature for final the Fermi level solver
+            anneal_temperature (float): if set, this will carry out a preliminary
+              high temperature fermi-energy solution, and fix the defect concentrations
+              to the high temperature values before recalculating at lower T
+            fix_defect_species (bool): if annealing temperature is set, this sets
+              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
+              to their high temperature values, or whether the DefectChargeStates
+              are fixed. If in doubt, leave as default value.
+            exceptions (list): if annealing_temperature is set, this lists the
+              defects to be excluded from the high-temperature concentration fixing
+              this may be important in systems with highly mobile defects that are
+              not expected to be "frozen-in"
+            file name (str): if set, will save a csv file containing results to
+              `file_name`
 
         Returns:
-            pd.DataFrame: DataFrame containing concentrations at different chemical potentials in long format.
+            pd.DataFrame: DataFrame containing concentrations at different
+            chemical potentials in long format.
         """
         all_concentration_data = []
         all_fermi_level_data = []
@@ -221,16 +257,16 @@ class FermiSolver:
                 )
             }
 
-            if anneal_temp is None:
+            if anneal_temperature is None:
                 updated_system = self.defect_system_from_chemical_potentials(
-                    chem_pot_interpolated, temperature=temp
+                    chem_pot_interpolated, temperature=temperature
                 )
             else:
                 updated_system = self.generate_annealed_defect_system(
-                    mu = chem_pot_interpolated,
-                    annealing_temperature=anneal_temp,
-                    target_temperature=temp,
-                    level=level,
+                    mu=chem_pot_interpolated,
+                    annealing_temperature=anneal_temperature,
+                    target_temperature=temperature,
+                    fix_defect_species=fix_defect_species,
                     exceptions=exceptions,
                 )
 
@@ -244,22 +280,47 @@ class FermiSolver:
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
 
-        return pd.merge(
-            concentration_df,
-            fermi_level_df,
-            on=["Interpolation_Parameter"]
-        )
+        all_data = pd.merge(concentration_df, fermi_level_df, on=["Interpolation_Parameter"])
+
+        if file_name is not None:
+            all_data.to_csv(file_name)
+
+        return all_data
 
     def generate_annealed_defect_system(
         self,
         mu: Dict[str, float],
         annealing_temperature: float,
         target_temperature: float = 300.0,
-        level: str = "DefectSpecies",
+        fix_defect_species: bool = True,
         exceptions: List[str] = [],
     ) -> DefectSystem:
-        if level not in ["DefectSpecies", "DefectChargeState"]:
-            raise ValueError("level must be either 'DefectSpecies' or 'DefectChargeState'")
+        """generate a py-sc-fermi DefectSystem object that has defect concentrations
+        fixed to the values determined at a high temperature (annealing_temperature),
+        and then set to a lower temperature (target_temperature)
+
+        Args:
+            mu (Dict[str, float]): set of chemical potentials used to generate the
+              DefectSystem
+            annealing_temperature (float): high temperature at which to generate
+              the initial DefectSystem for concentration fixing
+            target_temperature (float, optional): The low temperature at which to
+            . generate the final DefectSystem. Defaults to 300.0.
+            fix_defect_species (bool): if annealing temperature is set, this sets
+              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
+              to their high temperature values, or whether the DefectChargeStates
+              are fixed. If in doubt, leave as default value.
+            exceptions (list): if annealing_temperature is set, this lists the
+              defects to be excluded from the high-temperature concentration fixing
+              this may be important in systems with highly mobile defects that are
+              not expected to be "frozen-in"
+
+        Returns:
+            DefectSystem: a low temperature defect system (target_temperature),
+              with defect concentrations fixed to high temperature
+              (annealing_temperature) values.
+
+        """
 
         # Calculate concentrations at initial temperature
         initial_system = self.defect_system_from_chemical_potentials(mu, temperature=annealing_temperature)
@@ -282,10 +343,10 @@ class FermiSolver:
 
         # Apply the fixed concentrations
         for defect_species in initial_system.defect_species:
-            if level == "DefectSpecies":
+            if fix_defect_species == True:
                 if defect_species.name in fixed_concs:
                     defect_species.fix_concentration(fixed_concs[defect_species.name] / 1e24 * self.volume)
-            elif level == "DefectChargeState":
+            elif fix_defect_species == False:
                 for k, v in defect_species.charge_states.items():
                     key = f"{defect_species.name}_{int(k)}"
                     if key in [k for k in fixed_concs.keys()]:
@@ -300,17 +361,43 @@ class FermiSolver:
         Args:
             chemical_potenials ([type]): [description]
         """
-        return ChemicalPotentialGrid(chemical_potentials, num_points_along_edge=num_points_along_edge, num_points=num_points).get_grid()
+        return ChemicalPotentialGrid(
+            chemical_potentials, num_points_along_edge=num_points_along_edge, num_points=num_points
+        ).get_grid()
 
     def grid_solve(
-        self, chempot_grid, temperature=300.0, anneal_temperature=None, level="DefectSpecies", exceptions=[]
-    ):
-        """
+        self,
+        chempot_grid: pd.DataFrame,
+        temperature: float = 300.0,
+        anneal_temperature: float = None,
+        fix_defect_species: bool = True,
+        exceptions: Optional[list[str]] = [],
+        file_name: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Solve for all chemical potentials in a grid in n-dimensional
+        chemical potential space.
+
         Args:
-            chempot_grid (_type_): _description_
+            chempot_grid (pd.DataFrame): n-dimensional chemical potential grid
+              in a pandas DataFrame format
+            temperature (float): temperature for final the Fermi level solver
+            anneal_temperature (float): if set, this will carry out a preliminary
+              high temperature fermi-energy solution, and fix the defect concentrations
+              to the high temperature values before recalculating at lower T
+            fix_defect_species (bool): if annealing temperature is set, this sets
+              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
+              to their high temperature values, or whether the DefectChargeStates
+              are fixed. If in doubt, leave as default value.
+            exceptions (list): if annealing_temperature is set, this lists the
+              defects to be excluded from the high-temperature concentration fixing
+              this may be important in systems with highly mobile defects that are
+              not expected to be "frozen-in"
+            file name (str): if set, will save a csv file containing results to
+              `file_name`
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: DataFrame containing all the defect concentrations at
+              each chemical potential set in the DataFrame
         """
         all_concentration_data = []
         all_fermi_level_data = []
@@ -319,26 +406,38 @@ class FermiSolver:
             chemical_potentials = row.to_dict()
 
             if anneal_temperature:
-                live_system = self.generate_annealed_defect_system(chemical_potentials, anneal_temperature, temperature, level, exceptions)
+                live_system = self.generate_annealed_defect_system(
+                    mu=chemical_potentials,
+                    annealing_temperature=anneal_temperature,
+                    target_temperature=temperature,
+                    fix_defect_species=fix_defect_species,
+                    exceptions=exceptions,
+                )
 
             else:
-                live_system = self.defect_system_from_chemical_potentials(chemical_potentials, temperature=temperature)
+                live_system = self.defect_system_from_chemical_potentials(
+                    chemical_potentials, temperature=temperature
+                )
 
             concentration_data, fermi_level_data = self._get_concentrations(live_system)
             [d.update(chemical_potentials) for d in concentration_data]
             [d.update(chemical_potentials) for d in fermi_level_data]
             all_concentration_data.extend(concentration_data)
             all_fermi_level_data.extend(fermi_level_data)
-            
+
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
 
-        return pd.merge(
+        all_data = pd.merge(
             concentration_df,
             fermi_level_df,
             on=["Temperature"] + list(chemical_potentials.keys()),
         )
 
+        if file_name is not None:
+            all_data.to_csv(file_name)
+
+        return all_data
 
 
 @dataclass
@@ -356,7 +455,9 @@ class ChemicalPotentialGrid:
         self._generate_internal_grid()
 
     def _initialize_vertices(self):
-        vertices = [np.array(list(facet.values())) for facet in self.chemical_potentials["facets"].values()]
+        vertices = [
+            np.array(list(facet.values())) for facet in self.chemical_potentials["facets"].values()
+        ]
         return np.array(vertices)
 
     def _generate_grid_from_vertices(self):
@@ -371,9 +472,9 @@ class ChemicalPotentialGrid:
         distance_covered = 0
 
         total_perimeter = sum(
-            np.linalg.norm(self.vertices[simplex[i]] - self.vertices[simplex[j]]) 
-            for simplex in hull.simplices 
-            for i in range(len(simplex)) 
+            np.linalg.norm(self.vertices[simplex[i]] - self.vertices[simplex[j]])
+            for simplex in hull.simplices
+            for i in range(len(simplex))
             for j in range(i + 1, len(simplex))
         )
 
@@ -385,16 +486,16 @@ class ChemicalPotentialGrid:
                     point1 = self.vertices[simplex[i]]
                     point2 = self.vertices[simplex[j]]
                     edge_length = np.linalg.norm(point2 - point1)
-                    
+
                     num_points_on_edge = int(
-                        np.floor((distance_covered + edge_length) / spacing) 
+                        np.floor((distance_covered + edge_length) / spacing)
                         - np.floor(distance_covered / spacing)
                     )
-                    
+
                     if num_points_on_edge > 0:
                         edge_points = np.linspace(point1, point2, num_points_on_edge + 2)[1:-1]
                         grid_points.extend(edge_points)
-                    
+
                     distance_covered += edge_length
 
         self.grid_points = np.array(grid_points)
@@ -433,6 +534,8 @@ class ChemicalPotentialGrid:
         vertices_df["facet"] = self.chemical_potentials["facets"].keys()
 
         df = pd.concat([grid_df, internal_grid_df, vertices_df], ignore_index=True)
-        grid_df = df.drop_duplicates(subset=list(list(self.chemical_potentials["facets"].values())[0].keys()) + ["is_vertex"])
+        grid_df = df.drop_duplicates(
+            subset=list(list(self.chemical_potentials["facets"].values())[0].keys()) + ["is_vertex"]
+        )
 
         return grid_df
