@@ -98,12 +98,12 @@ def _get_sga(struct, symprec=0.01):
     raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
     if symm_ops is None:
-        sga = _get_sga(struct)
+        sga = _get_sga(struct, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
@@ -128,20 +128,20 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
     return x_sites
 
 
-def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
+def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
     unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops)
-    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites)
+    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
 
 
-def _get_sga_with_all_X(struct, unique_sites):
+def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
     """
     Add all sites in unique_sites to a _copy_ of struct and return
     SpacegroupAnalyzer of this new structure.
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
-    return _get_sga(struct_with_all_X)
+    return _get_sga(struct_with_all_X, symprec=symprec)
 
 
 def _get_equiv_frac_coords_in_primitive(
