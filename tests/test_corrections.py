@@ -108,7 +108,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             calculation_metadata=metadata,
         )
 
-    def test_get_correction_freysoldt(self):
+    def test_get_freysoldt_correction(self):
         fnv_corr_list = [get_freysoldt_correction(self.defect_entry, self.dielectric)]
         fnv_corr_list.append(get_freysoldt_correction(self.defect_entry, self.dielectric, axis=0))
         fnv_corr_list.append(get_freysoldt_correction(self.defect_entry, self.dielectric, axis=2))
@@ -128,7 +128,7 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
             get_freysoldt_correction(self.defect_entry, self.dielectric, verbose=False)
         mock_print.assert_not_called()
 
-    def test_get_correction_kumagai(self):
+    def test_get_kumagai_correction(self):
         efnv_corr_list = [get_kumagai_correction(self.defect_entry, self.dielectric)]
         efnv_corr_list.append(get_kumagai_correction(self.defect_entry, self.dielectric, plot=True)[0])
         for efnv_corr in efnv_corr_list:
@@ -244,6 +244,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test eFNV correction plotting.
         """
+        mpl.pyplot.clf()
         return get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)[1]
 
     @pytest.mark.mpl_image_compare(
@@ -256,6 +257,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         Test eFNV correction plotting, with figure customisation.
         """
+        mpl.pyplot.clf()
         _corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
         # add shading to left part of plot (10 Angstrom on):
         ax = fig.gca()
@@ -274,4 +276,5 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         Test eFNV correction plotting with Te_i^+2 (slightly trickier defect
         case).
         """
+        mpl.pyplot.clf()
         return self.Te_i_2_ent.get_kumagai_correction(plot=True)[1]
