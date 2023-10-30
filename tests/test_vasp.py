@@ -989,11 +989,12 @@ class DefectsSetTest(unittest.TestCase):
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
                 assert filecmp.cmp(f"{folder}/vasp_nkred_std/KPOINTS", f"{folder}/vasp_std/KPOINTS")
-                # assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
-                nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
-                std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
-                nkred_incar.pop("NKRED", None)
-                assert nkred_incar == std_incar
+                if _potcars_available():
+                    assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
+                    nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
+                    std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
+                    nkred_incar.pop("NKRED", None)
+                    assert nkred_incar == std_incar
 
         print("Checking vasp_ncl files")
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
@@ -1032,9 +1033,16 @@ class DefectsSetTest(unittest.TestCase):
             {k: v for k, v in self.cdte_defect_gen.items() if "v_Te" in k},
             user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_GW"},
             user_kpoints_settings={"reciprocal_density": 500},
-            user_potcar_functional=None,  # TODO: don't think we need this now?
         )
-        defects_set.write_files(potcar_spec=True, vasp_gam=True)  # include vasp_gam to compare POTCAR.spec
+
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True, vasp_gam=True)  # vasp_gam to test POTCAR.spec
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(potcar_spec=True, vasp_gam=True)  # INCAR ValueError for charged
+                # defects if POTCARs not available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_gam"):
                 with open(f"{folder}/vasp_gam/POTCAR.spec", encoding="utf-8") as file:

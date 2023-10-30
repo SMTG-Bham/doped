@@ -467,8 +467,8 @@ class DefectRelaxSet(MSONable):
 
         Creates attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
-            relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended), unless only Γ-point _k_-point sampling is
+            relaxation. Usually not needed if ShakeNBreak structure searching has
+            been performed (recommended), unless only Γ-point _k_-point sampling is
             required (converged) for your system, and no vasp_std calculations
             with multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
@@ -538,11 +538,11 @@ class DefectRelaxSet(MSONable):
 
         Attributes:
             vasp_gam (DefectDictSet):
-                DefectDictSet for Gamma-point only relaxation. Not needed if
-                ShakeNBreak structure searching has been performed (recommended),
-                unless only Γ-point _k_-point sampling is required (converged)
-                for your system, and no vasp_std calculations with multiple
-                _k_-points are required (determined from kpoints settings).
+                DefectDictSet for Gamma-point only relaxation. Usually not needed
+                if ShakeNBreak structure searching has been performed
+                (recommended), unless only Γ-point _k_-point sampling is required
+                (converged) for your system, and no vasp_std calculations with
+                multiple _k_-points are required (determined from kpoints settings).
             vasp_nkred_std (DefectDictSet):
                 DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
                 `NKRED(X,Y,Z)` INCAR tag(s) to downsample kpoints for the HF exchange
@@ -1065,13 +1065,16 @@ class DefectRelaxSet(MSONable):
         if nkred_defect_dict_set is None:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-        user_incar_settings.update(singleshot_incar_settings)
-        user_incar_settings.update(  # add NKRED settings
-            {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
-        )
+        if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
+            user_incar_settings = copy.deepcopy(self.user_incar_settings)
+            if "KPAR" not in user_incar_settings:
+                user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
+            user_incar_settings.update(singleshot_incar_settings)
+            user_incar_settings.update(  # add NKRED settings
+                {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
+            )
+        else:
+            user_incar_settings = {}
 
         return DefectDictSet(
             bulk_supercell,
@@ -1168,7 +1171,7 @@ class DefectRelaxSet(MSONable):
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_gam",
-        unperturbed_poscar: bool = True,
+        unperturbed_poscar: bool = False,
         bulk: bool = False,
         **kwargs,
     ):
@@ -1565,8 +1568,8 @@ class DefectRelaxSet(MSONable):
 
         If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
         _k_-point sampling converged for the kpoints settings used), then outputs:
-        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
-            structure searching has been performed (recommended).
+        - vasp_gam -> Γ-point only defect relaxation. Usually not needed if
+            ShakeNBreak structure searching has been performed (recommended).
 
         By default, does not generate a `vasp_gam` folder unless `self.vasp_std`
         is None (i.e. only Γ-point sampling required for this system), as
@@ -1681,6 +1684,7 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
+                    unperturbed_poscar=unperturbed_poscar,
                     **kwargs,
                 )
 
@@ -1727,8 +1731,8 @@ class DefectsSet(MSONable):
 
         DefectRelaxSet has the attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
-            relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended), unless only Γ-point _k_-point sampling is
+            relaxation. Usually not needed if ShakeNBreak structure searching has
+            been performed (recommended), unless only Γ-point _k_-point sampling is
             required (converged) for your system, and no vasp_std calculations with
             multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
@@ -1987,8 +1991,8 @@ class DefectsSet(MSONable):
 
         If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
         _k_-point sampling converged for the kpoints settings used), then outputs:
-        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
-            structure searching has been performed (recommended).
+        - vasp_gam -> Γ-point only defect relaxation. Usually not needed if
+            ShakeNBreak structure searching has been performed (recommended).
 
         By default, does not generate a `vasp_gam` folder unless
         `DefectRelaxSet.vasp_std` is None (i.e. only Γ-point sampling required
