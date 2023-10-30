@@ -20,8 +20,6 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
-from pymatgen.util.string import unicodeify
-from tabulate import tabulate
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
@@ -219,10 +217,6 @@ def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=Fal
         )
     else:
         defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
-        # unrelaxed_defect_structure[defect_site_idx]  # TODO: I believe this was to check we now get the
-        # same result when using either of these as defect_site? Should double-check and then remove!
-        # I think we need to set unrelaxed defect site (to use for the Defect object generation) and
-        # relaxed defect site (to use for the DefectEntry generation, and thus charge correction)
 
     if unrelaxed_defect_structure:
         if def_type == "interstitial":
@@ -823,118 +817,161 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
 
 def formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempot_limits: Optional[Dict] = None,
+    chempots: Optional[Dict] = None,
+    elt_refs: Optional[Dict] = None,
     facets: Optional[List] = None,
     fermi_level: float = 0,
-    hide_cols: Optional[List] = None,
-    show_key: bool = True,
 ):
     """
-    Prints defect formation energy tables for either a single chemical potential limit (i.e. phase
-    diagram facet) or each facet in the phase diagram (chempot_limits dict), depending on the
-    chempot_limits input supplied. This can either be a dictionary of chosen absolute/DFT chemical
-    potentials: {Elt: Energy} (giving a single formation energy table) or a dictionary including
-    the key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
-    by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). In the
-    latter case, a subset of facet(s) / chemical potential limit(s) can be chosen with the
-    facets argument, or if not specified, will print formation energy tables for each facet in
-    the phase diagram.
-    Returns the results a pandas DataFrame or list of DataFrames.
+    Generates defect formation energy tables (DataFrames) for either a
+    single chemical potential limit (i.e. phase diagram facet) or each
+    facet in the phase diagram (chempots dict), depending on the chempots
+    input supplied. This can either be a dictionary of chosen absolute/DFT
+    chemical potentials: {Elt: Energy} (giving a single formation energy
+    table) or a dictionary including the key-value pair: {"facets":
+    [{'facet': [chempot_dict]}]}, following the doped format. In the
+    latter case, a subset of facet(s) / chemical potential limit(s)
+    can be chosen with the facets argument, or if not specified, will
+    print formation energy tables for each facet in the phase diagram.
+
+    Returns the results as a pandas DataFrame or list of DataFrames.
+
+    Table Key: (all energies in eV)
+    'Defect' -> Defect name
+    'q' -> Defect charge state.
+    'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+    'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+    'qE_F' -> Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+              (if "vbm" in DefectEntry.calculation_metadata)
+    'Σμ_ref' -> Sum of reference energies of the elemental phases in the chemical potentials sum.
+    'Σμ_formal' -> Sum of _formal_ atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+    'E_corr' -> Finite-size supercell charge correction.
+    'ΔEᶠᵒʳᵐ' -> Defect formation energy, with the specified chemical potentials and Fermi level.
+                Equals the sum of all other terms.
 
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from
-             analysis.dpd_from_defect_dict)
-        chempot_limits (dict):
-            This can either be a dictionary of chosen absolute/DFT chemical potentials: {Elt:
-            Energy} (giving a single formation energy table) or a dictionary including the
-            key-value pair: {"facets": [{'facet': [chempot_dict]}]}, following the format generated
-            by chempot_limits = cpa.read_phase_diagram_and_chempots() (see example notebooks). If
-            not specified, chemical potentials are not included in the formation energy calculation
-            (all set to zero energy).
-        facets (list):
-            A list facet(s) / chemical potential limit(s) for which to print the defect formation
-            energy tables. If not specified, will print formation energy tables for each facet in
-            the phase diagram. (default: None)
+            DefectPhaseDiagram for which to plot defect formation energies
+            (typically created from analysis.dpd_from_defect_dict).
+        chempots (dict):
+            Dictionary of chemical potentials to use for calculating the defect
+            formation energies. This can have the form of
+            {"facets": [{'facet': [chempot_dict]}]} (the format generated by
+            doped's chemical potential parsing functions (see tutorials)) and
+            facet(s) (chemical potential limit(s)) to tabulate can be chosen using
+            `facets`, or a dictionary of **DFT**/absolute chemical potentials
+            (not formal chemical potentials!), in the format:
+            {element symbol: chemical potential} - if manually specifying
+            chemical potentials this way, you can set the elt_refs option with
+            the DFT reference energies of the elemental phases in order to show
+            the formal (relative) chemical potentials as well.
+            (Default: None)
+        facets (list, str):
+            A string or list of facet(s) (chemical potential limit(s)) for which
+            to tabulate the defect formation energies, corresponding to 'facet' in
+            {"facets": [{'facet': [chempot_dict]}]} (the format generated by
+            doped's chemical potential parsing functions (see tutorials)). If
+            not specified, will tabulate for each facet in `chempots`. (Default: None)
+        elt_refs (dict):
+            Dictionary of elemental reference energies for the chemical potentials
+            in the format:
+            {element symbol: reference energy} (to determine the formal chemical
+            potentials, when chempots has been manually specified as
+            {element symbol: chemical potential}). Unnecessary if chempots is
+            provided in format generated by doped (see tutorials).
+            (Default: None)
         fermi_level (float):
-            Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
-            at the VBM))
-        hide_cols: (list):
-            List of columns to hide from the output. (default: None)
-        show_key (bool):
-            Whether or not to print the table key at the bottom of the output. (default: True)
+            Value corresponding to the electron chemical potential. If "vbm" is
+            supplied in DefectEntry.calculation_metadata, then fermi_level is
+            referenced to the VBM. If "vbm" is NOT supplied in calculation_metadata,
+            then fermi_level is referenced to the calculation's absolute DFT
+            potential (and should include the vbm value provided by a band structure
+            calculation). Default = 0 (i.e. at the VBM)
 
     Returns:
         pandas DataFrame or list of DataFrames
     """
-    if chempot_limits is None:
-        chempot_limits = {}
+    if chempots is None:
+        chempots = {}
 
-    if "facets" in chempot_limits:
+    if "facets_wrt_elt_refs" in chempots:
         list_of_dfs = []
         if facets is None:
-            facets = chempot_limits["facets"].keys()  # Phase diagram facets to use for chemical
+            facets = chempots["facets"].keys()  # Phase diagram facets to use for chemical
             # potentials, to tabulate formation energies
         for facet in facets:
-            bold_print("Facet: " + unicodeify(facet))
-            single_formation_energy_df = single_formation_energy_table(
+            single_formation_energy_df = _single_formation_energy_table(
                 defect_phase_diagram,
-                chempot_limits=chempot_limits["facets"][facet],
+                chempots=chempots["facets_wrt_elt_refs"][facet],
+                elt_refs=chempots["elemental_refs"],
                 fermi_level=fermi_level,
-                hide_cols=hide_cols,
-                show_key=show_key,
             )
             list_of_dfs.append(single_formation_energy_df)
-            print("\n")
 
-        return list_of_dfs
+        return list_of_dfs[0] if len(list_of_dfs) == 1 else list_of_dfs
 
     # else return {Elt: Energy} dict for chempot_limits, or if unspecified, all zero energy
-    single_formation_energy_df = single_formation_energy_table(
+    single_formation_energy_df = _single_formation_energy_table(
         defect_phase_diagram,
-        chempot_limits=chempot_limits,
+        chempots=chempots,
+        elt_refs={elt: 0 for elt in chempots} if elt_refs is None else elt_refs,
         fermi_level=fermi_level,
-        hide_cols=hide_cols,
-        show_key=show_key,
     )
     return single_formation_energy_df
 
 
-def single_formation_energy_table(
+def _single_formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempot_limits: Optional[Dict] = None,
+    chempots: Dict,
+    elt_refs: Dict,
     fermi_level: float = 0,
-    hide_cols: Optional[List] = None,
-    show_key: bool = True,
 ):
     """
     Prints a defect formation energy table for a single chemical potential
     limit (i.e. phase diagram facet), and returns the results as a pandas
     DataFrame.
 
+    Table Key: (all energies in eV)
+    'Defect' -> Defect name
+    'q' -> Defect charge state.
+    'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+    'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+    'qE_F' -> Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+              (if "vbm" in DefectEntry.calculation_metadata)
+    'Σμ_ref' -> Sum of reference energies of the elemental phases in the chemical potentials sum.
+    'Σμ_formal' -> Sum of _formal_ atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+    'E_corr' -> Finite-size supercell charge correction.
+    'ΔEᶠᵒʳᵐ' -> Defect formation energy, with the specified chemical potentials and Fermi level.
+                Equals the sum of all other terms.
+
     Args:
         defect_phase_diagram (DefectPhaseDiagram):
-             DefectPhaseDiagram object (likely created from
-             analysis.dpd_from_defect_dict)
-        chempot_limits (dict):
-            Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}. If not
-            specified, chemical potentials are not included in the formation energy calculation
-            (all set to zero energy).
+            DefectPhaseDiagram for which to plot defect formation energies
+            (typically created from analysis.dpd_from_defect_dict).
+        chempots (dict):
+            Dictionary of chosen absolute/DFT chemical potentials: {Elt: Energy}.
+            If not specified, chemical potentials are not included in the
+            formation energy calculation (all set to zero energy).
+        elt_refs (dict):
+            Dictionary of elemental reference energies for the chemical potentials
+            in the format:
+            {element symbol: reference energy} (to determine the formal chemical
+            potentials, when chempots has been manually specified as
+            {element symbol: chemical potential}). Unnecessary if chempots is
+            provided in format generated by doped (see tutorials).
+            (Default: None)
         fermi_level (float):
-            Fermi level to use for computing the defect formation energies. (default: 0 (i.e.
-            at the VBM))
-        hide_cols: (list):
-            List of columns to hide from the output. (default: None)
-        show_key (bool):
-            Whether to print the table key at the bottom of the output. (default: True)
+            Value corresponding to the electron chemical potential. If "vbm" is
+            supplied in DefectEntry.calculation_metadata, then fermi_level is
+            referenced to the VBM. If "vbm" is NOT supplied in calculation_metadata,
+            then fermi_level is referenced to the calculation's absolute DFT
+            potential (and should include the vbm value provided by a band structure
+            calculation). Default = 0 (i.e. at the VBM)
 
     Returns:
         pandas DataFrame sorted by formation energy
     """
-    header = ["Defect", "q", "Path"]
     table = []
-    if hide_cols is None:
-        hide_cols = []
 
     defect_entries = defect_phase_diagram.entries
     # sort by defect name, then charge state (most positive to most negative), then energy:
@@ -945,64 +982,43 @@ def single_formation_energy_table(
         row = [
             defect_entry.name,
             defect_entry.charge_state,
-            defect_entry.calculation_metadata.get("defect_path", "N/A"),
         ]
-        if "ΔEʳᵃʷ" not in hide_cols:
-            header += ["ΔEʳᵃʷ"]
-            row += [
-                f"{defect_entry.get_ediff() - sum(defect_entry.corrections.values()):.2f} eV"
-            ]  # With 0 chemical potentials, at the calculation fermi level
-        if "E_corr" not in hide_cols:
-            header += ["E_corr"]
-            row += [f"{sum(defect_entry.corrections.values()):.2f} eV"]
-        if "Σμ" not in hide_cols:
-            header += ["Σμ"]
-            row += [f"{defect_phase_diagram._get_chempot_term(defect_entry, chempot_limits):.2f} eV"]
-        header += ["ΔEᶠᵒʳᵐ"]
+        row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
+        if "vbm" in defect_entry.calculation_metadata:
+            row += [defect_entry.charge_state * defect_entry.calculation_metadata["vbm"]]
+        else:
+            row += [0]
+        row += [defect_entry.charge_state * fermi_level]
+        row += [defect_phase_diagram._get_chempot_term(defect_entry, elt_refs)]
+        row += [defect_phase_diagram._get_chempot_term(defect_entry, chempots)]
+        row += [sum(defect_entry.corrections.values())]
+        dft_chempots = {elt: energy + elt_refs[elt] for elt, energy in chempots.items()}
         formation_energy = defect_phase_diagram._formation_energy(
-            defect_entry, chemical_potentials=chempot_limits, fermi_level=fermi_level
+            defect_entry, chemical_potentials=dft_chempots, fermi_level=fermi_level
         )
-        row += [f"{formation_energy:.2f} eV"]
+        row += [formation_energy]
+        row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
 
         table.append(row)
 
-    print(
-        tabulate(
-            table,
-            headers=header,
-            tablefmt="fancy_grid",
-            stralign="left",
-            numalign="left",
-        ),
-        "\n",
-    )
-
-    if show_key:
-        bold_print("Table Key:")
-        print(
-            """'Defect' -> Defect type and multiplicity.
-'q' -> Defect charge state.
-'ΔEʳᵃʷ' -> Energy difference between defect and host supercell (E_defect - E_host).
-(chemical potentials set to 0 and the fermi level at average electrostatic potential in the supercell).
-'E_corr' -> Defect energy correction.
-'Σμ' -> Sum of chemical potential terms in the formation energy equation.
-'ΔEᶠᵒʳᵐ' -> Final defect formation energy, with the specified chemical potentials (
-chempot_limits)(default: all 0) and the chosen fermi_level (default: 0)(i.e. at the VBM).
-        """
-        )
-
-    return pd.DataFrame(
+    formation_energy_df = pd.DataFrame(
         table,
         columns=[
             "Defect",
             "q",
-            "Path",
             "ΔEʳᵃʷ",
+            "qE_VBM",
+            "qE_F",
+            "Σμ_ref",
+            "Σμ_formal",
             "E_corr",
-            "Σμ",
             "ΔEᶠᵒʳᵐ",
+            "Path",
         ],
     )
+
+    # round all floats to 3dp:
+    return formation_energy_df.round(3)
 
 
 class DefectParser:
@@ -1225,44 +1241,10 @@ class DefectParser:
         bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
         defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
 
-        # Old code: (TODO: If pydefect code can satisfactorily deal with tricky/distorted cases,
-        #  then can remove, otherwise need to update to use our improved site-matching functions for this)
-        # bulk_structure = self.defect_entry.bulk_entry.structure
-        # bulksites = [site.frac_coords for site in bulk_structure]
-        #
-        # defect_structure = self.defect_entry.calculation_metadata["unrelaxed_defect_structure"]
-        # initsites = [site.frac_coords for site in defect_structure]
-        #
-        # distmatrix = bulk_structure.lattice.get_all_distances(
-        #     bulksites, initsites  # TODO: Should be able to take this from the defect ID functions?
-        # )  # first index of this list is bulk index
-        # min_dist_with_index = [
-        #     [
-        #         min(distmatrix[bulk_index]),
-        #         int(bulk_index),
-        #         int(distmatrix[bulk_index].argmin()),
-        #     ]
-        #     for bulk_index in range(len(distmatrix))
-        # ]  # list of [min dist, bulk ind, defect ind]
-        #
-        # site_matching_indices = []
-        # if isinstance(self.defect_entry.defect, (Vacancy, Interstitial)):
-        #     for mindist, bulk_index, defect_index in min_dist_with_index:
-        #         if mindist < 0.5:
-        #             site_matching_indices.append([bulk_index, defect_index])
-        #
-        # elif isinstance(self.defect_entry.defect, Substitution):
-        #     for mindist, bulk_index, defect_index in min_dist_with_index:
-        #         species_match = bulk_structure[bulk_index].specie == defect_structure[
-        #         defect_index].specie
-        #         if mindist < 0.5 and species_match:
-        #             site_matching_indices.append([bulk_index, defect_index])
-
         self.defect_entry.calculation_metadata.update(
             {
                 "bulk_site_potentials": bulk_site_potentials,
                 "defect_site_potentials": defect_site_potentials,
-                # "site_matching_indices": site_matching_indices,
             }
         )
 
