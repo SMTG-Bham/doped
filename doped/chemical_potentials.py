@@ -177,8 +177,8 @@ def _calculate_formation_energies(data: list, elemental: dict):
         pd.DataFrame: DataFrame formation energies of the input phases.
     """
     for d in data:
-        for e in elemental:
-            d[e] = Composition(d["formula"]).as_dict()[e]
+        for el in elemental:
+            d[el] = Composition(d["formula"]).as_dict().get(el, 0)
 
     formation_energy_df = pd.DataFrame(data)
     formation_energy_df["formation_energy"] = formation_energy_df["energy_per_fu"]
@@ -1346,15 +1346,17 @@ class CompetingPhasesAnalyzer:
             if verbose:
                 print(f"Calculating chempots for {self.extrinsic_species}")
             for e in extrinsic_formation_energies:
-                for el in self.elemental:
-                    e[el] = Composition(e["formula"]).as_dict()[el]
+                for el in self.elemental:  # TODO: This code (in all this module) should be rewritten to
+                    # be more readable (re-used and uninformative variable names, missing informative
+                    # comments...)
+                    e[el] = Composition(e["formula"]).as_dict().get(el, 0)
 
             # gets the df into a slightly more convenient dict
             cpd = extrinsic_chempots_df.to_dict(orient="records")
             mins = []
             mins_formulas = []
             df3 = pd.DataFrame(extrinsic_formation_energies)
-            print(f"df3: {df3}")
+            # print(f"df3: {df3}")  # debugging
             for i, c in enumerate(cpd):
                 name = f"mu_{self.extrinsic_species}_{i}"
                 df3[name] = df3["formation_energy"]
@@ -1390,7 +1392,7 @@ class CompetingPhasesAnalyzer:
                 "facets_wrt_el_refs": {},
                 "facets": {},
             }
-            print(f"df4: {df4}")
+            # print(f"df4: {df4}")  # debugging
 
             for i, d in enumerate(df4):
                 key = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
@@ -1399,7 +1401,7 @@ class CompetingPhasesAnalyzer:
                 new_vals = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
-            print(f"cl2: {cl2}")
+            # print(f"cl2: {cl2}")  # debugging
 
             # relate the facets to the elemental
             # energies but in reverse this time
