@@ -194,6 +194,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             defect_path=f"{cls.cdte_example_dir}/Int_Te_3_2/vasp_ncl",
             bulk_path=f"{cls.cdte_example_dir}/CdTe_Bulk/vasp_ncl",
             dielectric=9.13,
+            charge_state=None if _potcars_available() else +2,  # to allow testing on GH Actions
         )
 
     @pytest.mark.mpl_image_compare(
