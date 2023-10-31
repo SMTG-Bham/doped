@@ -351,7 +351,7 @@ def kumagai_correction_from_paths(
 
 
 # The following functions are taken from the deprecated AIDE package developed by the dynamic duo
-# Adam Jackson and Alex Ganose (https://github.com/SMTG-UCL/aide)
+# Adam Jackson and Alex Ganose (https://github.com/SMTG-Bham/aide)
 
 
 def get_murphy_image_charge_correction(
