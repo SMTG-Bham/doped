@@ -65,7 +65,7 @@ def _check_no_potcar_available_warning_error(symbol, message):
         x in str(message)
         for x in [
             f"No POTCAR for {symbol} with functional",
-            "Please set the PMG_VASP_PSP_DIR in .pmgrc.yaml.",
+            "Please set the PMG_VASP_PSP_DIR",  # message differs slightly for python 3.8 vs >=3.9
         ]
     )
 
