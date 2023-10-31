@@ -192,7 +192,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
         cls.Te_i_2_ent = analysis.defect_entry_from_paths(
             defect_path=f"{cls.cdte_example_dir}/Int_Te_3_2/vasp_ncl",
-            bulk_path=f"{cls.cdte_example_dir}/CdTe_Bulk/vasp_ncl",
+            bulk_path=f"{cls.cdte_bulk_data_dir}",
             dielectric=9.13,
             charge_state=None if _potcars_available() else +2,  # to allow testing on GH Actions
         )
