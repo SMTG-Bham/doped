@@ -44,7 +44,7 @@ jobs:
         if: always()  # always generate the plots, even if the tests fail
         run:  |
           # Generate the test plots in case there were any failures:
-          pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
+          pytest --mpl-generate-path=tests/remote_baseline -k "plot" tests
 
       # Upload test plots
       - name: Archive test plots
