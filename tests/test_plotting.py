@@ -332,7 +332,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         Test FNV correction plotting.
         """
         dielectric = [4.186, 19.33, 17.49]
-        bulk_path = f"{data_dir}/V2O5/bulk"
+        bulk_path = f"{data_dir}/V2O5/V2O5_bulk"
         chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
 
         defect_dict = {
