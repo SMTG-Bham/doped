@@ -1372,6 +1372,7 @@ class DefectsGenerator(MSONable):
                     # Generate interstitial sites using Voronoi tessellation
                     interstitial_gen_kwargs = self.interstitial_gen_kwargs.copy()
                     interstitial_gen_kwargs.setdefault("stol", 0.32)  # avoid overwriting input dict
+                    interstitial_gen_kwargs.setdefault("clustering_tol", 0.55)
 
                     vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
                     tight_vig = VoronoiInterstitialGenerator(
@@ -1435,13 +1436,25 @@ class DefectsGenerator(MSONable):
                                         tight_cand_site_mul_and_equiv_fpos
                                     ]
 
-                        # take the site with the lower multiplicity (higher symmetry), and most ideal site
-                        # according to _frac_coords_sort_func if multiplicities equal:
+                        # take the site with the lower multiplicity (higher symmetry). If multiplicities
+                        # equal, then take site with larger distance to host atoms (then most ideal site
+                        # according to _frac_coords_sort_func if also equal):
                         output_sites_mul_and_equiv_fpos.append(
                             min(
                                 [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
                                 key=lambda cand_site_mul_and_equiv_fpos: (
                                     cand_site_mul_and_equiv_fpos[1],
+                                    # distance to nearest host atom (and invert so max -> min for sorting)
+                                    1
+                                    / (
+                                        np.min(
+                                            self.primitive_structure.lattice.get_all_distances(
+                                                cand_site_mul_and_equiv_fpos[0],
+                                                self.primitive_structure.frac_coords,
+                                            ),
+                                            axis=1,
+                                        )
+                                    ),
                                     # return the minimum _frac_coords_sort_func for all equiv fpos:
                                     *_frac_coords_sort_func(
                                         sorted(

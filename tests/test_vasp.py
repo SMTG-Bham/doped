@@ -990,7 +990,9 @@ class DefectsSetTest(unittest.TestCase):
             if os.path.isdir(f"{folder}/vasp_std"):
                 assert filecmp.cmp(f"{folder}/vasp_nkred_std/KPOINTS", f"{folder}/vasp_std/KPOINTS")
                 if _potcars_available():
-                    assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
+                    assert filecmp.cmp(
+                        f"{folder}/vasp_nkred_std/POTCAR.spec", f"{folder}/vasp_std/POTCAR.spec"
+                    )
                     nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
                     std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
                     nkred_incar.pop("NKRED", None)

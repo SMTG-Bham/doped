@@ -264,7 +264,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         if ax is None:
-            plt.clf()  # clear figures first
+            plt.close("all")  # close any previous figures
             fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
         (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
@@ -446,7 +446,7 @@ def get_kumagai_correction(
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
-        plt.clf()  # clear figures first
+        plt.close("all")  # close any previous figures
         spp.construct_plot()
         fig = spp.plt.gcf()
         ax = fig.gca()
