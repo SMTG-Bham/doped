@@ -1,6 +1,22 @@
 Change Log
 ==========
 
+v.2.1.0
+----------
+- Update finite-size defect corrections implementations:
+    - `pydefect` used directly for eFNV correction (with optimisation for efficiency). Moreover, the
+      fully relaxed defect structure (with defect site determined by doped) is used.
+    - FNV correction now uses optimised version of `pymatgen-analysis-defects` implementation.
+    - Updated corrections plotting (much nicer formats, more informative etc)
+    - The actual energy error in the correction is now estimated, and the user is warned if this exceeds
+      `error_tolerance` (optional parameter, 0.05 eV by default)
+    - Bandfilling corrections no longer automatically calculated as (1) almost always not recommended
+      and (2) will show an example of calculating these if needed using our code in `pymatgen` on the docs
+- Efficiency improvements in obtaining defect site info (Wyckoff positions)
+- Additional utils and functions for defect generation and manipulation.
+- (Many) updated tests.
+- Added functionality for robustly determining the point group symmetry of _relaxed_ defects 🔥
+
 v.2.0.5
 ----------
 - Update oxi-state handling to:
