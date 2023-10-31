@@ -925,6 +925,12 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         distance_matrix = defect_entry.defect_supercell.distance_matrix
         min_dist = min(distance_matrix[distance_matrix > 0.01])
         print(min_dist)
+
+        min_dist_in_bulk = min(  # account for rare case where defect introduction _increases_ the
+            # minimum atomic distance (e.g. vacancy in defect supercell that had an interstitial)
+            defect_entry.bulk_supercell.distance_matrix[defect_entry.bulk_supercell.distance_matrix > 0.01]
+        )
+
         for equiv_defect_supercell_site in defect_entry.equivalent_supercell_sites:
             new_defect_structure = defect_entry.bulk_supercell.copy()
             new_defect_structure.append(
@@ -933,7 +939,9 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             distance_matrix = new_defect_structure.distance_matrix
             equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
             print(equiv_min_dist)
-            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01) or np.isclose(
+                min_dist_in_bulk, equiv_min_dist, atol=0.01
+            )
 
     def _check_editing_defect_gen(self, random_defect_entry_name, defect_gen):
         assert (
