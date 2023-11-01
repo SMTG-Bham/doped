@@ -5,28 +5,33 @@ import contextlib
 import filecmp
 import locale
 import os
+import random
 import unittest
+import warnings
 
 import numpy as np
 from ase.build import bulk, make_supercell
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar
+from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_generation import if_present_rm
 
 from doped.generation import DefectsGenerator
 from doped.vasp import (
     DefectDictSet,
+    DefectRelaxSet,
     DefectsSet,
     _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
     scaled_ediff,
+    singleshot_incar_settings,
 )
 
 # TODO: Flesh out these tests. Try test most possible combos, warnings and errors too. Test DefectEntry
-#  jsons etc. Test POTCAR warning when POTCARs not available
+#  jsons etc. See AgSbTe2 testing in `doped_generation` notebook -> add tests for all these combos
+# TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
 
 
 def _potcars_available() -> bool:
@@ -42,6 +47,45 @@ def _potcars_available() -> bool:
         return False
 
 
+def _check_potcar_dir_not_setup_warning_error(dds, message, unperturbed_poscar=True):
+    if unperturbed_poscar and dds.charge_state != 0:
+        ending_string = "so only '(unperturbed) `POSCAR` and `KPOINTS` files will be generated."
+
+    elif not unperturbed_poscar and dds.charge_state != 0:  # only KPOINTS can be written so no good
+        ending_string = "so no input files will be generated."
+
+    else:
+        ending_string = "so `POTCAR` files will not be generated."
+
+    return all(x in str(message) for x in ["POTCAR directory not set up with pymatgen", ending_string])
+
+
+def _check_no_potcar_available_warning_error(symbol, message):
+    return all(
+        x in str(message)
+        for x in [
+            f"No POTCAR for {symbol} with functional",
+            "Please set the PMG_VASP_PSP_DIR",  # message differs slightly for python 3.8 vs >=3.9
+        ]
+    )
+
+
+def _check_nelect_nupdown_error(message):
+    return "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be set" in str(
+        message
+    )
+
+
+def _check_nupdown_neutral_cell_warning(message):
+    return all(
+        x in str(message)
+        for x in [
+            "NUPDOWN (i.e. spin state) INCAR flag cannot be set",
+            "As this is a neutral supercell, the INCAR file will be written",
+        ]
+    )
+
+
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
@@ -52,12 +96,14 @@ class DefectDictSetTest(unittest.TestCase):
         self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.prim_cu = Structure.from_file(f"{self.data_dir}/Cu_prim_POSCAR")
+        self.N_doped_diamond_supercell = Structure.from_file(f"{self.data_dir}/N_C_diamond_POSCAR")
         # AgCu:
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
         aaa = AseAtomsAdaptor()
         self.agcu = aaa.get_structure(atoms)
+        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
             "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
@@ -78,21 +124,29 @@ class DefectDictSetTest(unittest.TestCase):
         self.doped_std_kpoint_comment = "KPOINTS from doped, with reciprocal_density = 100/Å⁻³"
         self.doped_gam_kpoint_comment = "Γ-only KPOINTS from doped"
 
-    def defect_dict_set_defaults_check(self, struct, incar_check=True, **dds_kwargs):
-        dds = DefectDictSet(
-            struct,
-            potcars=_potcars_available(),  # to allow testing on GH Actions
-            **dds_kwargs,
-        )  # fine for a bulk primitive input as well
+    def tearDown(self):
+        for i in ["test_pop", "YTOS_test_dir"]:
+            if_present_rm(i)
+
+    def _general_defect_dict_set_check(self, dds, struct, incar_check=True, **dds_kwargs):
         if incar_check:
-            assert self.neutral_def_incar_min.items() <= dds.incar.items()
-            assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
-            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+            expected_incar_settings = self.neutral_def_incar_min.copy()
+            expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
+            expected_incar_settings.update(dds.user_incar_settings)
+            expected_incar_settings_w_none_vals = expected_incar_settings.copy()
+            # remove any entries where value is None:
+            expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
+            assert expected_incar_settings.items() <= dds.incar.items()
+            if dds.incar.get("NSW", 0) > 0:
+                assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+            else:
+                assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
+
             for k, v in default_defect_relax_set["INCAR"].items():
                 if k in [
                     "EDIFF_PER_ATOM",
-                    *list(self.neutral_def_incar_min.keys()),
-                    *list(self.hse06_incar_min.keys()),
+                    *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
+                    # -> None in singleshot calcs
                 ]:  # already tested
                     continue
 
@@ -100,13 +154,21 @@ class DefectDictSetTest(unittest.TestCase):
                 if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
                     try:
                         val = float(v[:2])
-                        assert val == dds.incar[k]
+                        if k in dds.user_incar_settings:  # has been overwritten
+                            assert val != dds.incar[k]
+                        else:
+                            assert val == dds.incar[k]
                     except ValueError:
-                        assert v.lower().capitalize() == dds.incar[k]
+                        if k in dds.user_incar_settings:
+                            assert v.lower().capitalize() == dds.user_incar_settings[k]
+                        else:
+                            assert v.lower().capitalize() == dds.incar[k]
+                elif k in dds.user_incar_settings:
+                    assert dds.incar[k] == dds.user_incar_settings[k]
                 else:
                     assert v == dds.incar[k]
 
-        if dds.potcars:
+        if _potcars_available():
             for potcar_functional in [
                 dds.potcar_functional,
                 dds.potcar.functional,
@@ -114,74 +176,201 @@ class DefectDictSetTest(unittest.TestCase):
             ]:
                 assert "PBE" in potcar_functional
 
+            potcar_settings = default_potcar_dict["POTCAR"].copy()
+            potcar_settings.update(dds.user_potcar_settings or {})
             assert set(dds.potcar.as_dict()["symbols"]) == {
-                default_potcar_dict["POTCAR"][el_symbol] for el_symbol in dds.structure.symbol_set
+                potcar_settings[el_symbol] for el_symbol in dds.structure.symbol_set
             }
+        else:
+            assert not dds.potcars
+            with self.assertRaises(ValueError) as e:
+                _test_pop = dds.potcar
+            assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.exception)
+
+            if dds.charge_state != 0:
+                with self.assertRaises(ValueError) as e:
+                    _test_pop = dds.incar
+                assert _check_nelect_nupdown_error(e.exception)
+            else:
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.resetwarnings()
+                    _test_pop = dds.incar
+                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.resetwarnings()
+                    dds.write_input("test_pop")
+
+                assert any(
+                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
+                )
+                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+                assert any(
+                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
+                    for warning in w
+                )
+
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.resetwarnings()
+                    dds.write_input("test_pop", unperturbed_poscar=False)
+
+                assert any(
+                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
+                )
+                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+                assert any(
+                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
+                    for warning in w
+                )
 
         assert dds.structure == struct
+        # test no unwanted structure reordering
+        assert len(Poscar(dds.structure).site_symbols) == len(set(Poscar(dds.structure).site_symbols))
+
         if "charge_state" not in dds_kwargs:
             assert dds.charge_state == 0
         else:
             assert dds.charge_state == dds_kwargs["charge_state"]
-        assert dds.kpoints.comment == self.doped_std_kpoint_comment
+        if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
+            "reciprocal_density", False
+        ):  # comment changed!
+            assert dds.kpoints.comment == self.doped_std_kpoint_comment.replace(
+                "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
+            )
+        else:
+            assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
+
+    def _check_dds(self, dds, struct, **kwargs):
+        # INCARs only generated for charged defects when POTCARs available:
+        if _potcars_available():
+            self._general_defect_dict_set_check(  # also tests dds.charge_state
+                dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
+            )
+        else:
+            if kwargs.pop("incar_check", True) and dds.charge_state != 0:  # charged defect INCAR
+                with self.assertRaises(ValueError) as e:
+                    self._general_defect_dict_set_check(  # also tests dds.charge_state
+                        dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
+                    )
+                _check_nelect_nupdown_error(e.exception)
+            self._general_defect_dict_set_check(  # also tests dds.charge_state
+                dds, struct, incar_check=kwargs.pop("incar_check", False), **kwargs
+            )
+
+    def _generate_and_check_dds(self, struct, incar_check=True, **dds_kwargs):
+        dds = DefectDictSet(struct, **dds_kwargs)  # fine for bulk prim input as well
+        self._check_dds(dds, struct, incar_check=incar_check, **dds_kwargs)
         return dds
 
     def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
-        assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
-        if dds.potcars:
+        if isinstance(kpt, int):
+            assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
+        else:
+            assert dds.kpoints.kpts == kpt
+        if _potcars_available():
             assert dds.incar["NELECT"] == nelect
             assert dds.incar["NUPDOWN"] == nupdown
+        else:
+            assert not dds.potcars
 
-    def test_neutral_defect_incar(self):
-        dds = self.defect_dict_set_defaults_check(self.prim_cdte.copy())
-        self.kpts_nelect_nupdown_check(dds, 7, 18, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+    def test_neutral_defect_dict_set(self):
+        dds = self._generate_and_check_dds(self.prim_cdte.copy())  # fine for bulk prim input as well
+        # reciprocal_density = 100/Å⁻³ for prim CdTe:
+        self.kpts_nelect_nupdown_check(dds, 7, 18, 0)
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, potcar_spec=True)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell)
-        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell)
+        # reciprocal_density = 100/Å⁻³ for CdTe supercell:
+        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, potcar_spec=True)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def test_charged_defect_incar(self):
-        dds = self.defect_dict_set_defaults_check(
-            self.prim_cdte.copy(), charge_state=-2
-        )  # also tests dds.charge_state
-        self.kpts_nelect_nupdown_check(dds, 7, 20, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        dds = self._generate_and_check_dds(self.prim_cdte.copy(), charge_state=1)  # fine w/bulk prim
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # 100/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_0"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         defect_entry = self.cdte_defect_gen["Te_Cd_-2"]
-        dds = self.defect_dict_set_defaults_check(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # reciprocal_density = 100/Å⁻³ for CdTe supercell
+        dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
+        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
-        dds = self.defect_dict_set_defaults_check(
+
+        dds = self._generate_and_check_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=1,
             user_incar_settings=user_incar_settings,
         )
         self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
-        assert self.neutral_def_incar_min.items() <= dds.incar.items()
-        assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
-        for k, v in user_incar_settings.items():
-            assert v == dds.incar[k]
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+
+        if _potcars_available():
+            assert self.neutral_def_incar_min.items() <= dds.incar.items()
+            assert self.hse06_incar_min.items() <= dds.incar.items()  # HSE06 by default
+            for k, v in user_incar_settings.items():
+                assert v == dds.incar[k]
 
         # non-HSE settings:
-        gga_dds = self.defect_dict_set_defaults_check(
+        gga_dds = self._generate_and_check_dds(
             self.prim_cdte.copy(),
             incar_check=False,
             charge_state=10,
             user_incar_settings={"LHFCALC": False},
         )
         self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
-        assert gga_dds.incar["LHFCALC"] is False
-        for k in self.hse06_incar_min:
-            if k not in ["LHFCALC", "GGA"]:
-                assert k not in gga_dds.incar
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
-        assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
+        if _potcars_available():
+            assert gga_dds.incar["LHFCALC"] is False
+            for k in self.hse06_incar_min:
+                if k not in ["LHFCALC", "GGA"]:
+                    assert k not in gga_dds.incar
+
+            assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
+
+    def test_bad_incar_setting(self):
+        with warnings.catch_warnings(record=True) as w:
+            # warnings.resetwarnings()  # neither of these should've been called previously
+            dds = DefectDictSet(
+                self.prim_cdte.copy(),
+                user_incar_settings={"Whoops": "lol", "KPAR": 7},
+                user_kpoints_settings={"reciprocal_density": 1},  # gamma only babyyy
+            )
+            _incar_pop = dds.incar  # get KPAR warning
+
+        assert any(
+            "Cannot find Whoops from your user_incar_settings in the list of INCAR flags"
+            in str(warning.message)
+            for warning in w
+        )
+        assert any(warning.category == BadIncarWarning for warning in w)
+        assert any(
+            "KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(warning.message)
+            for warning in w
+        )
+        assert "1  # only one k-point" in dds.incar["KPAR"]  # pmg makes it lowercase and can change
+        # gamma symbol
+
+        self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
+        self._write_and_check_dds_files(dds)
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def test_initialisation_for_all_structs(self):
         """
@@ -193,10 +382,19 @@ class DefectDictSetTest(unittest.TestCase):
             self.lmno_primitive,
             self.prim_cu,
             self.agcu,
+            self.sqs_agsbte2,
+            self.N_doped_diamond_supercell,  # has unordered site symbols (C N C), so good to test
+            # ordered site symbols in written POSCARs
         ]:
-            self.defect_dict_set_defaults_check(struct)
+            dds = self._generate_and_check_dds(struct)  # fine for a bulk primitive input as well
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
 
-            self.defect_dict_set_defaults_check(struct, charge_state=np.random.randint(-5, 5))
+            # charged_dds:
+            self._generate_and_check_dds(struct, charge_state=np.random.randint(-5, 5))
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
             DefectDictSet(
                 struct,
@@ -206,6 +404,386 @@ class DefectDictSetTest(unittest.TestCase):
                 user_kpoints_settings={"reciprocal_density": 200},
                 poscar_comment="Test pop",
             )
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
+
+    def test_file_writing_with_without_POTCARs(self):
+        """
+        Test the behaviour of the `DefectDictSet` attributes and
+        `.write_input()` method when `POTCAR`s are and are not available.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy())  # fine for bulk prim
+            self._write_and_check_dds_files(dds)
+            self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
+            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
+        # reciprocal_density = 100/Å⁻³ for YTOS
+
+        if not _potcars_available():
+            for test_warning_message in [
+                "NUPDOWN (i.e. spin state) INCAR flag cannot be set",
+                "POTCAR directory not set up with pymatgen",
+            ]:
+                assert any(test_warning_message in str(warning.message) for warning in w)
+
+        # check changing charge state
+        dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
+        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
+        # reciprocal_density = 100/Å⁻³ for YTOS
+        self._write_and_check_dds_files(dds, output_dir="YTOS_test_dir")
+        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+
+    def _write_and_check_dds_files(self, dds, **kwargs):
+        output_dir = kwargs.pop("output_dir", "test_pop")
+        delete_dir = kwargs.pop("delete_dir", True)  # delete directory after testing?
+
+        if (
+            not kwargs.get("unperturbed_poscar", True)
+            and dds.charge_state != 0
+            and not _potcars_available()
+        ):
+            # error with charged defect and unperturbed_poscar=False
+            with self.assertRaises(ValueError) as e:
+                dds.write_input(output_dir, **kwargs)
+            assert _check_potcar_dir_not_setup_warning_error(dds, e.exception, unperturbed_poscar=False)
+            return
+
+        dds.write_input(output_dir, **kwargs)
+
+        # print(output_dir)  # to help debug if tests fail
+        assert os.path.exists(output_dir)
+
+        if _potcars_available() or dds.charge_state == 0:  # INCARs should be written
+            # load INCAR and check it matches dds.incar
+            written_incar = Incar.from_file(f"{output_dir}/INCAR")
+            dds_incar_without_comments = dds.incar.copy()
+            dds_incar_without_comments["ICORELEVEL"] = 0
+            dds_incar_without_comments["ISYM"] = 0
+            dds_incar_without_comments["ALGO"] = "Normal"
+            if "KPAR" in dds_incar_without_comments and isinstance(
+                dds_incar_without_comments["KPAR"], str
+            ):
+                dds_incar_without_comments["KPAR"] = int(dds_incar_without_comments["KPAR"][0])
+            dds_incar_without_comments.pop([k for k in dds.incar if k.startswith("#")][0])
+            assert written_incar == dds_incar_without_comments
+
+            with open(f"{output_dir}/INCAR") as f:
+                incar_lines = f.readlines()
+            for comment_string in [
+                "# May want to change NCORE, KPAR, AEXX, ENCUT",
+                "change to all if zhegv, fexcp/f or zbrent",
+                "needed if using the kumagai-oba",
+                "symmetry breaking extremely likely",
+            ]:
+                assert any(comment_string in line for line in incar_lines)
+
+        else:
+            assert not os.path.exists(f"{output_dir}/INCAR")
+
+        if _potcars_available() and not kwargs.get("potcar_spec", False):
+            written_potcar = Potcar.from_file(f"{output_dir}/POTCAR")
+            # assert dicts equal, as Potcar __eq__ fails due to hashing I believe
+            assert written_potcar.as_dict() == dds.potcar.as_dict()
+            assert len(written_potcar.symbols) == len(set(written_potcar.symbols))  # no duplicates
+        elif kwargs.get("potcar_spec", False):
+            with open(f"{output_dir}/POTCAR.spec", encoding="utf-8") as file:
+                contents = file.readlines()
+            for i, line in enumerate(contents):
+                assert line in [f"{dds.potcar_symbols[i]}", f"{dds.potcar_symbols[i]}\n"]
+        else:
+            assert not os.path.exists(f"{output_dir}/POTCAR")
+
+        written_kpoints = Kpoints.from_file(f"{output_dir}/KPOINTS")  # comment not parsed by pymatgen
+        with open(f"{output_dir}/KPOINTS") as f:
+            comment = f.readlines()[0].replace("\n", "")
+        if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
+            "reciprocal_density", False
+        ):  # comment changed!
+            assert comment == self.doped_std_kpoint_comment.replace(
+                "100", str(dds.user_kpoints_settings.get("reciprocal_density"))
+            )
+        elif np.prod(dds.kpoints.kpts[0]) == 1:
+            assert comment == self.doped_gam_kpoint_comment
+        else:
+            assert comment == self.doped_std_kpoint_comment
+
+        for k in written_kpoints.as_dict():
+            if k not in ["comment", "usershift"]:  # user shift can be tuple or list and causes failure
+                assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
+
+        if kwargs.get("unperturbed_poscar", True):
+            written_poscar = Poscar.from_file(f"{output_dir}/POSCAR")
+            assert str(written_poscar) == str(dds.poscar)  # POSCAR __eq__ fails for equal structures
+            assert written_poscar.structure == dds.structure
+            # no duplicates:
+            assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))
+        else:
+            assert not os.path.exists(f"{output_dir}/POSCAR")
+
+        if delete_dir:
+            if_present_rm(output_dir)
+
+
+class DefectRelaxSetTest(unittest.TestCase):
+    def setUp(self):
+        # get setup attributes from DefectDictSetTest:
+        dds_test = DefectDictSetTest()
+        dds_test.setUp()
+        for attr in dir(dds_test):
+            if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
+                setattr(self, attr, getattr(dds_test, attr))
+        self.dds_test = dds_test
+
+        self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
+        self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
+
+    def tearDown(self):
+        # get tearDown from DefectDictSetTest:
+        dds_test = DefectDictSetTest()
+        dds_test.tearDown()
+
+    def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
+        dds_test_list = [
+            (defect_relax_set.vasp_gam, "vasp_gam"),
+            (defect_relax_set.vasp_std, "vasp_std"),
+            (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
+            (defect_relax_set.vasp_ncl, "vasp_ncl"),
+        ]
+        dds_bulk_test_list = [
+            (defect_relax_set.bulk_vasp_gam, "bulk_vasp_gam"),
+            (defect_relax_set.bulk_vasp_std, "bulk_vasp_std"),
+            (defect_relax_set.bulk_vasp_ncl, "bulk_vasp_ncl"),
+        ]
+        if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
+            # std INCAR to be more computationally efficient
+            dds_bulk_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
+
+        def _check_drs_dds_attribute_transfer(parent_drs, child_dds):
+            child_incar_settings = child_dds.user_incar_settings.copy()
+            if "KPAR" in child_incar_settings and "KPAR" not in parent_drs.user_incar_settings:
+                assert child_incar_settings.pop("KPAR") == 2
+                assert parent_drs.vasp_std
+            if "LSORBIT" in child_incar_settings and "LSORBIT" not in parent_drs.user_incar_settings:
+                assert child_incar_settings.pop("LSORBIT") is True
+                for k, v in singleshot_incar_settings.items():
+                    assert child_incar_settings.pop(k) == v
+                assert parent_drs.soc
+            if any("NKRED" in k for k in child_incar_settings) and all(
+                "NKRED" not in k for k in parent_drs.user_incar_settings
+            ):
+                for k in list(child_incar_settings.keys()):
+                    if "NKRED" in k:
+                        assert child_incar_settings.pop(k) in [2, 3]
+                assert parent_drs.vasp_nkred_std
+            if "NSW" in child_incar_settings and "NSW" not in parent_drs.user_incar_settings:
+                for k, v in singleshot_incar_settings.items():  # bulk singleshots
+                    assert child_incar_settings.pop(k) == v
+
+            assert parent_drs.user_incar_settings == child_incar_settings
+            assert parent_drs.user_potcar_functional == child_dds.user_potcar_functional or str(
+                parent_drs.user_potcar_functional[:3]
+            ) == str(
+                child_dds.user_potcar_functional
+            )  # if PBE_52 set but not available, defaults to PBE
+            assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
+            if isinstance(child_dds.user_kpoints_settings, Kpoints):
+                assert (
+                    child_dds.user_kpoints_settings.as_dict()
+                    == Kpoints()
+                    .from_dict(
+                        {
+                            "comment": "Γ-only KPOINTS from doped",
+                            "generation_style": "Gamma",
+                        }
+                    )
+                    .as_dict()
+                )
+            else:
+                assert parent_drs.user_kpoints_settings == child_dds.user_kpoints_settings
+
+        for defect_dict_set, type in dds_test_list:
+            if defect_dict_set is not None:
+                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                self.dds_test._check_dds(
+                    defect_dict_set,
+                    defect_relax_set.defect_supercell,
+                    charge_state=defect_relax_set.charge_state,
+                    **kwargs,
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set)
+                self.dds_test._write_and_check_dds_files(
+                    defect_dict_set, output_dir=f"{defect_relax_set.defect_entry.name}"
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                if defect_relax_set.charge_state == 0:
+                    self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+
+                _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
+
+        for defect_dict_set, type in dds_bulk_test_list:
+            if defect_dict_set is not None:
+                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                self.dds_test._check_dds(
+                    defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
+                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
+
+                _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
+
+    def test_initialisation_and_writing(self):
+        """
+        Test the initialisation of DefectRelaxSet for a range of
+        `DefectEntry`s.
+        """
+        # test initialising DefectRelaxSet with our generation-tests materials, and writing files to disk
+        defect_gen_test_list = [
+            (self.cdte_defect_gen, "CdTe defect_gen"),
+            (DefectsGenerator(self.sqs_agsbte2), "SQS AgSbTe2 defect_gen"),
+        ]
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "ytos_defect_gen_supercell",
+            "lmno_defect_gen",
+            "cu_defect_gen",
+            "agcu_defect_gen",
+            "cd_i_supercell_defect_gen",
+            "N_diamond_defect_gen",  # input structure for this is unordered (but this checks
+            # that POSCAR site symbols output should be ordered)
+        ]:
+            defect_gen_test_list.append(
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+            )
+
+        for defect_gen, defect_gen_name in defect_gen_test_list:
+            print(f"Initialising and testing: {defect_gen_name}")
+            # randomly choose 3 defect entries from the defect_gen dict:
+            defect_entries = random.sample(list(defect_gen.values()), 3)
+
+            for defect_entry in defect_entries:
+                print(f"Randomly testing {defect_entry.name}")
+                drs = DefectRelaxSet(defect_entry)
+                self._general_defect_relax_set_check(drs)
+
+                def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
+                    assert parent_drs.defect_entry == input_defect_entry
+                    assert parent_drs.defect_supercell == input_defect_entry.defect_supercell
+                    assert parent_drs.charge_state == input_defect_entry.charge_state
+                    assert parent_drs.bulk_supercell == input_defect_entry.bulk_supercell
+
+                _check_drs_defect_entry_attribute_transfer(drs, defect_entry)
+
+                custom_drs = DefectRelaxSet(
+                    defect_entry,
+                    user_incar_settings={"ENCUT": 350},
+                    user_potcar_functional="PBE_52",
+                    user_potcar_settings={"Cu": "Cu_pv"},
+                    user_kpoints_settings={"reciprocal_density": 200},
+                    poscar_comment="Test pop",
+                )
+                self._general_defect_relax_set_check(custom_drs)
+                _check_drs_defect_entry_attribute_transfer(custom_drs, defect_entry)
+
+            # TODO: Test file writing, default folder naming
+            # TODO: Explicitly check some poscar comments? For DS, DRS and DDS
+
+    def test_default_kpoints_soc_handling(self):
+        """
+        Check vasp_std created when necessary, and not when vasp_gam converged.
+        """
+        defect_gen_test_list = [
+            (self.cdte_defect_gen, "CdTe defect_gen"),
+        ]
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "lmno_defect_gen",
+            "agcu_defect_gen",
+            "cd_i_supercell_defect_gen",
+        ]:
+            defect_gen_test_list.append(
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+            )
+
+        for defect_gen, defect_gen_name in defect_gen_test_list:
+            print(f"Testing:{defect_gen_name}")
+            # randomly choose 10 defect entries from the defect_gen dict:
+            defect_entries = random.sample(list(defect_gen.values()), 10)
+
+            for defect_entry in defect_entries:
+                print(f"Randomly testing {defect_entry.name}")
+                drs = DefectRelaxSet(defect_entry)
+                if defect_gen_name in [
+                    "CdTe defect_gen",
+                    "ytos_defect_gen",
+                    "agcu_defect_gen",
+                    "cd_i_supercell_defect_gen",
+                ]:
+                    assert drs.vasp_std
+                    assert drs.bulk_vasp_std
+                    assert drs.vasp_nkred_std
+
+                    if (
+                        _potcars_available()
+                    ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be
+                        # more computationally efficient
+                        assert drs.bulk_vasp_nkred_std
+
+                    assert drs.vasp_ncl
+                    assert drs.bulk_vasp_ncl
+
+                else:  # no SOC nor >vasp_gam for LMNO
+                    assert not drs.vasp_std
+                    assert not drs.bulk_vasp_std
+                    assert not drs.vasp_nkred_std
+
+                    if _potcars_available():
+                        assert not drs.bulk_vasp_nkred_std
+
+                    assert not drs.vasp_ncl
+                    assert not drs.bulk_vasp_ncl
+
+        # Test manually turning off SOC and making vasp_gam converged:
+        defect_entries = random.sample(list(self.cdte_defect_gen.values()), 5)
+
+        for defect_entry in defect_entries:
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry, soc=False, user_kpoints_settings={"reciprocal_density": 50})
+            assert not drs.vasp_std
+            assert not drs.bulk_vasp_std
+            assert not drs.vasp_nkred_std
+
+            if (
+                _potcars_available()
+            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
+                # computationally efficient
+                assert not drs.bulk_vasp_nkred_std
+
+            assert not drs.vasp_ncl
+            assert not drs.bulk_vasp_ncl
+
+        # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
+        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
+        defect_entries = random.sample(list(defect_gen.values()), 5)
+
+        for defect_entry in defect_entries:
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry, soc=True, user_kpoints_settings={"reciprocal_density": 200})
+            assert drs.vasp_std
+            assert drs.bulk_vasp_std
+            assert drs.vasp_nkred_std
+
+            if (
+                _potcars_available()
+            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
+                # computationally efficient
+                assert drs.bulk_vasp_nkred_std
+
+            assert drs.vasp_ncl
+            assert drs.bulk_vasp_ncl
 
 
 class DefectsSetTest(unittest.TestCase):
@@ -216,8 +794,12 @@ class DefectsSetTest(unittest.TestCase):
         for attr in dir(dds_test):
             if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
                 setattr(self, attr, getattr(dds_test, attr))
+        self.dds_test = dds_test
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
+
+        # Note this is different to above: (for testing against pre-generated input files with these
+        # settings):
         self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
 
         # Get the current locale setting
@@ -243,6 +825,7 @@ class DefectsSetTest(unittest.TestCase):
         vasp_type="vasp_gam",
         check_poscar=True,
         check_potcar_spec=False,
+        check_incar=None,
         single_defect_dir=False,
         bulk=True,
     ):
@@ -253,21 +836,23 @@ class DefectsSetTest(unittest.TestCase):
             vasp_type="vasp_gam",
             check_poscar=True,
             check_potcar_spec=False,
+            check_incar=True,
         ):
             # print(f"{generated_dir}/{folder}")  # to help debug if tests fail
             assert os.path.exists(f"{generated_dir}/{folder}")
             assert os.path.exists(f"{generated_dir}/{folder}/{vasp_type}")
 
             # load the Incar, Poscar and Kpoints and check it matches the previous:
-            test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
-            incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
-            # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
-            # locally)), otherwise pop from test_incar:
-            if not _potcars_available():  # to allow testing on GH Actions
-                test_incar.pop("NELECT", None)
-                test_incar.pop("NUPDOWN", None)
+            if check_incar:
+                test_incar = Incar.from_file(f"{data_dir}/{folder}/{vasp_type}/INCAR")
+                incar = Incar.from_file(f"{generated_dir}/{folder}/{vasp_type}/INCAR")
+                # test NELECT and NUPDOWN if present in generated INCAR (i.e. if POTCARs available (testing
+                # locally)), otherwise pop from test_incar:
+                if not _potcars_available():  # to allow testing on GH Actions
+                    test_incar.pop("NELECT", None)
+                    test_incar.pop("NUPDOWN", None)
 
-            assert test_incar == incar
+                assert test_incar == incar
 
             if check_poscar:
                 test_poscar = Poscar.from_file(
@@ -276,6 +861,7 @@ class DefectsSetTest(unittest.TestCase):
                 )
                 poscar = Poscar.from_file(f"{generated_dir}/{folder}/{vasp_type}/POSCAR")
                 assert test_poscar.structure == poscar.structure
+                assert len(poscar.site_symbols) == len(set(poscar.site_symbols))
 
             if check_potcar_spec:
                 with open(f"{generated_dir}/{folder}/{vasp_type}/POTCAR.spec", encoding="utf-8") as file:
@@ -292,6 +878,9 @@ class DefectsSetTest(unittest.TestCase):
         if data_dir is None:
             data_dir = self.cdte_data_dir
 
+        if check_incar is None:
+            check_incar = _potcars_available()
+
         if single_defect_dir:
             _check_single_vasp_dir(
                 data_dir=data_dir,
@@ -300,6 +889,7 @@ class DefectsSetTest(unittest.TestCase):
                 vasp_type=vasp_type,
                 check_poscar=check_poscar,
                 check_potcar_spec=check_potcar_spec,
+                check_incar=check_incar,
             )
 
         else:
@@ -312,6 +902,37 @@ class DefectsSetTest(unittest.TestCase):
                         vasp_type=vasp_type,
                         check_poscar=check_poscar,
                         check_potcar_spec=check_potcar_spec,
+                        check_incar=check_incar,
+                    )
+
+    def _general_defects_set_check(self, defects_set, **kwargs):
+        # TODO: Use function above!
+        for defect_relax_set in defects_set.defect_sets.values():
+            dds_test_list = [
+                defect_relax_set.vasp_gam,
+                defect_relax_set.bulk_vasp_gam,
+                defect_relax_set.vasp_std,
+                defect_relax_set.bulk_vasp_std,
+                defect_relax_set.vasp_nkred_std,
+                defect_relax_set.vasp_ncl,
+                defect_relax_set.bulk_vasp_ncl,
+            ]
+            if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
+                # std INCAR to be more computationally efficient
+                dds_test_list.append(defect_relax_set.bulk_vasp_nkred_std)
+
+            for defect_dict_set in dds_test_list:
+                print(f"Testing {defect_relax_set.defect_entry.name}")
+                try:
+                    self.dds_test._check_dds(
+                        defect_dict_set,
+                        defect_relax_set.defect_supercell,
+                        charge_state=defect_relax_set.charge_state,
+                        **kwargs,
+                    )
+                except AssertionError:  # try bulk structure
+                    self.dds_test._check_dds(
+                        defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
                     )
 
     def test_cdte_files(self):
@@ -319,18 +940,29 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             cdte_se_defect_gen,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True)
+        self._general_defects_set_check(defects_set)
+
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+
+            # test no (unperturbed) POSCAR files written:
+            for folder in os.listdir("."):
+                if os.path.isdir(folder) and "bulk" not in folder:
+                    for subfolder in os.listdir(folder):
+                        assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
+
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(
+                    potcar_spec=True
+                )  # INCAR ValueError for charged defects if POTCARs not
+                # available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+
         # test no vasp_gam files written:
         for folder in os.listdir("."):
             assert not os.path.exists(f"{folder}/vasp_gam")
-
-        # test no (unperturbed) POSCAR files written:
-        for folder in os.listdir("."):
-            if os.path.isdir(folder) and "bulk" not in folder:
-                for subfolder in os.listdir(folder):
-                    assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
 
@@ -346,29 +978,38 @@ class DefectsSetTest(unittest.TestCase):
         assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.cdte_data_dir are present in the current directory
-        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
+        print("Checking vasp_gam files")
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests
+        # vasp_gam
+        print("Checking vasp_std files")
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
 
         # test vasp_nkred_std: same as vasp_std except for NKRED
+        print("Checking NKRED vasp_std files")
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_std"):
                 assert filecmp.cmp(f"{folder}/vasp_nkred_std/KPOINTS", f"{folder}/vasp_std/KPOINTS")
-                # assert filecmp.cmp(f"{folder}/vasp_nkred_std/POTCAR", f"{folder}/vasp_std/POTCAR")
-                nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
-                std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
-                nkred_incar.pop("NKRED", None)
-                assert nkred_incar == std_incar
+                if _potcars_available():
+                    assert filecmp.cmp(
+                        f"{folder}/vasp_nkred_std/POTCAR.spec", f"{folder}/vasp_std/POTCAR.spec"
+                    )
+                    nkred_incar = Incar.from_file(f"{folder}/vasp_nkred_std/INCAR")
+                    std_incar = Incar.from_file(f"{folder}/vasp_std/INCAR")
+                    nkred_incar.pop("NKRED", None)
+                    assert nkred_incar == std_incar
+
+        print("Checking vasp_ncl files")
         self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
 
         # test unperturbed POSCARs and all bulk
+        print("Checking unperturbed POSCARs and all bulk")
         defects_set = DefectsSet(
             self.cdte_defect_gen,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, bulk="all", vasp_gam=True)
-        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=True)  # tests vasp_gam
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
         self.check_generated_vasp_inputs(vasp_type="vasp_nkred_std", check_poscar=False, bulk=True)
 
         # test DefectDictSet objects:
@@ -394,9 +1035,16 @@ class DefectsSetTest(unittest.TestCase):
             {k: v for k, v in self.cdte_defect_gen.items() if "v_Te" in k},
             user_potcar_settings={"Cd": "Cd_sv_GW", "Te": "Te_GW"},
             user_kpoints_settings={"reciprocal_density": 500},
-            user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True, vasp_gam=True)  # include vasp_gam to compare POTCAR.spec
+
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True, vasp_gam=True)  # vasp_gam to test POTCAR.spec
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(potcar_spec=True, vasp_gam=True)  # INCAR ValueError for charged
+                # defects if POTCARs not available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_gam"):
                 with open(f"{folder}/vasp_gam/POTCAR.spec", encoding="utf-8") as file:
@@ -413,7 +1061,6 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             single_defect_entry,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,
         )
         defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
 
@@ -429,6 +1076,7 @@ class DefectsSetTest(unittest.TestCase):
             data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
             vasp_type="vasp_std",
             check_poscar=True,
+            check_potcar_spec=True,
             single_defect_dir=True,
         )
         self.check_generated_vasp_inputs(  # vasp_ncl
@@ -436,6 +1084,7 @@ class DefectsSetTest(unittest.TestCase):
             data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
             vasp_type="vasp_ncl",
             check_poscar=True,
+            check_potcar_spec=True,
             single_defect_dir=True,
         )
 
@@ -457,7 +1106,6 @@ class DefectsSetTest(unittest.TestCase):
             defects_set = DefectsSet(
                 single_defect_entry,
                 user_incar_settings=self.cdte_custom_test_incar_settings,
-                user_potcar_functional=None,
             )
             defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
             locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
@@ -474,6 +1122,7 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
                 vasp_type="vasp_std",
                 check_poscar=True,
+                check_potcar_spec=True,
                 single_defect_dir=True,
             )
             self.check_generated_vasp_inputs(  # vasp_ncl
@@ -481,6 +1130,7 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.cdte_data_dir}/Cd_i_C3v_+2",
                 vasp_type="vasp_ncl",
                 check_poscar=True,
+                check_potcar_spec=True,
                 single_defect_dir=True,
             )
 
@@ -496,9 +1146,15 @@ class DefectsSetTest(unittest.TestCase):
         defects_set = DefectsSet(
             defect_entry_list,
             user_incar_settings=self.cdte_custom_test_incar_settings,
-            user_potcar_functional=None,
         )
-        defects_set.write_files(potcar_spec=True)
+
+        if _potcars_available():
+            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+        else:
+            with self.assertRaises(ValueError):
+                defects_set.write_files(potcar_spec=True)  # INCAR ValueError for charged defects if
+                # POTCARs not available and unperturbed_poscar=False
+            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
 
         for defect_entry in defect_entry_list:
             for vasp_type in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:  # no vasp_gam by default
@@ -507,7 +1163,8 @@ class DefectsSetTest(unittest.TestCase):
                     data_dir=f"{self.cdte_data_dir}/{defect_entry.name}",
                     vasp_type=vasp_type,
                     single_defect_dir=True,
-                    check_poscar=False,
+                    check_poscar=not _potcars_available(),
+                    check_potcar_spec=True,
                 )
 
     def test_initialise_and_write_all_defect_gens(self):
@@ -524,9 +1181,15 @@ class DefectsSetTest(unittest.TestCase):
             defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
             defects_set = DefectsSet(
                 defect_gen,
-                user_potcar_functional=None,  # to allow testing on GH Actions
             )
-            defects_set.write_files(potcar_spec=True)
+            if _potcars_available():
+                defects_set.write_files()
+            else:
+                with self.assertRaises(ValueError):
+                    defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
+                    # available and unperturbed_poscar=False
+                defects_set.write_files(unperturbed_poscar=True)
+
             self.tearDown()  # delete generated folders each time
 
 

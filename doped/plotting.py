@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, ticker
+from matplotlib import colormaps, colors, ticker
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
@@ -38,7 +38,7 @@ def formation_energy_plot(
     xlim: Optional[Tuple] = None,
     ylim: Optional[Tuple] = None,
     fermi_level: Optional[float] = None,
-    colormap: str = "Dark2",
+    colormap: Union[str, colors.Colormap] = "Dark2",
     auto_labels: bool = False,
     filename: Optional[str] = None,
 ):
@@ -103,7 +103,10 @@ def formation_energy_plot(
             If set, plots a dashed vertical line at this Fermi level value, typically
             used to indicate the equilibrium Fermi level position (e.g. calculated
             with py-sc-fermi). (Default: None)
-        colormap (str): Colormap to use for the formation energy lines. (default: "Dark2")
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use for the formation energy lines, either as a string (i.e.
+            name from https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+            or a Colormap / ListedColormap object. (default: "Dark2")
         auto_labels (bool):
             Whether to automatically label the transition levels with their charge
             states. If there are many transition levels, this can be quite ugly.
@@ -138,6 +141,7 @@ def formation_energy_plot(
         )
 
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
     with plt.style.context(style_file):
         if chempots and "facets" in chempots:
             if facets is None:
@@ -169,7 +173,6 @@ def formation_energy_plot(
                     filename=plot_filename,
                 )
                 figs.append(fig)
-                plt.show()  # show figure
 
             return figs[0] if len(figs) == 1 else figs
 
@@ -188,8 +191,7 @@ def formation_energy_plot(
             auto_labels=auto_labels,
             filename=filename,
         )
-        plt.show()  # show figure
-        return fig
+    return fig
 
 
 def _get_backend(save_format: str) -> Optional[str]:
@@ -221,7 +223,7 @@ def _chempot_warning(dft_chempots):
 
 
 def _get_plot_setup(colormap, xy):
-    cmap = colormaps[colormap]
+    cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
     colors = cmap(np.linspace(0, 1, len(xy)))
     if colormap == "Dark2" and len(xy) >= 8:
         warnings.warn(

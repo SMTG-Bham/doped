@@ -9,6 +9,7 @@ from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
+from monty.io import zopen
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
@@ -64,26 +65,32 @@ default_defect_relax_set = deep_dict_update(
 )  # only POTCAR settings, not set in other *Set.yamls
 singleshot_incar_settings = {
     "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
-    "NSW": 0,  # no ionic relaxation"
-    "IBRION": -1,  # no ionic relaxation"
+    "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
+    "IBRION": -1,  # no ionic relaxation
+    "NSW": 0,  # no ionic relaxation
+    "POTIM": None,  # no ionic relaxation, remove to avoid confusion
 }
 
 
-def _test_potcar_functional_choice(potcar_functional):
+def _test_potcar_functional_choice(
+    potcar_functional: UserPotcarFunctional = "PBE", symbols: Optional[List] = None
+):
     """
     Check if the potcar functional choice needs to be changed to match those
     available.
     """
     test_potcar = None
+    if symbols is None:
+        symbols = ["Mg"]
     try:
-        test_potcar = Potcar(["Mg"], functional=potcar_functional)
+        test_potcar = Potcar(symbols, functional=potcar_functional)
     except OSError as e:
         # try other functional choices:
         if potcar_functional.startswith("PBE"):
             for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
                 with contextlib.suppress(OSError):
-                    potcar_functional: UserPotcarFunctional = pbe_potcar_string
-                    test_potcar = Potcar(["Mg"], functional=potcar_functional)
+                    potcar_functional = pbe_potcar_string
+                    test_potcar = Potcar(symbols, functional=potcar_functional)
                     break
 
         if test_potcar is None:
@@ -93,10 +100,6 @@ def _test_potcar_functional_choice(potcar_functional):
 
 
 class DefectDictSet(DictSet):
-    """
-    Extension to pymatgen DictSet object for VASP defect calculations.
-    """
-
     def __init__(
         self,
         structure: Structure,
@@ -109,6 +112,8 @@ class DefectDictSet(DictSet):
         **kwargs,
     ):
         """
+        Extension to pymatgen DictSet object for VASP defect calculations.
+
         Args:
             structure (Structure): pymatgen Structure object of the defect supercell
             charge_state (int): Charge of the defect structure
@@ -135,8 +140,9 @@ class DefectDictSet(DictSet):
                 fractional coordinates of initial site and charge state.
             **kwargs: Additional kwargs to pass to DictSet.
         """
-        self.potcars = kwargs.pop("potcars", True)  # to allow testing on GH Actions
+        _ignore_pmg_warnings()
         self.charge_state = charge_state
+        self.potcars = self._check_user_potcars(unperturbed_poscar=True, snb=False)
         self.poscar_comment = (
             poscar_comment
             if poscar_comment is not None
@@ -163,16 +169,6 @@ class DefectDictSet(DictSet):
                         BadIncarWarning,
                     )
             relax_set["INCAR"].update(user_incar_settings)
-
-            if (
-                "EDIFFG" not in user_incar_settings
-                and relax_set["INCAR"]["IBRION"] == -1
-                and relax_set["INCAR"]["NSW"] == 0
-            ):
-                # singlepoint calc, remove EDIFFG & POTIM from INCAR to avoid confusion:
-                for key in ["EDIFFG", "POTIM"]:
-                    if key in relax_set["INCAR"]:
-                        del relax_set["INCAR"][key]
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if relax_set["KPOINTS"].get("length") or (
@@ -226,13 +222,27 @@ class DefectDictSet(DictSet):
                     "also have triplet (NUPDOWN=2), but energy diff typically small."
                 )
 
-        except Exception as e:
+        except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
+            # if it's a neutral defect, then this is ok (warn the user and write files), otherwise break
+            if self.charge_state != 0:
+                raise ValueError(
+                    "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be "
+                    "set due to the non-availability of POTCARs!\n(see the doped docs Installation page: "
+                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                    "this up)."
+                ) from e
+
             warnings.warn(
-                f"NELECT and NUPDOWN flags are not set due to non-availability of POTCARs; "
-                f"got error: {e}"
+                f"NUPDOWN (i.e. spin state) INCAR flag cannot be set due to the non-availability of "
+                f"POTCARs!\n(see the doped docs Installation page: "
+                f"https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                f"this up). As this is a neutral supercell, the INCAR file will be written without this "
+                f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
+                f"unphysical solutions, and POTCARs are also needed to set the charge state (i.e. "
+                f"NELECT) of charged defect supercells. Got error:\n{e}"
             )
 
-        if "KPAR" in incar_obj and self.user_kpoints_settings.get("comment", "").startswith("Γ-only"):
+        if "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
             # check KPAR setting is reasonable for number of KPOINTS
             warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
             incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
@@ -248,7 +258,7 @@ class DefectDictSet(DictSet):
         """
         if self.potcars:
             self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
-                self.user_potcar_functional
+                self.user_potcar_functional, self.potcar_symbols
             )
         return super(self.__class__, self).potcar
 
@@ -257,7 +267,14 @@ class DefectDictSet(DictSet):
         """
         Return Poscar object with comment.
         """
-        return Poscar(self.structure, comment=self.poscar_comment)
+        unsorted_poscar = Poscar(self.structure, comment=self.poscar_comment)
+
+        # check if POSCAR should be sorted:
+        if len(unsorted_poscar.site_symbols) == len(set(unsorted_poscar.site_symbols)):
+            # no duplicates, return poscar as is
+            return unsorted_poscar
+
+        return Poscar(self.structure, comment=self.poscar_comment, sort_structure=True)
 
     @property
     def kpoints(self):
@@ -282,7 +299,19 @@ class DefectDictSet(DictSet):
 
         return pmg_kpoints
 
-    def _check_user_potcars(self, unperturbed_poscar: bool = False) -> bool:
+    def _recode_kpoints(self):
+        """
+        Reformat the kpoints comment, as there is a rare encoding error that
+        can happen on some old HPCs, so change Γ to Gamma and Å to Angstrom in
+        KPOINTS comment.
+        """
+        kpoints_settings = self.kpoints.as_dict()
+        kpoints_settings["comment"] = (
+            kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
+        )
+        self.user_kpoints_settings = Kpoints.from_dict(kpoints_settings)
+
+    def _check_user_potcars(self, unperturbed_poscar: bool = False, snb: bool = False) -> bool:
         """
         Check and warn the user if POTCARs are not set up with pymatgen.
         """
@@ -291,16 +320,24 @@ class DefectDictSet(DictSet):
             potcar_warning_string = (
                 "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
                 "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                "this up). This is required to generate `POTCAR` and `INCAR` files (to set `NELECT` and "
-                "`NUPDOWN`)"
+                "this up). This is required to generate `POTCAR` files and set the `NELECT` and "
+                "`NUPDOWN` `INCAR` tags"
             )
             if unperturbed_poscar:
-                warnings.warn(
-                    f"{potcar_warning_string}, so only (unperturbed) `POSCAR` and `KPOINTS` files will "
-                    f"be generated."
-                )
-            else:
+                if self.charge_state != 0:
+                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
+                        # unperturbed in that case)
+                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
+                        f"`KPOINTS` files will be generated."
+                    )
+                    return False
+
+            elif self.charge_state != 0:  # only KPOINTS can be written so no good
                 raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+
+            # if at this point, means charge_state == 0, so neutral INCAR can be generated
+            warnings.warn(f"{potcar_warning_string}, so `POTCAR` files will not be generated.")
+
             return False
 
         return True
@@ -308,54 +345,91 @@ class DefectDictSet(DictSet):
     def write_input(
         self,
         output_dir: str,
+        unperturbed_poscar: bool = True,
         make_dir_if_not_present: bool = True,
         include_cif: bool = False,
         potcar_spec: bool = False,
         zip_output: bool = False,
+        snb: bool = False,
     ):
         """
         Writes out all input to a directory. Refactored slightly from pymatgen
         DictSet.write_input() to allow checking of user POTCAR setup.
 
-        Copied from DictSet.write_input() docstring:
         Args:
-            output_dir (str): Directory to output the VASP input files
+            output_dir (str): Directory to output the VASP input files.
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCAR to the generated
+                folder as well. (default: True)
             make_dir_if_not_present (bool): Set to True if you want the
                 directory (and the whole path) to be created if it is not
-                present.
+                present. (default: True)
             include_cif (bool): Whether to write a CIF file in the output
-                directory for easier opening by VESTA.
+                directory for easier opening by VESTA. (default: False)
             potcar_spec (bool): Instead of writing the POTCAR, write a "POTCAR.spec".
                 This is intended to help sharing an input set with people who might
                 not have a license to specific Potcar files. Given a "POTCAR.spec",
                 the specific POTCAR file can be re-generated using pymatgen with the
-                "generate_potcar" function in the pymatgen CLI.
-            zip_output (bool): Whether to zip each VASP input file written to the output directory.
+                "generate_potcar" function in the pymatgen CLI. (default: False)
+            zip_output (bool): Whether to zip each VASP input file written to the
+                output directory. (default: False)
+            snb (bool): If input structures are from ShakeNBreak (so POSCARs aren't
+                'unperturbed'). (default: False)
         """
         if not potcar_spec:
-            self._check_user_potcars(unperturbed_poscar=True)
+            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
+        else:
+            potcars = True
 
-        try:
-            super().write_input(
-                output_dir,
-                make_dir_if_not_present=make_dir_if_not_present,
-                include_cif=include_cif,
-                potcar_spec=potcar_spec,
-                zip_output=zip_output,
-            )
-        except UnicodeEncodeError:
-            kpoints_settings = self.kpoints.as_dict()
-            kpoints_settings["comment"] = (
-                kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
-            )
-            self.user_kpoints_settings = Kpoints.from_dict(kpoints_settings)
-            super().write_input(
-                output_dir,
-                make_dir_if_not_present=make_dir_if_not_present,
-                include_cif=include_cif,
-                potcar_spec=potcar_spec,
-                zip_output=zip_output,
-            )
+        if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
+            try:
+                super().write_input(
+                    output_dir,
+                    make_dir_if_not_present=make_dir_if_not_present,
+                    include_cif=include_cif,
+                    potcar_spec=potcar_spec,
+                    zip_output=zip_output,
+                )
+            except UnicodeEncodeError:  # likely KPOINTS comment encoding issue
+                self._recode_kpoints()
+                super().write_input(
+                    output_dir,
+                    make_dir_if_not_present=make_dir_if_not_present,
+                    include_cif=include_cif,
+                    potcar_spec=potcar_spec,
+                    zip_output=zip_output,
+                )
+            except ValueError as e:
+                if str(e).startswith("NELECT") and potcar_spec:
+                    with zopen(os.path.join(output_dir, "POTCAR.spec"), "wt") as pot_spec_file:
+                        pot_spec_file.write("\n".join(self.potcar_symbols))
+
+                    self.kpoints.write_file(f"{output_dir}/KPOINTS")
+                    self.poscar.write_file(f"{output_dir}/POSCAR")
+
+        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
+            os.makedirs(output_dir, exist_ok=True)
+
+            # if not POTCARs and charge_state not 0, but unperturbed POSCAR is true, then skip INCAR
+            # write attempt (unperturbed POSCARs and KPOINTS will be written, and user already warned):
+            if potcars or self.charge_state == 0 or not unperturbed_poscar:
+                self.incar.write_file(f"{output_dir}/INCAR")
+
+            if potcars:
+                if potcar_spec:
+                    with zopen(os.path.join(output_dir, "POTCAR.spec"), "wt") as pot_spec_file:
+                        pot_spec_file.write("\n".join(self.potcar_symbols))
+                else:
+                    self.potcar.write_file(f"{output_dir}/POTCAR")
+
+            try:
+                self.kpoints.write_file(f"{output_dir}/KPOINTS")
+            except UnicodeEncodeError:
+                self._recode_kpoints()
+                self.kpoints.write_file(f"{output_dir}/KPOINTS")
+
+            if unperturbed_poscar:
+                self.poscar.write_file(f"{output_dir}/POSCAR")
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -371,16 +445,6 @@ def scaled_ediff(natoms: int) -> float:
 
 
 class DefectRelaxSet(MSONable):
-    """
-    An object for generating input files for VASP defect relaxation
-    calculations from pymatgen `DefectEntry` (recommended) or `Structure`
-    objects.
-
-    The supercell structure and charge state are taken from the `DefectEntry`
-    attributes, or if a `Structure` is provided, then from the
-    `defect_supercell` and `charge_state` input parameters.
-    """
-
     def __init__(
         self,
         defect_entry: Union[DefectEntry, Structure],
@@ -393,10 +457,18 @@ class DefectRelaxSet(MSONable):
         **kwargs,
     ):
         """
+        An object for generating input files for VASP defect relaxation
+        calculations from pymatgen `DefectEntry` (recommended) or `Structure`
+        objects.
+
+        The supercell structure and charge state are taken from the `DefectEntry`
+        attributes, or if a `Structure` is provided, then from the
+        `defect_supercell` and `charge_state` input parameters.
+
         Creates attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
-            relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended), unless only Γ-point _k_-point sampling is
+            relaxation. Usually not needed if ShakeNBreak structure searching has
+            been performed (recommended), unless only Γ-point _k_-point sampling is
             required (converged) for your system, and no vasp_std calculations
             with multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
@@ -462,15 +534,15 @@ class DefectRelaxSet(MSONable):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
-            **kwargs: Additional kwargs to pass to DictSet().
+            **kwargs: Additional kwargs to pass to DefectDictSet().
 
         Attributes:
             vasp_gam (DefectDictSet):
-                DefectDictSet for Gamma-point only relaxation. Not needed if
-                ShakeNBreak structure searching has been performed (recommended),
-                unless only Γ-point _k_-point sampling is required (converged)
-                for your system, and no vasp_std calculations with multiple
-                _k_-points are required (determined from kpoints settings).
+                DefectDictSet for Gamma-point only relaxation. Usually not needed
+                if ShakeNBreak structure searching has been performed
+                (recommended), unless only Γ-point _k_-point sampling is required
+                (converged) for your system, and no vasp_std calculations with
+                multiple _k_-points are required (determined from kpoints settings).
             vasp_nkred_std (DefectDictSet):
                 DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
                 `NKRED(X,Y,Z)` INCAR tag(s) to downsample kpoints for the HF exchange
@@ -535,7 +607,7 @@ class DefectRelaxSet(MSONable):
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
-            self.poscar_comment = (
+            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
                 f"{self.defect_supercell.formula} {'+' if self.charge_state > 0 else ''}"
                 f"{self.charge_state}"
             )
@@ -570,7 +642,7 @@ class DefectRelaxSet(MSONable):
             else:
                 name = self.defect_supercell.formula
 
-            self.poscar_comment = (
+            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
                 f"{name} {approx_coords} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
@@ -809,7 +881,7 @@ class DefectRelaxSet(MSONable):
 
         # ignore warning with "KPAR", in case it's Γ-only
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")
+            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
             return DefectDictSet(
                 self.defect_supercell,
                 charge_state=self.defect_entry.charge_state,
@@ -993,13 +1065,16 @@ class DefectRelaxSet(MSONable):
         if nkred_defect_dict_set is None:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-        user_incar_settings.update(singleshot_incar_settings)
-        user_incar_settings.update(  # add NKRED settings
-            {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
-        )
+        if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
+            user_incar_settings = copy.deepcopy(self.user_incar_settings)
+            if "KPAR" not in user_incar_settings:
+                user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
+            user_incar_settings.update(singleshot_incar_settings)
+            user_incar_settings.update(  # add NKRED settings
+                {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
+            )
+        else:
+            user_incar_settings = {}
 
         return DefectDictSet(
             bulk_supercell,
@@ -1057,7 +1132,7 @@ class DefectRelaxSet(MSONable):
 
         # ignore warning with "KPAR", in case it's Γ-only
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")
+            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
             return DefectDictSet(
                 bulk_supercell,
                 charge_state=0,
@@ -1078,36 +1153,16 @@ class DefectRelaxSet(MSONable):
 
         return f"{defect_dir}/{subfolder}" if subfolder is not None else defect_dir
 
-    def _check_potcars_and_write_vasp_xxx_files(
+    def _write_vasp_xxx_files(
         self, defect_dir, subfolder, unperturbed_poscar, vasp_xxx_attribute, **kwargs
     ):
         output_dir = self._get_output_dir(defect_dir, subfolder)
 
-        if unperturbed_poscar:
-            vasp_xxx_attribute.write_input(
-                output_dir,
-                **kwargs,  # kwargs to allow POTCAR testing on GH Actions
-            )
-
-        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs
-            os.makedirs(output_dir, exist_ok=True)
-            if not kwargs.get("potcar_spec", False):
-                vasp_xxx_attribute._check_user_potcars(unperturbed_poscar=False)
-            vasp_xxx_attribute.incar.write_file(f"{output_dir}/INCAR")
-            try:
-                vasp_xxx_attribute.kpoints.write_file(f"{output_dir}/KPOINTS")
-            except UnicodeEncodeError:
-                # rare encoding error that can happen on some old HPCs, change Γ to Gamma and Å to Angstrom
-                # in KPOINTS comments
-                kpoints_settings = vasp_xxx_attribute.kpoints.as_dict()
-                kpoints_settings["comment"] = (
-                    kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
-                )
-                kpoints = Kpoints.from_dict(kpoints_settings)
-                kpoints.write_file(f"{output_dir}/KPOINTS")
-
-            if self.user_potcar_functional is not None:  # for GH Actions testing
-                vasp_xxx_attribute.potcar.write_file(f"{output_dir}/POTCAR")
+        vasp_xxx_attribute.write_input(
+            output_dir,
+            unperturbed_poscar,
+            **kwargs,  # kwargs to allow POTCAR testing on GH Actions
+        )
 
         if "bulk" not in defect_dir:  # not a bulk supercell
             self.defect_entry.to_json(f"{output_dir}/{self.defect_entry.name}.json")
@@ -1116,6 +1171,7 @@ class DefectRelaxSet(MSONable):
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_gam",
+        unperturbed_poscar: bool = False,
         bulk: bool = False,
         **kwargs,
     ):
@@ -1155,6 +1211,14 @@ class DefectRelaxSet(MSONable):
                 `subfolder` = 'vasp_gam' by default. Setting `subfolder` to
                 `None` will write the `vasp_gam` input files directly to the
                 `<defect_dir>` folder, with no subfolders created.
+            unperturbed_poscar (bool):
+                If True, write the unperturbed defect POSCAR to the generated
+                folder as well. Typically not recommended for use, as the
+                recommended workflow is to initially perform `vasp_gam`
+                ground-state structure searching using ShakeNBreak
+                (https://shakenbreak.readthedocs.io), then continue the
+                _`vasp_std`_ relaxations from the 'Groundstate' `CONTCAR`s.
+                (default: True)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1165,10 +1229,10 @@ class DefectRelaxSet(MSONable):
         if defect_dir is None:
             defect_dir = self.defect_entry.name
 
-        self._check_potcars_and_write_vasp_xxx_files(
+        self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
-            unperturbed_poscar=True,
+            unperturbed_poscar=unperturbed_poscar,
             vasp_xxx_attribute=self.vasp_gam,
             **kwargs,
         )
@@ -1179,7 +1243,7 @@ class DefectRelaxSet(MSONable):
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
-            self._check_potcars_and_write_vasp_xxx_files(
+            self._write_vasp_xxx_files(
                 f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
@@ -1239,8 +1303,8 @@ class DefectRelaxSet(MSONable):
                 `None` will write the `vasp_std` input files directly to the
                 `<defect_dir>` folder, with no subfolders created.
             unperturbed_poscar (bool):
-                If True, write the unperturbed defect POSCARs to the generated
-                folders as well. Not recommended, as the recommended workflow is
+                If True, write the unperturbed defect POSCAR to the generated
+                folder as well. Not recommended, as the recommended workflow is
                 to initially perform `vasp_gam` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the `vasp_std` relaxations from the 'Groundstate'
@@ -1260,7 +1324,7 @@ class DefectRelaxSet(MSONable):
         if defect_dir is None:
             defect_dir = self.defect_entry.name
 
-        self._check_potcars_and_write_vasp_xxx_files(
+        self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
@@ -1274,7 +1338,7 @@ class DefectRelaxSet(MSONable):
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
-            self._check_potcars_and_write_vasp_xxx_files(
+            self._write_vasp_xxx_files(
                 f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
@@ -1340,8 +1404,8 @@ class DefectRelaxSet(MSONable):
                 to `None` will write the `vasp_nkred_std` input files directly
                 to the `<defect_dir>` folder, with no subfolders created.
             unperturbed_poscar (bool):
-                If True, write the unperturbed defect POSCARs to the generated
-                folders as well. Not recommended, as the recommended workflow is
+                If True, write the unperturbed defect POSCAR to the generated
+                folder as well. Not recommended, as the recommended workflow is
                 to initially perform `vasp_gam` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the `vasp_std` relaxations from the 'Groundstate` `CONTCAR`s.
@@ -1359,7 +1423,7 @@ class DefectRelaxSet(MSONable):
         if defect_dir is None:
             defect_dir = self.defect_entry.name
 
-        self._check_potcars_and_write_vasp_xxx_files(
+        self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
@@ -1373,7 +1437,7 @@ class DefectRelaxSet(MSONable):
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
-            self._check_potcars_and_write_vasp_xxx_files(
+            self._write_vasp_xxx_files(
                 f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
@@ -1435,8 +1499,8 @@ class DefectRelaxSet(MSONable):
                 `None` will write the `vasp_ncl` input files directly to the
                 `<defect_dir>` folder, with no subfolders created.
             unperturbed_poscar (bool):
-                If True, write the unperturbed defect POSCARs to the generated
-                folders as well. Not recommended, as the recommended workflow is
+                If True, write the unperturbed defect POSCAR to the generated
+                folder as well. Not recommended, as the recommended workflow is
                 to initially perform `vasp_gam` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the `vasp_std` relaxations from the 'Groundstate'
@@ -1457,7 +1521,7 @@ class DefectRelaxSet(MSONable):
         if defect_dir is None:
             defect_dir = self.defect_entry.name
 
-        self._check_potcars_and_write_vasp_xxx_files(
+        self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
             unperturbed_poscar=unperturbed_poscar,
@@ -1472,7 +1536,7 @@ class DefectRelaxSet(MSONable):
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             # get output dir: (folder above defect_dir if defect_dir is a subfolder)
             output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
-            self._check_potcars_and_write_vasp_xxx_files(
+            self._write_vasp_xxx_files(
                 f"{output_dir}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
@@ -1504,8 +1568,8 @@ class DefectRelaxSet(MSONable):
 
         If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
         _k_-point sampling converged for the kpoints settings used), then outputs:
-        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
-            structure searching has been performed (recommended).
+        - vasp_gam -> Γ-point only defect relaxation. Usually not needed if
+            ShakeNBreak structure searching has been performed (recommended).
 
         By default, does not generate a `vasp_gam` folder unless `self.vasp_std`
         is None (i.e. only Γ-point sampling required for this system), as
@@ -1620,6 +1684,7 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
+                    unperturbed_poscar=unperturbed_poscar,
                     **kwargs,
                 )
 
@@ -1649,11 +1714,6 @@ class DefectRelaxSet(MSONable):
 
 
 class DefectsSet(MSONable):
-    """
-    An object for generating input files for VASP defect calculations from
-    doped/pymatgen `DefectEntry` objects.
-    """
-
     def __init__(
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
@@ -1665,12 +1725,14 @@ class DefectsSet(MSONable):
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
         """
+        An object for generating input files for VASP defect calculations from
+        doped/pymatgen `DefectEntry` objects.
         Creates a dictionary of: {defect_species: DefectRelaxSet}.
 
         DefectRelaxSet has the attributes:
         - `DefectRelaxSet.vasp_gam` -> `DefectDictSet` for Gamma-point only
-            relaxation. Not needed if ShakeNBreak structure searching has been
-            performed (recommended), unless only Γ-point _k_-point sampling is
+            relaxation. Usually not needed if ShakeNBreak structure searching has
+            been performed (recommended), unless only Γ-point _k_-point sampling is
             required (converged) for your system, and no vasp_std calculations with
             multiple _k_-points are required (determined from kpoints settings).
         - `DefectRelaxSet.vasp_nkred_std` -> `DefectDictSet` for relaxation with a
@@ -1891,9 +1953,9 @@ class DefectsSet(MSONable):
 
     @staticmethod
     def _write_defect(args):
-        defect_species, defect_entry, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
+        defect_species, defect_relax_set, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
         defect_dir = os.path.join(output_dir, defect_species)
-        defect_entry.write_all(
+        defect_relax_set.write_all(
             defect_dir=defect_dir,
             unperturbed_poscar=unperturbed_poscar,
             vasp_gam=vasp_gam,
@@ -1929,8 +1991,8 @@ class DefectsSet(MSONable):
 
         If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
         _k_-point sampling converged for the kpoints settings used), then outputs:
-        - vasp_gam -> Γ-point only defect relaxation. Not needed if ShakeNBreak
-            structure searching has been performed (recommended).
+        - vasp_gam -> Γ-point only defect relaxation. Usually not needed if
+            ShakeNBreak structure searching has been performed (recommended).
 
         By default, does not generate a `vasp_gam` folder unless
         `DefectRelaxSet.vasp_std` is None (i.e. only Γ-point sampling required
@@ -2019,17 +2081,20 @@ class DefectsSet(MSONable):
             **kwargs:
                 Keyword arguments to pass to `DefectDictSet.write_input()`.
         """
+        # TODO: If POTCARs not setup, warn and only write neutral defect folders, with INCAR, KPOINTS and
+        #  (if unperturbed_poscar) POSCAR? And bulk
+
         args_list = [
             (
                 defect_species,
-                defect_entry,
+                defect_relax_set,
                 output_dir,
                 unperturbed_poscar,
                 vasp_gam,
                 bulk if i == 0 else False,  # only write bulk folder(s) for first defect
                 kwargs,
             )
-            for i, (defect_species, defect_entry) in enumerate(self.defect_sets.items())
+            for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
         ]
         with Pool(processes=processes or cpu_count() - 1) as pool:
             for _ in tqdm(

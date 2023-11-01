@@ -10,18 +10,18 @@ on:
       - completed  # only test when new release has been deployed to PyPI
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  build:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     # only run when tests have passed (or manually triggered)
 
     strategy:
-      max-parallel: 5
+      fail-fast: false
 
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: [ '3.8', '3.9', '3.10', '3.11' ]
+        os: [ ubuntu-latest,macos-latest,windows-latest ]
 
-    name: Python ${{ matrix.python-version }} pip install
+    runs-on: ${{matrix.os}}
 
     steps:
       - uses: actions/checkout@v2
@@ -44,7 +44,7 @@ jobs:
         if: always()  # always generate the plots, even if the tests fail
         run:  |
           # Generate the test plots in case there were any failures:
-          pytest --mpl-generate-path=tests/remote_baseline tests/test_plotting.py
+          pytest --mpl-generate-path=tests/remote_baseline -k "plot" tests
 
       # Upload test plots
       - name: Archive test plots

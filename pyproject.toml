@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.0.5"
+version = "2.1.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -21,10 +21,11 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2023.5.8",  # imposed by pymatgen-analysis-defects
+    "pymatgen>=2023.8.10",
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.2.0",
     "pandas",
+    "pydefect",  # for Kumagai (eFNV) correction
 ]
 
 [project.urls]
@@ -114,5 +115,5 @@ wrap-descriptions = 79
 
 [tool.codespell]
 ignore-words-list = """
-titel,te,bu,aack,unx,nd,efect
+titel,te,bu,aack,unx,nd,efect,vise
 """
