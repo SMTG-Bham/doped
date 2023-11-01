@@ -24,6 +24,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
 
@@ -197,32 +198,32 @@ O_Li             [-3,-2,-1,0]           [0.004,0.004,0.004]  8c
 O_Mn             [-6,-5,-4,-3,-2,-1,0]  [0.121,0.129,0.625]  12d
 O_Ni             [-4,-3,-2,-1,0]        [0.625,0.625,0.625]  4b
 
-Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
----------------  -----------------  -------------------  ---------
-Li_i_C1_O1.72    [0,+1]             [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78    [0,+1]             [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.83   [0,+1]             [0.077,0.125,0.173]  12d
-Li_i_C2_Li1.84   [0,+1]             [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86   [0,+1]             [0.086,0.375,0.336]  12d
-Li_i_C3          [0,+1]             [0.497,0.497,0.497]  8c
-Mn_i_C1_O1.72    [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78    [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.83   [0,+1,+2,+3,+4]    [0.077,0.125,0.173]  12d
-Mn_i_C2_Li1.84   [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86   [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
-Mn_i_C3          [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
-Ni_i_C1_O1.72    [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78    [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.83   [0,+1,+2,+3,+4]    [0.077,0.125,0.173]  12d
-Ni_i_C2_Li1.84   [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86   [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
-Ni_i_C3          [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
-O_i_C1_O1.72     [-2,-1,0]          [0.248,0.480,0.249]  24e
-O_i_C1_O1.78     [-2,-1,0]          [0.017,0.261,0.250]  24e
-O_i_C2_Li1.83    [-2,-1,0]          [0.077,0.125,0.173]  12d
-O_i_C2_Li1.84    [-2,-1,0]          [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86    [-2,-1,0]          [0.086,0.375,0.336]  12d
-O_i_C3           [-2,-1,0]          [0.497,0.497,0.497]  8c
+Interstitials        Guessed Charges    Conv. Cell Coords    Wyckoff
+-------------------  -----------------  -------------------  ---------
+Li_i_C1_O1.72        [0,+1]             [0.248,0.480,0.249]  24e
+Li_i_C1_O1.78        [0,+1]             [0.017,0.261,0.250]  24e
+Li_i_C2_Li1.84O1.84  [0,+1]             [0.073,0.177,0.125]  12d
+Li_i_C2_Li1.84O1.94  [0,+1]             [0.151,0.375,0.401]  12d
+Li_i_C2_Li1.86       [0,+1]             [0.086,0.375,0.336]  12d
+Li_i_C3              [0,+1]             [0.497,0.497,0.497]  8c
+Mn_i_C1_O1.72        [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
+Mn_i_C1_O1.78        [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
+Mn_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]    [0.073,0.177,0.125]  12d
+Mn_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
+Mn_i_C2_Li1.86       [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
+Mn_i_C3              [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
+Ni_i_C1_O1.72        [0,+1,+2,+3,+4]    [0.248,0.480,0.249]  24e
+Ni_i_C1_O1.78        [0,+1,+2,+3,+4]    [0.017,0.261,0.250]  24e
+Ni_i_C2_Li1.84O1.84  [0,+1,+2,+3,+4]    [0.073,0.177,0.125]  12d
+Ni_i_C2_Li1.84O1.94  [0,+1,+2,+3,+4]    [0.151,0.375,0.401]  12d
+Ni_i_C2_Li1.86       [0,+1,+2,+3,+4]    [0.086,0.375,0.336]  12d
+Ni_i_C3              [0,+1,+2,+3,+4]    [0.497,0.497,0.497]  8c
+O_i_C1_O1.72         [-2,-1,0]          [0.248,0.480,0.249]  24e
+O_i_C1_O1.78         [-2,-1,0]          [0.017,0.261,0.250]  24e
+O_i_C2_Li1.84O1.84   [-2,-1,0]          [0.073,0.177,0.125]  12d
+O_i_C2_Li1.84O1.94   [-2,-1,0]          [0.151,0.375,0.401]  12d
+O_i_C2_Li1.86        [-2,-1,0]          [0.086,0.375,0.336]  12d
+O_i_C3               [-2,-1,0]          [0.497,0.497,0.497]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
@@ -473,121 +474,121 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e  [-2,-1,0,+1,+2,+3,+4]  [0.750,0.250,0.750]  9b
         self.N_diamond_defect_gen_info = (
             """Vacancies                 Guessed Charges    Conv. Cell Coords    Wyckoff
 ------------------------  -----------------  -------------------  ---------
-v_C_C1_C1.54C2.52C2.95a   [-1,0,+1]          [0.167,0.167,0.056]  18c
-v_C_C1_C1.54C2.52C2.95b   [-1,0,+1]          [0.167,0.167,0.139]  18c
-v_C_C1_C1.54C2.52C2.95c   [-1,0,+1]          [0.056,0.278,0.278]  18c
-v_C_C1_C1.54C2.52C2.95d   [-1,0,+1]          [0.167,0.167,0.389]  18c
-v_C_C1_C1.54C2.52C2.95e   [-1,0,+1]          [0.333,0.333,0.056]  18c
-v_C_C1_C1.54C2.52C2.95f   [-1,0,+1]          [0.333,0.333,0.139]  18c
-v_C_C1_C1.54C2.52C2.95g   [-1,0,+1]          [0.389,0.278,0.278]  18c
-v_C_C1_C1.54C2.52C2.95h   [-1,0,+1]          [0.167,0.167,0.722]  18c
-v_C_C1_C1.54C2.52C2.95i   [-1,0,+1]          [0.167,0.167,0.806]  18c
-v_C_C1_C1.54C2.52C2.95j   [-1,0,+1]          [0.056,0.278,0.028]  18c
-v_C_C1_C1.54C2.52C2.95k   [-1,0,+1]          [0.278,0.055,0.167]  18c
-v_C_C1_C1.54C2.52C2.95l   [-1,0,+1]          [0.278,0.056,0.250]  18c
-v_C_C1_C1.54C2.52C2.95m   [-1,0,+1]          [0.389,0.111,0.028]  18c
-v_C_C1_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.389,0.167]  18c
-v_C_C1_C1.54C2.52C2.95o   [-1,0,+1]          [0.056,0.444,0.028]  18c
-v_C_C1_C1.54C2.52C2.95p   [-1,0,+1]          [0.111,0.389,0.250]  18c
-v_C_C1_C1.54C2.52C2.95q   [-1,0,+1]          [0.445,0.056,0.167]  18c
-v_C_C1_C1.54C2.52C2.95r   [-1,0,+1]          [0.445,0.056,0.250]  18c
-v_C_C1_C1.54C2.52C2.95s   [-1,0,+1]          [0.056,0.445,0.278]  18c
-v_C_C1_C1.54C2.52N2.52    [-1,0,+1]          [0.167,0.167,0.472]  18c
-v_C_C3v_C1.54C2.52C2.95a  [-1,0,+1]          [0.000,0.000,0.056]  3a
-v_C_C3v_C1.54C2.52C2.95b  [-1,0,+1]          [0.000,0.000,0.139]  3a
-v_C_C3v_C1.54C2.52C2.95c  [-1,0,+1]          [0.000,0.000,0.722]  3a
-v_C_C3v_C1.54C2.52C2.95d  [-1,0,+1]          [0.000,0.000,0.806]  3a
-v_C_C3v_C1.54N1.54        [-1,0,+1]          [0.000,0.000,0.389]  3a
-v_C_Cs_C1.54C2.52C2.95a   [-1,0,+1]          [0.556,0.278,0.278]  9b
-v_C_Cs_C1.54C2.52C2.95b   [-1,0,+1]          [0.500,0.500,0.056]  9b
-v_C_Cs_C1.54C2.52C2.95c   [-1,0,+1]          [0.500,0.500,0.139]  9b
-v_C_Cs_C1.54C2.52C2.95d   [-1,0,+1]          [0.500,0.500,0.389]  9b
-v_C_Cs_C1.54C2.52C2.95e   [-1,0,+1]          [0.500,0.500,0.472]  9b
-v_C_Cs_C1.54C2.52C2.95f   [-1,0,+1]          [0.500,0.500,0.722]  9b
-v_C_Cs_C1.54C2.52C2.95g   [-1,0,+1]          [0.500,0.500,0.806]  9b
-v_C_Cs_C1.54C2.52C2.95h   [-1,0,+1]          [0.056,0.111,0.028]  9b
-v_C_Cs_C1.54C2.52C2.95i   [-1,0,+1]          [0.111,0.056,0.167]  9b
-v_C_Cs_C1.54C2.52C2.95j   [-1,0,+1]          [0.222,0.111,0.028]  9b
-v_C_Cs_C1.54C2.52C2.95k   [-1,0,+1]          [0.111,0.056,0.250]  9b
-v_C_Cs_C1.54C2.52C2.95l   [-1,0,+1]          [0.111,0.222,0.167]  9b
-v_C_Cs_C1.54C2.52C2.95m   [-1,0,+1]          [0.056,0.111,0.278]  9b
-v_C_Cs_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.222,0.250]  9b
-v_C_Cs_C1.54C2.52C2.95o   [-1,0,+1]          [0.222,0.111,0.278]  9b
-v_C_Cs_C1.54C2.52C2.95p   [-1,0,+1]          [0.222,0.111,0.361]  9b
-v_C_Cs_C1.54C2.52C2.95q   [-1,0,+1]          [0.444,0.222,0.167]  9b
-v_C_Cs_C1.54C2.52C2.95r   [-1,0,+1]          [0.444,0.222,0.250]  9b
-v_C_Cs_C1.54C2.52C2.95s   [-1,0,+1]          [0.111,0.222,0.500]  9b
-v_C_Cs_C1.54C2.52C2.95t   [-1,0,+1]          [0.556,0.111,0.028]  9b
-v_C_Cs_C1.54C2.52C2.95u   [-1,0,+1]          [0.222,0.445,0.278]  9b
-v_C_Cs_C1.54C2.52C2.95v   [-1,0,+1]          [0.111,0.555,0.250]  9b
-v_C_Cs_C1.54C2.52C2.95w   [-1,0,+1]          [0.556,0.278,0.028]  9b
-v_C_Cs_C1.54C2.52C2.95x   [-1,0,+1]          [0.056,0.111,0.611]  9b
-v_C_Cs_C1.54C2.52C2.95y   [-1,0,+1]          [0.556,0.111,0.278]  9b
-v_C_Cs_C1.54C2.52C2.95z   [-1,0,+1]          [0.611,0.222,0.167]  9b
-v_C_Cs_C1.54C2.52C2.95{   [-1,0,+1]          [0.611,0.222,0.250]  9b
-v_C_Cs_C1.54C2.52N2.52a   [-1,0,+1]          [0.056,0.111,0.361]  9b
-v_C_Cs_C1.54C2.52N2.52b   [-1,0,+1]          [0.111,0.056,0.583]  9b
-v_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
-v_N                       [-1,0,+1]          [0.000,0.000,0.472]  3a
+v_C_C1_C1.54C2.52C2.95a   [-1,0,+1]          [0.167,0.167,0.028]  18c
+v_C_C1_C1.54C2.52C2.95b   [-1,0,+1]          [0.167,0.167,0.111]  18c
+v_C_C1_C1.54C2.52C2.95c   [-1,0,+1]          [0.278,0.222,0.222]  18c
+v_C_C1_C1.54C2.52C2.95d   [-1,0,+1]          [0.333,0.333,0.028]  18c
+v_C_C1_C1.54C2.52C2.95e   [-1,0,+1]          [0.333,0.333,0.111]  18c
+v_C_C1_C1.54C2.52C2.95f   [-1,0,+1]          [0.167,0.167,0.444]  18c
+v_C_C1_C1.54C2.52C2.95g   [-1,0,+1]          [0.167,0.167,0.694]  18c
+v_C_C1_C1.54C2.52C2.95h   [-1,0,+1]          [0.167,0.167,0.778]  18c
+v_C_C1_C1.54C2.52C2.95i   [-1,0,+1]          [0.056,0.278,0.000]  18c
+v_C_C1_C1.54C2.52C2.95j   [-1,0,+1]          [0.278,0.056,0.139]  18c
+v_C_C1_C1.54C2.52C2.95k   [-1,0,+1]          [0.056,0.278,0.250]  18c
+v_C_C1_C1.54C2.52C2.95l   [-1,0,+1]          [0.389,0.111,0.000]  18c
+v_C_C1_C1.54C2.52C2.95m   [-1,0,+1]          [0.111,0.389,0.139]  18c
+v_C_C1_C1.54C2.52C2.95n   [-1,0,+1]          [0.056,0.278,0.333]  18c
+v_C_C1_C1.54C2.52C2.95o   [-1,0,+1]          [0.111,0.389,0.222]  18c
+v_C_C1_C1.54C2.52C2.95p   [-1,0,+1]          [0.445,0.056,0.139]  18c
+v_C_C1_C1.54C2.52C2.95q   [-1,0,+1]          [0.389,0.111,0.250]  18c
+v_C_C1_C1.54C2.52C2.95r   [-1,0,+1]          [0.445,0.056,0.222]  18c
+v_C_C1_C1.54C2.52C2.95s   [-1,0,+1]          [0.056,0.444,0.250]  18c
+v_C_C1_C1.54C2.52N2.52    [-1,0,+1]          [0.167,0.167,0.361]  18c
+v_C_C3v_C1.54C2.52C2.95a  [-1,0,+1]          [0.000,0.000,0.028]  3a
+v_C_C3v_C1.54C2.52C2.95b  [-1,0,+1]          [0.000,0.000,0.111]  3a
+v_C_C3v_C1.54C2.52C2.95c  [-1,0,+1]          [0.000,0.000,0.694]  3a
+v_C_C3v_C1.54C2.52C2.95d  [-1,0,+1]          [0.000,0.000,0.778]  3a
+v_C_C3v_C1.54N1.54        [-1,0,+1]          [0.000,0.000,0.444]  3a
+v_C_Cs_C1.54C2.52C2.95a   [-1,0,+1]          [0.111,0.222,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95b   [-1,0,+1]          [0.444,0.222,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95c   [-1,0,+1]          [0.611,0.222,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95d   [-1,0,+1]          [0.500,0.500,0.028]  9b
+v_C_Cs_C1.54C2.52C2.95e   [-1,0,+1]          [0.500,0.500,0.111]  9b
+v_C_Cs_C1.54C2.52C2.95f   [-1,0,+1]          [0.500,0.500,0.361]  9b
+v_C_Cs_C1.54C2.52C2.95g   [-1,0,+1]          [0.500,0.500,0.444]  9b
+v_C_Cs_C1.54C2.52C2.95h   [-1,0,+1]          [0.500,0.500,0.695]  9b
+v_C_Cs_C1.54C2.52C2.95i   [-1,0,+1]          [0.500,0.500,0.778]  9b
+v_C_Cs_C1.54C2.52C2.95j   [-1,0,+1]          [0.055,0.111,0.000]  9b
+v_C_Cs_C1.54C2.52C2.95k   [-1,0,+1]          [0.111,0.056,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95l   [-1,0,+1]          [0.222,0.111,0.000]  9b
+v_C_Cs_C1.54C2.52C2.95m   [-1,0,+1]          [0.111,0.056,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.222,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95o   [-1,0,+1]          [0.222,0.111,0.250]  9b
+v_C_Cs_C1.54C2.52C2.95p   [-1,0,+1]          [0.222,0.111,0.333]  9b
+v_C_Cs_C1.54C2.52C2.95q   [-1,0,+1]          [0.444,0.222,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95r   [-1,0,+1]          [0.111,0.222,0.472]  9b
+v_C_Cs_C1.54C2.52C2.95s   [-1,0,+1]          [0.222,0.444,0.250]  9b
+v_C_Cs_C1.54C2.52C2.95t   [-1,0,+1]          [0.555,0.111,0.000]  9b
+v_C_Cs_C1.54C2.52C2.95u   [-1,0,+1]          [0.111,0.056,0.555]  9b
+v_C_Cs_C1.54C2.52C2.95v   [-1,0,+1]          [0.056,0.111,0.583]  9b
+v_C_Cs_C1.54C2.52C2.95w   [-1,0,+1]          [0.111,0.555,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95x   [-1,0,+1]          [0.556,0.111,0.250]  9b
+v_C_Cs_C1.54C2.52C2.95y   [-1,0,+1]          [0.555,0.278,0.000]  9b
+v_C_Cs_C1.54C2.52C2.95z   [-1,0,+1]          [0.611,0.222,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95{   [-1,0,+1]          [0.555,0.278,0.250]  9b
+v_C_Cs_C1.54C2.52N2.52a   [-1,0,+1]          [0.056,0.111,0.250]  9b
+v_C_Cs_C1.54C2.52N2.52b   [-1,0,+1]          [0.111,0.056,0.472]  9b
+v_C_Cs_C1.54N1.54         [-1,0,+1]          [0.056,0.111,0.333]  9b
+v_N                       [-1,0,+1]          [0.000,0.000,0.361]  3a
 
 Substitutions             Guessed Charges    Conv. Cell Coords    Wyckoff
 ------------------------  -----------------  -------------------  ---------
-C_N                       [-1,0,+1]          [0.000,0.000,0.472]  3a
-N_C_C1_C1.54C2.52C2.95a   [-1,0,+1]          [0.167,0.167,0.056]  18c
-N_C_C1_C1.54C2.52C2.95b   [-1,0,+1]          [0.167,0.167,0.139]  18c
-N_C_C1_C1.54C2.52C2.95c   [-1,0,+1]          [0.056,0.278,0.278]  18c
-N_C_C1_C1.54C2.52C2.95d   [-1,0,+1]          [0.167,0.167,0.389]  18c
-N_C_C1_C1.54C2.52C2.95e   [-1,0,+1]          [0.333,0.333,0.056]  18c
-N_C_C1_C1.54C2.52C2.95f   [-1,0,+1]          [0.333,0.333,0.139]  18c
-N_C_C1_C1.54C2.52C2.95g   [-1,0,+1]          [0.389,0.278,0.278]  18c
-N_C_C1_C1.54C2.52C2.95h   [-1,0,+1]          [0.167,0.167,0.722]  18c
-N_C_C1_C1.54C2.52C2.95i   [-1,0,+1]          [0.167,0.167,0.806]  18c
-N_C_C1_C1.54C2.52C2.95j   [-1,0,+1]          [0.056,0.278,0.028]  18c
-N_C_C1_C1.54C2.52C2.95k   [-1,0,+1]          [0.278,0.055,0.167]  18c
-N_C_C1_C1.54C2.52C2.95l   [-1,0,+1]          [0.278,0.056,0.250]  18c
-N_C_C1_C1.54C2.52C2.95m   [-1,0,+1]          [0.389,0.111,0.028]  18c
-N_C_C1_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.389,0.167]  18c
-N_C_C1_C1.54C2.52C2.95o   [-1,0,+1]          [0.056,0.444,0.028]  18c
-N_C_C1_C1.54C2.52C2.95p   [-1,0,+1]          [0.111,0.389,0.250]  18c
-N_C_C1_C1.54C2.52C2.95q   [-1,0,+1]          [0.445,0.056,0.167]  18c
-N_C_C1_C1.54C2.52C2.95r   [-1,0,+1]          [0.445,0.056,0.250]  18c
-N_C_C1_C1.54C2.52C2.95s   [-1,0,+1]          [0.056,0.445,0.278]  18c
-N_C_C1_C1.54C2.52N2.52    [-1,0,+1]          [0.167,0.167,0.472]  18c
-N_C_C3v_C1.54C2.52C2.95a  [-1,0,+1]          [0.000,0.000,0.056]  3a
-N_C_C3v_C1.54C2.52C2.95b  [-1,0,+1]          [0.000,0.000,0.139]  3a
-N_C_C3v_C1.54C2.52C2.95c  [-1,0,+1]          [0.000,0.000,0.722]  3a
-N_C_C3v_C1.54C2.52C2.95d  [-1,0,+1]          [0.000,0.000,0.806]  3a
-N_C_C3v_C1.54N1.54        [-1,0,+1]          [0.000,0.000,0.389]  3a
-N_C_Cs_C1.54C2.52C2.95a   [-1,0,+1]          [0.556,0.278,0.278]  9b
-N_C_Cs_C1.54C2.52C2.95b   [-1,0,+1]          [0.500,0.500,0.056]  9b
-N_C_Cs_C1.54C2.52C2.95c   [-1,0,+1]          [0.500,0.500,0.139]  9b
-N_C_Cs_C1.54C2.52C2.95d   [-1,0,+1]          [0.500,0.500,0.389]  9b
-N_C_Cs_C1.54C2.52C2.95e   [-1,0,+1]          [0.500,0.500,0.472]  9b
-N_C_Cs_C1.54C2.52C2.95f   [-1,0,+1]          [0.500,0.500,0.722]  9b
-N_C_Cs_C1.54C2.52C2.95g   [-1,0,+1]          [0.500,0.500,0.806]  9b
-N_C_Cs_C1.54C2.52C2.95h   [-1,0,+1]          [0.056,0.111,0.028]  9b
-N_C_Cs_C1.54C2.52C2.95i   [-1,0,+1]          [0.111,0.056,0.167]  9b
-N_C_Cs_C1.54C2.52C2.95j   [-1,0,+1]          [0.222,0.111,0.028]  9b
-N_C_Cs_C1.54C2.52C2.95k   [-1,0,+1]          [0.111,0.056,0.250]  9b
-N_C_Cs_C1.54C2.52C2.95l   [-1,0,+1]          [0.111,0.222,0.167]  9b
-N_C_Cs_C1.54C2.52C2.95m   [-1,0,+1]          [0.056,0.111,0.278]  9b
-N_C_Cs_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.222,0.250]  9b
-N_C_Cs_C1.54C2.52C2.95o   [-1,0,+1]          [0.222,0.111,0.278]  9b
-N_C_Cs_C1.54C2.52C2.95p   [-1,0,+1]          [0.222,0.111,0.361]  9b
-N_C_Cs_C1.54C2.52C2.95q   [-1,0,+1]          [0.444,0.222,0.167]  9b
-N_C_Cs_C1.54C2.52C2.95r   [-1,0,+1]          [0.444,0.222,0.250]  9b
-N_C_Cs_C1.54C2.52C2.95s   [-1,0,+1]          [0.111,0.222,0.500]  9b
-N_C_Cs_C1.54C2.52C2.95t   [-1,0,+1]          [0.556,0.111,0.028]  9b
-N_C_Cs_C1.54C2.52C2.95u   [-1,0,+1]          [0.222,0.445,0.278]  9b
-N_C_Cs_C1.54C2.52C2.95v   [-1,0,+1]          [0.111,0.555,0.250]  9b
-N_C_Cs_C1.54C2.52C2.95w   [-1,0,+1]          [0.556,0.278,0.028]  9b
-N_C_Cs_C1.54C2.52C2.95x   [-1,0,+1]          [0.056,0.111,0.611]  9b
-N_C_Cs_C1.54C2.52C2.95y   [-1,0,+1]          [0.556,0.111,0.278]  9b
-N_C_Cs_C1.54C2.52C2.95z   [-1,0,+1]          [0.611,0.222,0.167]  9b
-N_C_Cs_C1.54C2.52C2.95{   [-1,0,+1]          [0.611,0.222,0.250]  9b
-N_C_Cs_C1.54C2.52N2.52a   [-1,0,+1]          [0.056,0.111,0.361]  9b
-N_C_Cs_C1.54C2.52N2.52b   [-1,0,+1]          [0.111,0.056,0.583]  9b
-N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
+C_N                       [-1,0,+1]          [0.000,0.000,0.361]  3a
+N_C_C1_C1.54C2.52C2.95a   [-1,0,+1]          [0.167,0.167,0.028]  18c
+N_C_C1_C1.54C2.52C2.95b   [-1,0,+1]          [0.167,0.167,0.111]  18c
+N_C_C1_C1.54C2.52C2.95c   [-1,0,+1]          [0.278,0.222,0.222]  18c
+N_C_C1_C1.54C2.52C2.95d   [-1,0,+1]          [0.333,0.333,0.028]  18c
+N_C_C1_C1.54C2.52C2.95e   [-1,0,+1]          [0.333,0.333,0.111]  18c
+N_C_C1_C1.54C2.52C2.95f   [-1,0,+1]          [0.167,0.167,0.444]  18c
+N_C_C1_C1.54C2.52C2.95g   [-1,0,+1]          [0.167,0.167,0.694]  18c
+N_C_C1_C1.54C2.52C2.95h   [-1,0,+1]          [0.167,0.167,0.778]  18c
+N_C_C1_C1.54C2.52C2.95i   [-1,0,+1]          [0.056,0.278,0.000]  18c
+N_C_C1_C1.54C2.52C2.95j   [-1,0,+1]          [0.278,0.056,0.139]  18c
+N_C_C1_C1.54C2.52C2.95k   [-1,0,+1]          [0.056,0.278,0.250]  18c
+N_C_C1_C1.54C2.52C2.95l   [-1,0,+1]          [0.389,0.111,0.000]  18c
+N_C_C1_C1.54C2.52C2.95m   [-1,0,+1]          [0.111,0.389,0.139]  18c
+N_C_C1_C1.54C2.52C2.95n   [-1,0,+1]          [0.056,0.278,0.333]  18c
+N_C_C1_C1.54C2.52C2.95o   [-1,0,+1]          [0.111,0.389,0.222]  18c
+N_C_C1_C1.54C2.52C2.95p   [-1,0,+1]          [0.445,0.056,0.139]  18c
+N_C_C1_C1.54C2.52C2.95q   [-1,0,+1]          [0.389,0.111,0.250]  18c
+N_C_C1_C1.54C2.52C2.95r   [-1,0,+1]          [0.445,0.056,0.222]  18c
+N_C_C1_C1.54C2.52C2.95s   [-1,0,+1]          [0.056,0.444,0.250]  18c
+N_C_C1_C1.54C2.52N2.52    [-1,0,+1]          [0.167,0.167,0.361]  18c
+N_C_C3v_C1.54C2.52C2.95a  [-1,0,+1]          [0.000,0.000,0.028]  3a
+N_C_C3v_C1.54C2.52C2.95b  [-1,0,+1]          [0.000,0.000,0.111]  3a
+N_C_C3v_C1.54C2.52C2.95c  [-1,0,+1]          [0.000,0.000,0.694]  3a
+N_C_C3v_C1.54C2.52C2.95d  [-1,0,+1]          [0.000,0.000,0.778]  3a
+N_C_C3v_C1.54N1.54        [-1,0,+1]          [0.000,0.000,0.444]  3a
+N_C_Cs_C1.54C2.52C2.95a   [-1,0,+1]          [0.111,0.222,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95b   [-1,0,+1]          [0.444,0.222,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95c   [-1,0,+1]          [0.611,0.222,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95d   [-1,0,+1]          [0.500,0.500,0.028]  9b
+N_C_Cs_C1.54C2.52C2.95e   [-1,0,+1]          [0.500,0.500,0.111]  9b
+N_C_Cs_C1.54C2.52C2.95f   [-1,0,+1]          [0.500,0.500,0.361]  9b
+N_C_Cs_C1.54C2.52C2.95g   [-1,0,+1]          [0.500,0.500,0.444]  9b
+N_C_Cs_C1.54C2.52C2.95h   [-1,0,+1]          [0.500,0.500,0.695]  9b
+N_C_Cs_C1.54C2.52C2.95i   [-1,0,+1]          [0.500,0.500,0.778]  9b
+N_C_Cs_C1.54C2.52C2.95j   [-1,0,+1]          [0.055,0.111,0.000]  9b
+N_C_Cs_C1.54C2.52C2.95k   [-1,0,+1]          [0.111,0.056,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95l   [-1,0,+1]          [0.222,0.111,0.000]  9b
+N_C_Cs_C1.54C2.52C2.95m   [-1,0,+1]          [0.111,0.056,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95n   [-1,0,+1]          [0.111,0.222,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95o   [-1,0,+1]          [0.222,0.111,0.250]  9b
+N_C_Cs_C1.54C2.52C2.95p   [-1,0,+1]          [0.222,0.111,0.333]  9b
+N_C_Cs_C1.54C2.52C2.95q   [-1,0,+1]          [0.444,0.222,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95r   [-1,0,+1]          [0.111,0.222,0.472]  9b
+N_C_Cs_C1.54C2.52C2.95s   [-1,0,+1]          [0.222,0.444,0.250]  9b
+N_C_Cs_C1.54C2.52C2.95t   [-1,0,+1]          [0.555,0.111,0.000]  9b
+N_C_Cs_C1.54C2.52C2.95u   [-1,0,+1]          [0.111,0.056,0.555]  9b
+N_C_Cs_C1.54C2.52C2.95v   [-1,0,+1]          [0.056,0.111,0.583]  9b
+N_C_Cs_C1.54C2.52C2.95w   [-1,0,+1]          [0.111,0.555,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95x   [-1,0,+1]          [0.556,0.111,0.250]  9b
+N_C_Cs_C1.54C2.52C2.95y   [-1,0,+1]          [0.555,0.278,0.000]  9b
+N_C_Cs_C1.54C2.52C2.95z   [-1,0,+1]          [0.611,0.222,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95{   [-1,0,+1]          [0.555,0.278,0.250]  9b
+N_C_Cs_C1.54C2.52N2.52a   [-1,0,+1]          [0.056,0.111,0.250]  9b
+N_C_Cs_C1.54C2.52N2.52b   [-1,0,+1]          [0.111,0.056,0.472]  9b
+N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.056,0.111,0.333]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of C215N.\n"
@@ -599,6 +600,49 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
         self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
         self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
+
+        self.sb2si2te6_defect_gen_info = (
+            """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Si         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+v_Sb         [-2,-1,0,+1]        [0.000,0.000,0.166]  6c
+v_Te         [-1,0,+1,+2]        [0.335,0.003,0.073]  18f
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_Sb            [0,+1,+2]                    [0.000,0.000,0.166]  6c
+Si_Te            [-2,-1,0,+1,+2,+3,+4,+5,+6]  [0.335,0.003,0.073]  18f
+Sb_Si            [-7,-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
+Sb_Te            [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.335,0.003,0.073]  18f
+Te_Si            [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
+Te_Sb            [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.166]  6c
+
+Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Si_i_C1_Si2.20   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.179,0.359,0.167]  18f
+Si_i_C1_Si2.43   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.341,0.341,0.458]  18f
+Si_i_C1_Te2.44   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.001,0.336,0.289]  18f
+Si_i_C3_Si2.64   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.318]  6c
+Si_i_C3i_Te2.81  [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.000]  3a
+Sb_i_C1_Si2.20   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.179,0.359,0.167]  18f
+Sb_i_C1_Si2.43   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.341,0.341,0.458]  18f
+Sb_i_C1_Te2.44   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.001,0.336,0.289]  18f
+Sb_i_C3_Si2.64   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.318]  6c
+Sb_i_C3i_Te2.81  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.000]  3a
+Te_i_C1_Si2.20   [-2,-1,0,+1,+2,+3,+4]        [0.179,0.359,0.167]  18f
+Te_i_C1_Si2.43   [-2,-1,0,+1,+2,+3,+4]        [0.341,0.341,0.458]  18f
+Te_i_C1_Te2.44   [-2,-1,0,+1,+2,+3,+4]        [0.001,0.336,0.289]  18f
+Te_i_C3_Si2.64   [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.318]  6c
+Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
+            "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
+            "SiSbTe3.\n"
+            "Note that Wyckoff letters can depend on the ordering of elements in the "
+            "conventional standard structure, for which doped uses the spglib convention."
+        )
+
+        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
@@ -652,6 +696,20 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
             defect_entry_name in defect_gen
             for defect_entry_name in defect_gen.defect_entries  # __contains__()
         )
+        # test no unwanted structure reordering
+        if not np.allclose(defect_gen.supercell_matrix, np.eye(3), atol=1e-3):  # if input structure is
+            # unordered and used as supercell, then primitive_structure and bulk_supercell attributes
+            # can be unordered, fine as not directly used for POSCAR file generation
+            for structure in [
+                # defect_gen.structure,  # input structure can be unordered, fine as not directly used for
+                # POSCAR file generation
+                defect_gen.primitive_structure,
+                defect_gen.conventional_structure,
+                defect_gen.bulk_supercell,
+            ]:
+                assert len(Poscar(structure).site_symbols) == len(
+                    set(Poscar(structure).site_symbols)
+                )  # no duplicates
 
         assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
         if "substitutions" in defect_gen.defects:
@@ -680,6 +738,17 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
                     defect.defect_structure.lattice.matrix,
                     defect_gen.primitive_structure.lattice.matrix,
                 )
+                # test no unwanted structure reordering
+                if not np.allclose(defect_gen.supercell_matrix, np.eye(3), atol=1e-3):
+                    for structure in [
+                        defect.structure,
+                        # defect.defect_structure,  # defect structure can have reordered structure,
+                        # fine as not used for POSCAR file generation
+                        defect.conventional_structure,
+                    ]:
+                        assert len(Poscar(structure).site_symbols) == len(
+                            set(Poscar(structure).site_symbols)
+                        )  # no duplicates
 
         for defect_name, defect_entry in defect_gen.defect_entries.items():
             self._check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed)
@@ -694,6 +763,10 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         assert defect_entry.wyckoff
         assert defect_entry.defect
         assert defect_entry.defect.wyckoff == defect_entry.wyckoff
+        # Commenting out as confirmed works but slows down tests (tested anyway with the defect_gen
+        # outputs):
+        # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
+        # defect_entry.defect)
         assert np.isclose(
             defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords
         ).all()
@@ -713,6 +786,17 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
             defect_entry.defect.conventional_structure.lattice.matrix,
             reoriented_conv_structure.lattice.matrix,
         )
+        # test no unwanted structure reordering
+        for structure in [
+            defect_entry.defect_supercell,
+            defect_entry.bulk_supercell,
+            defect_entry.sc_entry.structure,
+            defect_entry.conventional_structure,
+        ]:
+            assert len(Poscar(structure).site_symbols) == len(
+                set(Poscar(structure).site_symbols)
+            )  # no duplicates
+
         # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
         # defect_entry.conventional_structure
         distance_matrix = np.linalg.norm(
@@ -802,7 +886,7 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
                 charge_state = charge_state_dict["input_parameters"]["charge_state"]
                 try:
                     assert np.isclose(
-                        np.product(list(charge_state_dict["probability_factors"].values())),
+                        np.prod(list(charge_state_dict["probability_factors"].values())),
                         charge_state_dict["probability"],
                     )
                 except AssertionError as e:
@@ -841,6 +925,12 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         distance_matrix = defect_entry.defect_supercell.distance_matrix
         min_dist = min(distance_matrix[distance_matrix > 0.01])
         print(min_dist)
+
+        min_dist_in_bulk = min(  # account for rare case where defect introduction _increases_ the
+            # minimum atomic distance (e.g. vacancy in defect supercell that had an interstitial)
+            defect_entry.bulk_supercell.distance_matrix[defect_entry.bulk_supercell.distance_matrix > 0.01]
+        )
+
         for equiv_defect_supercell_site in defect_entry.equivalent_supercell_sites:
             new_defect_structure = defect_entry.bulk_supercell.copy()
             new_defect_structure.append(
@@ -849,7 +939,9 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
             distance_matrix = new_defect_structure.distance_matrix
             equiv_min_dist = min(distance_matrix[distance_matrix > 0.01])
             print(equiv_min_dist)
-            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+            assert np.isclose(min_dist, equiv_min_dist, atol=0.01) or np.isclose(
+                min_dist_in_bulk, equiv_min_dist, atol=0.01
+            )
 
     def _check_editing_defect_gen(self, random_defect_entry_name, defect_gen):
         assert (
@@ -887,22 +979,18 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 defect_gen = DefectsGenerator(structure, **kwargs)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
                 if min_image_distance is None:
-                    assert not non_ignored_warnings
+                    assert not w
                 else:
-                    assert len(non_ignored_warnings) == 1
-                    assert issubclass(non_ignored_warnings[-1].category, UserWarning)
+                    assert len(w) == 1
+                    assert issubclass(w[-1].category, UserWarning)
                     assert (
                         f"Input structure is <10 Å in at least one direction (minimum image distance ="
                         f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
                         f"calculations, but generate_supercell = False, so using input structure as "
-                        f"defect & bulk supercells. Caution advised!"
-                        in str(non_ignored_warnings[-1].message)
+                        f"defect & bulk supercells. Caution advised!" in str(w[-1].message)
                     )
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
@@ -1172,16 +1260,13 @@ N_C_Cs_C1.54N1.54         [-1,0,+1]          [0.111,0.056,0.500]  9b
             ["Cd"],
         ]:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 cdte_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert len(non_ignored_warnings) == 1
+                assert len(w) == 1
                 assert (
                     "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
                     "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
-                    in str(non_ignored_warnings[-1].message)
+                    in str(w[-1].message)
                 )
                 assert cdte_defect_gen.extrinsic == extrinsic_arg  # explicitly test extrinsic attribute
 
@@ -1697,6 +1782,21 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert "Cd_i_Td_Te2.83_0" in cdte_defect_gen.defect_entries
         #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
         info_line = "Cd_i_C3v         [0]                    [0.625,0.625,0.625]  16e"
+        assert info_line in repr(cdte_defect_gen)
+
+        # check removing neutral charge state still fine:
+        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
+        cdte_defect_gen.remove_charge_states("Cd_i", [0, +1])
+        self._general_defect_gen_check(cdte_defect_gen, charge_states_removed=True)
+
+        assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_+2" in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_+1" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_C3v_0" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_0" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_0" not in cdte_defect_gen.defect_entries
+        #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
+        info_line = "Cd_i_C3v         [+2]                   [0.625,0.625,0.625]  16e"
         assert info_line in repr(cdte_defect_gen)
 
     def test_cdte_no_generate_supercell_supercell_input(self):
@@ -2490,14 +2590,11 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         try:
             with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+                warnings.resetwarnings()
                 N_diamond_defect_gen = DefectsGenerator(
                     self.N_doped_diamond_supercell, interstitial_gen_kwargs=False
                 )
-                non_ignored_warnings = [
-                    warning for warning in w if "get_magnetic_symmetry" not in str(warning.message)
-                ]  # pymatgen/spglib warning, ignored by default in doped but not here from setting
-                assert len(non_ignored_warnings) == 1
+                assert len(w) == 1
                 assert (
                     "\nOxidation states could not be guessed for the input structure. This is "
                     "required for charge state guessing, so defects will still be generated but all "
@@ -2505,7 +2602,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                     "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
                     "states of the input structure (e.g. using "
                     "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
-                    in str(non_ignored_warnings[-1].message)
+                    in str(w[-1].message)
                 )
                 assert N_diamond_defect_gen.interstitial_gen_kwargs is False  # check attribute set
 
@@ -2518,6 +2615,22 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert "_i_" not in output  # no interstitials generated
 
         self._general_defect_gen_check(N_diamond_defect_gen)
+
+        # save reduced defect gen to json
+        # edit to only 3 defects / 9 defect entries
+        N_diamond_defect_gen.defects = {
+            "vacancies": N_diamond_defect_gen.defects["vacancies"][0:2],
+            "substitutions": N_diamond_defect_gen.defects["substitutions"][0:1],
+        }
+        N_diamond_defect_gen.defect_entries = {
+            k: v
+            for k, v in N_diamond_defect_gen.defect_entries.items()
+            if any(
+                i in k
+                for i in ["v_C_C1_C1.54C2.52C2.95a", "v_C_C1_C1.54C2.52C2.95b", "N_C_C1_C1.54C2.52C2.95s"]
+            )
+        }
+        N_diamond_defect_gen.to_json(f"{self.data_dir}/N_diamond_defect_gen.json")  # test in test_vasp.py
 
     def compare_doped_charges(self, tld_stable_charges, defect_gen):
         """
@@ -2610,15 +2723,15 @@ Interstitials         Guessed Charges              Conv. Cell Coords    Wyckoff
 --------------------  ---------------------------  -------------------  ---------
 Sb_i_C1               [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.367,0.043,0.279]  8d
 Sb_i_Cs_Sb2.14        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.503,0.250,0.700]  4c
-Sb_i_Cs_Sb2.32        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.295,0.250,0.378]  4c
-Sb_i_Cs_Sb2.63        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.591,0.250,0.090]  4c
+Sb_i_Cs_Sb2.34        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.335,0.250,0.349]  4c
+Sb_i_Cs_Sb2.83        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.627,0.250,0.132]  4c
 Sb_i_Cs_Se2.32Sb2.33  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.393,0.250,0.217]  4c
 Sb_i_Cs_Se2.32Sb2.40  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.074,0.250,0.035]  4c
 Sb_i_Cs_Se2.38        [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.293,0.750,0.263]  4c
 Se_i_C1               [-2,-1,0,+1,+2,+3,+4]        [0.367,0.043,0.279]  8d
 Se_i_Cs_Sb2.14        [-2,-1,0,+1,+2,+3,+4]        [0.503,0.250,0.700]  4c
-Se_i_Cs_Sb2.32        [-2,-1,0,+1,+2,+3,+4]        [0.295,0.250,0.378]  4c
-Se_i_Cs_Sb2.63        [-2,-1,0,+1,+2,+3,+4]        [0.591,0.250,0.090]  4c
+Se_i_Cs_Sb2.34        [-2,-1,0,+1,+2,+3,+4]        [0.335,0.250,0.349]  4c
+Se_i_Cs_Sb2.83        [-2,-1,0,+1,+2,+3,+4]        [0.627,0.250,0.132]  4c
 Se_i_Cs_Se2.32Sb2.33  [-2,-1,0,+1,+2,+3,+4]        [0.393,0.250,0.217]  4c
 Se_i_Cs_Se2.32Sb2.40  [-2,-1,0,+1,+2,+3,+4]        [0.074,0.250,0.035]  4c
 Se_i_Cs_Se2.38        [-2,-1,0,+1,+2,+3,+4]        [0.293,0.750,0.263]  4c
@@ -2659,11 +2772,11 @@ Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
 Ag_i_C1_Ag2.04   [0,+1,+2]          [0.335,0.435,0.002]  4e
 Ag_i_C1_Ag2.05   [0,+1,+2]          [0.405,0.109,0.250]  4e
-Ag_i_C2_Ag2.02   [0,+1,+2]          [0.500,0.250,0.184]  2d
+Ag_i_C2_Ag2.02   [0,+1,+2]          [0.500,0.250,0.319]  2d
 Ag_i_C2_Ag2.48   [0,+1,+2]          [0.091,0.500,0.500]  2b
 Se_i_C1_Ag2.04   [-2,-1,0]          [0.335,0.435,0.002]  4e
 Se_i_C1_Ag2.05   [-2,-1,0]          [0.405,0.109,0.250]  4e
-Se_i_C2_Ag2.02   [-2,-1,0]          [0.500,0.250,0.184]  2d
+Se_i_C2_Ag2.02   [-2,-1,0]          [0.500,0.250,0.319]  2d
 Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
 \n"""
                 "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
@@ -2681,52 +2794,12 @@ Se_i_C2_Ag2.48   [-2,-1,0]          [0.091,0.500,0.500]  2b
         # still a tricky case as we have rare Si+3 due to dumbbell formation
 
         sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(self.sb2si2te6)
-        self._general_defect_gen_check(sb2si2te6_defect_gen)
+
+        # different charge states than when max_sites = -1 is used:
+        assert self.sb2si2te6_defect_gen_info in output
+
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
-
-        assert (  # different charge states than when max_sites = -1 is used:
-            (
-                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
------------  ------------------  -------------------  ---------
-v_Si         [-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
-v_Sb         [-2,-1,0,+1]        [0.000,0.000,0.166]  6c
-v_Te         [-1,0,+1,+2]        [0.335,0.003,0.073]  18f
-
-Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Si_Sb            [0,+1,+2]                    [0.000,0.000,0.166]  6c
-Si_Te            [-2,-1,0,+1,+2,+3,+4,+5,+6]  [0.335,0.003,0.073]  18f
-Sb_Si            [-7,-6,-5,-4,-3,-2,-1,0,+1]  [0.000,0.000,0.445]  6c
-Sb_Te            [-1,0,+1,+2,+3,+4,+5,+6,+7]  [0.335,0.003,0.073]  18f
-Te_Si            [-6,-5,-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
-Te_Sb            [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.166]  6c
-
-Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.20   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.179,0.359,0.167]  18f
-Si_i_C1_Si2.28   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.209,0.208,0.361]  18f
-Si_i_C1_Si2.39   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.001,0.336,0.243]  18f
-Si_i_C3_Si2.64   [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.318]  6c
-Si_i_C3i_Te2.81  [-4,-3,-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.20   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.179,0.359,0.167]  18f
-Sb_i_C1_Si2.28   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.209,0.208,0.361]  18f
-Sb_i_C1_Si2.39   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.001,0.336,0.243]  18f
-Sb_i_C3_Si2.64   [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.318]  6c
-Sb_i_C3i_Te2.81  [-3,-2,-1,0,+1,+2,+3,+4,+5]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.20   [-2,-1,0,+1,+2,+3,+4]        [0.179,0.359,0.167]  18f
-Te_i_C1_Si2.28   [-2,-1,0,+1,+2,+3,+4]        [0.209,0.208,0.361]  18f
-Te_i_C1_Si2.39   [-2,-1,0,+1,+2,+3,+4]        [0.001,0.336,0.243]  18f
-Te_i_C3_Si2.64   [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.318]  6c
-Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
-                "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
-                "SiSbTe3.\n"
-                "Note that Wyckoff letters can depend on the ordering of elements in the "
-                "conventional standard structure, for which doped uses the spglib convention."
-            )
-            in output
-        )
+        self._general_defect_gen_check(sb2si2te6_defect_gen)
 
     def test_charge_state_gen_kwargs(self):
         # test adjusting probability_threshold with ZnS:
@@ -2759,3 +2832,56 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             assert new_string in output
 
         self.zns_defect_gen_check(zns_defect_gen, check_info=False)
+
+        # test adjusting padding with Sb2S2Te6:
+        sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(
+            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}
+        )
+        self._general_defect_gen_check(sb2si2te6_defect_gen)
+        assert sb2si2te6_defect_gen.structure == self.sb2si2te6
+        assert self.sb2si2te6_defect_gen_info not in output  # changed
+
+        assert self.sb2si2te6_defect_gen_info.split("Substitutions")[1] in output  # after vacancies,
+        # the same
+
+        assert (  # different charge states than when max_sites = -1 is used:
+            (
+                """Vacancies    Guessed Charges        Conv. Cell Coords    Wyckoff
+-----------  ---------------------  -------------------  ---------
+v_Si         [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.445]  6c
+v_Sb         [-2,-1,0,+1,+2]        [0.000,0.000,0.166]  6c
+v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
+\n"""
+            )
+            in output
+        )
+
+        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {"padding": 2}  # check attribute set
+
+    def test_unknown_oxi_states(self):
+        """
+        Test initialising DefectsGenerator with elements that don't have
+        tabulated ICSD oxidation states.
+        """
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
+        # Pt has no tabulated ICSD oxidation states via pymatgen
+        self._general_defect_gen_check(cdte_defect_gen)
+
+        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
+        self._general_defect_gen_check(cdte_defect_gen)
+        # Cali baby!
+
+    def test_agsbte2(self):
+        """
+        Test generating defects in a disordered supercell of AgSbTe2.
+
+        In particular, test that defect generation doesn't yield unsorted
+        structures.
+        """
+        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        self._general_defect_gen_check(agsbte2_defect_gen)
+
+        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(
+            self.sqs_agsbte2, generate_supercell=False
+        )
+        self._general_defect_gen_check(agsbte2_defect_gen)

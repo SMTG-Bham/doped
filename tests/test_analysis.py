@@ -13,10 +13,13 @@ import numpy as np
 from pymatgen.core.structure import Structure
 from test_vasp import _potcars_available
 
-from doped.analysis import DefectParser, defect_entry_from_paths
+from doped.analysis import defect_entry_from_paths, defect_from_structures, defect_name_from_structures
+from doped.generation import DefectsGenerator, get_defect_name_from_defect
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_outcar,
+    get_vasprun,
 )
 
 
@@ -29,6 +32,12 @@ def if_present_rm(path):
             os.remove(path)
         elif os.path.isdir(path):
             shutil.rmtree(path)
+
+
+# TODO: Test reordered case - have we one from before? - Pretty sure this shouldn't be any issue now
+# TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
+# TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
+#  cases (no warning in those cases 'cause anisotropic)
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -45,15 +54,6 @@ class DopedParsingTestCase(unittest.TestCase):
             [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
-
-        self.general_delocalization_warning = """
-Note: Defects throwing a "delocalization analysis" warning may require a larger supercell for
-accurate total energies. Recommended to look at the correction plots (i.e. run
-`get_correction_freysoldt(DefectEntry,...,plot=True)` from
-`doped.corrections`) to visually determine if the charge
-correction scheme is still appropriate (replace 'freysoldt' with 'kumagai' if using anisotropic
-correction). You can also change the DefectCompatibility() tolerance settings via the
-`compatibility` parameter in `DefectParser.from_paths()`."""
 
     def tearDown(self):
         if_present_rm("bulk_voronoi_nodes.json")
@@ -145,12 +145,19 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
+            skip_corrections=True,
         )
         assert ytos_F_O_1.charge_state == 1
-        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0031, atol=1e-3)
-        # assert np.isclose(ytos_F_O_1.uncorrected_energy, -0.0852, atol=1e-3)
+        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0852, atol=1e-3)  # uncorrected energy
+
+        ytos_F_O_1 = defect_entry_from_paths(  # with corrections this time
+            f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
+            f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+            self.ytos_dielectric,
+        )
+        assert np.isclose(ytos_F_O_1.get_ediff(), 0.04176070572680146, atol=1e-3)  # corrected energy
         correction_dict = {
-            "kumagai_charge_correction": 0.08214,
+            "kumagai_charge_correction": 0.12699488572686776,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(ytos_F_O_1.corrections[correction_name], correction_energy, atol=1e-3)
@@ -165,8 +172,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         """
         Test skipping of charge corrections and warnings.
         """
-        DefectParser._delocalization_warning_printed = False  # reset class variable, so test is
-        # independent of what tests have been run before
         defect_path = f"{self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         fake_aniso_dielectric = [1, 2, 3]
 
@@ -191,7 +196,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"supercells!" in str(w[-1].message)
             )
 
-        # assert np.isclose(parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2_fake_aniso.get_ediff() - sum(parsed_v_cd_m2_fake_aniso.corrections.values()),
+            7.661,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.379714081555262, atol=1e-3)
 
         # test no warnings when skip_corrections is True
@@ -205,7 +214,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
             assert len(w) == 0
 
-        # assert np.isclose(parsed_v_cd_m2_fake_aniso.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2_fake_aniso.get_ediff() - sum(parsed_v_cd_m2_fake_aniso.corrections.values()),
+            7.661,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 7.661, atol=1e-3)
         assert parsed_v_cd_m2_fake_aniso.corrections == {}
 
@@ -225,13 +238,22 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
             )
             assert (
-                f"Delocalization analysis has indicated that {parsed_int_Te_2_fake_aniso.name} with "
-                f"charge +2 may not be compatible with the chosen charge correction." in str(w[1].message)
+                f"Estimated error in the Kumagai (eFNV) charge correction for defect "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is than the "
+                f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
+                f"by plotting the site potential differences (using "
+                f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
+                f"to unstable or shallow defect charge states (which can't be accurately modelled with "
+                f"the supercell approach). If this error is not acceptable, you may need to use a larger "
+                f"supercell for more accurate energies." in str(w[1].message)
             )
-            assert self.general_delocalization_warning in str(w[2].message)
 
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.926, atol=1e-3)
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.991240009587045, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -241,11 +263,8 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 dielectric=self.cdte_dielectric,
                 charge_state=2,
             )
-        assert (
-            len(w) == 1
-        )  # no charge correction warning with iso dielectric, parsing from OUTCARs, but multiple
-        # OUTCARs present -> warning
-        # assert np.isclose(parsed_int_Te_2.uncorrected_energy, -7.105, atol=1e-3)
+        assert len(w) == 1  # no charge correction warning with iso dielectric, parsing from OUTCARs,
+        # but multiple OUTCARs present -> warning
         assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
 
         # test warning when only OUTCAR present but no core level info (ICORELEVEL != 0)
@@ -261,7 +280,11 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 1,
                 "-> Charge corrections will not be applied for this defect.",
             )
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
         assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -7.105, atol=1e-3)
 
         # test warning when no core level info in OUTCAR (ICORELEVEL != 0), but LOCPOT
@@ -282,11 +305,15 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 "dielectric. This could lead to significant errors for very anisotropic systems and/or "
                 "relatively small supercells!",
             )
-        # assert np.isclose(parsed_int_Te_2_fake_aniso.uncorrected_energy, -7.105, atol=1e-3)
+
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.771092998459437, atol=1e-3
-        )  # -4.734 with old
-        # voronoi frac coords
+            parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
+            -7.105,
+            atol=3e-3,
+        )  # uncorrected energy
+        assert np.isclose(
+            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=1e-3
+        )  # -4.734 with old voronoi frac coords
 
         if_present_rm(f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -319,7 +346,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 in str(w[0].message)
             )
 
-        # assert np.isclose(parsed_v_cd_m2.uncorrected_energy, 7.661, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()), 7.661, atol=3e-3
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_m2.get_ediff(), 7.661, atol=1e-3)
         assert parsed_v_cd_m2.corrections == {}
 
@@ -339,7 +368,9 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             )
             assert len(w) == 0
 
-        # assert np.isclose(parsed_v_cd_0.uncorrected_energy, 4.166, atol=1e-3)
+        assert np.isclose(
+            parsed_v_cd_0.get_ediff() - sum(parsed_v_cd_0.corrections.values()), 4.166, atol=3e-3
+        )  # uncorrected energy
         assert np.isclose(parsed_v_cd_0.get_ediff(), 4.166, atol=1e-3)
 
     def _check_no_icorelevel_warning_int_te(self, dielectric, warnings, num_warnings, action):
@@ -377,15 +408,13 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert all(issubclass(warning.category, UserWarning) for warning in w)
 
     def test_multiple_outcars(self):
-        DefectParser._delocalization_warning_printed = False  # reset class variable, so test is
-        # independent of what tests have been run before
         shutil.copyfile(
             f"{self.CDTE_BULK_DATA_DIR}/OUTCAR.gz",
             f"{self.CDTE_BULK_DATA_DIR}/another_OUTCAR.gz",
         )
         fake_aniso_dielectric = [1, 2, 3]
         with warnings.catch_warnings(record=True) as w:
-            self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 4)
+            self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
             assert (
                 f"Multiple `OUTCAR` files found in bulk directory: {self.CDTE_BULK_DATA_DIR}. Using"
                 f" {self.CDTE_BULK_DATA_DIR}/OUTCAR.gz to parse core levels and compute the Kumagai ("
@@ -397,7 +426,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 f" {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz to parse core levels and "
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[1].message)
             )
-            # other two warnings are delocalization warnings, already tested
+            # other warnings is charge correction error warning, already tested
 
         with warnings.catch_warnings(record=True) as w:
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
@@ -513,7 +542,6 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
                 atol=0.1,  # now slightly off because using int()
-                # difference)
             )
 
         # test 3x1 array
@@ -642,32 +670,23 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
         correction.
         """
+        if_present_rm("bulk_voronoi_nodes.json")
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    defect_charge = int(i[-2:].replace("_", ""))
-                    # parse with no transformation.json:
-                    te_i_2_ent = defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CDTE_BULK_DATA_DIR,
-                        dielectric=self.cdte_dielectric,
-                        charge_state=None if _potcars_available() else defect_charge
-                        # to allow testing
-                        # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-                    )
+            te_i_2_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=self.cdte_dielectric,
+                charge_state=None if _potcars_available() else +2
+                # to allow testing on GH Actions (otherwise test auto-charge determination if POTCARs
+                # available)
+            )
 
         mock_print.assert_called_once_with(
             "Saving parsed Voronoi sites (for interstitial site-matching) "
             "to bulk_voronoi_sites.json to speed up future parsing."
         )
 
-        assert np.isclose(te_i_2_ent.get_ediff(), -6.2009, atol=1e-3)
-        # assert np.isclose(te_i_2_ent.uncorrected_energy, -7.105, atol=1e-3)
-        correction_dict = {"kumagai_charge_correction": 0.9038318161163628}
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(te_i_2_ent.corrections[correction_name], correction_energy, atol=1e-3)
-
+        self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
         # assert auto-determined interstitial site is correct
         # initial position is: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
         np.testing.assert_array_almost_equal(
@@ -676,17 +695,14 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
-            for i in os.listdir(self.CDTE_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CDTE_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    defect_charge = int(i[-2:].replace("_", ""))
-                    # parse with no transformation.json:
-                    te_i_2_ent = defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CDTE_BULK_DATA_DIR,
-                        dielectric=self.cdte_dielectric,
-                        charge_state=defect_charge,
-                    )
+            te_i_2_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=self.cdte_dielectric,
+                charge_state=+2
+                # to allow testing on GH Actions (otherwise test auto-charge determination if POTCARs
+                # available)
+            )
 
         mock_print.assert_not_called()
         os.remove("bulk_voronoi_nodes.json")
@@ -707,13 +723,7 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
                     charge_state=defect_charge,
                 )
 
-        assert np.isclose(te_cd_1_ent.get_ediff(), -2.6676, atol=1e-3)
-        # assert np.isclose(te_cd_1_ent.uncorrected_energy, -2.906, atol=1e-3)
-        correction_dict = {
-            "kumagai_charge_correction": 0.23840982963691623,
-        }
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(te_cd_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
+        self._check_defect_entry_corrections(te_cd_1_ent, -2.6676, 0.23840982963691623)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
         np.testing.assert_array_almost_equal(
@@ -787,27 +797,21 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         correction.
         """
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
+
         # parse with no transformation.json or explicitly-set-charge:
-        int_F_minus1_ent = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-            dielectric=self.ytos_dielectric,
-            charge_state=None if _potcars_available() else -1  # to allow testing
-            # on GH Actions (otherwise test auto-charge determination if POTCARs available)
-        )
-
-        assert np.isclose(int_F_minus1_ent.get_ediff(), 0.767, atol=1e-3)
-        # assert np.isclose(int_F_minus1_ent.uncorrected_energy, 0.7515, atol=1e-3)
-        correction_dict = {
-            "kumagai_charge_correction": 0.0155169495708003,
-        }
-        for correction_name, correction_energy in correction_dict.items():
-            assert np.isclose(
-                int_F_minus1_ent.corrections[correction_name],
-                correction_energy,
-                atol=1e-3,
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else -1  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
 
+        correction_dict = self._check_defect_entry_corrections(
+            int_F_minus1_ent, 0.7478967131628451, -0.0036182568370900017
+        )
         # assert auto-determined interstitial site is correct
         assert np.isclose(
             int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords(
@@ -821,23 +825,128 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
 
         os.remove("bulk_voronoi_nodes.json")
 
+        # test error_tolerance setting:
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else -1,  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+                error_tolerance=0.001,
+            )
+        assert (
+            f"Estimated error in the Kumagai (eFNV) charge correction for defect "
+            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is than the `error_tolerance`: 0.001 "
+            f"eV). You may want to check the accuracy of the correction by plotting the site "
+            f"potential differences (using `defect_entry.get_kumagai_correction()` with "
+            f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
+            f"which can't be accurately modelled with the supercell approach). If this error is not "
+            f"acceptable, you may need to use a larger supercell for more accurate energies."
+            in str(w[0].message)
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent.get_kumagai_correction()  # default error tolerance, no warning
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent.get_kumagai_correction(error_tolerance=0.001)
+        assert "Estimated error in the Kumagai (eFNV)" in str(w[0].message)
+
+        # test returning correction error:
+        corr, corr_error = int_F_minus1_ent.get_kumagai_correction(return_correction_error=True)
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+        assert np.isclose(corr_error, 0.003, atol=1e-3)
+
+        # test returning correction error with plot:
+        corr, fig, corr_error = int_F_minus1_ent.get_kumagai_correction(
+            return_correction_error=True, plot=True
+        )
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+        assert np.isclose(corr_error, 0.003, atol=1e-3)
+
+        # test just correction returned with plot = False and return_correction_error = False:
+        corr = int_F_minus1_ent.get_kumagai_correction()
+        assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+
+    def _check_defect_entry_corrections(self, defect_entry, ediff, correction):
+        assert np.isclose(defect_entry.get_ediff(), ediff, atol=0.001)
+        assert np.isclose(
+            defect_entry.get_ediff() - sum(defect_entry.corrections.values()),
+            ediff - correction,
+            atol=0.003,
+        )
+        correction_dict = {"kumagai_charge_correction": correction}
+        for correction_name, correction_energy in correction_dict.items():
+            assert np.isclose(defect_entry.corrections[correction_name], correction_energy, atol=0.001)
+        return correction_dict
+
     def test_extrinsic_substitution_parsing_and_freysoldt_and_kumagai(self):
         """
         Test parsing of extrinsic F-on-O substitution in YTOS, w/Kumagai-Oba
         (eFNV) and Freysoldt (FNV) corrections.
         """
-        # first using Freysoldt (FNV) correction - gives error because anisotropic dielectric
+        # first using Freysoldt (FNV) correction
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
         # hide OUTCAR file:
         shutil.move(f"{defect_path}/OUTCAR.gz", f"{defect_path}/hidden_otcr.gz")
+
         # parse with no transformation.json or explicitly-set-charge:
-        F_O_1_ent = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-            dielectric=self.ytos_dielectric,
-            charge_state=None if _potcars_available() else 1  # to allow testing
-            # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else 1  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+            )  # check no correction error warning with default tolerance:
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+
+        # test error_tolerance setting:
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent = defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                dielectric=self.ytos_dielectric,
+                charge_state=None if _potcars_available() else 1,  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+                error_tolerance=0.00001,
+            )  # check no correction error warning with default tolerance:
+
+        assert any(
+            f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
+            f"0.000 eV (i.e. which is than the `error_tolerance`: 0.000 eV). You may want to check the "
+            f"accuracy of the correction by plotting the site potential differences (using "
+            f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due to "
+            f"unstable or shallow defect charge states (which can't be accurately modelled with the "
+            f"supercell approach). If this error is not acceptable, you may need to use a larger "
+            f"supercell for more accurate energies." in str(warning.message)
+            for warning in w
         )
+
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent.get_freysoldt_correction()  # default error tolerance, no warning
+        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+
+        with warnings.catch_warnings(record=True) as w:
+            F_O_1_ent.get_freysoldt_correction(error_tolerance=0.00001)
+        assert "Estimated error in the Freysoldt (FNV)" in str(w[0].message)
+
+        # test returning correction error:
+        corr, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True)
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
+        assert np.isclose(corr_error, 0.000, atol=1e-3)
+
+        # test returning correction error with plot:
+        corr, fig, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True, plot=True)
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
+        assert np.isclose(corr_error, 0.000, atol=1e-3)
+
+        # test just correction returned with plot = False and return_correction_error = False:
+        corr = F_O_1_ent.get_freysoldt_correction()
+        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
+
         # move OUTCAR file back to original:
         shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
 
@@ -857,11 +966,10 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
             charge_state=1,
         )
 
-        self._test_F_O_1_ent(F_O_1_ent, -0.0031, "kumagai_charge_correction", 0.08214)
+        self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
 
     def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
         assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)
-        # assert np.isclose(F_O_1_ent.uncorrected_energy, -0.08523418000004312, atol=1e-3)
         correction_test_dict = {correction_name: correction}
         for correction_name, correction_energy in correction_test_dict.items():
             assert np.isclose(F_O_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
@@ -918,6 +1026,110 @@ correction). You can also change the DefectCompatibility() tolerance settings vi
         assert warning_message in str(user_warnings[0].message)
         os.remove("bulk_voronoi_nodes.json")
 
+    def test_tricky_relaxed_interstitial_corrections_kumagai(self):
+        """
+        Test the eFNV correction performance with tricky-to-locate relaxed
+        interstitial sites (Te_i^+1 ground-state and metastable from Kavanagh
+        et al.
+
+        2022 doi.org/10.1039/D2FD00043A).
+        """
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+
+        def _make_calc_results(directory) -> CalcResults:
+            vasprun = get_vasprun(f"{directory}/vasprun.xml.gz")
+            outcar = get_outcar(f"{directory}/OUTCAR.gz")
+            return CalcResults(
+                structure=vasprun.final_structure,
+                energy=outcar.final_energy,
+                magnetization=outcar.total_mag or 0.0,
+                potentials=[-p for p in outcar.electrostatic_potential],
+                electronic_conv=vasprun.converged_electronic,
+                ionic_conv=vasprun.converged_ionic,
+            )
+
+        bulk_calc_results = _make_calc_results(f"{self.CDTE_BULK_DATA_DIR}")
+
+        for name, correction_energy in [
+            ("Int_Te_3_Unperturbed_1", 0.2974374231312522),
+            ("Int_Te_3_1", 0.3001740745077274),
+        ]:
+            print("Testing", name)
+            defect_calc_results = _make_calc_results(f"{self.CDTE_EXAMPLE_DIR}/{name}/vasp_ncl")
+            raw_efnv = make_efnv_correction(
+                +1, defect_calc_results, bulk_calc_results, self.cdte_dielectric
+            )
+
+            Te_i_ent = defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/{name}/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+            )
+
+            efnv_w_doped_site = make_efnv_correction(
+                +1,
+                defect_calc_results,
+                bulk_calc_results,
+                self.cdte_dielectric,
+                defect_coords=Te_i_ent.sc_defect_frac_coords,
+            )
+
+            assert np.isclose(raw_efnv.correction_energy, efnv_w_doped_site.correction_energy, atol=1e-3)
+            assert np.isclose(raw_efnv.correction_energy, sum(Te_i_ent.corrections.values()), atol=1e-3)
+            assert np.isclose(raw_efnv.correction_energy, correction_energy, atol=1e-3)
+
+            efnv_w_fcked_site = make_efnv_correction(
+                +1,
+                defect_calc_results,
+                bulk_calc_results,
+                self.cdte_dielectric,
+                defect_coords=Te_i_ent.sc_defect_frac_coords + 0.1,  # shifting to wrong defect site
+                # affects correction as expected (~0.02 eV = 7% in this case)
+            )
+            assert not np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-3)
+            assert np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-1)
+
+
+class DopedParsingFunctionsTestCase(unittest.TestCase):
+    def setUp(self):
+        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
+        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
+        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
+        self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
+
+        # TODO: Try rattling the structures (and modifying symprec a little to test tolerance?)
+
+    def test_defect_name_from_structures(self):
+        # by proxy also tests defect_from_structures
+        for struct in [
+            self.prim_cdte,
+            self.ytos_bulk_supercell,
+            self.lmno_primitive,
+            self.non_diagonal_ZnS,
+        ]:
+            defect_gen = DefectsGenerator(struct)
+            for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
+                print(
+                    defect_from_structures(defect_entry.bulk_supercell, defect_entry.defect_supercell),
+                    defect_entry.defect_supercell_site,
+                )
+                assert defect_name_from_structures(
+                    defect_entry.bulk_supercell, defect_entry.defect_supercell
+                ) == get_defect_name_from_defect(defect_entry.defect)
+
+                # Can't use defect.structure/defect.defect_structure because might be vacancy in a 1/2
+                # atom cell etc.:
+                # assert defect_name_from_structures(
+                #     defect_entry.defect.structure, defect_entry.defect.defect_structure
+                # ) == get_defect_name_from_defect(defect_entry.defect)
+
+    def tearDown(self):
+        if_present_rm("bulk_voronoi_nodes.json")
+
 
 class ReorderedParsingTestCase(unittest.TestCase):
     """
@@ -928,7 +1140,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
 
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.cdte_corrections_dir = os.path.join(self.module_path, "data/charge_correction_tests/CdTe")
+        self.cdte_corrections_dir = os.path.join(self.module_path, "data/CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.cdte_corrections_dir}/v_Cd_-2_vasp_gam"
         self.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
