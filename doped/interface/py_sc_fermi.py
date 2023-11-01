@@ -1,13 +1,12 @@
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from multiprocessing import Pool
-import warnings
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from scipy.spatial import ConvexHull, Delaunay
-from tqdm import tqdm
 
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 
@@ -43,7 +42,9 @@ class FermiSolver:
     dos_vasprun: str
 
     def __post_init__(self) -> None:
-        """Initializes additional attributes after dataclass instantiation."""
+        """
+        Initializes additional attributes after dataclass instantiation.
+        """
         self.bulk_dos = DOS.from_vasprun(self.dos_vasprun)
         self.volume = self.defect_phase_diagram.entries[0].defect.structure.volume
 
@@ -172,7 +173,6 @@ class FermiSolver:
             pd.DataFrame: DataFrame containing concentrations at different
             temperatures in long format.
         """
-
         if suppress_warnings:
             warnings.filterwarnings("ignore")
 
@@ -271,7 +271,8 @@ class FermiSolver:
         cpus: int = 1,
         suppress_warnings: bool = True,
     ) -> pd.DataFrame:
-        """Linearly interpolates between two dictionaries of chemical potentials
+        """
+        Linearly interpolates between two dictionaries of chemical potentials
         and returns a dataframe containing all the concentration data. We can
         then optionally saves the data to a csv.
 
@@ -312,8 +313,10 @@ class FermiSolver:
             }
             interpolated_chem_pots.append(chem_pot_interpolated)
 
-        defect_systems = [self.defect_system_from_chemical_potentials(mu, temperature) for mu in interpolated_chem_pots]
-        
+        defect_systems = [
+            self.defect_system_from_chemical_potentials(mu, temperature) for mu in interpolated_chem_pots
+        ]
+
         if annealing_temperature is not None:
             with Pool(processes=cpus) as pool:
                 defect_systems = pool.map(
@@ -334,8 +337,8 @@ class FermiSolver:
             results = pool.map(self._get_concentrations, defect_systems)
 
         for r, mu, t in zip(results, interpolated_chem_pots, interpolation):
-            [d.update({"interpolation" : t} | mu) for d in r[0]]
-            [d.update({"interpolation" : t} | mu) for d in r[1]]
+            [d.update({"interpolation": t} | mu) for d in r[0]]
+            [d.update({"interpolation": t} | mu) for d in r[1]]
             all_concentration_data.extend(r[0])
             all_fermi_level_data.extend(r[1])
 
@@ -355,9 +358,11 @@ class FermiSolver:
 
     @staticmethod
     def generate_annealed_defect_system(args: dict) -> DefectSystem:
-        """generate a py-sc-fermi DefectSystem object that has defect concentrations
-        fixed to the values determined at a high temperature (annealing_temperature),
-        and then set to a lower temperature (target_temperature)
+        """
+        Generate a py-sc-fermi DefectSystem object that has defect
+        concentrations fixed to the values determined at a high temperature
+        (annealing_temperature), and then set to a lower temperature
+        (target_temperature).
 
         Args:
             mu (Dict[str, float]): set of chemical potentials used to generate the
@@ -379,9 +384,7 @@ class FermiSolver:
             DefectSystem: a low temperature defect system (target_temperature),
               with defect concentrations fixed to high temperature
               (annealing_temperature) values.
-
         """
-
         # Calculate concentrations at initial temperature
         defect_system = args["initial_system"]
         defect_system.temperature = args["annealing_temperature"]
@@ -405,12 +408,12 @@ class FermiSolver:
 
         # Apply the fixed concentrations
         for defect_species in defect_system.defect_species:
-            if args["fix_defect_species"] == True:
+            if args["fix_defect_species"] is True:
                 if defect_species.name in fixed_concs:
                     defect_species.fix_concentration(
                         fixed_concs[defect_species.name] / 1e24 * defect_system.volume
                     )
-            elif args["fix_defect_species"] == False:
+            elif args["fix_defect_species"] is False:
                 for k, v in defect_species.charge_states.items():
                     key = f"{defect_species.name}_{int(k)}"
                     if key in list(fixed_concs.keys()):
@@ -442,8 +445,9 @@ class FermiSolver:
         suppress_warnings: bool = True,
         cpus: int = 1,
     ) -> pd.DataFrame:
-        """Solve for all chemical potentials in a grid in n-dimensional
-        chemical potential space.
+        """
+        Solve for all chemical potentials in a grid in n-dimensional chemical
+        potential space.
 
         Args:
             chempot_grid (pd.DataFrame): n-dimensional chemical potential grid
@@ -467,17 +471,16 @@ class FermiSolver:
             pd.DataFrame: DataFrame containing all the defect concentrations at
               each chemical potential set in the DataFrame
         """
-
         if suppress_warnings:
             warnings.filterwarnings("ignore")
 
         chemical_potentials = chempot_grid.copy()
-        chemical_potentials.drop(["is_vertex", "facet"], axis=1, inplace=True)
+        chemical_potentials = chemical_potentials.drop(["is_vertex", "facet"], axis=1)
 
         defect_systems = [
-                self.defect_system_from_chemical_potentials(row.to_dict(), temperature=temperature)
-                for _i, row in chemical_potentials.iterrows()
-            ]
+            self.defect_system_from_chemical_potentials(row.to_dict(), temperature=temperature)
+            for _i, row in chemical_potentials.iterrows()
+        ]
 
         if annealing_temperature is not None:
             with Pool(processes=cpus) as pool:
@@ -492,7 +495,8 @@ class FermiSolver:
                             "exceptions": exceptions,
                         }
                         for defect_system in defect_systems
-                    ])
+                    ],
+                )
 
         with Pool(processes=cpus) as pool:
             results = pool.map(self._get_concentrations, defect_systems)
@@ -508,7 +512,9 @@ class FermiSolver:
         concentration_df = pd.DataFrame(all_concentration_data)
         fermi_level_df = pd.DataFrame(all_fermi_level_data)
 
-        all_data = pd.merge(concentration_df, fermi_level_df, on=[*list(chempot_grid.columns), "Temperature"])
+        all_data = pd.merge(
+            concentration_df, fermi_level_df, on=[*list(chempot_grid.columns), "Temperature"]
+        )
 
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
