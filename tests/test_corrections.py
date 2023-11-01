@@ -260,9 +260,9 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         mpl.pyplot.clf()
         _corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
-        # add shading to left part of plot (10 Angstrom on):
+        # add shading to plot:
         ax = fig.gca()
-        ax.axvspan(10, 100, alpha=0.2, color="purple")
+        ax.axvspan(5, 100, alpha=0.2, color="yellow")
 
         return fig
 

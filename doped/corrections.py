@@ -451,7 +451,20 @@ def get_kumagai_correction(
         fig = spp.plt.gcf()
         ax = fig.gca()
 
-        # reformat plot slightly
+        # reformat plot slightly:
+        x_lims = ax.get_xlim()
+        y_lims = ax.get_ylim()
+        # shade in sampling region:
+        spp.plt.fill_between(
+            [spp.defect_region_radius, x_lims[1]],
+            *y_lims,
+            color="purple",
+            alpha=0.15,
+            label="Sampling Region",
+        )
+        spp.plt.ylim(*y_lims)  # reset y-lims after fill_between
+
+        # update legend:
         handles, labels = ax.get_legend_handles_labels()
         labels = [
             label.replace("point charge", "Point Charge (PC)").replace(
@@ -459,8 +472,8 @@ def get_kumagai_correction(
             )
             for label in labels
         ]
-        # add entry for dashed red line
 
+        # add entry for dashed red line:
         handles += [Line2D([0], [0], **spp._mpl_defaults.hline)]
         labels += [
             rf"Avg. $\Delta V$ = {spp.ave_pot_diff:.3f} V",
