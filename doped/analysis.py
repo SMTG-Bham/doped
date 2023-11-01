@@ -1284,8 +1284,9 @@ class DefectParser:
             self.defect_vr = get_vasprun(defect_vr_path)
 
         run_metadata = {  # TODO: Add check that incars, kpoints and potcars are compatible here
-            "defect_incar": self.defect_vr.incar,
-            "bulk_incar": self.bulk_vr.incar,
+            # incars need to be as dict without module keys otherwise not JSONable:
+            "defect_incar": {k: v for k, v in self.defect_vr.incar.as_dict().items() if "@" not in k},
+            "bulk_incar": {k: v for k, v in self.bulk_vr.incar.as_dict().items() if "@" not in k},
             "defect_kpoints": self.defect_vr.kpoints,
             "bulk_kpoints": self.bulk_vr.kpoints,
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
