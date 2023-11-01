@@ -98,12 +98,12 @@ def _get_sga(struct, symprec=0.01):
     raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
     if symm_ops is None:
-        sga = _get_sga(struct)
+        sga = _get_sga(struct, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
@@ -128,20 +128,20 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None):
     return x_sites
 
 
-def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None):
+def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
     unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops)
-    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites)
+    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
 
 
-def _get_sga_with_all_X(struct, unique_sites):
+def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
     """
     Add all sites in unique_sites to a _copy_ of struct and return
     SpacegroupAnalyzer of this new structure.
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
-    return _get_sga(struct_with_all_X)
+    return _get_sga(struct_with_all_X, symprec=symprec)
 
 
 def _get_equiv_frac_coords_in_primitive(
@@ -209,15 +209,56 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         supercell_matrix = mapping[2]
     rotation_symmop = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
-    )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical
-    # stability
+    )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
     output_prim_struct = prim_struct.copy()
     output_prim_struct.apply_operation(rotation_symmop)
     clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
 
-def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False):
+def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
+    """
+    Determines the supercell transformation matrix to convert from the
+    primitive structure to the target structure. The supercell matrix is
+    defined to be T in `T*P = S` where P and S.
+
+    are the primitive and supercell lattice matrices respectively.
+    Equivalently, multiplying `prim_struct * T` will give the target_struct.
+
+    First tries to determine a simple (integer) transformation matrix with no
+    basis set rotation required. If that fails, then defaults to using
+    _rotate_and_get_supercell_matrix.
+
+    Args:
+        prim_struct: pymatgen Structure object of the primitive cell.
+        target_struct: pymatgen Structure object of the target cell.
+
+    Returns:
+        prim_struct: rotated primitive structure, if needed.
+        supercell_matrix: supercell transformation matrix to convert from the
+            primitive structure to the target structure.
+    """
+    try:
+        # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
+        transformation_matrix = np.rint(
+            target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
+        )
+        if not np.allclose(
+            (prim_struct * transformation_matrix).lattice.matrix,
+            target_struct.lattice.matrix,
+            rtol=5e-3,
+        ):
+            raise ValueError  # if non-integer transformation matrix
+
+        return prim_struct, transformation_matrix
+
+    except ValueError:  # if non-integer transformation matrix
+        prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(prim_struct, target_struct)
+
+    return prim_struct, transformation_matrix
+
+
+def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False, symprec=0.01):
     """
     Get the Wyckoff label of the input fractional coordinates in the input
     structure. If the symmetry operations of the structure have already been
@@ -233,9 +274,11 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
             will recompute these from the input struct.
         equiv_sites:
             If True, also returns a list of equivalent sites in struct.
+        symprec:
+            Symmetry precision for SpacegroupAnalyzer.
     """
     symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        frac_coords, struct, symm_ops
+        frac_coords, struct, symm_ops, symprec=symprec
     )
     conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
     multiplicity = int(conv_cell_factor * len(unique_sites))

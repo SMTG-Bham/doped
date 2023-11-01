@@ -119,7 +119,9 @@ class DefectPhaseDiagram(MSONable):
         Returns:
             DefectPhaseDiagram object
         """
-        warnings.filterwarnings("ignore", "Use of properties is")
+        warnings.filterwarnings(
+            "ignore", "Use of properties is"
+        )  # `message` only needs to match start of message
         entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
         vbm = d["vbm"]
         band_gap = d["band_gap"]
@@ -156,7 +158,7 @@ class DefectPhaseDiagram(MSONable):
                 Values are float numbers equal to the atomic chemical potential for that element.
              fermi_level (float):  Value corresponding to the electron chemical potential.
                 If "vbm" is supplied in calculation_metadata dict, then fermi_level is referenced to
-                the VBM.  "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
+                the VBM. If "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
                 referenced to the
                 calculation's absolute Kohn-Sham potential (and should include the vbm value provided
                 by a band structure calculation).

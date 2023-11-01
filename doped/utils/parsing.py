@@ -36,7 +36,9 @@ def get_vasprun(vasprun_path, **kwargs):
         "ignore", category=UnknownPotcarWarning
     )  # Ignore unknown POTCAR warnings when loading vasprun.xml
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
-    warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
+    warnings.filterwarnings(
+        "ignore", message="No POTCAR file with matching TITEL fields"
+    )  # `message` only needs to match start of message
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
     except FileNotFoundError:
@@ -138,8 +140,17 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     vacancies/substitutions, and the pristine bulk structure with the _final_
     relaxed interstitial site for interstitials.
 
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species and code efficiency/robustness improvements.
+    Initially contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
+    refactored for extrinsic species and code efficiency/robustness improvements.
+
+    Returns:
+        bulk_site_idx: index of the site in the bulk structure that corresponds
+            to the defect site in the defect structure
+        defect_site_idx: index of the defect site in the defect structure
+        unrelaxed_defect_structure: pristine defect supercell structure for
+            vacancies/substitutions (i.e. pristine bulk with unrelaxed vacancy/
+            substitution), or the pristine bulk structure with the _final_
+            relaxed interstitial site for interstitials.
     """
 
     def get_species_from_composition_diff(composition_diff, el_change):
@@ -175,8 +186,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             )[0]
 
         if len(site_matches.shape) == 0:
-            # # if there are any other matches with a distance within unique_tolerance of the located
-            # # site then unique matching failed
+            # if there are any other matches with a distance within unique_tolerance of the located site
+            # then unique matching failed
             if (
                 len(distance_matrix[distance_matrix < distance_matrix[site_matches] * unique_tolerance])
                 > 1
@@ -396,6 +407,11 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
     # Reorder s1_structure so that it matches the ordering of s2_structure
     reordered_sites = [s1_structure[tmp[2]] for tmp in mapping]
+
+    # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
+    # otherwise) for the bulk):
+    warnings.filterwarnings("ignore", message="Not all sites have property")
+
     new_structure = Structure.from_sites(reordered_sites)
 
     assert len(new_structure) == len(s1_structure)

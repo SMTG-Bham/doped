@@ -36,7 +36,7 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 _ignore_pmg_warnings()
 warnings.filterwarnings(
     "ignore", message="You are using the legacy MPRester"
-)  # currently rely on this so shouldn't show warning
+)  # currently rely on this so shouldn't show warning, `message` only needs to match start of message
 
 
 # TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
@@ -177,8 +177,8 @@ def _calculate_formation_energies(data: list, elemental: dict):
         pd.DataFrame: DataFrame formation energies of the input phases.
     """
     for d in data:
-        for e in elemental:
-            d[e] = Composition(d["formula"]).as_dict()[e]
+        for el in elemental:
+            d[el] = Composition(d["formula"]).as_dict().get(el, 0)
 
     formation_energy_df = pd.DataFrame(data)
     formation_energy_df["formation_energy"] = formation_energy_df["energy_per_fu"]
@@ -325,7 +325,8 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         # test api_key:
-        if api_key is not None:
+        if api_key is not None:  # TODO: Should test API key also when not explicitly set, but this will
+            # be avoided when we just update to make it compatible with both
             if len(api_key) == 32:
                 raise ValueError(
                     "You are trying to use the new Materials Project (MP) API which is not "
@@ -1345,15 +1346,17 @@ class CompetingPhasesAnalyzer:
             if verbose:
                 print(f"Calculating chempots for {self.extrinsic_species}")
             for e in extrinsic_formation_energies:
-                for el in self.elemental:
-                    e[el] = Composition(e["formula"]).as_dict()[el]
+                for el in self.elemental:  # TODO: This code (in all this module) should be rewritten to
+                    # be more readable (re-used and uninformative variable names, missing informative
+                    # comments...)
+                    e[el] = Composition(e["formula"]).as_dict().get(el, 0)
 
             # gets the df into a slightly more convenient dict
             cpd = extrinsic_chempots_df.to_dict(orient="records")
             mins = []
             mins_formulas = []
             df3 = pd.DataFrame(extrinsic_formation_energies)
-            print(f"df3: {df3}")
+            # print(f"df3: {df3}")  # debugging
             for i, c in enumerate(cpd):
                 name = f"mu_{self.extrinsic_species}_{i}"
                 df3[name] = df3["formation_energy"]
@@ -1389,7 +1392,7 @@ class CompetingPhasesAnalyzer:
                 "facets_wrt_el_refs": {},
                 "facets": {},
             }
-            print(f"df4: {df4}")
+            # print(f"df4: {df4}")  # debugging
 
             for i, d in enumerate(df4):
                 key = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
@@ -1398,7 +1401,7 @@ class CompetingPhasesAnalyzer:
                 new_vals = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
-            print(f"cl2: {cl2}")
+            # print(f"cl2: {cl2}")  # debugging
 
             # relate the facets to the elemental
             # energies but in reverse this time

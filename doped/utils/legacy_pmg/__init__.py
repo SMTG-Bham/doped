@@ -6,49 +6,9 @@ This is a temporary measure while refactoring to use the new pymatgen-analysis-
 defects package takes place.
 """
 import copy
-from abc import abstractmethod
 
 from monty.json import MSONable
 from pymatgen.analysis.structure_matcher import StructureMatcher
-
-
-class DefectCorrection(MSONable):
-    """
-    A Correction class modeled off the computed entry correction format.
-    """
-
-    @abstractmethod
-    def get_correction(self, entry):
-        """
-        Returns correction for a single entry.
-
-        Args:
-            entry: A DefectEntry object.
-
-        Returns:
-            A single dictionary with the format
-            correction_name: energy_correction
-
-        Raises:
-            CompatibilityError if entry is not compatible.
-        """
-        return
-
-    def correct_entry(self, entry):
-        """
-        Corrects a single entry.
-
-        Args:
-            entry: A DefectEntry object.
-
-        Returns:
-            An processed entry.
-
-        Raises:
-            CompatibilityError if entry is not compatible.
-        """
-        entry.correction.update(self.get_correction(entry))
-        return entry
 
 
 class PointDefectComparator(MSONable):

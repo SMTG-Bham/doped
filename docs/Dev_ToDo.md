@@ -5,10 +5,11 @@
 ## Chemical potential
 - Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
-- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions).
+- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?)
   - Also see `Cs2SnTiI6` notebooks for template code for this.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
+- Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
 
 ## Post-processing / analysis / plotting
 - Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
@@ -27,7 +28,7 @@
     For interstitials, should be based off just the Wyckoff number of the final relaxed site.
     Should make this a parsed defect property, defined relative to the conventional cell (so they
     actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
-    and have this automatically plug-and-play with `py-sc-fermi`. Already have the site analysis /
+    and have this automatically plug-and-play with `py-sc-fermi` (can do by setting `spin_degeneracy` and `config_degeneracy` properties, and use this in `py-sc-fermi` `interface` code). Already have the site analysis /
     Wyckoff matching code for this.
   - See `pydefect` and pmg `finder.py` for tools for this.
   - For complex defects, this is future work, and should be done manually (note in docs and give
@@ -71,17 +72,14 @@
   - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
+- Automate `pydefect` shallow defect analysis? At least have notebook showing how to manually do this (Adair's done before?).
 - Previous `pymatgen` issues, fixed?
-  - Improved handling of the delocalisation analysis warning. `pymatgen`'s version is too sensitive. Maybe if `pymatgen` finds the defect to be incompatible, estimate the error in the energy, and if small enough ignore, otherwise give an informative warning of the estimated error, possible origins (unreasonable/unstable/shallow charge state, as the charge is being significantly delocalised across the cell, rather than localised at the defect) – this has been tanked in new `pymatgen`. Could just use the `pydefect` shallow defect analysis instead?
-  - Related: Add warning for bandfilling correction based off energy range of the CBM/VBM occupation? (In
-    addition to `num_hole` and `num_electron`)
   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think about how we want to refactor the `DefectPhaseDiagram` object!
   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
 - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
   (and note this behaviour in examples/docs)
-- Ideally our defect parsing would be able to get the final _relaxed_ position of vacancies / antisites that move significantly (or the centroid if a defect cluster), to then use for the charge correction. Not a big deal for larger supercells, but a slight mismatch in defect site prediction for smaller supercells can have a semi-significant effect on the predicted charge correction. `Int_Te_3_unperturbed_1` is a good example of this tricky case.
-- Change formation energy plotting and tabulation to DefectPhaseDiagram methods rather than standalone
+- Change formation energy plotting and tabulation to `DefectPhaseDiagram` methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots?
@@ -111,13 +109,13 @@
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
   - Some nice defect structure and eigenvalue analysis
   - GKFO correction
+- Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting. Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
 - `ShakeNBreak` related updates:
-  - Use doped naming conventions and functions and defect entry generation functions in `ShakeNBreak`.
+  - Use doped defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
-  - Notebooks in `tests`; update or delete.
   - Test coverage?
   - Go through docstrings and trim to 80 characters. Also make sure all tidy and understandable (idiot-proof). Should be able to generate docs with little to no warnings/errors.
   - Add type hints for all functions.
@@ -126,8 +124,11 @@
 
 - Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and O-O in STO from Kanta?)).
+  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe)).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
+  - Update parsing notebook to reflect preferred usage of eFNV correction (rather than FNV with LOCPOTs).
+  - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check, and note this in the tutorial
+  - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
     super-lean for some reason. Can use SMTG wiki stuff for this.
@@ -136,7 +137,7 @@
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
     with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
     and/or if it's known from other work for your chosen functional etc.)
-  - Add notes about polaron finding (use SnB or MAGMOMs. Any other advice to add?)
+  - Add notes about polaron finding (use SnB and/or MAGMOMs. Any other advice to add? See Abdullah/Dan chat and YouTube tutorial, should have note about setting `MAGMOM`s for defects somewhere). `doped` can't do automatically because far too much defect/material-specific dependence.
   - Show our workflow for calculating interstitials (i.e. `vasp_gam` neutral relaxations first (can point to defects tutorial for this)), and why this is recommended over the charge density method etc.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
@@ -156,7 +157,7 @@
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
   - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
-    this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials. Also include examples of extending to
+    this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials, and example of doing the Kumagai PRX Energy carrier concentration with TLD plots (can use: https://py-sc-fermi.readthedocs.io/en/latest/tutorial.html#plot-defect-concentrations-as-a-function-of-Fermi-energy). Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Worth adding a very short example showing how to set `MAGMOM`s for AFM/FM systems (see Dan & Abdullah chat)
@@ -175,6 +176,10 @@
   - Note that charge states are guessed based on different factors, but these rely on auto-determined
     oxidation states and can fail in weird cases. As always please consider if these charge states are
     reasonable for the defects in your system. (i.e. low-symmetry, amphoteric, mixed-valence cases etc!)
+    - Note cases where we expect default charge states to not be appropriate (e.g. mixed ionic-covalent systems, low-symmetry systems and/or with amphoteric species), often better to test more than necessary to be thorough! (And link Xinwei stuff, Ke F_i +1 (also found with our Se and Alex's Ba2BiO6)) – i.e.
+      use your f*cking head!
+    - And particularly when you've calculated your initial set of defect results! E.g. with Sb2Se3, all antisites and interstitials amphoteric, so suggests you should re-check amphotericity for all vacancies
+  - Note about rare cases where `vasp_gam` pre-relaxation can fail (e.g. Wenzhen's case); extremely disperse bands with small bandgaps, where low k-point sampling can induce a phase transition in the bulk structure. In these cases, using a special k-point is advised for the pre-relaxations. You can get the corresponding k-point for your supercell (given the primitive cell special k-point) using the `get_K_from_k` function from `easyunfold`, with the `doped` `supercell_matrix`.
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
