@@ -6,7 +6,7 @@ import copy
 import warnings
 from functools import partial
 from itertools import chain
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, Process, Queue, cpu_count
 from typing import Dict, List, Optional, Tuple, Type, Union, cast
 from unittest.mock import MagicMock
 
@@ -31,7 +31,14 @@ from pymatgen.transformations.advanced_transformations import _proj
 from tabulate import tabulate
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
+from doped.core import (
+    Defect,
+    DefectEntry,
+    Interstitial,
+    Substitution,
+    Vacancy,
+    _guess_and_set_struct_oxi_states,
+)
 from doped.utils.wyckoff import (
     _custom_round,
     _frac_coords_sort_func,
@@ -295,7 +302,7 @@ def name_defect_entries(defect_entries, element_list=None):
         return full_defect_name.rsplit("_", split_number)[0]
 
     def get_matching_names(defect_naming_dict, defect_name):
-        return [name for name in defect_naming_dict if defect_name.startswith(name)]
+        return [name for name in defect_naming_dict if name.startswith(defect_name)]
 
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
@@ -421,6 +428,7 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
         dict: Dictionary of oxidation states and their probabilities.
     """
     comp_obj = Composition(element_symbol)
+    comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
     oxi_probabilities = {
         k: v
         for k, v in comp_obj.oxi_prob.items()
@@ -588,7 +596,7 @@ def _get_charge_states(
 
 
 def guess_defect_charge_states(
-    defect: Defect, probability_threshold: float = 0.01, padding: int = 1, return_log: bool = False
+    defect: Defect, probability_threshold: float = 0.0075, padding: int = 1, return_log: bool = False
 ) -> Union[List[int], Tuple[List[int], List[Dict]]]:
     """
     Guess the possible charge states of a defect.
@@ -597,7 +605,7 @@ def guess_defect_charge_states(
         defect (Defect): doped Defect object.
         probability_threshold (float):
             Probability threshold for including defect charge states
-            (for substitutions and interstitials). Default is 0.01.
+            (for substitutions and interstitials). Default is 0.0075.
         padding (int):
             Padding for vacancy charge states, such that the vacancy
             charge states are set to range(vacancy oxi state, padding),
@@ -801,11 +809,12 @@ class DefectsGenerator(MSONable):
         'charged' the host is), with large (absolute) charge states, low probability
         oxidation states and/or greater charge/oxidation state magnitudes than that of
         the host being disfavoured. This can be controlled using the
-        `probability_threshold` or `padding` keys in the `charge_state_gen_kwargs`
-        parameter, which are passed to the `_charge_state_probability()` function.
-        The input and computed values used to guess charge state probabilities are
-        provided in the `DefectEntry.charge_state_guessing_log` attributes.
-        See docs for examples of modifying the generated charge states.
+        `probability_threshold` (default = 0.0075) or `padding` (default = 1) keys in
+        the `charge_state_gen_kwargs` parameter, which are passed to the
+        `_charge_state_probability()` function. The input and computed values used to
+        guess charge state probabilities are provided in the
+        `DefectEntry.charge_state_guessing_log` attributes. See docs for examples of
+        modifying the generated charge states.
 
         Args:
             structure (Structure):
@@ -828,8 +837,8 @@ class DefectsGenerator(MSONable):
                 The input interstitial_coords are converted to
                 DefectsGenerator.prim_interstitial_coords, which are the corresponding
                 fractional coordinates in DefectsGenerator.primitive_structure (which
-                is used for defect generation), sorted according to the doped
-                _frac_coords_sort_func.
+                is used for defect generation), along with the multiplicity and
+                equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
                 (using pymatgen's `CubicSupercellTransformation` and ASE's
@@ -837,7 +846,7 @@ class DefectsGenerator(MSONable):
                 input structure is used as the defect & bulk supercell.
             charge_state_gen_kwargs (Dict):
                 Keyword arguments to be passed to the `_charge_state_probability`
-                function (such as `probability_threshold` (default = 0.01, used for
+                function (such as `probability_threshold` (default = 0.0075, used for
                 substitutions and interstitials) and `padding` (default = 1, used for
                 vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
@@ -845,10 +854,11 @@ class DefectsGenerator(MSONable):
                 in `pymatgen.analysis.defects.supercells` (such as `min_atoms`
                 (default = 50), `max_atoms` (default = 500), `min_length` (default
                 = 10), and `force_diagonal` (default = False)).
-            interstitial_gen_kwargs (Dict):
+            interstitial_gen_kwargs (Dict, bool):
                 Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
                 class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
                 `InterstitialGenerator` if `interstitial_coords` is specified.
+                If set to False, interstitial generation will be skipped entirely.
             target_frac_coords (List):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
@@ -1015,21 +1025,78 @@ class DefectsGenerator(MSONable):
                     f"(which can then be specified with the `supercell_matrix` argument)."
                 )
 
+            _bulk_oxi_states: Union[
+                bool, Dict
+            ] = True  # to check if pymatgen can guess the bulk oxidation states
+            # if input structure was oxi-state-decorated, use these oxi states for defect generation:
+            if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
+                isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
+            ):
+                _bulk_oxi_states = {el.symbol: el.oxi_state for el in self.structure.composition.elements}
+
+            else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
+                queue: Queue = Queue()
+                guess_oxi_process_wout_max_sites = Process(
+                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure, True, queue)
+                )  # try without max sites first, if fails, try with max sites
+                guess_oxi_process_wout_max_sites.start()
+                guess_oxi_process_wout_max_sites.join(timeout=10)  # if still going, revert to using max
+                # sites
+
+                if guess_oxi_process_wout_max_sites.is_alive():
+                    guess_oxi_process_wout_max_sites.terminate()
+                    guess_oxi_process_wout_max_sites.join()
+
+                    guess_oxi_process = Process(
+                        target=_guess_and_set_struct_oxi_states,
+                        args=(self.primitive_structure, False, queue),
+                    )
+                    guess_oxi_process.start()
+                    guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
+                    # otherwise revert to all Defect oxi states being set to 0
+
+                    if guess_oxi_process.is_alive():
+                        _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
+                        warnings.warn(
+                            "\nOxidation states could not be guessed for the input structure. This is "
+                            "required for charge state guessing, so defects will still be generated but "
+                            "all charge states will be set to -1, 0, +1. You can manually edit these "
+                            "with the add/remove_charge_states methods (see tutorials), or you can set "
+                            "the oxidation states of the input structure (e.g. using "
+                            "structure.add_oxidation_state_by_element()) and re-initialize "
+                            "DefectsGenerator()."
+                        )
+                        guess_oxi_process.terminate()
+                        guess_oxi_process.join()
+
+                if _bulk_oxi_states is not False:
+                    self.primitive_structure = queue.get()
+                    _bulk_oxi_states = {
+                        el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
+                    }
+
             pbar.update(10)  # 15% of progress bar
 
             # Generate defects
             # Vacancies:
             pbar.set_description("Generating vacancies")
             vac_generator_obj = VacancyGenerator()
-            vac_generator = vac_generator_obj.generate(self.primitive_structure)
-            self.defects["vacancies"] = [Vacancy._from_pmg_defect(vac) for vac in vac_generator]
+            vac_generator = vac_generator_obj.generate(
+                self.primitive_structure, oxi_state=0
+            )  # set oxi_state using doped functions; more robust and efficient
+            self.defects["vacancies"] = [
+                Vacancy._from_pmg_defect(vac, bulk_oxi_states=_bulk_oxi_states) for vac in vac_generator
+            ]
             pbar.update(5)  # 20% of progress bar
 
             # Antisites:
             pbar.set_description("Generating substitutions")
             antisite_generator_obj = AntiSiteGenerator()
-            as_generator = antisite_generator_obj.generate(self.primitive_structure)
-            self.defects["substitutions"] = [Substitution._from_pmg_defect(anti) for anti in as_generator]
+            as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
+            self.defects["substitutions"] = [
+                Substitution._from_pmg_defect(anti, bulk_oxi_states=_bulk_oxi_states)
+                for anti in as_generator
+            ]
             pbar.update(5)  # 25% of progress bar
 
             # Substitutions:
@@ -1075,9 +1142,12 @@ class DefectsGenerator(MSONable):
 
             if substitutions:
                 sub_generator = substitution_generator_obj.generate(
-                    self.primitive_structure, substitution=substitutions
+                    self.primitive_structure, substitution=substitutions, oxi_state=0
                 )
-                sub_defects = [Substitution._from_pmg_defect(sub) for sub in sub_generator]
+                sub_defects = [
+                    Substitution._from_pmg_defect(sub, bulk_oxi_states=_bulk_oxi_states)
+                    for sub in sub_generator
+                ]
                 if "substitutions" in self.defects:
                     self.defects["substitutions"].extend(sub_defects)
                 else:
@@ -1087,133 +1157,154 @@ class DefectsGenerator(MSONable):
             pbar.update(5)  # 30% of progress bar
 
             # Interstitials:
-            pbar.set_description("Generating interstitials")
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
-            if self.interstitial_coords:
-                # map interstitial coords to primitive structure, and get multiplicities
-                sga = _get_sga(self.structure)
-                symm_ops = sga.get_symmetry_operations(cartesian=False)
-                self.prim_interstitial_coords = []
+            if self.interstitial_gen_kwargs is not False:  # skip interstitials
+                pbar.set_description("Generating interstitials")
+                if self.interstitial_coords:
+                    # map interstitial coords to primitive structure, and get multiplicities
+                    sga = _get_sga(self.structure)
+                    symm_ops = sga.get_symmetry_operations(cartesian=False)
+                    self.prim_interstitial_coords = []
 
-                for interstitial_frac_coords in self.interstitial_coords:
-                    prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
-                        interstitial_frac_coords,
-                        self.structure,
-                        self.primitive_structure,
-                        symm_ops,
-                        equiv_coords=True,
-                    )
-                    self.prim_interstitial_coords.append(
-                        (prim_inter_coords, len(equiv_coords), equiv_coords)
-                    )
-
-                sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
-
-            else:
-                # Generate interstitial sites using Voronoi tessellation
-                vig = VoronoiInterstitialGenerator(**self.interstitial_gen_kwargs)
-                tight_vig = VoronoiInterstitialGenerator(stol=0.01)  # for determining multiplicities of
-                # any merged/grouped interstitial sites from Voronoi tessellation + structure-matching
-
-                # parallelize Voronoi interstitial site generation:
-                if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
-                    # communication overhead / process initialisation outweighs speedup
-                    with Pool(2) as p:
-                        interstitial_gen_mp_results = p.map(
-                            _get_interstitial_candidate_sites,
-                            [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
+                    for interstitial_frac_coords in self.interstitial_coords:
+                        prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                            interstitial_frac_coords,
+                            self.structure,
+                            self.primitive_structure,
+                            symm_ops,
+                            equiv_coords=True,
+                        )
+                        self.prim_interstitial_coords.append(
+                            (prim_inter_coords, len(equiv_coords), equiv_coords)
                         )
 
-                    cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
-                    tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
+                    sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
 
                 else:
-                    cand_sites_mul_and_equiv_fpos = [*vig._get_candidate_sites(self.primitive_structure)]
-                    tight_cand_sites_mul_and_equiv_fpos = [
-                        *tight_vig._get_candidate_sites(self.primitive_structure)
+                    # Generate interstitial sites using Voronoi tessellation
+                    interstitial_gen_kwargs = self.interstitial_gen_kwargs.copy()
+                    interstitial_gen_kwargs.setdefault("stol", 0.32)  # avoid overwriting input dict
+
+                    vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
+                    tight_vig = VoronoiInterstitialGenerator(
+                        stol=0.01
+                    )  # for determining multiplicities of any merged/grouped interstitial sites from
+                    # Voronoi tessellation + structure-matching
+
+                    # parallelize Voronoi interstitial site generation:
+                    if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
+                        # communication overhead / process initialisation outweighs speedup
+                        with Pool(2) as p:
+                            interstitial_gen_mp_results = p.map(
+                                _get_interstitial_candidate_sites,
+                                [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
+                            )
+
+                        cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
+                        tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
+
+                    else:
+                        cand_sites_mul_and_equiv_fpos = [
+                            *vig._get_candidate_sites(self.primitive_structure)
+                        ]
+                        tight_cand_sites_mul_and_equiv_fpos = [
+                            *tight_vig._get_candidate_sites(self.primitive_structure)
+                        ]
+
+                    structure_matcher = StructureMatcher(
+                        self.interstitial_gen_kwargs.get("ltol", 0.2),
+                        self.interstitial_gen_kwargs.get("stol", 0.3),
+                        self.interstitial_gen_kwargs.get("angle_tol", 5),
+                    )  # pymatgen-analysis-defects default
+                    unique_tight_cand_sites_mul_and_equiv_fpos = [
+                        cand_site_mul_and_equiv_fpos
+                        for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
+                        if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
                     ]
 
-                structure_matcher = StructureMatcher(
-                    self.interstitial_gen_kwargs.get("ltol", 0.2),
-                    self.interstitial_gen_kwargs.get("stol", 0.3),
-                    self.interstitial_gen_kwargs.get("angle_tol", 5),
-                )  # pymatgen-analysis-defects default
-                unique_tight_cand_sites_mul_and_equiv_fpos = [
-                    cand_site_mul_and_equiv_fpos
-                    for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
-                    if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
-                ]
+                    # structure-match the non-matching site & multiplicity tuples, and return the site &
+                    # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
+                    output_sites_mul_and_equiv_fpos = []
+                    for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
+                        matching_sites_mul_and_equiv_fpos = []
+                        if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
+                            for (
+                                tight_cand_site_mul_and_equiv_fpos
+                            ) in unique_tight_cand_sites_mul_and_equiv_fpos:
+                                interstitial_struct = self.primitive_structure.copy()
+                                interstitial_struct.insert(
+                                    0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
+                                )
+                                tight_interstitial_struct = self.primitive_structure.copy()
+                                tight_interstitial_struct.insert(
+                                    0,
+                                    "H",
+                                    tight_cand_site_mul_and_equiv_fpos[0],
+                                    coords_are_cartesian=False,
+                                )
+                                if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
+                                    matching_sites_mul_and_equiv_fpos += [
+                                        tight_cand_site_mul_and_equiv_fpos
+                                    ]
 
-                # structure-match the non-matching site & multiplicity tuples, and return the site &
-                # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
-                output_sites_mul_and_equiv_fpos = []
-                for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
-                    matching_sites_mul_and_equiv_fpos = []
-                    if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
-                        for (
-                            tight_cand_site_mul_and_equiv_fpos
-                        ) in unique_tight_cand_sites_mul_and_equiv_fpos:
-                            interstitial_struct = self.primitive_structure.copy()
-                            interstitial_struct.insert(
-                                0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
-                            )
-                            tight_interstitial_struct = self.primitive_structure.copy()
-                            tight_interstitial_struct.insert(
-                                0, "H", tight_cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
-                            )
-                            if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
-                                matching_sites_mul_and_equiv_fpos += [tight_cand_site_mul_and_equiv_fpos]
-
-                    # take the site with the lower multiplicity (higher symmetry), and most ideal site
-                    # according to _frac_coords_sort_func if multiplicities equal:
-                    output_sites_mul_and_equiv_fpos.append(
-                        min(
-                            [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
-                            key=lambda cand_site_mul_and_equiv_fpos: (
-                                cand_site_mul_and_equiv_fpos[1],
-                                # return the minimum _frac_coords_sort_func for all equiv fpos:
-                                *_frac_coords_sort_func(
-                                    sorted(cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func)[0]
+                        # take the site with the lower multiplicity (higher symmetry), and most ideal site
+                        # according to _frac_coords_sort_func if multiplicities equal:
+                        output_sites_mul_and_equiv_fpos.append(
+                            min(
+                                [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
+                                key=lambda cand_site_mul_and_equiv_fpos: (
+                                    cand_site_mul_and_equiv_fpos[1],
+                                    # return the minimum _frac_coords_sort_func for all equiv fpos:
+                                    *_frac_coords_sort_func(
+                                        sorted(
+                                            cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func
+                                        )[0]
+                                    ),
                                 ),
-                            ),
+                            )
                         )
+
+                    sorted_sites_mul_and_equiv_fpos = []
+                    for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
+                        # take site with equiv_fpos sorted by _frac_coords_sort_func:
+                        sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
+                        ideal_cand_site = sorted_equiv_fpos[0]
+                        sorted_sites_mul_and_equiv_fpos.append(
+                            (ideal_cand_site, multiplicity, sorted_equiv_fpos)
+                        )
+
+                self.defects["interstitials"] = []
+                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
+                for el in self._element_list:
+                    inter_generator = ig.generate(
+                        self.primitive_structure,
+                        insertions={el: cand_sites},
+                        multiplicities={el: multiplicity},
+                        equivalent_positions={el: equiv_fpos},
+                        oxi_state=0,
+                    )
+                    self.defects["interstitials"].extend(
+                        [
+                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=_bulk_oxi_states)
+                            for inter in inter_generator
+                        ]
                     )
 
-                sorted_sites_mul_and_equiv_fpos = []
-                for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
-                    # take site with equiv_fpos sorted by _frac_coords_sort_func:
-                    sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
-                    ideal_cand_site = sorted_equiv_fpos[0]
-                    sorted_sites_mul_and_equiv_fpos.append(
-                        (ideal_cand_site, multiplicity, sorted_equiv_fpos)
-                    )
-
-            self.defects["interstitials"] = []
-            ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
-            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
-            for el in self._element_list:
-                inter_generator = ig.generate(
-                    self.primitive_structure,
-                    insertions={el: cand_sites},
-                    multiplicities={el: multiplicity},
-                    equivalent_positions={el: equiv_fpos},
-                )
-                self.defects["interstitials"].extend(
-                    [Interstitial._from_pmg_defect(inter) for inter in inter_generator]
-                )
-
-                # check if any manually-specified interstitials were skipped due to min_dist and warn user:
-                if self.interstitial_coords and len(self.interstitial_coords) > len(
-                    self.defects["interstitials"]
-                ):
-                    warnings.warn(
-                        f"\nNote that some manually-specified interstitial sites were skipped due to "
-                        f"being too close to host lattice sites (minimum distance = `min_dist` = "
-                        f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some reason "
-                        f"you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
-                        f"Å), or just use the default Voronoi tessellation algorithm for generating "
-                        f"interstials (by not setting the `interstitial_coords` argument)."
-                    )
+                    # check if any manually-specified interstitials were skipped due to min_dist and
+                    # warn user:
+                    if self.interstitial_coords and len(self.interstitial_coords) > len(
+                        self.defects["interstitials"]
+                    ):
+                        warnings.warn(
+                            f"\nNote that some manually-specified interstitial sites were skipped due to "
+                            f"being too close to host lattice sites (minimum distance = `min_dist` = "
+                            f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
+                            f"reason you still want to include these sites, you can adjust `min_dist` ("
+                            f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
+                            f"for generating interstitials (by not setting the `interstitial_coords` "
+                            f"argument)."
+                        )
 
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
@@ -1303,15 +1394,20 @@ class DefectsGenerator(MSONable):
                 # warnings from tqdm
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                charge_state_guessing_output = guess_defect_charge_states(
-                    neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
-                )
-                charge_state_guessing_output = cast(
-                    Tuple[List[int], List[Dict]], charge_state_guessing_output
-                )  # for correct type checking; guess_defect_charge_states can return different types
-                # depending on return_log
-                charge_states, charge_state_guessing_log = charge_state_guessing_output
-                neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
+                if _bulk_oxi_states is not False:
+                    charge_state_guessing_output = guess_defect_charge_states(
+                        neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
+                    )
+                    charge_state_guessing_output = cast(
+                        Tuple[List[int], List[Dict]], charge_state_guessing_output
+                    )  # for correct type checking; guess_defect_charge_states can return different types
+                    # depending on return_log
+                    charge_states, charge_state_guessing_log = charge_state_guessing_output
+                    neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
+
+                else:
+                    charge_states = [-1, 0, 1]  # no oxi states, so can't guess charge states
+                    neutral_defect_entry.charge_state_guessing_log = {}
 
                 for charge in charge_states:
                     defect_entry = copy.deepcopy(neutral_defect_entry)
@@ -1369,7 +1465,7 @@ class DefectsGenerator(MSONable):
                 table = []
                 header = [
                     defect_class.capitalize(),
-                    "Charge States",
+                    "Guessed Charges",
                     "Conv. Cell Coords",
                     "Wyckoff",
                 ]
