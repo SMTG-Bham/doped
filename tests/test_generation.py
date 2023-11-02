@@ -1959,6 +1959,26 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             atol=1e-3,
         )
 
+    def _reduce_to_one_defect_each(self, defect_gen):
+        """
+        Reduce the defect_gen to just having one of each defect type, for
+        testing purposes.
+        """
+        if "interstitials" in defect_gen.defects:
+            defect_gen.defects["interstitials"] = [defect_gen.defects["interstitials"][0]]
+            defect_gen.defects["vacancies"] = [defect_gen.defects["vacancies"][0]]
+        else:  # take 2 vacancies instead
+            defect_gen.defects["vacancies"] = defect_gen.defects["vacancies"][0:1]
+
+        defect_gen.defects["substitutions"] = [defect_gen.defects["substitutions"][0]]
+
+        defect_gen.defect_entries = {
+            k: v
+            for k, v in defect_gen.defect_entries.items()
+            if any(i == v.defect for i in sum(defect_gen.defects.values(), []))
+        }
+        return defect_gen
+
     def test_ytos_supercell_input(self):
         # note that this tests the case of an input structure which is >10 Å in each direction and has
         # more atoms (198) than the pmg supercell (99), so the pmg supercell is used
@@ -1970,7 +1990,12 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.ytos_defect_gen_check(ytos_defect_gen)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
-        ytos_defect_gen.to_json(f"{self.data_dir}/ytos_defect_gen.json")  # for testing in test_vasp.py
+        # save reduced defect gen to json
+        reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
+
+        reduced_ytos_defect_gen.to_json(
+            f"{self.data_dir}/ytos_defect_gen.json"
+        )  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):
         # tests the case of an input structure which is >10 Å in each direction, has
@@ -1986,7 +2011,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
-        ytos_defect_gen.to_json(
+        # save reduced defect gen to json
+        reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
+
+        reduced_ytos_defect_gen.to_json(
             f"{self.data_dir}/ytos_defect_gen_supercell.json"
         )  # for testing in test_vasp.py
 
@@ -2101,7 +2129,12 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.lmno_defect_gen_check(lmno_defect_gen)
         self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
-        lmno_defect_gen.to_json(f"{self.data_dir}/lmno_defect_gen.json")  # for testing in test_vasp.py
+        # save reduced defect gen to json
+        reduced_lmno_defect_gen = self._reduce_to_one_defect_each(lmno_defect_gen)
+
+        reduced_lmno_defect_gen.to_json(
+            f"{self.data_dir}/lmno_defect_gen.json"
+        )  # for testing in test_vasp.py
 
     def test_lmno_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
@@ -2573,7 +2606,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
         self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
-        cd_i_defect_gen.to_json(
+        # save reduced defect gen to json
+        reduced_cd_i_defect_gen = self._reduce_to_one_defect_each(cd_i_defect_gen)
+
+        reduced_cd_i_defect_gen.to_json(
             f"{self.data_dir}/cd_i_supercell_defect_gen.json"
         )  # for testing in test_vasp.py
 
@@ -2617,20 +2653,11 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(N_diamond_defect_gen)
 
         # save reduced defect gen to json
-        # edit to only 3 defects / 9 defect entries
-        N_diamond_defect_gen.defects = {
-            "vacancies": N_diamond_defect_gen.defects["vacancies"][0:2],
-            "substitutions": N_diamond_defect_gen.defects["substitutions"][0:1],
-        }
-        N_diamond_defect_gen.defect_entries = {
-            k: v
-            for k, v in N_diamond_defect_gen.defect_entries.items()
-            if any(
-                i in k
-                for i in ["v_C_C1_C1.54C2.52C2.95a", "v_C_C1_C1.54C2.52C2.95b", "N_C_C1_C1.54C2.52C2.95s"]
-            )
-        }
-        N_diamond_defect_gen.to_json(f"{self.data_dir}/N_diamond_defect_gen.json")  # test in test_vasp.py
+        reduced_N_diamond_defect_gen = self._reduce_to_one_defect_each(N_diamond_defect_gen)
+
+        reduced_N_diamond_defect_gen.to_json(
+            f"{self.data_dir}/N_diamond_defect_gen.json"
+        )  # test in test_vasp.py
 
     def compare_doped_charges(self, tld_stable_charges, defect_gen):
         """
