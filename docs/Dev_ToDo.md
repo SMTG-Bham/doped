@@ -126,8 +126,7 @@
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe)).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
-  - Update parsing notebook to reflect preferred usage of eFNV correction (rather than FNV with LOCPOTs).
-  - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check, and note this in the tutorial
+  - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check (with Kumagai), and note this in the tutorial
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Cite https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf for validation of Voronoi tessellation
     approach for interstitials, but note user can use charge-density based approach if needing to be
