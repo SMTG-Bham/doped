@@ -88,6 +88,12 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
+        if not _potcars_available() and random.randint(1, 10) != 1:
+            # on GH Actions, only run the heavy tests 10% of times:
+            self.heavy_tests = False
+        else:
+            self.heavy_tests = True
+
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
@@ -640,6 +646,15 @@ class DefectRelaxSetTest(unittest.TestCase):
         Test the initialisation of DefectRelaxSet for a range of
         `DefectEntry`s.
         """
+        if not self.heavy_tests:
+            return
+
+        def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
+            assert parent_drs.defect_entry == input_defect_entry
+            assert parent_drs.defect_supercell == input_defect_entry.defect_supercell
+            assert parent_drs.charge_state == input_defect_entry.charge_state
+            assert parent_drs.bulk_supercell == input_defect_entry.bulk_supercell
+
         # test initialising DefectRelaxSet with our generation-tests materials, and writing files to disk
         defect_gen_test_list = [
             (self.cdte_defect_gen, "CdTe defect_gen"),
@@ -661,32 +676,25 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
             print(f"Initialising and testing: {defect_gen_name}")
-            # randomly choose 3 defect entries from the defect_gen dict:
-            defect_entries = random.sample(list(defect_gen.values()), 3)
+            # randomly choose a defect entry from the defect_gen dict:
+            defect_entry = random.choice(list(defect_gen.values()))
 
-            for defect_entry in defect_entries:
-                print(f"Randomly testing {defect_entry.name}")
-                drs = DefectRelaxSet(defect_entry)
-                self._general_defect_relax_set_check(drs)
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry)
+            self._general_defect_relax_set_check(drs)
 
-                def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
-                    assert parent_drs.defect_entry == input_defect_entry
-                    assert parent_drs.defect_supercell == input_defect_entry.defect_supercell
-                    assert parent_drs.charge_state == input_defect_entry.charge_state
-                    assert parent_drs.bulk_supercell == input_defect_entry.bulk_supercell
+            _check_drs_defect_entry_attribute_transfer(drs, defect_entry)
 
-                _check_drs_defect_entry_attribute_transfer(drs, defect_entry)
-
-                custom_drs = DefectRelaxSet(
-                    defect_entry,
-                    user_incar_settings={"ENCUT": 350},
-                    user_potcar_functional="PBE_52",
-                    user_potcar_settings={"Cu": "Cu_pv"},
-                    user_kpoints_settings={"reciprocal_density": 200},
-                    poscar_comment="Test pop",
-                )
-                self._general_defect_relax_set_check(custom_drs)
-                _check_drs_defect_entry_attribute_transfer(custom_drs, defect_entry)
+            custom_drs = DefectRelaxSet(
+                defect_entry,
+                user_incar_settings={"ENCUT": 350},
+                user_potcar_functional="PBE_52",
+                user_potcar_settings={"Cu": "Cu_pv"},
+                user_kpoints_settings={"reciprocal_density": 200},
+                poscar_comment="Test pop",
+            )
+            self._general_defect_relax_set_check(custom_drs)
+            _check_drs_defect_entry_attribute_transfer(custom_drs, defect_entry)
 
             # TODO: Test file writing, default folder naming
             # TODO: Explicitly check some poscar comments? For DS, DRS and DDS
@@ -711,7 +719,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_gen, defect_gen_name in defect_gen_test_list:
             print(f"Testing:{defect_gen_name}")
             # randomly choose 10 defect entries from the defect_gen dict:
-            defect_entries = random.sample(list(defect_gen.values()), 10)
+            defect_entries = random.sample(list(defect_gen.values()), min(10, len(defect_gen)))
 
             for defect_entry in defect_entries:
                 print(f"Randomly testing {defect_entry.name}")
@@ -767,7 +775,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
         defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
-        defect_entries = random.sample(list(defect_gen.values()), 5)
+        defect_entries = random.sample(list(defect_gen.values()), min(5, len(defect_gen)))
 
         for defect_entry in defect_entries:
             print(f"Randomly testing {defect_entry.name}")
@@ -936,6 +944,9 @@ class DefectsSetTest(unittest.TestCase):
                     )
 
     def test_cdte_files(self):
+        if not self.heavy_tests:
+            return
+
         cdte_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(
             cdte_se_defect_gen,

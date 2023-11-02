@@ -42,6 +42,7 @@ from matplotlib.lines import Line2D
 from monty.json import MontyDecoder
 from pymatgen.analysis.defects.corrections import freysoldt
 from pymatgen.analysis.defects.utils import CorrectionResult
+from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from shakenbreak.plotting import _install_custom_font
 
@@ -470,6 +471,11 @@ def get_kumagai_correction(
             label.replace("point charge", "Point Charge (PC)").replace(
                 "potential difference", r"$\Delta V$"
             )
+            for label in labels
+        ]
+        dummy_h = Element("H")  # dummy element to check if valid symbol
+        labels = [
+            label + r" ($V_{defect} - V_{bulk}$)" if dummy_h.is_valid_symbol(label) else label
             for label in labels
         ]
 
