@@ -711,7 +711,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_gen, defect_gen_name in defect_gen_test_list:
             print(f"Testing:{defect_gen_name}")
             # randomly choose 10 defect entries from the defect_gen dict:
-            defect_entries = random.sample(list(defect_gen.values()), 10)
+            defect_entries = random.sample(list(defect_gen.values()), min(10, len(defect_gen)))
 
             for defect_entry in defect_entries:
                 print(f"Randomly testing {defect_entry.name}")
@@ -767,7 +767,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
         defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
-        defect_entries = random.sample(list(defect_gen.values()), 5)
+        defect_entries = random.sample(list(defect_gen.values()), min(5, len(defect_gen)))
 
         for defect_entry in defect_entries:
             print(f"Randomly testing {defect_entry.name}")
