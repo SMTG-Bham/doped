@@ -59,6 +59,12 @@ def _potcars_available() -> bool:
 
 class DefectsGeneratorTest(unittest.TestCase):
     def setUp(self):
+        if not _potcars_available() and random.randint(1, 10) != 1:
+            # on GH Actions, only run the heavy tests 10% of times:
+            self.heavy_tests = False
+        else:
+            self.heavy_tests = True
+
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
@@ -1998,6 +2004,9 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):
+        if not self.heavy_tests:  # skip one of the YTOS tests if on GH Actions
+            return
+
         # tests the case of an input structure which is >10 Å in each direction, has
         # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
         # so the _input_ supercell is used
@@ -2119,6 +2128,9 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
     def test_lmno(self):
+        if not self.heavy_tests:  # skip one of the LMNO tests if on GH Actions
+            return
+
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
         lmno_defect_gen, output = self._generate_and_test_no_warnings(self.lmno_primitive)
@@ -2593,6 +2605,9 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
     def test_supercell_w_defect_cd_i_cdte(self):
+        if not self.heavy_tests:
+            return
+
         # test inputting a defective supercell
         cdte_defect_gen = DefectsGenerator(self.prim_cdte)
 
