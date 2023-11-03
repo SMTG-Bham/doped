@@ -239,7 +239,7 @@ class DopedParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is than the "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is greater than the "
                 f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
@@ -837,8 +837,8 @@ class DopedParsingTestCase(unittest.TestCase):
             )
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is than the `error_tolerance`: 0.001 "
-            f"eV). You may want to check the accuracy of the correction by plotting the site "
+            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is greater than the `error_tolerance`: "
+            f"0.001 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
             f"which can't be accurately modelled with the supercell approach). If this error is not "
@@ -916,8 +916,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         assert any(
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"0.000 eV (i.e. which is than the `error_tolerance`: 0.000 eV). You may want to check the "
-            f"accuracy of the correction by plotting the site potential differences (using "
+            f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
+            f"check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due to "
             f"unstable or shallow defect charge states (which can't be accurately modelled with the "
             f"supercell approach). If this error is not acceptable, you may need to use a larger "
