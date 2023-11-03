@@ -304,9 +304,19 @@ def get_defect_name_from_entry(
     if symprec is None:
         symprec = 0.01 if unrelaxed else 0.2  # relaxed structures likely have structural noise
 
-    # TODO: This only works for relaxed defect structures if they have a diagonal supercell expansion!!
-    #  (I think, need to test with some non-diagonal supercells - use some relaxed ZnS structures from
-    #  Savya)(If so, update docstrings to match)
+    # TODO: This usually only works for relaxed defect structures if it is a scalar matrix supercell
+    # expansion of the primitive/conventional cell (otherwises messes up the periodicity).
+    # Sometimes works even if not a scalar matrix for _low-symmetry_ systems (counter-intuitively),
+    # because then the breakdown in periodicity affects the defect site symmetry less. This can be
+    # checked by seeing if the site symmetry of the defect site in the unrelaxed structure is correctly
+    # guessed (in which case the supercell site symmetry is not messing up the symmetry detection),
+    # so implement this somehow as a user check.
+    # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very slight
+    # distortions present in the unrelaxed material).
+
+    # Maybe implement this as a function (to get symmetry and corresponding degeneracy) and show example
+    # in tutorials, but not automated because requires a bit of user sanity
+    # Need to update docstrings, warnings, docs to reflect this.
     # TODO: Update get_defect_name_from_defect too? Or at least warn/fail if unrelaxed=True and
     #  AttributeError
 
