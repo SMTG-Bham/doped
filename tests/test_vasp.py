@@ -88,9 +88,8 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        if not _potcars_available() and random.randint(1, 10) != 1:
-            # on GH Actions, only run the heavy tests 10% of times:
-            self.heavy_tests = False
+        if not _potcars_available():  # don't run heavy tests on GH Actions, these are run locally
+            self.heavy_tests = False  # (too slow without multiprocessing etc)
         else:
             self.heavy_tests = True
 
