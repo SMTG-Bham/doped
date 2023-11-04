@@ -420,3 +420,101 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     assert len(new_structure) == len(s1_structure)
 
     return new_structure
+
+
+def _compare_potcar_symbols(bulk_potcar_symbols, defect_potcar_symbols):
+    """
+    Check all POTCAR symbols in the bulk are the same in the defect
+    calculation.
+    """
+    for symbol in bulk_potcar_symbols:
+        if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
+            warnings.warn(
+                f"The POTCAR symbols for your bulk and defect calculations do not match, which is likely "
+                f"to cause severe errors in the parsed results. Found the following symbol in the bulk "
+                f"calculation:"
+                f"\n{symbol['titel']}\n"
+                f"but not in the defect calculation:"
+                f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
+                f"The same POTCAR settings should be used for both calculations for accurate results!"
+            )
+            return False
+    return True
+
+
+def _compare_kpoints(bulk_kpoints, defect_kpoints):
+    """
+    Check bulk and defect KPOINTS are the same.
+    """
+    # sort kpoints, in case same KPOINTS just different ordering:
+    sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=lambda x: tuple(x))
+    sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=lambda x: tuple(x))
+    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+        warnings.warn(
+            f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
+            f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
+            f"\n{bulk_kpoints.kpts}\n"
+            f"and in the defect calculations:"
+            f"\n{defect_kpoints.kpts}\n"
+            f"The same KPOINTS settings should be used for both calculations for accurate results!"
+        )
+        return False
+    return True
+
+
+def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch_tags=None):
+    """
+    Check bulk and defect INCAR tags (that can affect energies) are the same.
+    """
+    if fatal_incar_mismatch_tags is None:
+        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
+            "AEXX": 0.25,  # default 0.25
+            "ENCUT": 0,
+            "LREAL": False,  # default False
+            "HFSCREEN": 0,  # default 0 (None)
+            "GGA": "PE",  # default PE
+            "LHFCALC": False,  # default False
+            "ADDGRID": False,  # default False
+            "ISIF": 2,
+            "LASPH": False,  # default False
+            "PREC": "Normal",  # default Normal
+            "PRECFOCK": "Normal",  # default Normal
+            "LDAU": False,  # default False
+        }
+
+    def _compare_incar_vals(val1, val2):
+        if isinstance(val1, str):
+            return val1.split()[0].lower() == val2.split()[0].lower()
+        if isinstance(val1, float):
+            return np.isclose(val1, val2, rtol=1e-3)
+
+        return val1 == val2
+
+    mismatch_list = []
+    for key, val in bulk_incar_dict.items():
+        if key in fatal_incar_mismatch_tags:
+            defect_val = defect_incar_dict.get(key, fatal_incar_mismatch_tags[key])
+            if not _compare_incar_vals(val, defect_val):
+                mismatch_list.append((key, val, defect_val))
+
+    # get any missing keys:
+    defect_incar_keys_not_in_bulk = set(defect_incar_dict.keys()) - set(bulk_incar_dict.keys())
+
+    for key in defect_incar_keys_not_in_bulk:
+        if key in fatal_incar_mismatch_tags and not _compare_incar_vals(
+            defect_incar_dict[key], fatal_incar_mismatch_tags[key]
+        ):
+            mismatch_list.append((key, fatal_incar_mismatch_tags[key], defect_incar_dict[key]))
+
+    if mismatch_list:
+        # compare to defaults:
+        warnings.warn(
+            f"There are mismatching INCAR tags for your bulk and defect calculations which are likely to "
+            f"cause severe errors in the parsed results (energies). Found the following differences:\n"
+            f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+            f"\n{mismatch_list}\n"
+            f"The same INCAR settings should be used in both calculations for these tags which can affect "
+            f"energies!"
+        )
+        return False
+    return True

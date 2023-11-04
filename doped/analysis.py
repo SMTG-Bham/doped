@@ -28,6 +28,9 @@ from doped.generation import get_defect_name_from_entry
 from doped.plotting import _format_defect_name
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
+    _compare_incar_tags,
+    _compare_kpoints,
+    _compare_potcar_symbols,
     _get_output_files_and_check_if_multiple,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
@@ -1332,7 +1335,7 @@ class DefectParser:
                 )
             self.defect_vr = get_vasprun(defect_vr_path)
 
-        run_metadata = {  # TODO: Add check that incars, kpoints and potcars are compatible here
+        run_metadata = {
             # incars need to be as dict without module keys otherwise not JSONable:
             "defect_incar": {k: v for k, v in self.defect_vr.incar.as_dict().items() if "@" not in k},
             "bulk_incar": {k: v for k, v in self.bulk_vr.incar.as_dict().items() if "@" not in k},
@@ -1345,6 +1348,10 @@ class DefectParser:
         #  it and in dpd from defect dict (which should be a classmethod)), but either way here using
         #  the same bulk in each case means we are also indirectly testing that each defect supercell
         #  calc used compatible settings
+
+        _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
+        _compare_potcar_symbols(run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"])
+        _compare_kpoints(run_metadata["bulk_kpoints"], run_metadata["defect_kpoints"])
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
