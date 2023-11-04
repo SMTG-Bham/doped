@@ -534,21 +534,14 @@ class DefectDictSetTest(unittest.TestCase):
 
 class DefectRelaxSetTest(unittest.TestCase):
     def setUp(self):
-        # get setup attributes from DefectDictSetTest:
-        dds_test = DefectDictSetTest()
-        dds_test.setUp()
-        for attr in dir(dds_test):
-            if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
-                setattr(self, attr, getattr(dds_test, attr))
-        self.dds_test = dds_test
+        self.dds_test = DefectDictSetTest()
+        DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
         self.cdte_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
 
     def tearDown(self):
-        # get tearDown from DefectDictSetTest:
-        dds_test = DefectDictSetTest()
-        dds_test.tearDown()
+        self.dds_test.tearDown()  # use tearDown from DefectDictSetTest
 
     def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
         dds_test_list = [
@@ -795,13 +788,8 @@ class DefectRelaxSetTest(unittest.TestCase):
 
 class DefectsSetTest(unittest.TestCase):
     def setUp(self):
-        # get setup attributes from DefectDictSetTest:
-        dds_test = DefectDictSetTest()
-        dds_test.setUp()
-        for attr in dir(dds_test):
-            if not attr.startswith("_") and "setUp" not in attr and "tearDown" not in attr:
-                setattr(self, attr, getattr(dds_test, attr))
-        self.dds_test = dds_test
+        self.dds_test = DefectDictSetTest()
+        DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
         self.cdte_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/cdte_defect_gen.json")
 

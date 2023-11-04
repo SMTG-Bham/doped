@@ -3,6 +3,7 @@ Tests for the `doped.analysis` module, which also implicitly tests most of the
 `doped.utils.parsing` module.
 """
 
+import gzip
 import os
 import shutil
 import unittest
@@ -1118,10 +1119,10 @@ class DopedParsingTestCase(unittest.TestCase):
 
 class DopedParsingFunctionsTestCase(unittest.TestCase):
     def setUp(self):
+        DopedParsingTestCase.setUp(self)  # get attributes from DopedParsingTestCase
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
-        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
-        self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
+        self.prim_cdte = Structure.from_file(f"{self.EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
 
@@ -1151,8 +1152,73 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 #     defect_entry.defect.structure, defect_entry.defect.defect_structure
                 # ) == get_defect_name_from_defect(defect_entry.defect)
 
+    def test_bulk_defect_compatibility_checks(self):
+        """
+        Test our bulk/defect INCAR/KPOINTS/POTCAR compatibility checks.
+
+        Note that _compatible_ cases are indirectly tested above, by checking
+        the number of warnings is as expected (i.e. no compatibility warnings
+        when matching defect/bulk settings used).
+        """
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_unperturbed_1/vasp_ncl",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+                skip_corrections=True,
+            )
+            assert len(w) == 1
+            assert all(
+                i in str(w[-1].message)
+                for i in [
+                    "There are mismatching INCAR tags for your bulk and defect calculations",
+                    "[('ADDGRID', True, False)]",
+                ]
+            )
+
+        # edit vasprun.xml.gz to have different INCAR tags:
+        with gzip.open(
+            f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_unperturbed_1/vasp_ncl/vasprun.xml.gz", "rb"
+        ) as f_in, open("./vasprun.xml", "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+
+        # open vasprun.xml, edit ENCUT and add LDAU to INCAR but with default value:
+        with open("./vasprun.xml") as f:  # line 11 (10 in python indexing) is start of INCAR
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if '<i name="ENCUT">' in line:
+                    lines[i] = '  <i name="ENCUT">    500.00000000</i>\n'
+                    break
+
+            new_vr_lines = lines[:11] + ['  <i type="logical" name="LDAU"> F  </i>\n'] + lines[11:]
+
+        with open("./vasprun.xml", "w") as f_out:
+            f_out.writelines(new_vr_lines)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=".",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+                skip_corrections=True,
+            )
+            assert len(w) == 1
+            print(w[-1].message)
+            assert all(
+                i in str(w[-1].message)
+                for i in [
+                    "There are mismatching INCAR tags for your bulk and defect calculations",
+                    "[('ADDGRID', True, False), ('ENCUT', 450.0, 500.0)]",
+                ]
+            )
+
     def tearDown(self):
         if_present_rm("bulk_voronoi_nodes.json")
+        if_present_rm("./vasprun.xml")
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
