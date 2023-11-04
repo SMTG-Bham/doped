@@ -121,15 +121,6 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         # was used
 
 
-# TODO: Should add check the bulk and defect KPOINTS/INCAR/POTCAR/POSCAR (size) settings
-#  are compatible, and throw warning if not.
-# TODO: Add `check_defects_compatibility()` function that checks the bulk and defect
-#  KPOINTS/INCAR/POTCAR/POSCAR (size) settings for all defects in the supplied defect_dict
-#  are compatible, if not throw warnings and say what the differences are. Should recommend
-#  using this in the example notebook if a user has parsed the defects individually (rather
-#  than with the single looping function described below). Also check that the same type of
-#  correction was used in each case (FNV vs eFNV). If isotropic, shouldn't really matter, but
-#  worth warning user as best to be consistent, and could give some unexpected behaviour
 # TODO: Add a function that loops over all the defects in a directory (with `defect_dir = .`,
 #  and `subfolder = vasp_ncl` options) and parses them all (use `SnB` defect-name-matching
 #  function?), returning a dictionary of defect entries, with the defect name as the key. (i.e.
@@ -918,6 +909,16 @@ class DefectParser:
         defect_structure = defect_vr.final_structure.copy()
         calculation_metadata["defect_structure"] = defect_structure
 
+        # check if the bulk and defect supercells are the same size:
+        if not np.isclose(defect_structure.volume, bulk_supercell.volume, rtol=1e-2):
+            warnings.warn(
+                f"The defect and bulk supercells are not the same size, having volumes of "
+                f"{defect_structure.volume:.1f} and {bulk_supercell.volume:.1f} Å^3 respectively. This "
+                f"may cause errors in parsing and/or output energies. In most cases (unless looking at "
+                f"extremely high doping concentrations) the same fixed supercell (ISIF = 2) should be "
+                f"used for both the defect and bulk calculations! (i.e. assuming the dilute limit)"
+            )
+
         # identify defect site, structural information, and create defect object:
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
@@ -1348,6 +1349,11 @@ class DefectParser:
         #  it and in dpd from defect dict (which should be a classmethod)), but either way here using
         #  the same bulk in each case means we are also indirectly testing that each defect supercell
         #  calc used compatible settings
+        #  Should recommend using this in the example notebook if a user has parsed the defects
+        #  individually (rather than with the DefectsParser class which loops over all). Also check that
+        #  the same type of correction was used in each case (FNV vs eFNV). If isotropic, shouldn't
+        #  really matter, but worth warning user as best to be consistent, and could give some
+        #  unexpected behaviour
 
         _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
         _compare_potcar_symbols(run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"])
