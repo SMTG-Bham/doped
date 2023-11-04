@@ -1154,7 +1154,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
     def test_bulk_defect_compatibility_checks(self):
         """
-        Test our bulk/defect INCAR/KPOINTS/POTCAR compatibility checks.
+        Test our bulk/defect INCAR/POSCAR/KPOINTS/POTCAR compatibility checks.
 
         Note that _compatible_ cases are indirectly tested above, by checking
         the number of warnings is as expected (i.e. no compatibility warnings
@@ -1273,6 +1273,30 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         "PAW_PBE Cd_GW 06Sep2000",
                     ]
                 )
+                for warning in w
+            )
+
+        # edit POSCAR volume:
+        for i, line in enumerate(lines[-1000:]):  # vasprun lines already loaded above
+            if "13.08676800" in line:
+                lines[i + len(lines) - 1000] = line.replace("13.08676800", "3000")  # went to the year 3000
+                break
+
+        with open("./vasprun.xml", "w") as f_out:
+            f_out.writelines(lines)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=".",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+                skip_corrections=True,
+            )
+            assert any(
+                "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
+                "2241.3 Å^3 respectively." in str(warning.message)
                 for warning in w
             )
 
