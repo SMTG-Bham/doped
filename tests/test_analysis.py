@@ -1189,7 +1189,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             lines = f.readlines()
             for i, line in enumerate(lines):
                 if '<i name="ENCUT">' in line:
-                    lines[i] = '  <i name="ENCUT">    500.00000000</i>\n'
+                    lines[i] = lines[i].replace("450", "500")
                     break
 
             new_vr_lines = lines[:11] + ['  <i type="logical" name="LDAU"> F  </i>\n'] + lines[11:]
@@ -1207,13 +1207,42 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
             )
             assert len(w) == 1
-            print(w[-1].message)
             assert all(
                 i in str(w[-1].message)
                 for i in [
                     "There are mismatching INCAR tags for your bulk and defect calculations",
                     "[('ADDGRID', True, False), ('ENCUT', 450.0, 500.0)]",
                 ]
+            )
+
+        # edit KPOINTS:
+        for i, line in enumerate(lines):  # vasprun lines already loaded above
+            if "   <v>       0.50000000       0.50000000       0.50000000 </v>" in line:
+                lines[i] = lines[i].replace("0.500000", "0.125")
+                break
+
+        with open("./vasprun.xml", "w") as f_out:
+            f_out.writelines(lines)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=".",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+                skip_corrections=True,
+            )
+            assert len(w) == 2  # now INCAR and KPOINTS warnings!
+            assert any(
+                all(
+                    i in str(warning.message)
+                    for i in [
+                        "The KPOINTS for your bulk and defect calculations do not match",
+                        "[0.125, 0.125, 0.125]",
+                    ]
+                )
+                for warning in w
             )
 
     def tearDown(self):
