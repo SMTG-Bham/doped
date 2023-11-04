@@ -1047,8 +1047,6 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_t
 class DefectParser:
     # TODO: Load bulk locpot once when looping through defects for expedited FNV parsing
     # TODO: Test that charge correction is not attempted by default when charge state is zero
-    # TODO: Add comment/note somewhere that the supercells should have equal definitions for both bulk
-    #  and defect
 
     def __init__(
         self,
