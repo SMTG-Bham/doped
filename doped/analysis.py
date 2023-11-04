@@ -20,6 +20,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.io.vasp.outputs import Vasprun
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
@@ -333,99 +334,7 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     return get_defect_name_from_defect(defect)
 
 
-def defect_entry_from_paths(
-    defect_path,
-    bulk_path,
-    dielectric,
-    charge_state=None,
-    initial_defect_structure=None,
-    skip_corrections=False,
-    bulk_bandgap_path=None,
-    **kwargs,
-):
-    """
-    Parse the defect calculation outputs in `defect_path` and return the parsed
-    `DefectEntry` object. By default, the `DefectEntry.name` attribute (later
-    used to label the defects in plots) is set to the defect_path folder name
-    (if it is a recognised defect name), else it is set to the default doped
-    name for that defect.
-
-    Note that the bulk and defect supercells should have the same definitions/basis
-    sets (for site-matching and finite-size charge corrections to work appropriately).
-
-    Args:
-        defect_path (str):
-            Path to defect supercell folder (containing at least vasprun.xml(.gz)).
-        bulk_path (str):
-            Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
-        dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to the dielectric constant.
-        charge_state (int):
-            Charge state of defect. If not provided, will be automatically determined
-            from the defect calculation outputs (requires `POTCAR`s to be set up
-            with `pymatgen`).
-        initial_defect_structure (str):
-            Path to the initial/unrelaxed defect structure. Only recommended for use
-            if structure matching with the relaxed defect structure(s) fails (rare).
-            Default is None.
-        skip_corrections (bool):
-            Whether to skip the calculation and application of finite-size charge
-            corrections to the defect energy (not recommended in most cases).
-            Default = False.
-        bulk_bandgap_path (str):
-            Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
-            occur at reciprocal space points not included in the bulk supercell
-            calculation, you should use this tag to point to a bulk bandstructure
-            calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
-            entries in self.defect_entry.calculation_metadata to match the correct
-            (eigen)values.
-    #  and defect
-            If None, will use self.defect_entry.calculation_metadata["bulk_path"].
-        **kwargs:
-            Additional keyword arguments to pass to `DefectParser()` (such as
-             `error_tolerance`). See `DefectParser()` docstring for more details.
-
-    Return:
-        Parsed `DefectEntry` object.
-    """
-    _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
-    dielectric = _convert_dielectric_to_tensor(dielectric)
-
-    calculation_metadata = {
-        "bulk_path": bulk_path,
-        "defect_path": defect_path,
-        "dielectric": dielectric,
-    }
-
-    # add bulk simple properties
-    bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
-    if multiple:
-        _multiple_files_warning(
-            "vasprun.xml",
-            bulk_path,
-            bulk_vr_path,
-            "parse the calculation energy and metadata.",
-            dir_type="bulk",
-        )
-    bulk_vr = get_vasprun(bulk_vr_path)
-    bulk_supercell = bulk_vr.final_structure.copy()
-
-    # add defect simple properties
-    (
-        defect_vr_path,
-        multiple,
-    ) = _get_output_files_and_check_if_multiple("vasprun.xml", defect_path)
-    if multiple:
-        _multiple_files_warning(
-            "vasprun.xml",
-            defect_path,
-            defect_vr_path,
-            "parse the calculation energy and metadata.",
-            dir_type="defect",
-        )
-    defect_vr = get_vasprun(defect_vr_path)
-
-    # get defect charge
+def _determine_defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: Optional[int]):
     try:
         defect_nelect = defect_vr.incar.get("NELECT", None)
         if defect_nelect is None:
@@ -482,247 +391,75 @@ def defect_entry_from_paths(
             "Please manually specify defect charge using the `charge_state` argument."
         )
 
-    # Add defect structure to calculation_metadata, so it can be pulled later on (eg. for Kumagai loader)
-    defect_structure = defect_vr.final_structure.copy()
-    calculation_metadata["defect_structure"] = defect_structure
+    return charge_state
 
-    # identify defect site, structural information, and create defect object:
-    # Can specify initial defect structure (to help find the defect site if we have a very very
-    # distorted final structure), but regardless try using the final structure (from defect OUTCAR) first:
-    try:
-        (
-            defect,
-            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            defect_site_index,
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-        ) = defect_from_structures(bulk_supercell, defect_structure.copy(), return_all_info=True)
 
-    except RuntimeError:
-        if initial_defect_structure:
-            defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
-            (
-                defect,
-                defect_site_in_initial_struct,
-                defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-                # w/interstitials
-                defect_site_index,  # in this initial_defect_structure
-                bulk_site_index,
-                guessed_initial_defect_structure,
-                unrelaxed_defect_structure,
-            ) = defect_from_structures(bulk_supercell, defect_structure_for_ID, return_all_info=True)
+def defect_entry_from_paths(
+    defect_path,
+    bulk_path,
+    dielectric,
+    charge_state=None,
+    initial_defect_structure=None,
+    skip_corrections=False,
+    bulk_bandgap_path=None,
+    **kwargs,
+):
+    """
+    Parse the defect calculation outputs in `defect_path` and return the parsed
+    `DefectEntry` object. By default, the `DefectEntry.name` attribute (later
+    used to label the defects in plots) is set to the defect_path folder name
+    (if it is a recognised defect name), else it is set to the default doped
+    name for that defect.
 
-            # then try get defect_site in final structure:
-            # need to check that this is the correct defect site, and hasn't been reordered/changed
-            # compared to the initial_defect_structure used here, check same element and distance
-            # reasonable:
-            defect_site = defect_site_in_initial_struct
+    Note that the bulk and defect supercells should have the same definitions/basis
+    sets (for site-matching and finite-size charge corrections to work appropriately).
 
-            if defect.defect_type != core.DefectType.Vacancy:
-                final_defect_site = defect_structure[defect_site_index]
-                if (
-                    defect_site_in_initial_struct.species.elements[0].symbol
-                    == final_defect_site.species.elements[0].symbol
-                ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
-                    defect_site = final_defect_site
+    Args:
+        defect_path (str):
+            Path to defect supercell folder (containing at least vasprun.xml(.gz)).
+        bulk_path (str):
+            Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            Ionic + static contributions to the dielectric constant.
+        charge_state (int):
+            Charge state of defect. If not provided, will be automatically determined
+            from the defect calculation outputs (requires `POTCAR`s to be set up
+            with `pymatgen`).
+        initial_defect_structure (str):
+            Path to the initial/unrelaxed defect structure. Only recommended for use
+            if structure matching with the relaxed defect structure(s) fails (rare).
+            Default is None.
+        skip_corrections (bool):
+            Whether to skip the calculation and application of finite-size charge
+            corrections to the defect energy (not recommended in most cases).
+            Default = False.
+        bulk_bandgap_path (str):
+            Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+            occur at reciprocal space points not included in the bulk supercell
+            calculation, you should use this tag to point to a bulk bandstructure
+            calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
+            entries in self.defect_entry.calculation_metadata to match the correct
+            (eigen)values.
+            If None, will use DefectEntry.calculation_metadata["bulk_path"].
+        **kwargs:
+            Additional keyword arguments to pass to `DefectParser()` (such as
+             `error_tolerance`). See `DefectParser()` docstring for more details.
 
-                    if defect.defect_type == core.DefectType.Interstitial:
-                        pass
+    Return:
+        Parsed `DefectEntry` object.
+    """
+    _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
-        else:
-            raise
-
-    calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
-    calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-
-    defect_entry = DefectEntry(
-        # pmg attributes:
-        defect=defect,  # this corresponds to _unrelaxed_ defect
+    dp = DefectParser.from_paths(
+        defect_path,
+        bulk_path,
+        dielectric,
         charge_state=charge_state,
-        sc_entry=defect_vr.get_computed_entry(),
-        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-        bulk_entry=bulk_vr.get_computed_entry(),
-        # doped attributes:
-        defect_supercell_site=defect_site,  # _relaxed_ defect site
-        defect_supercell=defect_vr.final_structure,
-        bulk_supercell=bulk_vr.final_structure,
-        calculation_metadata=calculation_metadata,
-    )
-
-    defect_name = os.path.basename(defect_path)  # set equal to folder name
-    if "vasp" in defect_name:  # get parent directory name:
-        defect_name = os.path.basename(os.path.dirname(defect_path))
-
-    check_and_set_defect_entry_name(defect_entry, defect_name)
-
-    return_dp = kwargs.pop("return DefectParser", False)  # internal use for tests/debugging
-    dp = DefectParser(
-        defect_entry,
-        defect_vr=defect_vr,
-        bulk_vr=bulk_vr,
+        initial_defect_structure=initial_defect_structure,
+        skip_corrections=skip_corrections,
+        bulk_bandgap_path=bulk_bandgap_path,
         **kwargs,
     )
-    if return_dp:
-        return dp
-
-    dp.get_stdrd_metadata()  # Load standard defect metadata
-    dp.get_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
-
-    if not skip_corrections:
-        # determine charge correction to use, based on what output files are available (`LOCPOT`s or
-        # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
-        def _check_folder_for_file_match(folder, filename):
-            return any(
-                filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
-            )
-
-        def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
-            aniso_dielectric,
-        ):
-            return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
-
-        # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
-        isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
-
-        # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
-        # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
-        # etc) and also works regardless of isotropic/anisotropic)
-        if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
-            bulk_path, "OUTCAR"
-        ):
-            try:
-                dp.kumagai_loader()
-            except Exception as kumagai_exc:
-                if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
-                    bulk_path, "LOCPOT"
-                ):
-                    try:
-                        if not isotropic_dielectric:
-                            # convert anisotropic dielectric to harmonic mean of the diagonal:
-                            # (this is a better approximation than the pymatgen default of the
-                            # standard arithmetic mean of the diagonal)
-                            dp.defect_entry.calculation_metadata[
-                                "dielectric"
-                            ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
-                        dp.freysoldt_loader()
-                        if not isotropic_dielectric:
-                            warnings.warn(
-                                f"An anisotropic dielectric constant was supplied, but `OUTCAR` "
-                                f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
-                                f"correction) in the defect (at {defect_path}) & bulk (at "
-                                f"{bulk_path}) folders were unable to be parsed, giving the "
-                                f"following error message:\n{kumagai_exc}\n"
-                                f"`LOCPOT` files were found in both defect & bulk folders, "
-                                f"and so the Freysoldt (FNV) charge correction developed for "
-                                f"_isotropic_ materials will be applied here, which corresponds "
-                                f"to using the effective isotropic average of the supplied "
-                                f"anisotropic dielectric. This could lead to significant errors "
-                                f"for very anisotropic systems and/or relatively small supercells!"
-                            )
-                    except Exception as freysoldt_exc:
-                        warnings.warn(
-                            f"Got this error message when attempting to parse defect & bulk "
-                            f"`OUTCAR` files to compute the Kumagai (eFNV) charge correction:"
-                            f"\n{kumagai_exc}\nThen got this error message when attempting to "
-                            f"parse defect & bulk `LOCPOT` files to compute the Freysoldt (FNV) "
-                            f"charge correction:\n{freysoldt_exc}\n-> Charge corrections will not "
-                            f"be applied for this defect."
-                        )
-                        if not isotropic_dielectric:
-                            # reset dielectric to original anisotropic value if FNV failed as well:
-                            dp.defect_entry.calculation_metadata["dielectric"] = dielectric
-                        skip_corrections = True
-
-                else:
-                    warnings.warn(
-                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` "
-                        f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
-                        f"correction) in the defect (at {defect_path}) & bulk (at "
-                        f"{bulk_path}) folders were unable to be parsed, giving the "
-                        f"following error message:\n{kumagai_exc}\n-> Charge corrections will not "
-                        f"be applied for this defect."
-                    )
-                    skip_corrections = True
-
-        elif _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
-            bulk_path, "LOCPOT"
-        ):
-            try:
-                if not isotropic_dielectric:
-                    # convert anisotropic dielectric to harmonic mean of the diagonal:
-                    # (this is a better approximation than the pymatgen default of the
-                    # standard arithmetic mean of the diagonal)
-                    dp.defect_entry.calculation_metadata[
-                        "dielectric"
-                    ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
-                dp.freysoldt_loader()
-                if not isotropic_dielectric:
-                    warnings.warn(
-                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` "
-                        f"files (needed to compute the _anisotropic_ Kumagai eFNV charge "
-                        f"correction) were not found in the defect (at {defect_path}) & bulk "
-                        f"(at {bulk_path}) folders.\n"
-                        f"`LOCPOT` files were found in both defect & bulk folders, "
-                        f"and so the Freysoldt (FNV) charge correction developed for "
-                        f"_isotropic_ materials will be applied here, which corresponds "
-                        f"to using the effective isotropic average of the supplied "
-                        f"anisotropic dielectric. This could lead to significant errors "
-                        f"for very anisotropic systems and/or relatively small supercells!"
-                    )
-            except Exception as freysoldt_exc:
-                warnings.warn(
-                    f"Got this error message when attempting to parse defect & bulk "
-                    f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
-                    f"\n{freysoldt_exc}\n-> Charge corrections will not be applied for this "
-                    f"defect."
-                )
-                if not isotropic_dielectric:
-                    # reset dielectric to original anisotropic value if FNV failed as well:
-                    dp.defect_entry.calculation_metadata["dielectric"] = dielectric
-                skip_corrections = True
-
-        else:
-            if int(dp.defect_entry.charge_state) != 0:
-                warnings.warn(
-                    f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at "
-                    f"{defect_path}) and bulk (at {bulk_path}) folders. These are needed to "
-                    f"perform the finite-size charge corrections. Charge corrections will not be "
-                    f"applied for this defect."
-                )
-                skip_corrections = True
-
-        if not skip_corrections:
-            dp.apply_corrections()
-
-            # check that charge corrections are not negative
-            summed_corrections = sum(
-                val
-                for key, val in dp.defect_entry.corrections.items()
-                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
-            )
-            if summed_corrections < -0.05:
-                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
-                # affecting the potential alignment)
-                # how anisotropic is the dielectric?
-                how_aniso = np.diag(
-                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
-                )
-                if np.allclose(how_aniso, 0, atol=0.05):
-                    warnings.warn(
-                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
-                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
-                        f"relatively isotropic dielectrics (as is the case here) this is usually "
-                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
-                        f"charge occupying the band edge states and not localised at the defect), "
-                        f"affecting the potential alignment, or some error/mismatch in the defect and "
-                        f"bulk calculations. If this defect species is not stable in the formation "
-                        f"energy diagram then this warning can usually be ignored, but if it is, "
-                        f"you should double-check your calculations and parsed results!"
-                    )
-
     return dp.defect_entry
 
 
@@ -1056,7 +793,12 @@ class DefectParser:
         error_tolerance: float = 0.05,
     ):
         """
-        Parse a single Defect object.
+        Create a DefectParser object, which has methods for parsing the results
+        of defect supercell calculations.
+
+        Direct initiation with DefectParser() is typically not recommended. Rather
+        DefectParser.from_paths() or defect_entry_from_paths() are preferred as
+        shown in the doped parsing tutorials.
 
         Args:
             defect_entry (DefectEntry):
@@ -1088,48 +830,331 @@ class DefectParser:
     ):
         """
         Parse the defect calculation outputs in `defect_path` and return the
-        parsed `DefectEntry` object.
+        `DefectParser` object. By default, the `DefectParse.defect_entry.name`
+        attribute (later used to label defects in plots) is set to the
+        defect_path folder name (if it is a recognised defect name), else it is
+        set to the default doped name for that defect.
+
+        Note that the bulk and defect supercells should have the same definitions/basis
+        sets (for site-matching and finite-size charge corrections to work appropriately).
 
         Args:
-        defect_path (str): Path to defect folder of interest (with vasprun.xml(.gz))
-        bulk_path (str): Path to bulk folder of interest (with vasprun.xml(.gz))
-        dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to dielectric constant.
-        charge_state (int):
-            Charge state of defect. If not provided, then automatically determined
-            from the defect calculation outputs (requires POTCARs to be set up with
-            `pymatgen`).
-        initial_defect_structure (str):
-            Path to the initial/unrelaxed defect structure. Only recommended for use
-            if structure matching with the relaxed defect structure(s) fails.
-        skip_corrections (bool):
-            Whether to skip the calculation of finite-size charge corrections for the
-            DefectEntry.
-        bulk_bandgap_path (str):
-            Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM occur
-            at reciprocal space points not included in the bulk supercell calculation,
-            you should use this tag to point to a bulk bandstructure calculation instead.
-            If None, will use self.defect_entry.calculation_metadata["bulk_path"].
-        **kwargs: kwargs to pass to `defect_entry_from_paths()`
+            defect_path (str):
+                Path to defect supercell folder (containing at least vasprun.xml(.gz)).
+            bulk_path (str):
+                Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+            dielectric (float or int or 3x1 matrix or 3x3 matrix):
+                Ionic + static contributions to the dielectric constant.
+            charge_state (int):
+                Charge state of defect. If not provided, will be automatically determined
+                from the defect calculation outputs (requires `POTCAR`s to be set up
+                with `pymatgen`).
+            initial_defect_structure (str):
+                Path to the initial/unrelaxed defect structure. Only recommended for use
+                if structure matching with the relaxed defect structure(s) fails (rare).
+                Default is None.
+            skip_corrections (bool):
+                Whether to skip the calculation and application of finite-size charge
+                corrections to the defect energy (not recommended in most cases).
+                Default = False.
+            bulk_bandgap_path (str):
+                Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+                occur at reciprocal space points not included in the bulk supercell
+                calculation, you should use this tag to point to a bulk bandstructure
+                calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
+                entries in DefectParser.defect_entry.calculation_metadata to match the
+                correct (eigen)values.
+                If None, will calculate "gap"/"vbm" using the outputs at:
+                DefectParser.defect_entry.calculation_metadata["bulk_path"]
+            **kwargs:
+                Additional keyword arguments to pass to `DefectParser()` (such as
+                 `error_tolerance`). See `DefectParser()` docstring for more details.
 
         Return:
-            Parsed `DefectEntry` object.
+            `DefectParser` object.
         """
-        # TODO: Update this docstring? (Using `defect_entry_from_paths`) Depending on recommended parsing
-        #  workflow
-        kwargs["return DefectParser"] = True
-        return defect_entry_from_paths(
-            defect_path,
-            bulk_path,
-            dielectric,
+        dielectric = _convert_dielectric_to_tensor(dielectric)
+
+        calculation_metadata = {
+            "bulk_path": bulk_path,
+            "defect_path": defect_path,
+            "dielectric": dielectric,
+        }
+
+        # add bulk simple properties
+        bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
+        if multiple:
+            _multiple_files_warning(
+                "vasprun.xml",
+                bulk_path,
+                bulk_vr_path,
+                "parse the calculation energy and metadata.",
+                dir_type="bulk",
+            )
+        bulk_vr = get_vasprun(bulk_vr_path)
+        bulk_supercell = bulk_vr.final_structure.copy()
+
+        # add defect simple properties
+        (
+            defect_vr_path,
+            multiple,
+        ) = _get_output_files_and_check_if_multiple("vasprun.xml", defect_path)
+        if multiple:
+            _multiple_files_warning(
+                "vasprun.xml",
+                defect_path,
+                defect_vr_path,
+                "parse the calculation energy and metadata.",
+                dir_type="defect",
+            )
+        defect_vr = get_vasprun(defect_vr_path)
+
+        charge_state = _determine_defect_charge_from_vasprun(defect_vr, charge_state)  # get defect charge
+
+        # Add defect structure to calculation_metadata, so it can be pulled later on (e.g. for eFNV)
+        defect_structure = defect_vr.final_structure.copy()
+        calculation_metadata["defect_structure"] = defect_structure
+
+        # identify defect site, structural information, and create defect object:
+        # Can specify initial defect structure (to help find the defect site if we have a very distorted
+        # final structure), but regardless try using the final structure (from defect OUTCAR) first:
+        try:
+            (
+                defect,
+                defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+                defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+                # w/interstitials
+                defect_site_index,
+                bulk_site_index,
+                guessed_initial_defect_structure,
+                unrelaxed_defect_structure,
+            ) = defect_from_structures(bulk_supercell, defect_structure.copy(), return_all_info=True)
+
+        except RuntimeError:
+            if initial_defect_structure:
+                defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
+                (
+                    defect,
+                    defect_site_in_initial_struct,
+                    defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+                    # w/interstitials
+                    defect_site_index,  # in this initial_defect_structure
+                    bulk_site_index,
+                    guessed_initial_defect_structure,
+                    unrelaxed_defect_structure,
+                ) = defect_from_structures(bulk_supercell, defect_structure_for_ID, return_all_info=True)
+
+                # then try get defect_site in final structure:
+                # need to check that this is the correct defect site, and hasn't been reordered/changed
+                # compared to the initial_defect_structure used here, check same element and distance
+                # reasonable:
+                defect_site = defect_site_in_initial_struct
+
+                if defect.defect_type != core.DefectType.Vacancy:
+                    final_defect_site = defect_structure[defect_site_index]
+                    if (
+                        defect_site_in_initial_struct.species.elements[0].symbol
+                        == final_defect_site.species.elements[0].symbol
+                    ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
+                        defect_site = final_defect_site
+
+                        if defect.defect_type == core.DefectType.Interstitial:
+                            pass
+
+            else:
+                raise
+
+        calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
+        calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
+
+        defect_entry = DefectEntry(
+            # pmg attributes:
+            defect=defect,  # this corresponds to _unrelaxed_ defect
             charge_state=charge_state,
-            initial_defect_structure=initial_defect_structure,
-            skip_corrections=skip_corrections,
-            bulk_bandgap_path=bulk_bandgap_path,
-            **kwargs,
+            sc_entry=defect_vr.get_computed_entry(),
+            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+            bulk_entry=bulk_vr.get_computed_entry(),
+            # doped attributes:
+            defect_supercell_site=defect_site,  # _relaxed_ defect site
+            defect_supercell=defect_vr.final_structure,
+            bulk_supercell=bulk_vr.final_structure,
+            calculation_metadata=calculation_metadata,
         )
 
-    def freysoldt_loader(self, bulk_locpot_dict=None):
+        defect_name = os.path.basename(defect_path)  # set equal to folder name
+        if "vasp" in defect_name:  # get parent directory name:
+            defect_name = os.path.basename(os.path.dirname(defect_path))
+
+        check_and_set_defect_entry_name(defect_entry, defect_name)
+
+        dp = cls(defect_entry, defect_vr=defect_vr, bulk_vr=bulk_vr, **kwargs)
+
+        dp.get_and_check_calculation_metadata()  # Load standard defect metadata
+        dp.get_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
+
+        if not skip_corrections:
+            skip_corrections = dp._check_and_load_appropriate_charge_correction()
+
+        if not skip_corrections:
+            dp.apply_corrections()
+
+            # check that charge corrections are not negative
+            summed_corrections = sum(
+                val
+                for key, val in dp.defect_entry.corrections.items()
+                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
+            )
+            if summed_corrections < -0.08:
+                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
+                # affecting the potential alignment)
+                # how anisotropic is the dielectric?
+                how_aniso = np.diag(
+                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
+                )
+                if np.allclose(how_aniso, 0, atol=0.05):
+                    warnings.warn(
+                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
+                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
+                        f"relatively isotropic dielectrics (as is the case here) this is usually "
+                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
+                        f"charge occupying the band edge states and not localised at the defect), "
+                        f"affecting the potential alignment, or some error/mismatch in the defect and "
+                        f"bulk calculations. If this defect species is not stable in the formation "
+                        f"energy diagram then this warning can usually be ignored, but if it is, "
+                        f"you should double-check your calculations and parsed results!"
+                    )
+
+        return dp
+
+    def _check_and_load_appropriate_charge_correction(self):
+        skip_corrections = False
+        dielectric = self.defect_entry.calculation_metadata["dielectric"]
+        bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
+        defect_path = self.defect_entry.calculation_metadata["defect_path"]
+
+        # determine charge correction to use, based on what output files are available (`LOCPOT`s or
+        # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
+        def _check_folder_for_file_match(folder, filename):
+            return any(
+                filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
+            )
+
+        def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+            aniso_dielectric,
+        ):
+            return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
+
+        # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
+        isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
+
+        # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
+        # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
+        # etc) and also works regardless of isotropic/anisotropic)
+        if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
+            bulk_path, "OUTCAR"
+        ):
+            try:
+                self.load_eFNV_data()
+            except Exception as kumagai_exc:
+                if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
+                    bulk_path, "LOCPOT"
+                ):
+                    try:
+                        if not isotropic_dielectric:
+                            # convert anisotropic dielectric to harmonic mean of the diagonal:
+                            # (this is a better approximation than the pymatgen default of the
+                            # standard arithmetic mean of the diagonal)
+                            self.defect_entry.calculation_metadata[
+                                "dielectric"
+                            ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                        self.load_FNV_data()
+                        if not isotropic_dielectric:
+                            warnings.warn(
+                                f"An anisotropic dielectric constant was supplied, but `OUTCAR` files "
+                                f"(needed to compute the _anisotropic_ Kumagai eFNV charge correction) "
+                                f"in the defect (at {defect_path}) & bulk (at {bulk_path}) folders were "
+                                f"unable to be parsed, giving the following error message:"
+                                f"\n{kumagai_exc}\n"
+                                f"`LOCPOT` files were found in both defect & bulk folders, and so the "
+                                f"Freysoldt (FNV) charge correction developed for _isotropic_ materials "
+                                f"will be applied here, which corresponds to using the effective "
+                                f"isotropic average of the supplied anisotropic dielectric. This could "
+                                f"lead to significant errors for very anisotropic systems and/or "
+                                f"relatively small supercells!"
+                            )
+                    except Exception as freysoldt_exc:
+                        warnings.warn(
+                            f"Got this error message when attempting to parse defect & bulk `OUTCAR` "
+                            f"files to compute the Kumagai (eFNV) charge correction:"
+                            f"\n{kumagai_exc}\n"
+                            f"Then got this error message when attempting to parse defect & bulk "
+                            f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
+                            f"\n{freysoldt_exc}\n"
+                            f"-> Charge corrections will not be applied for this defect."
+                        )
+                        if not isotropic_dielectric:
+                            # reset dielectric to original anisotropic value if FNV failed as well:
+                            self.defect_entry.calculation_metadata["dielectric"] = dielectric
+                        skip_corrections = True
+
+                else:
+                    warnings.warn(
+                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
+                        f"compute the _anisotropic_ Kumagai eFNV charge correction) in the defect (at"
+                        f" {defect_path}) & bulk (at {bulk_path}) folders were unable to be parsed, "
+                        f"giving the following error message:"
+                        f"\n{kumagai_exc}\n"
+                        f"-> Charge corrections will not be applied for this defect."
+                    )
+                    skip_corrections = True
+
+        elif _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
+            bulk_path, "LOCPOT"
+        ):
+            try:
+                if not isotropic_dielectric:
+                    # convert anisotropic dielectric to harmonic mean of the diagonal:
+                    # (this is a better approximation than the pymatgen default of the
+                    # standard arithmetic mean of the diagonal)
+                    self.defect_entry.calculation_metadata[
+                        "dielectric"
+                    ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                self.load_FNV_data()
+                if not isotropic_dielectric:
+                    warnings.warn(
+                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
+                        f"compute the _anisotropic_ Kumagai eFNV charge correction) were not found in "
+                        f"the defect (at {defect_path}) & bulk (at {bulk_path}) folders.\n"
+                        f"`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt "
+                        f"(FNV) charge correction developed for _isotropic_ materials will be applied "
+                        f"here, which corresponds to using the effective isotropic average of the "
+                        f"supplied anisotropic dielectric. This could lead to significant errors for "
+                        f"very anisotropic systems and/or relatively small supercells!"
+                    )
+            except Exception as freysoldt_exc:
+                warnings.warn(
+                    f"Got this error message when attempting to parse defect & bulk `LOCPOT` files to "
+                    f"compute the Freysoldt (FNV) charge correction:"
+                    f"\n{freysoldt_exc}\n"
+                    f"-> Charge corrections will not be applied for this defect."
+                )
+                if not isotropic_dielectric:
+                    # reset dielectric to original anisotropic value if FNV failed as well:
+                    self.defect_entry.calculation_metadata["dielectric"] = dielectric
+                skip_corrections = True
+
+        else:
+            if int(self.defect_entry.charge_state) != 0:
+                warnings.warn(
+                    f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at {defect_path}) "
+                    f"and bulk (at {bulk_path}) folders. These are needed to perform the finite-size "
+                    f"charge corrections. Charge corrections will not be applied for this defect."
+                )
+                skip_corrections = True
+
+        return skip_corrections
+
+    def load_FNV_data(self, bulk_locpot_dict=None):
         """
         Load metadata required for performing Freysoldt correction (i.e. LOCPOT
         planar-averaged potential dictionary).
@@ -1196,7 +1221,7 @@ class DefectParser:
 
         return bulk_locpot_dict
 
-    def kumagai_loader(self, bulk_site_potentials=None):
+    def load_eFNV_data(self, bulk_site_potentials=None):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
         site potentials from the OUTCAR files).
@@ -1273,9 +1298,11 @@ class DefectParser:
 
         return bulk_site_potentials
 
-    def get_stdrd_metadata(self):
+    def get_and_check_calculation_metadata(self):
         """
-        Get standard defect calculation metadata.
+        Pull metadata about the defect supercell calculations from the outputs,
+        and check if the defect and bulk supercell calculations settings are
+        compatible.
         """
         if not self.bulk_vr:
             bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
@@ -1314,6 +1341,10 @@ class DefectParser:
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
         }
+        # TODO: Could have this test loop over all defects with our full defect parser object (maybe in
+        #  it and in dpd from defect dict (which should be a classmethod)), but either way here using
+        #  the same bulk in each case means we are also indirectly testing that each defect supercell
+        #  calc used compatible settings
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
@@ -1338,20 +1369,24 @@ class DefectParser:
         Get bulk gap data from bulk OUTCAR file, or OUTCAR located at
         `actual_bulk_path`.
 
-        Alternatively, one can specify query the Materials Project (MP) database for the bulk gap
-        data, using `use_MP = True`, in which case the MP entry with the lowest number ID and
-        composition matching the bulk will be used, or  the MP ID (mpid) of the bulk material to
-        use can be specified. This is not recommended as it will correspond to a
-        severely-underestimated GGA DFT bandgap!
+        Alternatively, one can specify query the Materials Project (MP) database
+        for the bulk gap data, using `use_MP = True`, in which case the MP entry
+        with the lowest number ID and composition matching the bulk will be used,
+        or the MP ID (mpid) of the bulk material to use can be specified. This is
+        not recommended as it will correspond to a severely-underestimated GGA DFT
+        bandgap!
 
         Args:
-            bulk_bandgap_path (str): Path to bulk OUTCAR file for determining the band gap. If
-                the VBM/CBM occur at reciprocal space points not included in the bulk supercell
-                calculation, you should use this tag to point to a bulk bandstructure calculation
-                instead. If None, will use self.defect_entry.calculation_metadata["bulk_path"].
-            use_MP (bool): If True, will query the Materials Project database for the bulk gap
-                data.
-            mpid (str): If provided, will query the Materials Project database for the bulk gap
+            bulk_bandgap_path (str):
+                Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+                occur at reciprocal space points not included in the bulk supercell
+                calculation, you should use this tag to point to a bulk bandstructure
+                calculation instead. If None, will use
+                self.defect_entry.calculation_metadata["bulk_path"].
+            use_MP (bool):
+                If True, will query the Materials Project database for the bulk gap data.
+            mpid (str):
+                If provided, will query the Materials Project database for the bulk gap
                 data, using this Materials Project ID.
             api_key (str): Materials API key to access database.
         """
@@ -1485,7 +1520,7 @@ class DefectParser:
                 "No charge correction performed! Missing required metadata in "
                 "defect_entry.calculation_metadata ('bulk/defect_site_potentials' for Kumagai ("
                 "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) - these "
-                "are loaded with either the kumagai_loader() or freysoldt_loader() methods for "
+                "are loaded with either the load_eFNV_data() or load_FNV_data() methods for "
                 "DefectParser."
             )
 
