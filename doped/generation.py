@@ -281,8 +281,8 @@ def _check_unrelaxed_defect_symmetry_determination(
 ):
     if defect_entry.defect_supercell_site is None:
         raise AttributeError(
-            "`defect_entry.defect_supercell_site` not defined! Needed to check defect "
-            "supercell periodicity (for symmetry determination)"
+            "`defect_entry.defect_supercell_site` not defined! Needed to check defect supercell "
+            "periodicity (for symmetry determination)"
         )
     unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
     if unrelaxed_defect_structure is not None:

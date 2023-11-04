@@ -42,7 +42,7 @@ class DefectPhaseDiagram(MSONable):
         d) used as input to doped plotting/analysis functions
     """
 
-    def __init__(self, entries, vbm, band_gap, filter_compatible=True, metadata=None):
+    def __init__(self, entries, vbm, band_gap, metadata=None):
         """
         Args:
             entries ([DefectEntry]):
@@ -56,24 +56,13 @@ class DefectPhaseDiagram(MSONable):
                 VBM energy to use as Fermi level reference point for all defect entries.
             band_gap (float):
                 Band gap value to use for all defect entries.
-            filter_compatible (bool):
-                Whether to consider entries which were ruled incompatible by the
-                DefectCompatibility class. Must be set to False if you desire a
-                suggestion for larger supercell sizes. Default is True (to omit
-                calculations which have "is_compatible"=False in DefectEntry's
-                calculation_metadata)
             metadata (dict):
                 Dictionary of metadata to store with the PhaseDiagram. Has no impact on
                 calculations.
         """
         self.vbm = vbm
         self.band_gap = band_gap
-        self.filter_compatible = filter_compatible
-
-        if filter_compatible:
-            self.entries = [e for e in entries if e.calculation_metadata.get("is_compatible", True)]
-        else:
-            self.entries = entries
+        self.entries = entries
 
         for ent_ind, ent in enumerate(self.entries):
             if "vbm" not in ent.calculation_metadata.keys() or ent.calculation_metadata["vbm"] != vbm:
@@ -103,7 +92,6 @@ class DefectPhaseDiagram(MSONable):
             "entries": [entry.as_dict() for entry in self.entries],
             "vbm": self.vbm,
             "band_gap": self.band_gap,
-            "filter_compatible": self.filter_compatible,
             "metadata": self.metadata,
         }
 
@@ -125,7 +113,6 @@ class DefectPhaseDiagram(MSONable):
         entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
         vbm = d["vbm"]
         band_gap = d["band_gap"]
-        filter_compatible = d.get("filter_compatible", True)
         metadata = d.get("metadata", {})
         if "entry_id" in d and "entry_id" not in metadata:
             metadata["entry_id"] = d["entry_id"]
@@ -134,7 +121,6 @@ class DefectPhaseDiagram(MSONable):
             entries,
             vbm,
             band_gap,
-            filter_compatible=filter_compatible,
             metadata=metadata,
         )
 
@@ -479,57 +465,6 @@ class DefectPhaseDiagram(MSONable):
                 ]
 
             recommendations[def_type] = test_charges
-
-        return recommendations
-
-    def suggest_larger_supercells(self, tolerance=0.1):
-        """
-        Suggest larger supercells for different defect+chg combinations based
-        on use of compatibility analysis. Does this for any charged defects
-        which have is_compatible = False, and the defect+chg formation energy
-        is stable at fermi levels within the band gap.
-
-        NOTE: Requires self.filter_compatible = False
-        Args:
-            tolerance (float): tolerance with respect to the VBM and CBM for considering
-                               larger supercells for a given charge
-        """
-        if self.filter_compatible:
-            raise ValueError("Cannot suggest larger supercells if filter_compatible is True.")
-
-        recommendations = {}
-
-        for def_type in self.defect_types:
-            template_entry = copy.deepcopy(self.stable_entries[def_type][0])
-            defect_indices = [int(def_ind) for def_ind in def_type.split("@")[-1].split("-")]
-
-            for charge in self.finished_charges[def_type]:
-                chg_defect = copy.deepcopy(template_entry.defect)
-                chg_defect.set_charge(charge)
-
-                for entry_index in defect_indices:
-                    entry = self.entries[entry_index]
-                    if entry.charge_state == charge:
-                        break
-
-                if entry.calculation_metadata.get("is_compatible", True):
-                    continue
-
-                # consider if transition level is within
-                # tolerance of band edges
-                suggest_bigger_supercell = True
-                for tl, chgset in self.transition_level_map[def_type].items():
-                    sorted_chgset = list(chgset)
-                    sorted_chgset.sort(reverse=True)
-                    if (charge == sorted_chgset[0] and tl < tolerance) or (
-                        charge == sorted_chgset[1] and tl > (self.band_gap - tolerance)
-                    ):
-                        suggest_bigger_supercell = False
-
-                if suggest_bigger_supercell:
-                    if def_type not in recommendations:
-                        recommendations[def_type] = []
-                    recommendations[def_type].append(charge)
 
         return recommendations
 
