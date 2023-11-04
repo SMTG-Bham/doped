@@ -273,11 +273,82 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
 
 
-def get_defect_name_from_entry(
-    defect_entry, element_list=None, symm_ops=None, unrelaxed=False, symprec=None
+def _check_unrelaxed_defect_symmetry_determination(
+    defect_entry: DefectEntry,
+    symm_ops: Optional[list] = None,
+    symprec: Optional[float] = None,
+    verbose: bool = False,
 ):
-    """
-    Get the doped/SnB defect name from DefectEntry object.
+    if defect_entry.defect_supercell_site is None:
+        raise AttributeError(
+            "`defect_entry.defect_supercell_site` not defined! Needed to check defect "
+            "supercell periodicity (for symmetry determination)"
+        )
+    unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
+    if unrelaxed_defect_structure is not None:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            defect_entry.defect_supercell_site.frac_coords,
+            unrelaxed_defect_structure,
+            symm_ops=symm_ops,
+            symprec=symprec,
+        )
+        unrelaxed_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
+
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            defect_entry.defect_supercell_site.frac_coords,
+            defect_entry.bulk_supercell,
+            symm_ops=symm_ops,
+            symprec=symprec,
+        )
+        bulk_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
+
+        if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
+            if verbose:
+                warnings.warn(
+                    "`unrelaxed` is set to False (i.e. get _relaxed_ defect symmetry), but doped has "
+                    "detected that the supercell is a non-scalar matrix expansion which is breaking the "
+                    "cell periodicity, likely preventing the correct point group symmetry from being "
+                    "determined. You should probably set unrelaxed=True to instead get the "
+                    "unrelaxed/initial point group symmetry (and manually or otherwise determine the "
+                    "relaxed point symmetry if desired."
+                )
+            return False
+
+        return True
+
+    return False  # return False if symmetry couldn't be checked
+
+
+def get_defect_name_from_entry(
+    defect_entry: DefectEntry,
+    element_list: Optional[list] = None,
+    symm_ops: Optional[list] = None,
+    symprec: Optional[float] = None,
+    unrelaxed: bool = False,
+):
+    r"""
+    Get the doped/SnB defect name from a DefectEntry object.
+
+    Note: If unrelaxed=False (default), then this tries to use the
+    defect_entry.defect_supercell to determine the site symmetry. This will
+    thus give the _relaxed_ defect point symmetry if this is a DefectEntry
+    created from parsed defect calculations. However, it should be noted
+    that this is not guaranteed to work in all cases; namely for non-diagonal
+    supercell expansions, or sometimes for non-scalar supercell expansion
+    matrices (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
+    which can mess up the periodicity of the cell. doped tries to automatically
+    check if this is the case, and will warn you if so.
+
+    This can also be checked by using this function on your doped _generated_ defects:
+
+    from doped.generation import get_defect_name_from_entry
+    for defect_name, defect_entry in defect_gen.items():
+        print(defect_name, get_defect_name_from_entry(defect_entry, unrelaxed=True),
+              get_defect_name_from_entry(defect_entry), "\n")
+
+    And if the point symmetries match in each case, then using this function on your
+    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
+    defect symmetry (and closest site info) - otherwise periodicity-breaking prevents this.
 
     Args:
         defect_entry (DefectEntry): DefectEntry object.
@@ -289,13 +360,16 @@ def get_defect_name_from_entry(
         symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
             structure, to avoid re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
+            0.2 for relaxed (to account for residual structural noise). You may
+            want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc).
         unrelaxed (bool):
             If True, determines the site symmetry using the defect site _in the
             unrelaxed bulk supercell_, otherwise uses the defect supercell to
-            determine the site symmetry. Default is False.
-        symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
-            0.2 for relaxed (to account for residual structural noise).
+            determine the site symmetry (i.e. try determine the point symmetry
+            of a relaxed defect in the defect supercell). Default is False.
 
     Returns:
         str: Defect name.
@@ -303,36 +377,79 @@ def get_defect_name_from_entry(
     supercell = defect_entry.bulk_supercell if unrelaxed else defect_entry.defect_supercell
     if symprec is None:
         symprec = 0.01 if unrelaxed else 0.2  # relaxed structures likely have structural noise
+        # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very
+        # slight distortions present in the unrelaxed material).
 
-    # TODO: This usually only works for relaxed defect structures if it is a scalar matrix supercell
-    # expansion of the primitive/conventional cell (otherwises messes up the periodicity).
+    # For unrelaxed=False, often only works for relaxed defect structures if it is a scalar matrix
+    # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
     # Sometimes works even if not a scalar matrix for _low-symmetry_ systems (counter-intuitively),
     # because then the breakdown in periodicity affects the defect site symmetry less. This can be
     # checked by seeing if the site symmetry of the defect site in the unrelaxed structure is correctly
     # guessed (in which case the supercell site symmetry is not messing up the symmetry detection),
-    # so implement this somehow as a user check.
-    # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very slight
-    # distortions present in the unrelaxed material).
+    # as shown in the docstrings. Here we test using the 'unrelaxed_defect_structure' in the DefectEntry
+    # calculation_metadata if present, which, if it gives the same result as unrelaxed=True, means that
+    # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
+    # determination.
+    if not unrelaxed:
+        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata.get(
+            "unrelaxed_defect_structure"
+        ):
+            _matching = _check_unrelaxed_defect_symmetry_determination(
+                defect_entry, symm_ops=symm_ops, symprec=symprec, verbose=True
+            )
+        else:
+            warnings.warn(
+                "`unrelaxed` was set to False (i.e. get _relaxed_ defect symmetry), "
+                "but the `calculation_metadata` attribute is not set for `DefectEntry`, suggesting that "
+                "this DefectEntry was not parsed from calculations using doped. This means doped cannot "
+                "automatically check if the supercell shape is breaking the cell periodicity here or not "
+                "(see `get_defect_name_from_entry` docstring) - the point symmetry groups may not be "
+                "correct here!"
+            )
 
-    # Maybe implement this as a function (to get symmetry and corresponding degeneracy) and show example
+    # TODO: Implement this as a function (to get symmetry and corresponding degeneracy) and show example
     # in tutorials, but not automated because requires a bit of user sanity
-    # Need to update docstrings, warnings, docs to reflect this.
-    # TODO: Update get_defect_name_from_defect too? Or at least warn/fail if unrelaxed=True and
-    #  AttributeError
 
-    try:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords, supercell, symm_ops=symm_ops, symprec=symprec
-        )
-    except AttributeError:  # possibly pymatgen DefectEntry object without defect_supercell_site set
+    _failed = False
+    if defect_entry.defect_supercell_site is not None:
+        try:
+            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+                defect_entry.defect_supercell_site.frac_coords,
+                supercell,
+                symm_ops=symm_ops,
+                symprec=symprec,
+            )
+        except AttributeError:
+            _failed = True
+
+    if defect_entry.defect_supercell_site is None or _failed:
+        # possibly pymatgen DefectEntry object without defect_supercell_site set
+        if not unrelaxed:
+            warnings.warn(
+                "Symmetry determination failed with the standard approach (likely due to this being a "
+                "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
+                "group symmetry cannot be reliably determined."
+            )
+
         return get_defect_name_from_defect(
-            defect_entry.defect, element_list=element_list, symm_ops=symm_ops, symprec=symprec
+            defect_entry.defect,
+            element_list=element_list,
+            symm_ops=symm_ops,
+            symprec=symprec,
         )
 
-    spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])  # site_symmetry_symbols[-1] also
-    # works for unrelaxed defects, but sometimes the "defect supercell site" is not the true centre of
-    # mass of the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc), so
-    # use 'pointgroup' output
+    if unrelaxed:
+        # site_symmetry_symbols[-1] works better for unrelaxed defects (as sometimes with the equivalent
+        # sites population it can change the overall point group symbol (but site symmetry symbol is
+        # still correct))
+        spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
+
+    else:
+        # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
+        # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
+        # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
+        # possibility with the equivalent sites, as when unrelaxed=True)
+        spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
 
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
