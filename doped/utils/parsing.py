@@ -174,11 +174,16 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
         site_matches = distance_matrix.argmin(axis=0 if defect_type == "vacancy" else -1)
 
+        def _site_matching_failure_error(defect_type, searched_structure):
+            raise RuntimeError(
+                f"Could not uniquely determine site of {defect_type} in {searched_structure} "
+                f"structure. Remember the bulk and defect supercells should have the same "
+                f"definitions/basis sets for site-matching (parsing) to be possible."
+            )
+
         if len(site_matches.shape) == 1:
             if len(np.unique(site_matches)) != len(site_matches):
-                raise RuntimeError(
-                    f"Could not uniquely determine site of {defect_type} in {searched_structure} structure"
-                )
+                _site_matching_failure_error(defect_type, searched_structure)
 
             return list(
                 set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
@@ -192,9 +197,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 len(distance_matrix[distance_matrix < distance_matrix[site_matches] * unique_tolerance])
                 > 1
             ):
-                raise RuntimeError(
-                    f"Could not uniquely determine site of {defect_type} in {searched_structure} structure"
-                )
+                _site_matching_failure_error(defect_type, searched_structure)
 
             return site_matches
         return None

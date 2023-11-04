@@ -29,7 +29,7 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
 
 from doped.core import Defect, DefectEntry
-from doped.generation import DefectsGenerator
+from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.wyckoff import get_BCS_conventional_structure, swap_axes
 
 
@@ -1753,6 +1753,29 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
         cdte_defect_gen.to_json(f"{self.data_dir}/cdte_defect_gen.json")  # for testing in test_vasp.py
 
+        # test get_defect_name_from_entry relaxed/unrelaxed warnings:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            # suggested check function in `get_defect_name_from_entry`:
+            for defect_name, defect_entry in cdte_defect_gen.items():
+                print(
+                    defect_name,
+                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry),
+                    "\n",
+                )
+                assert get_defect_name_from_entry(
+                    defect_entry, unrelaxed=True
+                ) == get_defect_name_from_entry(defect_entry)
+
+        non_ignored_warnings = [  # warning about calculation_metadata with unrelaxed=False,
+            # but no other warnings
+            warning
+            for warning in w
+            if ("`calculation_metadata` attribute is not set") not in str(warning.message)
+        ]
+        assert len(non_ignored_warnings) == 0  # no warnings for CdTe, scalar matrix
+
     def test_defects_generator_cdte_supercell_input(self):
         cdte_defect_gen, output = self._generate_and_test_no_warnings(self.cdte_bulk_supercell)
 
@@ -1994,6 +2017,24 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self._save_defect_gen_jsons(ytos_defect_gen)
         self.ytos_defect_gen_check(ytos_defect_gen)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
+
+        # test get_defect_name_from_entry relaxed/unrelaxed warnings:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            # suggested check function in `get_defect_name_from_entry`:
+            for defect_name, defect_entry in ytos_defect_gen.items():
+                print(
+                    defect_name,
+                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry),
+                    "\n",
+                )
+            assert len(w) == 1
+            assert (
+                "`unrelaxed` was set to False (i.e. get _relaxed_ defect symmetry), "
+                "but the `calculation_metadata` attribute is not set for `DefectEntry`"
+                in str(w[-1].message)
+            )
 
         # save reduced defect gen to json
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
@@ -2784,6 +2825,29 @@ Se_i_Cs_Se2.38        [-2,-1,0,+1,+2,+3,+4]        [0.293,0.750,0.263]  4c
             )
             in output
         )
+
+        # test get_defect_name_from_entry relaxed/unrelaxed warnings:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            # suggested check function in `get_defect_name_from_entry`:
+            for defect_name, defect_entry in sb2se3_defect_gen.items():
+                print(
+                    defect_name,
+                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry),
+                    "\n",
+                )
+                assert get_defect_name_from_entry(
+                    defect_entry, unrelaxed=True
+                ) == get_defect_name_from_entry(defect_entry)
+
+        non_ignored_warnings = [  # warning about calculation_metadata with unrelaxed=False,
+            # but no other warnings
+            warning
+            for warning in w
+            if ("`calculation_metadata` attribute is not set") not in str(warning.message)
+        ]
+        assert not non_ignored_warnings  # diagonal (but non-scalar) expansion matrix, works fine here
 
     def test_lattice_vector_swapping(self):
         # Already tested above with Sb2Se3, but Ag2Se is also another tricky case so quick test with it too

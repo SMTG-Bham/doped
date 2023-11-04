@@ -183,12 +183,13 @@ def _get_equiv_frac_coords_in_primitive(
         if site.specie.symbol == "X"
     ]
 
-    return (  # sort with _frac_coords_sort_func
-        sorted(prim_coord_list, key=_frac_coords_sort_func)[0]
-        if equiv_coords
-        else sorted(prim_coord_list, key=_frac_coords_sort_func)[0],
-        prim_coord_list,
-    )
+    if equiv_coords:
+        return (  # sort with _frac_coords_sort_func
+            sorted(prim_coord_list, key=_frac_coords_sort_func)[0],
+            prim_coord_list,
+        )
+
+    return sorted(prim_coord_list, key=_frac_coords_sort_func)[0]
 
 
 def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
