@@ -1147,7 +1147,7 @@ class DefectRelaxSet(MSONable):
     def _get_output_dir(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
         if defect_dir is None:
             if self.defect_entry.name is None:
-                self.defect_entry.name = get_defect_name_from_entry(self.defect_entry)
+                self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, unrelaxed=True)
 
             defect_dir = self.defect_entry.name
 

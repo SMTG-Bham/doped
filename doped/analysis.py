@@ -110,9 +110,11 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         defect_entry.name = defect_name_w_charge_state
     else:
         defect_entry.name = (
-            f"{get_defect_name_from_entry(defect_entry)}_"
+            f"{get_defect_name_from_entry(defect_entry, unrelaxed=True)}_"
             f"{'+' if charge_state > 0 else ''}{charge_state}"
         )  # otherwise use default doped name  # TODO: Test!
+        # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
+        # was used
 
 
 # TODO: Should add check the bulk and defect KPOINTS/INCAR/POTCAR/POSCAR (size) settings
@@ -348,6 +350,9 @@ def defect_entry_from_paths(
     (if it is a recognised defect name), else it is set to the default doped
     name for that defect.
 
+    Note that the bulk and defect supercells should have the same definitions/basis
+    sets (for site-matching and finite-size charge corrections to work appropriately).
+
     Args:
         defect_path (str):
             Path to defect supercell folder (containing at least vasprun.xml(.gz)).
@@ -371,7 +376,10 @@ def defect_entry_from_paths(
             Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
             occur at reciprocal space points not included in the bulk supercell
             calculation, you should use this tag to point to a bulk bandstructure
-            calculation instead.
+            calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
+            entries in self.defect_entry.calculation_metadata to match the correct
+            (eigen)values.
+    #  and defect
             If None, will use self.defect_entry.calculation_metadata["bulk_path"].
         **kwargs:
             Additional keyword arguments to pass to `DefectParser()` (such as
@@ -787,9 +795,7 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
     if max(bandgap_vals) - min(bandgap_vals) > 0.05:  # Check if all defects give same bandgap
         _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
 
-    return DefectPhaseDiagram(
-        list(defect_dict.values()), vbm_vals[0], bandgap_vals[0], filter_compatible=False
-    )
+    return DefectPhaseDiagram(list(defect_dict.values()), vbm_vals[0], bandgap_vals[0])
 
 
 def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
@@ -1022,11 +1028,25 @@ def _single_formation_energy_table(
     return formation_energy_df.round(3)
 
 
+def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):
+    meta = defect_entry.calculation_metadata[f"{charge_correction_type}_meta"]
+    corr = (
+        meta[f"{charge_correction_type}_electrostatic"]
+        + meta[f"{charge_correction_type}_potential_alignment_correction"]
+    )
+    defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
+
+
+def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type="bulk"):
+    warnings.warn(
+        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using "
+        f"{chosen_filepath} to {action}"
+    )
+
+
 class DefectParser:
     # TODO: Load bulk locpot once when looping through defects for expedited FNV parsing
-    # TODO: Test that charge correction is by default when charge state is zero
-    # TODO: Add comment/note somewhere that the supercells should have equal definitions for both bulk
-    #  and defect
+    # TODO: Test that charge correction is not attempted by default when charge state is zero
 
     def __init__(
         self,
@@ -1095,6 +1115,8 @@ class DefectParser:
         Return:
             Parsed `DefectEntry` object.
         """
+        # TODO: Update this docstring? (Using `defect_entry_from_paths`) Depending on recommended parsing
+        #  workflow
         kwargs["return DefectParser"] = True
         return defect_entry_from_paths(
             defect_path,
@@ -1477,19 +1499,3 @@ class DefectParser:
                 f"the charge correction (i.e. dielectric constant, LOCPOT files for Freysoldt "
                 f"correction, OUTCAR (with ICORELEVEL = 0) for Kumagai correction etc)."
             )
-
-
-def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):
-    meta = defect_entry.calculation_metadata[f"{charge_correction_type}_meta"]
-    corr = (
-        meta[f"{charge_correction_type}_electrostatic"]
-        + meta[f"{charge_correction_type}_potential_alignment_correction"]
-    )
-    defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
-
-
-def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type="bulk"):
-    warnings.warn(
-        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using "
-        f"{chosen_filepath} to {action}"
-    )

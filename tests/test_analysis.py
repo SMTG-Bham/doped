@@ -14,7 +14,7 @@ from pymatgen.core.structure import Structure
 from test_vasp import _potcars_available
 
 from doped.analysis import defect_entry_from_paths, defect_from_structures, defect_name_from_structures
-from doped.generation import DefectsGenerator, get_defect_name_from_defect
+from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
@@ -38,6 +38,8 @@ def if_present_rm(path):
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
 # TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
 #  cases (no warning in those cases 'cause anisotropic)
+# TODO: When adding full parsing tests (e.g. with full CdTe dpd or similar), add quick loop-over test of
+#  the symmetry determination functions
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -239,7 +241,7 @@ class DopedParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is than the "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is greater than the "
                 f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
@@ -837,8 +839,8 @@ class DopedParsingTestCase(unittest.TestCase):
             )
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is than the `error_tolerance`: 0.001 "
-            f"eV). You may want to check the accuracy of the correction by plotting the site "
+            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is greater than the `error_tolerance`: "
+            f"0.001 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
             f"which can't be accurately modelled with the supercell approach). If this error is not "
@@ -869,6 +871,20 @@ class DopedParsingTestCase(unittest.TestCase):
         # test just correction returned with plot = False and return_correction_error = False:
         corr = int_F_minus1_ent.get_kumagai_correction()
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
+
+        # test symmetry determination (warning here because periodicity breaking affects F_i):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            relaxed_defect_name = get_defect_name_from_entry(int_F_minus1_ent)
+            assert len(w) == 1
+            assert (
+                "`unrelaxed` is set to False (i.e. get _relaxed_ defect symmetry), but doped has "
+                "detected that the supercell is a non-scalar matrix expansion which is breaking "
+                "the cell periodicity, likely preventing the correct point group symmetry "
+                in str(w[-1].message)
+            )
+        assert relaxed_defect_name == "F_i_C4v_O2.67"
+        assert get_defect_name_from_entry(int_F_minus1_ent, unrelaxed=True) == "F_i_Cs_O2.67"
 
     def _check_defect_entry_corrections(self, defect_entry, ediff, correction):
         assert np.isclose(defect_entry.get_ediff(), ediff, atol=0.001)
@@ -916,8 +932,8 @@ class DopedParsingTestCase(unittest.TestCase):
 
         assert any(
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"0.000 eV (i.e. which is than the `error_tolerance`: 0.000 eV). You may want to check the "
-            f"accuracy of the correction by plotting the site potential differences (using "
+            f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
+            f"check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due to "
             f"unstable or shallow defect charge states (which can't be accurately modelled with the "
             f"supercell approach). If this error is not acceptable, you may need to use a larger "
@@ -967,6 +983,14 @@ class DopedParsingTestCase(unittest.TestCase):
         )
 
         self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
+
+        # test symmetry determination (no warning here because periodicity breaking doesn't affect F_O):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            relaxed_defect_name = get_defect_name_from_entry(F_O_1_ent)
+            assert len(w) == 0
+        assert relaxed_defect_name == "F_O_D4h_Ti1.79"
+        assert get_defect_name_from_entry(F_O_1_ent, unrelaxed=True) == "F_O_D4h_Ti1.79"
 
     def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
         assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)

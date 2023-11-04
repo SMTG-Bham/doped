@@ -1,25 +1,21 @@
-name: pip install doped
+name: MacOS and Windows Tests
 
 on:
   workflow_dispatch:
 
   workflow_run:
-    workflows: ["Release and publish"]
-    branches: [master]
+    workflows: [ "Tests" ]
     types:
       - completed  # only test when new release has been deployed to PyPI
 
 jobs:
   build:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
-    # only run when tests have passed (or manually triggered)
-
     strategy:
       fail-fast: false
 
       matrix:
-        python-version: [ '3.8', '3.9', '3.10', '3.11' ]
-        os: [ ubuntu-latest ]
+        python-version: [ '3.8', '3.11' ]
+        os: [ windows-latest, macos-latest ]
 
     runs-on: ${{ matrix.os }}
 
@@ -32,9 +28,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sleep 360  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
-          pip install doped[tests]  # install only from PyPI
+          pip install -e .[tests]
 
       - name: Test
         run:  |
