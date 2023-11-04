@@ -1245,6 +1245,37 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 for warning in w
             )
 
+        # edit POTCAR symbols:
+        for i, line in enumerate(lines):  # vasprun lines already loaded above
+            if "PAW_PBE Cd 06Sep2000" in line:
+                lines[i] = lines[i].replace("Cd", "Cd_GW")
+                break
+
+        with open("./vasprun.xml", "w") as f_out:
+            f_out.writelines(lines)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=".",
+                bulk_path=self.CDTE_BULK_DATA_DIR,
+                dielectric=9.13,
+                charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
+                skip_corrections=True,
+            )
+            assert len(w) == 3  # now INCAR and KPOINTS and POTCAR warnings!
+            assert any(
+                all(
+                    i in str(warning.message)
+                    for i in [
+                        "The POTCAR symbols for your bulk and defect calculations do not match",
+                        "PAW_PBE Cd 06Sep2000",
+                        "PAW_PBE Cd_GW 06Sep2000",
+                    ]
+                )
+                for warning in w
+            )
+
     def tearDown(self):
         if_present_rm("bulk_voronoi_nodes.json")
         if_present_rm("./vasprun.xml")

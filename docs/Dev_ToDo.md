@@ -12,8 +12,7 @@
 - Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
 
 ## Post-processing / analysis / plotting
-- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
-  settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
+- Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
 - Profile defect parsing, identify bottlenecks and consider if multiprocessing could be used to speed up.
 - Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge
