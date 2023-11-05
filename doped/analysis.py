@@ -473,7 +473,7 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
             {"defect_name": defect_entry}), likely created using defect_entry_from_paths()
             (or DefectParser). Must have 'vbm' and 'gap' in
             defect_entry.calculation_metadata for at least one defect (from
-            DefectParser.get_bulk_gap_data())
+            DefectParser.load_bulk_gap_data())
 
     Returns:
         doped DefectPhaseDiagram object (DefectPhaseDiagram)
@@ -993,8 +993,8 @@ class DefectParser:
 
         dp = cls(defect_entry, defect_vr=defect_vr, bulk_vr=bulk_vr, **kwargs)
 
-        dp.get_and_check_calculation_metadata()  # Load standard defect metadata
-        dp.get_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
+        dp.load_and_check_calculation_metadata()  # Load standard defect metadata
+        dp.load_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
 
         if not skip_corrections:
             skip_corrections = dp._check_and_load_appropriate_charge_correction()
@@ -1302,7 +1302,7 @@ class DefectParser:
 
         return bulk_site_potentials
 
-    def get_and_check_calculation_metadata(self):
+    def load_and_check_calculation_metadata(self):
         """
         Pull metadata about the defect supercell calculations from the outputs,
         and check if the defect and bulk supercell calculations settings are
@@ -1377,9 +1377,9 @@ class DefectParser:
             {"eigenvalues": eigenvalues, "kpoint_weights": kpoint_weights}
         )
 
-    def get_bulk_gap_data(self, bulk_bandgap_path=None, use_MP=False, mpid=None, api_key=None):
+    def load_bulk_gap_data(self, bulk_bandgap_path=None, use_MP=False, mpid=None, api_key=None):
         """
-        Get bulk gap data from bulk OUTCAR file, or OUTCAR located at
+        Get bulk band gap data from bulk OUTCAR file, or OUTCAR located at
         `actual_bulk_path`.
 
         Alternatively, one can specify query the Materials Project (MP) database
