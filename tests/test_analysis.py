@@ -810,7 +810,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=None if _potcars_available() else -1  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )
-        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
         correction_dict = self._check_defect_entry_corrections(
             int_F_minus1_ent, 0.7478967131628451, -0.0036182568370900017
@@ -851,7 +851,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent.get_kumagai_correction()  # default error tolerance, no warning
-        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent.get_kumagai_correction(error_tolerance=0.001)
@@ -918,7 +918,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=None if _potcars_available() else 1  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )  # check no correction error warning with default tolerance:
-        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
@@ -944,7 +944,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             F_O_1_ent.get_freysoldt_correction()  # default error tolerance, no warning
-        assert not [warning for warning in w if isinstance(warning.category, UserWarning)]
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
         with warnings.catch_warnings(record=True) as w:
             F_O_1_ent.get_freysoldt_correction(error_tolerance=0.00001)
@@ -1115,6 +1115,42 @@ class DopedParsingTestCase(unittest.TestCase):
             )
             assert not np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-3)
             assert np.isclose(efnv_w_fcked_site.correction_energy, correction_energy, atol=1e-1)
+
+    def test_no_dielectric_warning(self):
+        """
+        Test the warning about charge corrections not being possible when no
+        dielectric is provided.
+        """
+        defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
+
+        # parse with no transformation.json or explicitly-set-charge:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=defect_path,
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+                charge_state=None if _potcars_available() else -1  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+            )
+        assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
+        assert all(
+            i in str(w[-1].message)
+            for i in [
+                "The dielectric constant (`dielectric`) is needed to compute finite-size charge correct",
+                "Formation energies and transition levels of charged defects will likely be very inacc",
+            ]
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_entry_from_paths(
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/V_Cd_0/vasp_ncl",
+                bulk_path=f"{self.CDTE_BULK_DATA_DIR}",
+                charge_state=None if _potcars_available() else 0  # to allow testing
+                # on GH Actions (otherwise test auto-charge determination if POTCARs available)
+            )
+        print([str(warning.message) for warning in w])
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
 
 class DopedParsingFunctionsTestCase(unittest.TestCase):
