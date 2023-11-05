@@ -389,13 +389,13 @@ def _determine_defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: Opti
 
 
 def defect_entry_from_paths(
-    defect_path,
-    bulk_path,
-    dielectric,
-    charge_state=None,
-    initial_defect_structure=None,
-    skip_corrections=False,
-    bulk_bandgap_path=None,
+    defect_path: str,
+    bulk_path: str,
+    dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+    charge_state: Optional[int] = None,
+    initial_defect_structure_path: Optional[str] = None,
+    skip_corrections: bool = False,
+    bulk_bandgap_path: Optional[str] = None,
     **kwargs,
 ):
     """
@@ -414,12 +414,14 @@ def defect_entry_from_paths(
         bulk_path (str):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to the dielectric constant.
+            Ionic + static contributions to the dielectric constant. If not provided,
+            charge corrections cannot be computed and so `skip_corrections` will be
+            set to true.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
             from the defect calculation outputs (requires `POTCAR`s to be set up
             with `pymatgen`).
-        initial_defect_structure (str):
+        initial_defect_structure_path (str):
             Path to the initial/unrelaxed defect structure. Only recommended for use
             if structure matching with the relaxed defect structure(s) fails (rare).
             Default is None.
@@ -447,9 +449,9 @@ def defect_entry_from_paths(
     dp = DefectParser.from_paths(
         defect_path,
         bulk_path,
-        dielectric,
+        dielectric=dielectric,
         charge_state=charge_state,
-        initial_defect_structure=initial_defect_structure,
+        initial_defect_structure_path=initial_defect_structure_path,
         skip_corrections=skip_corrections,
         bulk_bandgap_path=bulk_bandgap_path,
         **kwargs,
@@ -777,13 +779,12 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_t
 
 class DefectParser:
     # TODO: Load bulk locpot once when looping through defects for expedited FNV parsing
-    # TODO: Test that charge correction is not attempted by default when charge state is zero
 
     def __init__(
         self,
-        defect_entry,
-        defect_vr=None,
-        bulk_vr=None,
+        defect_entry: DefectEntry,
+        defect_vr: Optional[Vasprun] = None,
+        bulk_vr: Optional[Vasprun] = None,
         error_tolerance: float = 0.05,
     ):
         """
@@ -815,11 +816,11 @@ class DefectParser:
         cls,
         defect_path,
         bulk_path,
-        dielectric,
-        charge_state=None,
-        initial_defect_structure=None,
-        skip_corrections=False,
-        bulk_bandgap_path=None,
+        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+        charge_state: Optional[int] = None,
+        initial_defect_structure_path: Optional[str] = None,
+        skip_corrections: bool = False,
+        bulk_bandgap_path: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -838,12 +839,14 @@ class DefectParser:
             bulk_path (str):
                 Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant.
+                Ionic + static contributions to the dielectric constant. If not provided,
+                charge corrections cannot be computed and so `skip_corrections` will be
+                set to true.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
                 from the defect calculation outputs (requires `POTCAR`s to be set up
                 with `pymatgen`).
-            initial_defect_structure (str):
+            initial_defect_structure_path (str):
                 Path to the initial/unrelaxed defect structure. Only recommended for use
                 if structure matching with the relaxed defect structure(s) fails (rare).
                 Default is None.
@@ -867,12 +870,9 @@ class DefectParser:
         Return:
             `DefectParser` object.
         """
-        dielectric = _convert_dielectric_to_tensor(dielectric)
-
         calculation_metadata = {
             "bulk_path": bulk_path,
             "defect_path": defect_path,
-            "dielectric": dielectric,
         }
 
         # add bulk simple properties
@@ -903,7 +903,22 @@ class DefectParser:
             )
         defect_vr = get_vasprun(defect_vr_path)
 
-        charge_state = _determine_defect_charge_from_vasprun(defect_vr, charge_state)  # get defect charge
+        parsed_charge_state: int = _determine_defect_charge_from_vasprun(defect_vr, charge_state)
+        if parsed_charge_state == 0:
+            skip_corrections = True  # no finite-size charge corrections by default for neutral defects
+
+        if dielectric is None and not skip_corrections and parsed_charge_state != 0:
+            warnings.warn(
+                "The dielectric constant (`dielectric`) is needed to compute finite-size charge "
+                "corrections, but none was provided, so charge corrections will be skipped "
+                "(`skip_corrections = True`). Formation energies and transition levels of charged "
+                "defects will likely be very inaccurate without charge corrections!"
+            )
+            skip_corrections = True
+
+        if dielectric is not None:
+            dielectric = _convert_dielectric_to_tensor(dielectric)
+            calculation_metadata["dielectric"] = dielectric
 
         # Add defect structure to calculation_metadata, so it can be pulled later on (e.g. for eFNV)
         defect_structure = defect_vr.final_structure.copy()
@@ -935,8 +950,8 @@ class DefectParser:
             ) = defect_from_structures(bulk_supercell, defect_structure.copy(), return_all_info=True)
 
         except RuntimeError:
-            if initial_defect_structure:
-                defect_structure_for_ID = Poscar.from_file(initial_defect_structure).structure.copy()
+            if initial_defect_structure_path:
+                defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
                 (
                     defect,
                     defect_site_in_initial_struct,
@@ -974,7 +989,7 @@ class DefectParser:
         defect_entry = DefectEntry(
             # pmg attributes:
             defect=defect,  # this corresponds to _unrelaxed_ defect
-            charge_state=charge_state,
+            charge_state=parsed_charge_state,
             sc_entry=defect_vr.get_computed_entry(),
             sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
             bulk_entry=bulk_vr.get_computed_entry(),
