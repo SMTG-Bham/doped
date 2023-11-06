@@ -1662,7 +1662,6 @@ class DefectRelaxSet(MSONable):
         elif bulk and not isinstance(bulk, str) and bulk is not True:
             raise ValueError("Unrecognised input for `bulk` argument. Must be True, False, or 'all'.")
 
-        # check if vasp_std is None, and if so, set vasp_gam to True:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if bulk is True:
@@ -1680,7 +1679,7 @@ class DefectRelaxSet(MSONable):
 
                 bulk_vasp = [top_vasp]
 
-            if vasp_gam or self.vasp_std is None:
+            if vasp_gam or self.vasp_std is None:  # if vasp_std is None, write vasp_gam
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),

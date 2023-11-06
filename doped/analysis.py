@@ -395,6 +395,7 @@ def defect_entry_from_paths(
     charge_state: Optional[int] = None,
     initial_defect_structure_path: Optional[str] = None,
     skip_corrections: bool = False,
+    error_tolerance: float = 0.05,
     bulk_bandgap_path: Optional[str] = None,
     **kwargs,
 ):
@@ -429,6 +430,9 @@ def defect_entry_from_paths(
             Whether to skip the calculation and application of finite-size charge
             corrections to the defect energy (not recommended in most cases).
             Default = False.
+        error_tolerance (float):
+            If the estimated error in the defect charge correction is greater
+            than this value (in eV), then a warning is raised. (default: 0.05 eV)
         bulk_bandgap_path (str):
             Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
             occur at reciprocal space points not included in the bulk supercell
@@ -438,14 +442,13 @@ def defect_entry_from_paths(
             (eigen)values.
             If None, will use DefectEntry.calculation_metadata["bulk_path"].
         **kwargs:
-            Additional keyword arguments to pass to `DefectParser()` (such as
-             `error_tolerance`). See `DefectParser()` docstring for more details.
+            Keyword arguments to pass to `DefectParser()` methods
+            (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
+            such as `bulk_locpot_dict`, `bulk_site_potentials` etc.
 
     Return:
         Parsed `DefectEntry` object.
     """
-    _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
-
     dp = DefectParser.from_paths(
         defect_path,
         bulk_path,
@@ -453,6 +456,7 @@ def defect_entry_from_paths(
         charge_state=charge_state,
         initial_defect_structure_path=initial_defect_structure_path,
         skip_corrections=skip_corrections,
+        error_tolerance=error_tolerance,
         bulk_bandgap_path=bulk_bandgap_path,
         **kwargs,
     )
@@ -777,15 +781,215 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_t
     )
 
 
-class DefectParser:
-    # TODO: Load bulk locpot once when looping through defects for expedited FNV parsing
+class DefectsParser:
+    def __init__(
+        self,
+        output_path: str = ".",
+        dielectric: Optional[Union[float, int, np.ndarray]] = None,
+        subfolder: Optional[str] = None,
+        bulk_path: Optional[str] = None,
+        skip_corrections: bool = False,
+        error_tolerance: float = 0.05,
+        bulk_bandgap_path: Optional[str] = None,
+        processes: Optional[int] = None,
+    ):
+        """
+        A class for rapidly parsing multiple VASP defect supercell calculations
+        for a given host (bulk) material.
 
+        Loops over calculation directories in `output_path` (likely the same
+        `output_path` used with `DefectsSet` for file generation in `doped.vasp`)
+        and parses the defect calculations into a dictionary of:
+        {defect_name: DefectEntry}, where the defect_name is set to the defect
+        calculation folder name (_if it is a recognised defect name_), else it is
+        set to the default `doped` name for that defect. By default, searches for
+        folders in `output_path` with `subfolder` containing `vasprun.xml(.gz)`
+        files, and tries to parse them as `DefectEntry`s.
+
+        Defect charge states are automatically determined from the defect calculation
+        outputs if `POTCAR`s are set up with `pymatgen` (see docs Installation page),
+        or if that fails, using the defect folder name (must end in "_+X" or "_-X"
+        where +/-X is the defect charge state).
+
+        Uses the (single) `DefectParser` class to parse the individual defect
+        calculations. Note that the bulk and defect supercells should have the same
+        definitions/basis sets (for site-matching and finite-size charge corrections
+        to work appropriately).
+
+        Args:
+            output_path (str):
+                Path to the output directory containing the defect calculation
+                folders (likely the same `output_path` used with `DefectsSet` for
+                file generation in `doped.vasp`). Default = current directory.
+            dielectric (float or int or 3x1 matrix or 3x3 matrix):
+                Ionic + static contributions to the dielectric constant. If not provided,
+                charge corrections cannot be computed and so `skip_corrections` will be
+                set to true.
+            subfolder (str):
+                Name of subfolder(s) within each defect calculation folder (in the
+                `output_path` directory) containing the VASP calculation files to
+                parse (e.g. `vasp_ncl`, `vasp_std`, `vasp_gam` etc.). If not
+                specified, `doped` checks first for `vasp_ncl`, `vasp_std`, `vasp_gam`
+                subfolders with calculation outputs (`vasprun.xml(.gz)` files) and uses
+                the highest level VASP type (ncl > std > gam) found as `subfolder`,
+                otherwise uses the defect calculation folder itself with no subfolder
+                (set `subfolder = "."` to enforce this).
+            bulk_path (str):
+                Path to bulk supercell reference calculation folder. If not specified,
+                searches for folder with name "X_bulk" in the `output_path` directory
+                (matching the default `doped` name for the bulk supercell reference folder).
+            skip_corrections (bool):
+                Whether to skip the calculation and application of finite-size charge
+                corrections to the defect energies (not recommended in most cases).
+                Default = False.
+            error_tolerance (float):
+                If the estimated error in any charge correction is greater than
+                this value (in eV), then a warning is raised. (default: 0.05 eV)
+            bulk_bandgap_path (str):
+                Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+                occur at reciprocal space points not included in the bulk supercell
+                calculation, you should use this tag to point to a bulk bandstructure
+                calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
+                entries in DefectParser.defect_entry.calculation_metadata to match the
+                correct (eigen)values.
+                If None, will calculate "gap"/"vbm" using the outputs at:
+                DefectParser.defect_entry.calculation_metadata["bulk_path"]
+            processes (int):
+                Number of processes to use for multiprocessing for expedited parsing.
+                If not set, defaults to one less than the number of CPUs available.
+
+        Attributes:
+            defect_dict (dict):
+                Dictionary of parsed defect calculations in the format:
+                {"defect_name": DefectEntry}) where the defect_name is set to the
+                defect calculation folder name (_if it is a recognised defect name_),
+                else it is set to the default `doped` name for that defect.
+        """
+        self.output_path = output_path
+        self.dielectric = dielectric
+        self.skip_corrections = skip_corrections
+        self.error_tolerance = error_tolerance
+        self.bulk_bandgap_path = bulk_bandgap_path
+
+        possible_defect_folders = [
+            dir
+            for dir in os.listdir(self.output_path)
+            if os.path.isdir(os.path.join(self.output_path, dir))
+            and any(
+                "vasprun.xml" in file
+                for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
+                for file in file_list
+            )
+        ]
+
+        if subfolder is None:  # determine subfolder to use
+            vasp_subfolders = [
+                subdir
+                for possible_defect_folder in possible_defect_folders
+                for subdir in os.listdir(os.path.join(self.output_path, possible_defect_folder))
+                if os.path.isdir(os.path.join(self.output_path, possible_defect_folder, subdir))
+                and "vasp_" in subdir
+            ]
+            vasp_type_count_dict = {  # Count Dik
+                i: len([subdir for subdir in vasp_subfolders if i in subdir])
+                for i in ["vasp_ncl", "vasp_std", "vasp_gam"]
+            }
+            # take first entry with non-zero count, else use defect folder itself:
+            self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
+
+        if bulk_path is None:  # determine bulk_path to use
+            possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in dir]
+            if len(possible_bulk_folders) == 1:
+                self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
+            elif len([dir for dir in possible_bulk_folders if dir.endswith("_bulk")]) == 1:
+                self.bulk_path = os.path.join(
+                    self.output_path, [dir for dir in possible_bulk_folders if dir.endswith("_bulk")][0]
+                )
+            else:
+                raise ValueError(
+                    f"Could not automatically determine bulk supercell calculation folder in "
+                    f"{self.output_path}, found {len(possible_bulk_folders)} folders containing "
+                    f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
+                    f"specify `bulk_path` manually."
+                )
+
+        # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is:
+        if os.path.isdir(os.path.join(self.bulk_path, self.subfolder)) and any(
+            "vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
+        ):
+            self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
+
+        self.defect_dict = {}
+        self.defect_folders = [
+            dir
+            for dir in possible_defect_folders
+            if dir not in possible_bulk_folders
+            and self.subfolder in os.listdir(os.path.join(self.output_path, dir))
+        ]
+
+        bulk_corrections_data_kwargs = {  # so we only load and parse bulk data once
+            "bulk_locpot_dict": None,
+            "bulk_site_potentials": None,
+        }
+
+        for defect_folder in self.defect_folders:
+            # TODO: Add multiprocessing here
+            print(
+                f"Parsing {defect_folder if self.subfolder=='.' else defect_folder+'/'+self.subfolder}..."
+            )
+            try:
+                dp = DefectParser.from_paths(
+                    defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
+                    bulk_path=self.bulk_path,
+                    dielectric=self.dielectric,
+                    skip_corrections=self.skip_corrections,
+                    error_tolerance=self.error_tolerance,
+                    bulk_bandgap_path=self.bulk_bandgap_path,
+                    **bulk_corrections_data_kwargs,
+                )
+                if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
+                    self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
+                    # dielectric is None and there are charged defects present (shows dielectric warning
+                    # once)
+
+                if (
+                    dp.defect_entry.calculation_metadata.get("bulk_locpot_dict") is not None
+                    and bulk_corrections_data_kwargs.get("bulk_locpot_dict") is None
+                ):
+                    bulk_corrections_data_kwargs[
+                        "bulk_locpot_dict"
+                    ] = dp.defect_entry.calculation_metadata["bulk_locpot_dict"]
+
+                if (
+                    dp.defect_entry.calculation_metadata.get("bulk_site_potentials") is not None
+                    and bulk_corrections_data_kwargs.get("bulk_site_potentials") is None
+                ):
+                    bulk_corrections_data_kwargs["bulk_site_potentials"] = (
+                        dp.defect_entry.calculation_metadata
+                    )["bulk_site_potentials"]
+
+                self.defect_dict[dp.defect_entry.name] = dp.defect_entry
+
+            except Exception as exc:
+                warnings.warn(
+                    f"Parsing failed for "
+                    f"{defect_folder if self.subfolder=='.' else defect_folder+'/'+self.subfolder}, "
+                    f"got error: {exc}"
+                )
+
+        # TODO: Test attribute setting
+        # TODO: Check same type of charge correction used in each case, otherwise warn
+
+
+class DefectParser:
     def __init__(
         self,
         defect_entry: DefectEntry,
         defect_vr: Optional[Vasprun] = None,
         bulk_vr: Optional[Vasprun] = None,
+        skip_corrections: bool = False,
         error_tolerance: float = 0.05,
+        **kwargs,
     ):
         """
         Create a DefectParser object, which has methods for parsing the results
@@ -802,14 +1006,26 @@ class DefectParser:
                 pymatgen Vasprun object for the defect supercell calculation
             bulk_vr (Vasprun):
                 pymatgen Vasprun object for the reference bulk supercell calculation
+            skip_corrections (bool):
+                Whether to skip calculation and application of finite-size charge
+                corrections to the defect energy (not recommended in most cases).
+                Default = False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
-                this value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction is greater
+                than this value (in eV), then a warning is raised. (default: 0.05 eV)
+            **kwargs:
+                Keyword arguments to pass to `DefectParser()` methods
+                (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
+                such as `bulk_locpot_dict`, `bulk_site_potentials` etc. Mainly
+                used by DefectsParser to expedite parsing by avoiding reloading
+                bulk data for each defect.
         """
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
         self.bulk_vr = bulk_vr
+        self.skip_corrections = skip_corrections
         self.error_tolerance = error_tolerance
+        self.kwargs = kwargs or {}
 
     @classmethod
     def from_paths(
@@ -820,12 +1036,13 @@ class DefectParser:
         charge_state: Optional[int] = None,
         initial_defect_structure_path: Optional[str] = None,
         skip_corrections: bool = False,
+        error_tolerance: float = 0.05,
         bulk_bandgap_path: Optional[str] = None,
         **kwargs,
     ):
         """
         Parse the defect calculation outputs in `defect_path` and return the
-        `DefectParser` object. By default, the `DefectParse.defect_entry.name`
+        `DefectParser` object. By default, the `DefectParser.defect_entry.name`
         attribute (later used to label defects in plots) is set to the
         defect_path folder name (if it is a recognised defect name), else it is
         set to the default doped name for that defect.
@@ -845,7 +1062,8 @@ class DefectParser:
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
                 from the defect calculation outputs (requires `POTCAR`s to be set up
-                with `pymatgen`).
+                with `pymatgen`), or if that fails, using the defect folder name (must
+                end in "_+X" or "_-X" where +/-X is the defect charge state).
             initial_defect_structure_path (str):
                 Path to the initial/unrelaxed defect structure. Only recommended for use
                 if structure matching with the relaxed defect structure(s) fails (rare).
@@ -854,6 +1072,9 @@ class DefectParser:
                 Whether to skip the calculation and application of finite-size charge
                 corrections to the defect energy (not recommended in most cases).
                 Default = False.
+            error_tolerance (float):
+                If the estimated error in the defect charge correction is greater
+                than this value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_bandgap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
                 occur at reciprocal space points not included in the bulk supercell
@@ -864,12 +1085,17 @@ class DefectParser:
                 If None, will calculate "gap"/"vbm" using the outputs at:
                 DefectParser.defect_entry.calculation_metadata["bulk_path"]
             **kwargs:
-                Additional keyword arguments to pass to `DefectParser()` (such as
-                 `error_tolerance`). See `DefectParser()` docstring for more details.
+                Keyword arguments to pass to `DefectParser()` methods
+                (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
+                such as `bulk_locpot_dict`, `bulk_site_potentials` etc. Mainly
+                used by DefectsParser to expedite parsing by avoiding reloading
+                bulk data for each defect.
 
         Return:
             `DefectParser` object.
         """
+        _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
+
         calculation_metadata = {
             "bulk_path": bulk_path,
             "defect_path": defect_path,
@@ -903,9 +1129,30 @@ class DefectParser:
             )
         defect_vr = get_vasprun(defect_vr_path)
 
-        parsed_charge_state: int = _determine_defect_charge_from_vasprun(defect_vr, charge_state)
-        if parsed_charge_state == 0:
-            skip_corrections = True  # no finite-size charge corrections by default for neutral defects
+        possible_defect_name = os.path.basename(defect_path)  # set equal to folder name
+        if "vasp" in possible_defect_name:  # get parent directory name:
+            possible_defect_name = os.path.basename(os.path.dirname(defect_path))
+
+        try:
+            parsed_charge_state: int = _determine_defect_charge_from_vasprun(defect_vr, charge_state)
+        except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
+            # try determine from folder name - must have "-" or "+" at end of name for this
+            try:
+                charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
+                if charge_state_suffix[0] in ["-", "+"]:
+                    parsed_charge_state = int(charge_state_suffix)
+                    if abs(parsed_charge_state) >= 7:
+                        raise ValueError(
+                            f"Guessed charge state from folder name was {parsed_charge_state:+} "
+                            f"which is almost certainly unphysical"
+                        )
+                else:
+                    raise ValueError(
+                        f"Could not guess charge state from folder name: {possible_defect_name}"
+                    )
+
+            except Exception as next_exc:
+                raise orig_exc from next_exc
 
         if dielectric is None and not skip_corrections and parsed_charge_state != 0:
             warnings.warn(
@@ -1000,21 +1247,25 @@ class DefectParser:
             calculation_metadata=calculation_metadata,
         )
 
-        defect_name = os.path.basename(defect_path)  # set equal to folder name
-        if "vasp" in defect_name:  # get parent directory name:
-            defect_name = os.path.basename(os.path.dirname(defect_path))
+        check_and_set_defect_entry_name(defect_entry, possible_defect_name)
 
-        check_and_set_defect_entry_name(defect_entry, defect_name)
-
-        dp = cls(defect_entry, defect_vr=defect_vr, bulk_vr=bulk_vr, **kwargs)
+        dp = cls(
+            defect_entry,
+            defect_vr=defect_vr,
+            bulk_vr=bulk_vr,
+            skip_corrections=skip_corrections,
+            error_tolerance=error_tolerance,
+            **kwargs,
+        )
 
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
         dp.load_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
 
-        if not skip_corrections:
+        if not skip_corrections and defect_entry.charge_state != 0:
+            # no finite-size charge corrections by default for neutral defects
             skip_corrections = dp._check_and_load_appropriate_charge_correction()
 
-        if not skip_corrections:
+        if not skip_corrections and defect_entry.charge_state != 0:
             dp.apply_corrections()
 
             # check that charge corrections are not negative
@@ -1118,10 +1369,10 @@ class DefectParser:
 
                 else:
                     warnings.warn(
-                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
-                        f"compute the _anisotropic_ Kumagai eFNV charge correction) in the defect (at"
-                        f" {defect_path}) & bulk (at {bulk_path}) folders were unable to be parsed, "
-                        f"giving the following error message:"
+                        f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
+                        f"_anisotropic_ and isotropic systems) in the defect (at {defect_path}) & bulk "
+                        f"(at {bulk_path}) folders were unable to be parsed, giving the following error "
+                        f"message:"
                         f"\n{kumagai_exc}\n"
                         f"-> Charge corrections will not be applied for this defect."
                     )
@@ -1202,7 +1453,8 @@ class DefectParser:
             # no charge correction if charge is zero
             return None
 
-        if not bulk_locpot_dict:
+        bulk_locpot_dict = bulk_locpot_dict or self.kwargs.get("bulk_locpot_dict", None)
+        if bulk_locpot_dict is None:
             bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple(
                 "LOCPOT", self.defect_entry.calculation_metadata["bulk_path"]
             )
@@ -1272,7 +1524,9 @@ class DefectParser:
             # don't need to load outcars if charge is zero
             return None
 
-        if not bulk_site_potentials:
+        bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
+
+        if bulk_site_potentials is None:
             bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
                 "OUTCAR", self.defect_entry.calculation_metadata["bulk_path"]
             )
@@ -1285,6 +1539,11 @@ class DefectParser:
                     dir_type="bulk",
                 )
             bulk_outcar = get_outcar(bulk_outcar_path)
+
+            if bulk_outcar.electrostatic_potential is None:
+                _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
+
+            bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
             "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
@@ -1299,13 +1558,9 @@ class DefectParser:
             )
         defect_outcar = get_outcar(defect_outcar_path)
 
-        if bulk_outcar.electrostatic_potential is None:
-            _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
-
         if defect_outcar.electrostatic_potential is None:
             _raise_incomplete_outcar_error(defect_outcar_path, dir_type="defect")
 
-        bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
         defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
 
         self.defect_entry.calculation_metadata.update(
@@ -1434,6 +1689,10 @@ class DefectParser:
 
         vbm, cbm, bandgap = None, None, None
         gap_calculation_metadata = {}
+
+        use_MP = use_MP or self.kwargs.get("use_MP", False)
+        mpid = mpid or self.kwargs.get("mpid", None)
+        api_key = api_key or self.kwargs.get("api_key", None)
 
         if use_MP and mpid is None:
             try:
