@@ -918,7 +918,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=None if _potcars_available() else 1  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )  # check no correction error warning with default tolerance:
-        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
+        assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
+        assert "An anisotropic dielectric constant was supplied, but `OUTCAR`" in str(w[0].message)
 
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
