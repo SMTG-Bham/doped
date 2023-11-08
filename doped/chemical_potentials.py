@@ -297,13 +297,21 @@ class CompetingPhases:
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
         #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
         #  any particularly bad cases. E.g. P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037
-        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for Li,
-        #  Na and K (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad cases).
+        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for all
+        #  alkali and alkaline earth metals (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad
+        #  cases).
+        # With Materials Project querying, can check if the structure has a database ID (i.e. is
+        # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
+        # which only outputs phases which are either on the MP-predicted hull or have an ICSD ID?
+        # Would want to test this to see if it is sufficient in most cases, then can recommend its use
+        # with a caution... From a quick test, this does cut down a good chunk of unnecessary phases,
+        # but still not all as often there are several ICSD phases for e.g. metals with a load of known
+        # polymorphs (at different temperatures/pressures).
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
         # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
-        # entries for the same composition, say which have database IDs, warn the user (that it would
-        # be prudent to manually confirm which are actually the groundstate, ICSD best bet) and direct to
-        # relevant section on the docs.
+        # entries for the same composition, warn the user (that if the groundstate phase at low/room
+        # temp is well-known, then likely best to prune to that) and direct to relevant section on the
+        # docs discussing this
 
         # all data collected from materials project
         self.data = [
@@ -313,6 +321,8 @@ class CompetingPhases:
             "nsites",
             "volume",
             "icsd_id",
+            "icsd_ids",  # some entries have icsd_id and some have icsd_ids
+            "theoretical",
             "formation_energy_per_atom",
             "energy_per_atom",
             "energy",
