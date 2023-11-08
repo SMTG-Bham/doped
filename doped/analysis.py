@@ -901,7 +901,7 @@ def formation_energy_table(
     if chempots is None:
         chempots = {}
 
-    if "facets_wrt_elt_refs" in chempots:
+    if "facets_wrt_el_refs" in chempots:
         list_of_dfs = []
         if facets is None:
             facets = chempots["facets"].keys()  # Phase diagram facets to use for chemical
@@ -909,7 +909,7 @@ def formation_energy_table(
         for facet in facets:
             single_formation_energy_df = _single_formation_energy_table(
                 defect_phase_diagram,
-                chempots=chempots["facets_wrt_elt_refs"][facet],
+                chempots=chempots["facets_wrt_el_refs"][facet],
                 elt_refs=chempots["elemental_refs"],
                 fermi_level=fermi_level,
             )
