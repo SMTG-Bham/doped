@@ -314,7 +314,7 @@ class CompetingPhases:
         # docs discussing this
 
         # all data collected from materials project
-        self.data = [
+        self.data = [  # can see available fields with MPRester.*.available_fields on new API
             "pretty_formula",
             "e_above_hull",
             "band_gap",
