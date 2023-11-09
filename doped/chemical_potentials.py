@@ -822,7 +822,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
                 for entry in self.MP_full_pd_entries.copy():
-                    if any(sub_elt in entry.composition for sub_elt in self.extrinsic_species):
+                    if any(sub_el in entry.composition for sub_el in self.extrinsic_species):
                         if (
                             entry.data["pretty_formula"] in self._molecules_in_a_box
                             and entry.data["e_above_hull"] == 0
@@ -850,7 +850,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
             else:  # full_sub_approach but not co-doping
                 self.MP_full_pd_entries = []
-                for sub_elt in self.extrinsic_species:
+                for sub_el in self.extrinsic_species:
                     extrinsic_entries = []
                     with contextlib.ExitStack() as stack:
                         if self.api_key is None:
@@ -859,7 +859,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             mpr = stack.enter_context(MPRester(self.api_key))
 
                         MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                            [*self.intrinsic_species, sub_elt],
+                            [*self.intrinsic_species, sub_el],
                             inc_structure="initial",
                             property_data=self.data,
                         )
@@ -872,7 +872,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     for entry in MP_full_pd_entries.copy():
                         if entry not in self.MP_full_pd_entries:
                             self.MP_full_pd_entries.append(entry)
-                        if sub_elt in entry.composition:
+                        if sub_el in entry.composition:
                             if (
                                 entry.data["pretty_formula"] in self._molecules_in_a_box
                                 and entry.data["e_above_hull"] == 0
@@ -909,7 +909,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             # now compile substitution entries:
             self.MP_full_pd_entries = []
 
-            for sub_elt in self.extrinsic_species:
+            for sub_el in self.extrinsic_species:
                 extrinsic_pd_entries = []
                 with contextlib.ExitStack() as stack:
                     if self.api_key is None:
@@ -918,7 +918,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         mpr = stack.enter_context(MPRester(self.api_key))
 
                     MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                        [*self.intrinsic_species, sub_elt],
+                        [*self.intrinsic_species, sub_el],
                         inc_structure="initial",
                         property_data=self.data,
                     )
@@ -955,7 +955,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 if not extrinsic_pd_entries:
                     raise ValueError(
                         f"No Materials Project entries found for the given chemical "
-                        f"system: {[*self.intrinsic_species, sub_elt]}"
+                        f"system: {[*self.intrinsic_species, sub_el]}"
                     )
 
                 extrinsic_phase_diagram = PhaseDiagram(extrinsic_pd_entries)
@@ -969,7 +969,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     # number of species in the bulk composition, then include the extrinsic phase(s)
                     # for this facet (full_sub_approach = False approach)
                     MP_intrinsic_bordering_phases = {
-                        phase for phase in facet.split("-") if sub_elt not in phase
+                        phase for phase in facet.split("-") if sub_el not in phase
                     }
                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                         # add to list of extrinsic bordering phases, if not already present:
@@ -977,7 +977,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             [
                                 phase
                                 for phase in facet.split("-")
-                                if sub_elt in phase and phase not in MP_extrinsic_bordering_phases
+                                if sub_el in phase and phase not in MP_extrinsic_bordering_phases
                             ]
                         )
 
@@ -987,7 +987,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     if (
                         entry.name not in MP_extrinsic_bordering_phases
                         and not entry.is_element
-                        and sub_elt in entry.composition
+                        and sub_el in entry.composition
                     ):
                         # decrease entry energy per atom by `e_above_hull` eV/atom
                         renormalised_entry = _renormalise_entry(entry, e_above_hull)
@@ -1005,14 +1005,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                 if facet not in MP_extrinsic_gga_chempots:
                                     # new facet, check if not an over-dependent facet:
                                     MP_intrinsic_bordering_phases = {
-                                        phase for phase in facet.split("-") if sub_elt not in phase
+                                        phase for phase in facet.split("-") if sub_el not in phase
                                     }
                                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                                         MP_extrinsic_bordering_phases.extend(
                                             [
                                                 phase
                                                 for phase in facet.split("-")
-                                                if sub_elt in phase
+                                                if sub_el in phase
                                                 and phase not in MP_extrinsic_bordering_phases
                                             ]
                                         )
@@ -1021,7 +1021,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     entry
                     for entry in extrinsic_pd_entries
                     if entry.name in MP_extrinsic_bordering_phases
-                    or (entry.is_element and sub_elt in entry.name)
+                    or (entry.is_element and sub_el in entry.name)
                 ]
 
                 # check that extrinsic competing phases list is not empty (can happen with
@@ -1035,7 +1035,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     )
                     full_sub_approach = True
                     extrinsic_entries = [
-                        entry for entry in self.MP_full_pd_entries if sub_elt in entry.composition
+                        entry for entry in self.MP_full_pd_entries if sub_el in entry.composition
                     ]
 
                 # sort entries by e_above_hull, and then by num_species, then alphabetically:
@@ -1177,16 +1177,16 @@ class CompetingPhasesAnalyzer:
 
             # check if elemental:
             if len(rcf) == 1:
-                elt = v["elements"][0]
-                if elt not in self.elemental_energies:
-                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
-                    if elt not in self.elemental:  # new (extrinsic) element
-                        self.extrinsic_species = elt
-                        self.elemental.append(elt)
+                el = v["elements"][0]
+                if el not in self.elemental_energies:
+                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    if el not in self.elemental:  # new (extrinsic) element
+                        self.extrinsic_species = el
+                        self.elemental.append(el)
 
-                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]:
+                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[el]:
                     # only include lowest energy elemental polymorph
-                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
 
             d = {
                 "formula": v["pretty_formula"],
@@ -1232,12 +1232,12 @@ class CompetingPhasesAnalyzer:
             for i in formation_energy_dict:
                 c = Composition(i["formula"])
                 if len(c.elements) == 1:
-                    elt = c.chemical_system
+                    el = c.chemical_system
                     if (
-                        elt not in self.elemental_energies
-                        or i["energy_per_atom"] < self.elemental_energies[elt]
+                        el not in self.elemental_energies
+                        or i["energy_per_atom"] < self.elemental_energies[el]
                     ):
-                        self.elemental_energies[elt] = i["energy_per_atom"]
+                        self.elemental_energies[el] = i["energy_per_atom"]
 
         else:
             raise ValueError("supplied csv does not contain the correct headers, cannot read in the data")
@@ -1317,7 +1317,7 @@ class CompetingPhasesAnalyzer:
         self._intrinsic_chem_limits = {
             "facets": no_element_chem_lims,
             "elemental_refs": {
-                str(elt): ent.energy_per_atom for elt, ent in self._intrinsic_phase_diagram.el_refs.items()
+                str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
             },
             "facets_wrt_el_refs": {},
         }
@@ -1671,7 +1671,7 @@ def combine_extrinsic(first, second, extrinsic_species):
         v1[extrinsic_species] = v2.pop(extrinsic_species)
         new_facets[new_key] = v1
 
-    new_facets_wrt_elt = {}
+    new_facets_wrt_el = {}
     for (k1, v1), (k2, v2) in zip(
         list(cpa1["facets_wrt_el_refs"].items()),
         list(cpa2["facets_wrt_el_refs"].items()),
@@ -1682,7 +1682,7 @@ def combine_extrinsic(first, second, extrinsic_species):
             raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets_wrt_elt[new_key] = v1
+        new_facets_wrt_el[new_key] = v1
 
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
@@ -1691,7 +1691,7 @@ def combine_extrinsic(first, second, extrinsic_species):
     new_dict = {
         "elemental_refs": new_elements,
         "facets": new_facets,
-        "facets_wrt_el_refs": new_facets_wrt_elt,
+        "facets_wrt_el_refs": new_facets_wrt_el,
     }
 
     return new_dict
