@@ -438,11 +438,11 @@ class DefectDictSetTest(unittest.TestCase):
         dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
         self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
-        self._write_and_check_dds_files(dds, output_dir="YTOS_test_dir")
+        self._write_and_check_dds_files(dds, output_path="YTOS_test_dir")
         self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
     def _write_and_check_dds_files(self, dds, **kwargs):
-        output_dir = kwargs.pop("output_dir", "test_pop")
+        output_path = kwargs.pop("output_path", "test_pop")
         delete_dir = kwargs.pop("delete_dir", True)  # delete directory after testing?
 
         if (
@@ -452,18 +452,18 @@ class DefectDictSetTest(unittest.TestCase):
         ):
             # error with charged defect and unperturbed_poscar=False
             with self.assertRaises(ValueError) as e:
-                dds.write_input(output_dir, **kwargs)
+                dds.write_input(output_path, **kwargs)
             assert _check_potcar_dir_not_setup_warning_error(dds, e.exception, unperturbed_poscar=False)
             return
 
-        dds.write_input(output_dir, **kwargs)
+        dds.write_input(output_path, **kwargs)
 
-        # print(output_dir)  # to help debug if tests fail
-        assert os.path.exists(output_dir)
+        # print(output_path)  # to help debug if tests fail
+        assert os.path.exists(output_path)
 
         if _potcars_available() or dds.charge_state == 0:  # INCARs should be written
             # load INCAR and check it matches dds.incar
-            written_incar = Incar.from_file(f"{output_dir}/INCAR")
+            written_incar = Incar.from_file(f"{output_path}/INCAR")
             dds_incar_without_comments = dds.incar.copy()
             dds_incar_without_comments["ICORELEVEL"] = 0
             dds_incar_without_comments["ISYM"] = 0
@@ -475,7 +475,7 @@ class DefectDictSetTest(unittest.TestCase):
             dds_incar_without_comments.pop([k for k in dds.incar if k.startswith("#")][0])
             assert written_incar == dds_incar_without_comments
 
-            with open(f"{output_dir}/INCAR") as f:
+            with open(f"{output_path}/INCAR") as f:
                 incar_lines = f.readlines()
             for comment_string in [
                 "# May want to change NCORE, KPAR, AEXX, ENCUT",
@@ -486,23 +486,23 @@ class DefectDictSetTest(unittest.TestCase):
                 assert any(comment_string in line for line in incar_lines)
 
         else:
-            assert not os.path.exists(f"{output_dir}/INCAR")
+            assert not os.path.exists(f"{output_path}/INCAR")
 
         if _potcars_available() and not kwargs.get("potcar_spec", False):
-            written_potcar = Potcar.from_file(f"{output_dir}/POTCAR")
+            written_potcar = Potcar.from_file(f"{output_path}/POTCAR")
             # assert dicts equal, as Potcar __eq__ fails due to hashing I believe
             assert written_potcar.as_dict() == dds.potcar.as_dict()
             assert len(written_potcar.symbols) == len(set(written_potcar.symbols))  # no duplicates
         elif kwargs.get("potcar_spec", False):
-            with open(f"{output_dir}/POTCAR.spec", encoding="utf-8") as file:
+            with open(f"{output_path}/POTCAR.spec", encoding="utf-8") as file:
                 contents = file.readlines()
             for i, line in enumerate(contents):
                 assert line in [f"{dds.potcar_symbols[i]}", f"{dds.potcar_symbols[i]}\n"]
         else:
-            assert not os.path.exists(f"{output_dir}/POTCAR")
+            assert not os.path.exists(f"{output_path}/POTCAR")
 
-        written_kpoints = Kpoints.from_file(f"{output_dir}/KPOINTS")  # comment not parsed by pymatgen
-        with open(f"{output_dir}/KPOINTS") as f:
+        written_kpoints = Kpoints.from_file(f"{output_path}/KPOINTS")  # comment not parsed by pymatgen
+        with open(f"{output_path}/KPOINTS") as f:
             comment = f.readlines()[0].replace("\n", "")
         if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
             "reciprocal_density", False
@@ -520,16 +520,16 @@ class DefectDictSetTest(unittest.TestCase):
                 assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
 
         if kwargs.get("unperturbed_poscar", True):
-            written_poscar = Poscar.from_file(f"{output_dir}/POSCAR")
+            written_poscar = Poscar.from_file(f"{output_path}/POSCAR")
             assert str(written_poscar) == str(dds.poscar)  # POSCAR __eq__ fails for equal structures
             assert written_poscar.structure == dds.structure
             # no duplicates:
             assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))
         else:
-            assert not os.path.exists(f"{output_dir}/POSCAR")
+            assert not os.path.exists(f"{output_path}/POSCAR")
 
         if delete_dir:
-            if_present_rm(output_dir)
+            if_present_rm(output_path)
 
 
 class DefectRelaxSetTest(unittest.TestCase):
@@ -613,7 +613,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 )
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
                 self.dds_test._write_and_check_dds_files(
-                    defect_dict_set, output_dir=f"{defect_relax_set.defect_entry.name}"
+                    defect_dict_set, output_path=f"{defect_relax_set.defect_entry.name}"
                 )
                 self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
                 if defect_relax_set.charge_state == 0:

@@ -344,7 +344,7 @@ class DefectDictSet(DictSet):
 
     def write_input(
         self,
-        output_dir: str,
+        output_path: str,
         unperturbed_poscar: bool = True,
         make_dir_if_not_present: bool = True,
         include_cif: bool = False,
@@ -357,7 +357,7 @@ class DefectDictSet(DictSet):
         DictSet.write_input() to allow checking of user POTCAR setup.
 
         Args:
-            output_dir (str): Directory to output the VASP input files.
+            output_path (str): Directory to output the VASP input files.
             unperturbed_poscar (bool):
                 If True, write the unperturbed defect POSCAR to the generated
                 folder as well. (default: True)
@@ -384,7 +384,7 @@ class DefectDictSet(DictSet):
         if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
             try:
                 super().write_input(
-                    output_dir,
+                    output_path,
                     make_dir_if_not_present=make_dir_if_not_present,
                     include_cif=include_cif,
                     potcar_spec=potcar_spec,
@@ -393,7 +393,7 @@ class DefectDictSet(DictSet):
             except UnicodeEncodeError:  # likely KPOINTS comment encoding issue
                 self._recode_kpoints()
                 super().write_input(
-                    output_dir,
+                    output_path,
                     make_dir_if_not_present=make_dir_if_not_present,
                     include_cif=include_cif,
                     potcar_spec=potcar_spec,
@@ -401,35 +401,35 @@ class DefectDictSet(DictSet):
                 )
             except ValueError as e:
                 if str(e).startswith("NELECT") and potcar_spec:
-                    with zopen(os.path.join(output_dir, "POTCAR.spec"), "wt") as pot_spec_file:
+                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
                         pot_spec_file.write("\n".join(self.potcar_symbols))
 
-                    self.kpoints.write_file(f"{output_dir}/KPOINTS")
-                    self.poscar.write_file(f"{output_dir}/POSCAR")
+                    self.kpoints.write_file(f"{output_path}/KPOINTS")
+                    self.poscar.write_file(f"{output_path}/POSCAR")
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_path, exist_ok=True)
 
             # if not POTCARs and charge_state not 0, but unperturbed POSCAR is true, then skip INCAR
             # write attempt (unperturbed POSCARs and KPOINTS will be written, and user already warned):
             if potcars or self.charge_state == 0 or not unperturbed_poscar:
-                self.incar.write_file(f"{output_dir}/INCAR")
+                self.incar.write_file(f"{output_path}/INCAR")
 
             if potcars:
                 if potcar_spec:
-                    with zopen(os.path.join(output_dir, "POTCAR.spec"), "wt") as pot_spec_file:
+                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
                         pot_spec_file.write("\n".join(self.potcar_symbols))
                 else:
-                    self.potcar.write_file(f"{output_dir}/POTCAR")
+                    self.potcar.write_file(f"{output_path}/POTCAR")
 
             try:
-                self.kpoints.write_file(f"{output_dir}/KPOINTS")
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
             except UnicodeEncodeError:
                 self._recode_kpoints()
-                self.kpoints.write_file(f"{output_dir}/KPOINTS")
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
 
             if unperturbed_poscar:
-                self.poscar.write_file(f"{output_dir}/POSCAR")
+                self.poscar.write_file(f"{output_path}/POSCAR")
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -1144,7 +1144,7 @@ class DefectRelaxSet(MSONable):
                 **self.dict_set_kwargs,
             )
 
-    def _get_output_dir(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
+    def _get_output_path(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
         if defect_dir is None:
             if self.defect_entry.name is None:
                 self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, unrelaxed=True)
@@ -1156,16 +1156,16 @@ class DefectRelaxSet(MSONable):
     def _write_vasp_xxx_files(
         self, defect_dir, subfolder, unperturbed_poscar, vasp_xxx_attribute, **kwargs
     ):
-        output_dir = self._get_output_dir(defect_dir, subfolder)
+        output_path = self._get_output_path(defect_dir, subfolder)
 
         vasp_xxx_attribute.write_input(
-            output_dir,
+            output_path,
             unperturbed_poscar,
             **kwargs,  # kwargs to allow POTCAR testing on GH Actions
         )
 
         if "bulk" not in defect_dir:  # not a bulk supercell
-            self.defect_entry.to_json(f"{output_dir}/{self.defect_entry.name}.json")
+            self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json")
 
     def write_gam(
         self,
@@ -1242,9 +1242,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_dir}/{formula}_bulk",
+                f"{output_path}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_gam,
@@ -1337,9 +1337,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_dir}/{formula}_bulk",
+                f"{output_path}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_std,
@@ -1436,9 +1436,9 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_dir}/{formula}_bulk",
+                f"{output_path}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_nkred_std,
@@ -1535,9 +1535,9 @@ class DefectRelaxSet(MSONable):
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             # get output dir: (folder above defect_dir if defect_dir is a subfolder)
-            output_dir = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_dir}/{formula}_bulk",
+                f"{output_path}/{formula}_bulk",
                 subfolder,
                 unperturbed_poscar=True,
                 vasp_xxx_attribute=self.bulk_vasp_ncl,
@@ -1952,8 +1952,8 @@ class DefectsSet(MSONable):
 
     @staticmethod
     def _write_defect(args):
-        defect_species, defect_relax_set, output_dir, unperturbed_poscar, vasp_gam, bulk, kwargs = args
-        defect_dir = os.path.join(output_dir, defect_species)
+        defect_species, defect_relax_set, output_path, unperturbed_poscar, vasp_gam, bulk, kwargs = args
+        defect_dir = os.path.join(output_path, defect_species)
         defect_relax_set.write_all(
             defect_dir=defect_dir,
             unperturbed_poscar=unperturbed_poscar,
@@ -1964,7 +1964,7 @@ class DefectsSet(MSONable):
 
     def write_files(
         self,
-        output_dir: str = ".",
+        output_path: str = ".",
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
         bulk: Union[bool, str] = True,
@@ -2035,10 +2035,10 @@ class DefectsSet(MSONable):
         chemical potential) calculations.
 
         Args:
-            output_dir (str):
+            output_path (str):
                 Folder in which to create the VASP defect calculation folders.
                 Default is the current directory ("."). Output folder structure
-                is `<output_dir>/<defect_species>/<subfolder>` where
+                is `<output_path>/<defect_species>/<subfolder>` where
                 `defect_species` is the key of the DefectRelaxSet in
                 `self.defect_sets` (same as `self.defect_entries` keys, see
                 `DefectsSet` docstring) and `subfolder` is the name of the
@@ -2087,7 +2087,7 @@ class DefectsSet(MSONable):
             (
                 defect_species,
                 defect_relax_set,
-                output_dir,
+                output_path,
                 unperturbed_poscar,
                 vasp_gam,
                 bulk if i == 0 else False,  # only write bulk folder(s) for first defect
