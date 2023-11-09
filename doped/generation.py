@@ -773,8 +773,8 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
 
 def _charge_state_probability(
     charge_state: int,
-    defect_elt_oxi_state: int,
-    defect_elt_oxi_probability: float,
+    defect_el_oxi_state: int,
+    defect_el_oxi_probability: float,
     max_host_oxi_magnitude: int,
     return_log: bool = False,
 ) -> Union[float, dict]:
@@ -789,8 +789,8 @@ def _charge_state_probability(
 
     Args:
         charge_state (int): Charge state of defect.
-        defect_elt_oxi_state (int): Oxidation state of defect element.
-        defect_elt_oxi_probability (float):
+        defect_el_oxi_state (int): Oxidation state of defect element.
+        defect_el_oxi_probability (float):
             Probability of oxidation state of defect element.
         max_host_oxi_magnitude (int): Maximum host oxidation state magnitude.
         return_log (bool):
@@ -819,17 +819,17 @@ def _charge_state_probability(
     charge_state_guessing_log = {
         "input_parameters": {
             "charge_state": charge_state,
-            "oxi_state": defect_elt_oxi_state,
-            "oxi_probability": defect_elt_oxi_probability,
+            "oxi_state": defect_el_oxi_state,
+            "oxi_probability": defect_el_oxi_probability,
             "max_host_oxi_magnitude": max_host_oxi_magnitude,
         },
         "probability_factors": {
-            "oxi_probability": defect_elt_oxi_probability,
+            "oxi_probability": defect_el_oxi_probability,
             "charge_state_magnitude": (1 / abs(charge_state)) ** (2 / 3) if charge_state != 0 else 1,
             "charge_state_vs_max_host_charge": _defect_vs_host_charge(charge_state, max_host_oxi_magnitude)
             ** (2 / 3),
             "oxi_state_vs_max_host_charge": _defect_vs_host_charge(
-                defect_elt_oxi_state, max_host_oxi_magnitude
+                defect_el_oxi_state, max_host_oxi_magnitude
             )
             ** (2 / 3),
         },
@@ -977,28 +977,28 @@ def guess_defect_charge_states(
 
     # check if defect element (interstitial/substitution) is present in structure (i.e. intrinsic
     # interstitial or antisite):
-    defect_elt_sites_in_struct = [
+    defect_el_sites_in_struct = [
         site for site in defect.structure if site.specie.symbol == defect.site.specie.symbol
     ]
-    defect_elt_oxi_in_struct = (
-        int(np.mean([site.specie.oxi_state for site in defect_elt_sites_in_struct]))
-        if defect_elt_sites_in_struct
+    defect_el_oxi_in_struct = (
+        int(np.mean([site.specie.oxi_state for site in defect_el_sites_in_struct]))
+        if defect_el_sites_in_struct
         else None
     )
 
     if (
         defect.defect_type == core.DefectType.Substitution
-        and defect_elt_oxi_in_struct is not None
-        and defect_elt_oxi_in_struct - orig_oxi
+        and defect_el_oxi_in_struct is not None
+        and defect_el_oxi_in_struct - orig_oxi
         not in range(charge_state_range[0], charge_state_range[1] + 1)
     ):
         # if simple antisite oxidation state difference not included, recheck with bumped up oxi_state
         # probability for the oxi_state of the substitution atom in the structure
         # should really be included unless it gives an absolute charge state >= 5, so set oxi_state
         # probability to 100%
-        possible_charge_states[defect_elt_oxi_in_struct - orig_oxi] = _charge_state_probability(
-            defect_elt_oxi_in_struct - orig_oxi,
-            defect_elt_oxi_in_struct,
+        possible_charge_states[defect_el_oxi_in_struct - orig_oxi] = _charge_state_probability(
+            defect_el_oxi_in_struct - orig_oxi,
+            defect_el_oxi_in_struct,
             1,
             max_host_oxi_magnitude,
             return_log=True,
@@ -1006,13 +1006,13 @@ def guess_defect_charge_states(
 
     if (
         defect.defect_type == core.DefectType.Interstitial
-        and defect_elt_oxi_in_struct is not None
-        and defect_elt_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
+        and defect_el_oxi_in_struct is not None
+        and defect_el_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
     ):
         # if oxidation state of interstitial element in the host structure is not included, include it!
-        possible_charge_states[defect_elt_oxi_in_struct] = _charge_state_probability(
-            defect_elt_oxi_in_struct - orig_oxi,
-            defect_elt_oxi_in_struct,
+        possible_charge_states[defect_el_oxi_in_struct] = _charge_state_probability(
+            defect_el_oxi_in_struct - orig_oxi,
+            defect_el_oxi_in_struct,
             1,
             max_host_oxi_magnitude,
             return_log=True,
@@ -1041,8 +1041,8 @@ def guess_defect_charge_states(
 
     if (
         defect.defect_type == core.DefectType.Substitution
-        and defect_elt_oxi_in_struct is not None
-        and defect_elt_oxi_in_struct - orig_oxi == 0
+        and defect_el_oxi_in_struct is not None
+        and defect_el_oxi_in_struct - orig_oxi == 0
         and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
     ) or (charge_state_range[0] == 0 and charge_state_range[1] == 0):
         # if defect is an antisite of two equal oxi state elements, or if range is 0, ensure at least
@@ -1467,7 +1467,7 @@ class DefectsGenerator(MSONable):
                     self.defects["substitutions"].extend(sub_defects)
                 else:
                     self.defects["substitutions"] = sub_defects
-            if not self.defects["substitutions"]:  # no substitutions, single-elt system, no extrinsic
+            if not self.defects["substitutions"]:  # no substitutions, single-element system, no extrinsic
                 del self.defects["substitutions"]  # remove empty list
             pbar.update(5)  # 30% of progress bar
 
