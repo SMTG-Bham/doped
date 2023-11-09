@@ -69,13 +69,13 @@ def get_outcar(outcar_path):
     Read the OUTCAR(.gz) file as a pymatgen Outcar object.
     """
     outcar_path = str(outcar_path)  # convert to string if Path object
-    if os.path.exists(outcar_path) and os.path.isfile(outcar_path):
-        outcar = Outcar(outcar_path)
-    else:
+    try:
+        outcar = Outcar(find_archived_fname(outcar_path))
+    except FileNotFoundError:
         raise FileNotFoundError(
             f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
             f"image charge correction."
-        )
+        ) from None
     return outcar
 
 
