@@ -1088,8 +1088,9 @@ class CompetingPhasesAnalyzer:
         """
         Args:
             system (str): The  'reduced formula' of the bulk composition
-            extrinsic_species (str): Dopant species - can only deal with one at a time (see
-            notebook in examples folder for more complex cases).
+            extrinsic_species (str):
+                Dopant species - can only deal with one at a time (see
+                tutorial on the docs for more complex cases).
         """
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
@@ -1100,17 +1101,28 @@ class CompetingPhasesAnalyzer:
 
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
         """
-        Reads in vaspruns, collates energies to csv.
+        Parses competing phase energies from `vasprun.xml(.gz)` outputs,
+        computes the formation energies and generates the
+        `CompetingPhasesAnalyzer` object.
 
         Args:
-            path (list, str, pathlib Path): Either a path to the base folder in which you have your
-                competing phase calculation outputs (e.g. formula_EaH_X/vasp_std/vasprun.xml(
-                .gz), or formula_EaH_X/vasprun.xml(.gz)), or a list of strings or Paths to
-                vasprun.xml(.gz) files.
-            folder (str): The subfolder in which your vasprun.xml output files are located (e.g.
-                a file-structure like: formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
-                search for `vasp_std` subfolders, or directly in the `formula_EaH_X` folder.
-            csv_path (str): If set will save to csv with this name
+            path (list, str, pathlib Path):
+                Either a path to the base folder in which you have your
+                competing phase calculation outputs (e.g.
+                formula_EaH_X/vasp_std/vasprun.xml(.gz), or
+                formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
+                to vasprun.xml(.gz) files.
+            folder (str):
+                The subfolder in which your vasprun.xml(.gz) output files
+                are located (e.g. a file-structure like:
+                formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
+                search for `vasp_std` subfolders, or directly in the
+                `formula_EaH_X` folder.
+            csv_path (str):
+                If set will save the parsed data to a csv at this filepath.
+                Further customisation of the output csv can be achieved with
+                the CompetingPhasesAnalyzer.to_csv() method.
+
         Returns:
             None, sets self.data and self.elemental_energies
         """
