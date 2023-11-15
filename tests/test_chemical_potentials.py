@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 
@@ -258,18 +259,25 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_to_csv(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
+        stable_cpa_data = stable_cpa._get_and_sort_formation_energy_data()
+
+        stable_cpa.to_csv("competing_phases.csv")
+        reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        reloaded_cpa.from_csv("competing_phases.csv")
+        reloaded_cpa_data = reloaded_cpa._get_and_sort_formation_energy_data()
+        assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
+
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-
-        assert len(stable_cpa.elemental) == 2
-        assert len(self.ext_cpa.elemental) == 3
-        assert any(entry["formula"] == "O2" for entry in stable_cpa.data)
-        assert np.isclose(
-            [entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"][0],
-            -119.619571095,
+        self.ext_cpa.to_csv("competing_phases.csv")
+        reloaded_ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
         )
+        reloaded_ext_cpa.from_csv("competing_phases.csv")
+        reloaded_ext_cpa_data = reloaded_ext_cpa._get_and_sort_formation_energy_data()
+        assert pd.DataFrame(self.ext_cpa.data).equals(pd.DataFrame(reloaded_ext_cpa_data))
 
     def test_from_csv_minimal(self):
         """
