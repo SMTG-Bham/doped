@@ -191,10 +191,17 @@ def _calculate_formation_energies(data: list, elemental: dict):
     # get energy per fu then subtract elemental energies later, to get formation energies
     if "energy_per_fu" in formation_energy_df.columns:
         formation_energy_df["formation_energy_calc"] = formation_energy_df["energy_per_fu"]
+        if "energy_per_atom" not in formation_energy_df.columns:
+            formation_energy_df["energy_per_atom"] = formation_energy_df["energy_per_fu"] / (
+                formation_energy_df["num_atoms_in_fu"]
+            )
 
     elif "energy_per_atom" in formation_energy_df.columns:
         formation_energy_df["formation_energy_calc"] = (
             formation_energy_df["energy_per_atom"] * formation_energy_df["num_atoms_in_fu"]
+        )
+        formation_energy_df["energy_per_fu"] = formation_energy_df["energy_per_atom"] * (
+            formation_energy_df["num_atoms_in_fu"]
         )
 
     else:
@@ -1089,8 +1096,17 @@ class CompetingPhasesAnalyzer:
         Args:
             system (str): The  'reduced formula' of the bulk composition
             extrinsic_species (str):
-                Dopant species - can only deal with one at a time (see
+                Extrinsic species - can only deal with one at a time (see
                 tutorial on the docs for more complex cases).
+
+        Attributes:
+            bulk_composition (str): The bulk (host) composition
+            elemental (list): List of elemental species in the bulk composition
+            extrinsic_species (str): Extrinsic species, if present
+            data (list):
+                List of dictionaries containing the parsed competing phases data
+            formation_energy_df (pandas.DataFrame):
+                DataFrame containing the parsed competing phases data
         """
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
@@ -1126,7 +1142,7 @@ class CompetingPhasesAnalyzer:
                 the CompetingPhasesAnalyzer.to_csv() method.
 
         Returns:
-            None, sets self.data and self.elemental_energies
+            None, sets self.data, self.formation_energy_df and self.elemental_energies
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
@@ -1240,6 +1256,7 @@ class CompetingPhasesAnalyzer:
 
         formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
         self.data = formation_energy_df.to_dict(orient="records")
+        self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
 
         if csv_path is not None:
             self.to_csv(csv_path)
@@ -1258,6 +1275,37 @@ class CompetingPhasesAnalyzer:
 
         # moves the bulk composition to the top of the list
         _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
+
+        # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
+        # energy_per_fu, energy, kpoints, then by order of appearance in bulk_composition dict,
+        # then alphabetically for any remaining:
+        data = [
+            {
+                "formula": d["formula"],
+                "formation_energy": d["formation_energy"],
+                "energy_per_atom": d["energy_per_atom"],
+                "energy_per_fu": d["energy_per_fu"],
+                "energy": d.get("energy"),
+                "kpoints": d.get("kpoints"),
+                **{
+                    k: v
+                    for k, v in d.items()
+                    if k
+                    not in [
+                        "formula",
+                        "formation_energy",
+                        "energy_per_atom",
+                        "energy_per_fu",
+                        "energy",
+                        "kpoints",
+                    ]
+                },
+            }
+            for d in data
+        ]
+        # if all values are None for a certain key, remove that key from all dicts in list:
+        keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
+        data = [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
 
         return data
 
@@ -1307,11 +1355,19 @@ class CompetingPhasesAnalyzer:
             c = Composition(i["formula"])
             if len(c.elements) == 1:
                 el = c.chemical_system
-                if el not in self.elemental_energies or i["energy_per_atom"] < self.elemental_energies[el]:
-                    self.elemental_energies[el] = i["energy_per_atom"]
+                if "energy_per_atom" in list(formation_energy_df.columns):
+                    el_energy_per_atom = i["energy_per_atom"]
+                else:
+                    el_energy_per_atom = i["energy_per_fu"] / c.num_atoms
+
+                if el not in self.elemental_energies or el_energy_per_atom < self.elemental_energies[el]:
+                    self.elemental_energies[el] = el_energy_per_atom
 
         if "formation_energy" not in list(formation_energy_df.columns):
-            self.data = _calculate_formation_energies(self.data, self.elemental_energies)
+            formation_energy_df = _calculate_formation_energies(self.data, self.elemental_energies)
+            self.data = formation_energy_df.to_dict(orient="records")
+
+        self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
 
     def calculate_chempots(self, csv_path=None, verbose=True, sort_by=None):
         """
