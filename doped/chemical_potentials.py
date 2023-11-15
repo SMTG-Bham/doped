@@ -1098,7 +1098,7 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
-    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_fname=None):
+    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
         """
         Reads in vaspruns, collates energies to csv.
 
@@ -1110,7 +1110,7 @@ class CompetingPhasesAnalyzer:
             folder (str): The subfolder in which your vasprun.xml output files are located (e.g.
                 a file-structure like: formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
                 search for `vasp_std` subfolders, or directly in the `formula_EaH_X` folder.
-            csv_fname (str): If set will save to csv with this name
+            csv_path (str): If set will save to csv with this name
         Returns:
             None, sets self.data and self.elemental_energies
         """
@@ -1225,9 +1225,9 @@ class CompetingPhasesAnalyzer:
             temp_data.append(d)
 
         formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
-        if csv_fname is not None:
-            formation_energy_df.to_csv(csv_fname, index=False)
-            print(f"Competing phase formation energies have been saved to {csv_fname}.")
+        if csv_path is not None:
+            formation_energy_df.to_csv(csv_path, index=False)
+            print(f"Competing phase formation energies have been saved to {csv_path}.")
 
         self.data = formation_energy_df.to_dict(orient="records")
 
@@ -1263,14 +1263,14 @@ class CompetingPhasesAnalyzer:
         if "formation_energy" not in list(formation_energy_df.columns):
             self.data = _calculate_formation_energies(self.data, self.elemental_energies)
 
-    def calculate_chempots(self, csv_fname=None, verbose=True, sort_by=None):
+    def calculate_chempots(self, csv_path=None, verbose=True, sort_by=None):
         """
         Calculates chemical potential limits. For dopant species, it calculates
         the limiting potential based on the intrinsic chemical potentials (i.e.
         same as `full_sub_approach=False` in pycdt).
 
         Args:
-            csv_fname (str): If set, will save chemical potential limits to csv
+            csv_path (str): If set, will save chemical potential limits to csv
             verbose (bool): If True, will print out chemical potential limits.
             sort_by (str): If set, will sort the chemical potential limits in the output
                 dataframe according to the chemical potential of the specified element (from
@@ -1438,10 +1438,10 @@ class CompetingPhasesAnalyzer:
             self._chem_limits = self._intrinsic_chem_limits
 
         # save and print
-        if csv_fname is not None:
-            extrinsic_chempots_df.to_csv(csv_fname, index=False)
+        if csv_path is not None:
+            extrinsic_chempots_df.to_csv(csv_path, index=False)
             if verbose:
-                print("Saved chemical potential limits to csv file: ", csv_fname)
+                print("Saved chemical potential limits to csv file: ", csv_path)
 
         if verbose:
             print("Calculated chemical potential limits: \n")

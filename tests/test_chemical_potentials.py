@@ -100,7 +100,7 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_vaspruns(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
         assert len(cpa.elemental) == 2
         assert cpa.data[0]["formula"] == "O2"
 
@@ -113,7 +113,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
         ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.extrinsic_species)
         path2 = self.path / "La_ZrO2"
-        ext_cpa.from_vaspruns(path=path2, folder="relax", csv_fname=self.csv_path_ext)
+        ext_cpa.from_vaspruns(path=path2, folder="relax", csv_path=self.csv_path_ext)
         assert len(ext_cpa.elemental) == 3
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
         # formation_energy
@@ -222,7 +222,7 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_latex_table(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
 
         with self.assertRaises(ValueError):
             cpa.to_LaTeX_table(columns="M")
@@ -256,7 +256,7 @@ class ChemPotsTestCase(unittest.TestCase):
         cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa_csv.from_csv(self.csv_path)
         with self.assertRaises(ValueError):
-            cpa_csv.to_LaTeX_table(columns=2)
+            cpa_csv.to_LaTeX_table(columns=3)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
