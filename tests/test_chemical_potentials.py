@@ -265,6 +265,7 @@ class ChemPotsTestCase(unittest.TestCase):
             cpa_csv.to_LaTeX_table(splits=3)
 
     def test_to_csv(self):
+        self.tearDown()  # clear out previous csvs
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         stable_cpa_data = stable_cpa._get_and_sort_formation_energy_data()
@@ -304,7 +305,7 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_cpa.from_csv("competing_phases.csv")
 
         # check chem limits the same:
-        _compare_chempot_dicts(reloaded_cpa.chem_limits, reloaded_ext_cpa.chem_limits)
+        _compare_chempot_dicts(reloaded_cpa.chem_limits, stable_cpa.chem_limits)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
@@ -331,6 +332,7 @@ class ChemPotsTestCase(unittest.TestCase):
         """
         Test that CompetingPhasesAnalyzer.from_csv() works with minimal data.
         """
+        self.tearDown()  # clear out previous csvs
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax")
