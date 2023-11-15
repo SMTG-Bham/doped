@@ -1099,6 +1099,8 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
+    # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
+    #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
         """
         Parses competing phase energies from `vasprun.xml(.gz)` outputs,
@@ -1128,9 +1130,9 @@ class CompetingPhasesAnalyzer:
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
-        #  subfolders are found).
-        # TODO: Add check for matching INCAR and POTCARs from these calcs, as we also want with
-        #  defect parsing
+        #  subfolders are found). - see how this is done in DefectsParser in analysis.py
+        # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
+        #  analysis.py for this
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
@@ -1237,23 +1239,59 @@ class CompetingPhasesAnalyzer:
             temp_data.append(d)
 
         formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
-        if csv_path is not None:
-            formation_energy_df.to_csv(csv_path, index=False)
-            print(f"Competing phase formation energies have been saved to {csv_path}.")
-
         self.data = formation_energy_df.to_dict(orient="records")
 
-    def from_csv(self, csv):
+        if csv_path is not None:
+            self.to_csv(csv_path)
+
+    def _get_and_sort_formation_energy_data(self, sort_by_energy=False, prune_polymorphs=False):
+        data = copy.deepcopy(self.data)
+
+        if prune_polymorphs:  # only keep the lowest energy polymorphs
+            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
+            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
+            pruned_df = formation_energy_df.loc[indices]
+            data = pruned_df.to_dict(orient="records")
+
+        if sort_by_energy:
+            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
+
+        # moves the bulk composition to the top of the list
+        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
+
+        return data
+
+    def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
+        """
+        Write parsed competing phases data to csv. Can be re-loaded with
+        CompetingPhasesAnalyzer.from_csv().
+
+        Args:
+            csv_path (str): Path to csv file to write to.
+            sort_by_energy (bool):
+                If True, sorts the csv by formation energy (highest to lowest).
+                Default is False (sorting by formula).
+            prune_polymorphs (bool):
+                Whether to only write the lowest energy polymorphs for each composition.
+                Doesn't affect chemical potential limits (only the ground-state
+                polymorphs matter for this).
+                Default is False.
+        """
+        formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
+        pd.DataFrame(formation_energy_data).to_csv(csv_path, index=False)
+        print(f"Competing phase formation energies have been saved to {csv_path}.")
+
+    def from_csv(self, csv_path):
         """
         Read in data from csv.
 
         Args:
-            csv (str): Path to csv file. Must have columns 'formula',
+            csv_path (str): Path to csv file. Must have columns 'formula',
                 'energy_per_fu', 'energy' and 'formation_energy'
         Returns:
             None, sets self.data and self.elemental_energies.
         """
-        formation_energy_df = pd.read_csv(csv)
+        formation_energy_df = pd.read_csv(csv_path)
         if "formula" not in list(formation_energy_df.columns) or all(
             x not in list(formation_energy_df.columns) for x in ["energy_per_fu", "energy_per_atom"]
         ):
@@ -1548,19 +1586,24 @@ class CompetingPhasesAnalyzer:
                     print(int(v), k, end=" ")
                 print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
 
-    def to_LaTeX_table(self, columns=1, sort_by_energy=False, prune_polymorphs=True):
+    def to_LaTeX_table(self, splits=1, sort_by_energy=False, prune_polymorphs=True):
         """
         A very simple function to print out the competing phase formation
-        energies in a LaTeX table format. Needs the mhchem package to work and
-        does *not* use the booktabs package -- change hline to toprule, midrule
-        and bottomrule if you want to use booktabs style.
+        energies in a LaTeX table format, showing the formula, kpoints (if
+        present in the parsed data) and formation energy.
+
+        Needs the mhchem package to work and does *not* use the booktabs package
+        -- change hline to toprule, midrule and bottomrule if you want to use
+        booktabs style.
 
         Args:
-            columns (int):
-                Number of columns to print out the table in; either 1 or 2
+            splits (int):
+                Number of splits for the table; either 1 (default) or 2 (with
+                two large columns, each with the formula, kpoints (if present)
+                and formation energy (sub-)columns).
             sort_by_energy (bool):
                 If True, sorts the table by formation energy (highest to lowest).
-                Default sorting by formula.
+                Default is False (sorting by formula).
             prune_polymorphs (bool):
                 Whether to only print out the lowest energy polymorphs for each composition.
                 Default is True.
@@ -1568,29 +1611,19 @@ class CompetingPhasesAnalyzer:
         Returns:
             str: LaTeX table string
         """
-        if columns not in [1, 2]:
-            raise ValueError("columns must be either 1 or 2")
+        if splits not in [1, 2]:
+            raise ValueError("`splits` must be either 1 or 2")
         # done in the pyscfermi report style
-        data = copy.deepcopy(self.data)
+        formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
 
-        if any("kpoints" not in item for item in data):
+        if any("kpoints" not in item for item in formation_energy_data):  # TODO: this is bad,
+            # should just not have the kpoints column if it's not present, and warn user
             raise (
                 ValueError(
                     "kpoints need to be present in data; run CompetingPhasesAnalyzer.from_vaspruns "
                     "instead of from_csv"
                 )
             )
-
-        if prune_polymorphs:  # only keep the lowest energy polymorphs
-            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
-            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
-            pruned_df = formation_energy_df.loc[indices]
-            data = pruned_df.to_dict(orient="records")
-
-        if sort_by_energy:
-            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
-        # moves the bulk composition to the top of the list
-        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
 
         string = "\\begin{table}[h]\n\\centering\n"
         string += (
@@ -1600,11 +1633,11 @@ class CompetingPhasesAnalyzer:
             + ("}\n" if not prune_polymorphs else " Only the lowest energy polymorphs are included}\n")
         )
         string += "\\label{tab:competing_phase_formation_energies}\n"
-        if columns == 1:
+        if splits == 1:
             string += "\\begin{tabular}{ccc}\n"
             string += "\\hline\n"
             string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
-            for i in data:
+            for i in formation_energy_data:
                 kpoints = i["kpoints"].split("x")
                 fe = i["formation_energy"]
                 string += (
@@ -1615,7 +1648,7 @@ class CompetingPhasesAnalyzer:
                     " & " + f"{fe:.3f} \\\\ \n"
                 )
 
-        elif columns == 2:
+        elif splits == 2:
             string += "\\begin{tabular}{ccc|ccc}\n"
             string += "\\hline\n"
             string += (
@@ -1623,9 +1656,9 @@ class CompetingPhasesAnalyzer:
                 "\\hline \n"
             )
 
-            mid = len(data) // 2
-            first_half = data[:mid]
-            last_half = data[mid:]
+            mid = len(formation_energy_data) // 2
+            first_half = formation_energy_data[:mid]
+            last_half = formation_energy_data[mid:]
 
             for i, j in zip(first_half, last_half):
                 kpoints = i["kpoints"].split("x")

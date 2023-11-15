@@ -224,10 +224,7 @@ class ChemPotsTestCase(unittest.TestCase):
         path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
 
-        with self.assertRaises(ValueError):
-            cpa.to_LaTeX_table(columns="M")
-
-        string = cpa.to_LaTeX_table(columns=1)
+        string = cpa.to_LaTeX_table(splits=1)
         assert (
             string[28:209]
             == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
@@ -238,7 +235,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\"
         assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
 
-        string = cpa.to_LaTeX_table(columns=2)
+        string = cpa.to_LaTeX_table(splits=2)
         assert (
             string[28:209]
             == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
@@ -256,7 +253,31 @@ class ChemPotsTestCase(unittest.TestCase):
         cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa_csv.from_csv(self.csv_path)
         with self.assertRaises(ValueError):
-            cpa_csv.to_LaTeX_table(columns=3)
+            cpa_csv.to_LaTeX_table(splits=3)
+
+    def test_to_csv(self):
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa.from_csv(self.csv_path)
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        self.ext_cpa.from_csv(self.csv_path_ext)
+
+        assert len(stable_cpa.elemental) == 2
+        assert len(self.ext_cpa.elemental) == 3
+        assert any(entry["formula"] == "O2" for entry in stable_cpa.data)
+        assert np.isclose(
+            [entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"][0],
+            -119.619571095,
+        )
+
+    def test_from_csv_minimal(self):
+        """
+        Test that CompetingPhasesAnalyzer.from_csv() works with minimal data.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+        cpa.from_vaspruns(path=path, folder="relax")
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
