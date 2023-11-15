@@ -181,16 +181,33 @@ def _calculate_formation_energies(data: list, elemental: dict):
             d[el] = Composition(d["formula"]).as_dict().get(el, 0)
 
     formation_energy_df = pd.DataFrame(data)
-    formation_energy_df["formation_energy"] = formation_energy_df["energy_per_fu"]
-    for k, v in elemental.items():
-        formation_energy_df["formation_energy"] -= formation_energy_df[k] * v
-
-    formation_energy_df["num_atoms_in_fu"] = (
-        formation_energy_df["energy_per_fu"] / formation_energy_df["energy_per_atom"]
+    formation_energy_df["num_atoms_in_fu"] = formation_energy_df["formula"].apply(
+        lambda x: Composition(x).num_atoms
     )
     formation_energy_df["num_species"] = formation_energy_df["formula"].apply(
         lambda x: len(Composition(x).as_dict())
     )
+
+    # get energy per fu then subtract elemental energies later, to get formation energies
+    if "energy_per_fu" in formation_energy_df.columns:
+        formation_energy_df["formation_energy_calc"] = formation_energy_df["energy_per_fu"]
+
+    elif "energy_per_atom" in formation_energy_df.columns:
+        formation_energy_df["formation_energy_calc"] = (
+            formation_energy_df["energy_per_atom"] * formation_energy_df["num_atoms_in_fu"]
+        )
+
+    else:
+        raise ValueError(
+            "No energy data (energy_per_atom or energy_per_fu) found in input data to calculate "
+            "formation energies!"
+        )
+
+    for k, v in elemental.items():
+        formation_energy_df["formation_energy_calc"] -= formation_energy_df[k] * v
+
+    formation_energy_df["formation_energy"] = formation_energy_df["formation_energy_calc"]
+    formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
 
     # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
     formation_energy_df = formation_energy_df.sort_values(
@@ -1225,32 +1242,26 @@ class CompetingPhasesAnalyzer:
             None, sets self.data and self.elemental_energies.
         """
         formation_energy_df = pd.read_csv(csv)
-        columns = [
-            "formula",
-            "energy_per_fu",
-            "energy_per_atom",
-            "energy",
-            "formation_energy",
-        ]
-        if all(x in list(formation_energy_df.columns) for x in columns):
-            droplist = [i for i in formation_energy_df.columns if i not in columns]
-            formation_energy_df = formation_energy_df.drop(droplist, axis=1)
-            formation_energy_dict = formation_energy_df.to_dict(orient="records")
-            self.data = formation_energy_dict
+        if "formula" not in list(formation_energy_df.columns) or all(
+            x not in list(formation_energy_df.columns) for x in ["energy_per_fu", "energy_per_atom"]
+        ):
+            raise ValueError(
+                "Supplied csv does not contain the minimal columns required ('formula', "
+                "and 'energy_per_fu' or 'energy_per_atom'!"
+            )
 
-            self.elemental_energies = {}
-            for i in formation_energy_dict:
-                c = Composition(i["formula"])
-                if len(c.elements) == 1:
-                    el = c.chemical_system
-                    if (
-                        el not in self.elemental_energies
-                        or i["energy_per_atom"] < self.elemental_energies[el]
-                    ):
-                        self.elemental_energies[el] = i["energy_per_atom"]
+        self.data = formation_energy_df.to_dict(orient="records")
 
-        else:
-            raise ValueError("supplied csv does not contain the correct headers, cannot read in the data")
+        self.elemental_energies = {}
+        for i in self.data:
+            c = Composition(i["formula"])
+            if len(c.elements) == 1:
+                el = c.chemical_system
+                if el not in self.elemental_energies or i["energy_per_atom"] < self.elemental_energies[el]:
+                    self.elemental_energies[el] = i["energy_per_atom"]
+
+        if "formation_energy" not in list(formation_energy_df.columns):
+            self.data = _calculate_formation_energies(self.data, self.elemental_energies)
 
     def calculate_chempots(self, csv_fname=None, verbose=True, sort_by=None):
         """
