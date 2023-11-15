@@ -7,8 +7,10 @@ user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
 import contextlib
+import io
 import os
 import warnings
+from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -21,6 +23,7 @@ from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Vasprun
+from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
@@ -870,6 +873,7 @@ class DefectsParser:
         self.skip_corrections = skip_corrections
         self.error_tolerance = error_tolerance
         self.bulk_bandgap_path = bulk_bandgap_path
+        self.processes = processes
 
         possible_defect_folders = [
             dir
@@ -927,58 +931,151 @@ class DefectsParser:
             and self.subfolder in os.listdir(os.path.join(self.output_path, dir))
         ]
 
-        bulk_corrections_data_kwargs = {  # so we only load and parse bulk data once
+        self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
         }
 
-        for defect_folder in self.defect_folders:
-            # TODO: Add multiprocessing here
-            print(
-                f"Parsing {defect_folder if self.subfolder=='.' else defect_folder+'/'+self.subfolder}..."
-            )
-            try:
-                dp = DefectParser.from_paths(
-                    defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
-                    bulk_path=self.bulk_path,
-                    dielectric=self.dielectric,
-                    skip_corrections=self.skip_corrections,
-                    error_tolerance=self.error_tolerance,
-                    bulk_bandgap_path=self.bulk_bandgap_path,
-                    **bulk_corrections_data_kwargs,
+        if self.processes is None:  # multiprocessing?
+            self.processes = min(max(1, cpu_count() - 1), len(self.defect_folders) - 1)  # only
+            # multiprocess as much as makes sense, if only a handful of defect folders
+
+        if self.processes <= 1:  # no multiprocessing
+            with tqdm(self.defect_folders, desc="Parsing defect calculations") as pbar:
+                for defect_folder in pbar:
+                    pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+                    # set tqdm progress bar description to defect folder being parsed:
+                    parsed_defect_entry = self._parse_defect(defect_folder)
+                    if parsed_defect_entry is not None:
+                        self.defect_dict[parsed_defect_entry.name] = parsed_defect_entry
+
+            return
+
+        # otherwise multiprocessing:
+        # guess a charged defect in defect_folders, to try initially check if dielectric and corrections
+        # correctly set, before multiprocessing with the same settings for all folders:
+        charged_defect_folder = None
+        for possible_charged_defect_folder in self.defect_folders:
+            with contextlib.suppress(Exception):
+                if abs(int(possible_charged_defect_folder[-1])) > 0:  # likely charged defect
+                    charged_defect_folder = possible_charged_defect_folder
+
+        parsing_warnings = []
+        try:
+            pbar = tqdm(total=len(self.defect_folders))
+
+            def _update_defect_dict_and_return_warnings_from_parsing(result, defect_folder, pbar):
+                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+                if result[0] is not None:
+                    self.defect_dict[result[0].name] = result[0]
+                pbar.update()
+                return (
+                    (
+                        f"Warning(s) encountered when parsing {result[0].name} at "
+                        f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
+                    )
+                    if result[1]
+                    else ""
                 )
-                if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
-                    self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
-                    # dielectric is None and there are charged defects present (shows dielectric warning
-                    # once)
 
-                if (
-                    dp.defect_entry.calculation_metadata.get("bulk_locpot_dict") is not None
-                    and bulk_corrections_data_kwargs.get("bulk_locpot_dict") is None
-                ):
-                    bulk_corrections_data_kwargs[
-                        "bulk_locpot_dict"
-                    ] = dp.defect_entry.calculation_metadata["bulk_locpot_dict"]
-
-                if (
-                    dp.defect_entry.calculation_metadata.get("bulk_site_potentials") is not None
-                    and bulk_corrections_data_kwargs.get("bulk_site_potentials") is None
-                ):
-                    bulk_corrections_data_kwargs["bulk_site_potentials"] = (
-                        dp.defect_entry.calculation_metadata
-                    )["bulk_site_potentials"]
-
-                self.defect_dict[dp.defect_entry.name] = dp.defect_entry
-
-            except Exception as exc:
-                warnings.warn(
-                    f"Parsing failed for "
-                    f"{defect_folder if self.subfolder=='.' else defect_folder+'/'+self.subfolder}, "
-                    f"got error: {exc}"
+            if charged_defect_folder is not None:
+                # will throw warnings if dielectric is None / charge corrections not possible,
+                # and set self.skip_corrections appropriately
+                pbar.set_description(  # set this first as desc is only set after parsing run in function
+                    f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
                 )
+                parsing_warnings.append(
+                    _update_defect_dict_and_return_warnings_from_parsing(
+                        self._multiprocess_parse_defect(charged_defect_folder), charged_defect_folder, pbar
+                    )
+                )
+
+            folders_to_process = [
+                folder for folder in self.defect_folders if folder != charged_defect_folder
+            ]
+            pbar.set_description("Setting up multiprocessing")
+            if self.processes > 1:
+                with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
+                    for result in pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process):
+                        defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
+                        parsing_warnings.append(
+                            _update_defect_dict_and_return_warnings_from_parsing(
+                                result, defect_folder, pbar
+                            )
+                        )
+
+        except Exception as e:
+            pbar.close()
+            raise e
+
+        finally:
+            pbar.close()
+
+        parsing_warnings = [warning for warning in parsing_warnings if warning]  # remove empty strings
+        if parsing_warnings:
+            warnings.warn("\n".join(parsing_warnings))
 
         # TODO: Test attribute setting
-        # TODO: Check same type of charge correction used in each case, otherwise warn
+        # TODO: Check same type of charge correction used in each case, otherwise warn - here because
+        #  both eFNV and FNV present, it uses eFNV when it can and FNV otherwise... For isotropic
+        #  materials usually fine so just warn and say can print out correction vals with
+        #  formation_energy_table to check no major outliers (either way have delocalisation analysis
+        #  checks so should be fine)
+        # TODO: Need to handle duplicate defect entry names like we do in generation
+
+    def _multiprocess_parse_defect(self, defect_folder):
+        """
+        Process defect and catch warnings along the way, so we can print which
+        warnings came from which defect.
+        """
+        str_io = io.StringIO()  # Redirect stderr to capture warnings
+        with contextlib.redirect_stderr(str_io):  # capture warnings
+            parsed_defect_entry = self._parse_defect(defect_folder)
+        warnings_string = str_io.getvalue()
+
+        return parsed_defect_entry, warnings_string
+
+    def _parse_defect(self, defect_folder):
+        try:
+            dp = DefectParser.from_paths(
+                defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
+                bulk_path=self.bulk_path,
+                dielectric=self.dielectric,
+                skip_corrections=self.skip_corrections,
+                error_tolerance=self.error_tolerance,
+                bulk_bandgap_path=self.bulk_bandgap_path,
+                **self.bulk_corrections_data,
+            )
+
+            if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
+                self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
+                # dielectric is None and there are charged defects present (shows dielectric warning once)
+
+            if (
+                dp.defect_entry.calculation_metadata.get("bulk_locpot_dict") is not None
+                and self.bulk_corrections_data.get("bulk_locpot_dict") is None
+            ):
+                self.bulk_corrections_data["bulk_locpot_dict"] = dp.defect_entry.calculation_metadata[
+                    "bulk_locpot_dict"
+                ]
+
+            if (
+                dp.defect_entry.calculation_metadata.get("bulk_site_potentials") is not None
+                and self.bulk_corrections_data.get("bulk_site_potentials") is None
+            ):
+                self.bulk_corrections_data["bulk_site_potentials"] = (
+                    dp.defect_entry.calculation_metadata
+                )["bulk_site_potentials"]
+
+        except Exception as exc:
+            warnings.warn(
+                f"Parsing failed for "
+                f"{defect_folder if self.subfolder == '.' else defect_folder + '/' + self.subfolder}, "
+                f"got error: {exc}"
+            )
+            return None
+
+        return dp.defect_entry
 
 
 class DefectParser:
@@ -1139,18 +1236,17 @@ class DefectParser:
             # try determine from folder name - must have "-" or "+" at end of name for this
             try:
                 charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
-                if charge_state_suffix[0] in ["-", "+"]:
-                    parsed_charge_state = int(charge_state_suffix)
-                    if abs(parsed_charge_state) >= 7:
-                        raise ValueError(
-                            f"Guessed charge state from folder name was {parsed_charge_state:+} "
-                            f"which is almost certainly unphysical"
-                        )
-                else:
+                if charge_state_suffix[0] not in ["-", "+"]:
                     raise ValueError(
                         f"Could not guess charge state from folder name: {possible_defect_name}"
                     )
 
+                parsed_charge_state = int(charge_state_suffix)
+                if abs(parsed_charge_state) >= 7:
+                    raise ValueError(
+                        f"Guessed charge state from folder name was {parsed_charge_state:+} which is "
+                        f"almost certainly unphysical"
+                    )
             except Exception as next_exc:
                 raise orig_exc from next_exc
 
