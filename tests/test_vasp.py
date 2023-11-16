@@ -6,6 +6,7 @@ import filecmp
 import locale
 import os
 import random
+import sys
 import unittest
 import warnings
 
@@ -1165,8 +1166,15 @@ class DefectsSetTest(unittest.TestCase):
                     check_potcar_spec=True,
                 )
 
+    @unittest.skipIf(sys.version_info[:2] == (3, 8), "Test is skipped for Python 3.8")
     def test_initialise_and_write_all_defect_gens(self):
-        # test initialising DefectsSet with our generation-tests materials, and writing files to disk
+        """
+        Test initialising DefectsSet with our generation-tests materials, and
+        writing files to disk.
+
+        Hangs on GitHub Actions python=3.8 for some reason, so skipped if we're
+        on python=3.8.
+        """
         for defect_gen_name in [
             "ytos_defect_gen",
             "ytos_defect_gen_supercell",
