@@ -355,7 +355,7 @@ class ChemPotsTestCase(unittest.TestCase):
                 "energy_per_fu",
                 "energy_per_atom",
                 "formation_energy",
-                "Zr",
+                "Zr",  # ordered by appearance in bulk composition
                 "O",
             ]
             trimmed_df = cpa.formation_energy_df[

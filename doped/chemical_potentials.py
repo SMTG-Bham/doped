@@ -1165,41 +1165,10 @@ class CompetingPhasesAnalyzer:
                 else:
                     print(f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution")
 
-        # if path provided points to the doped created directories
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
-                if p.glob("EaH"):
-                    # add bulk simple properties
-                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
-                    if multiple:
-                        warnings.warn(
-                            f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
-                            f"{vr_path} to parse the calculation energy and metadata."
-                        )
-
-                    if os.path.exists(vr_path):
-                        self.vasprun_paths.append(vr_path)
-
-                    else:
-                        vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
-                        if multiple:
-                            warnings.warn(
-                                f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                                f"{vr_path} to parse the calculation energy and metadata."
-                            )
-
-                        if os.path.exists(vr_path):
-                            self.vasprun_paths.append(vr_path)
-
-                        else:
-                            warnings.warn(
-                                f"Can't find a vasprun.xml file in {p} or {p/folder}, "
-                                f"proceed with caution"
-                            )
-                            continue
-
-                else:
+                if not p.glob("EaH"):  # if path provided doesn't point to the doped created directories
                     # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
                     #  only if there's no *EaH* folders at all.
                     #  Seemed to be causing problems with .DS_Store files on Macs as well
@@ -1209,6 +1178,32 @@ class CompetingPhasesAnalyzer:
                         "folder name."
                     )
 
+                # add bulk simple properties
+                vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
+                if multiple:
+                    warnings.warn(
+                        f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                        f"{vr_path} to parse the calculation energy and metadata."
+                    )
+
+                if os.path.exists(vr_path):
+                    self.vasprun_paths.append(vr_path)
+
+                else:
+                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                    if multiple:
+                        warnings.warn(
+                            f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                            f"{vr_path} to parse the calculation energy and metadata."
+                        )
+
+                    if os.path.exists(vr_path):
+                        self.vasprun_paths.append(vr_path)
+
+                    else:
+                        warnings.warn(
+                            f"Can't find a vasprun.xml file in {p} or {p/folder}, proceed with caution"
+                        )
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
@@ -1287,6 +1282,13 @@ class CompetingPhasesAnalyzer:
                 "energy_per_fu": d["energy_per_fu"],
                 "energy": d.get("energy"),
                 "kpoints": d.get("kpoints"),
+                **{  # num elts columns, sorted by order of occurrence in bulk composition:
+                    str(elt): d.get(str(elt))
+                    for elt in sorted(
+                        self.bulk_composition.elements,
+                        key=lambda x: self.bulk_composition.reduced_formula.index(str(x)),
+                    )
+                },
                 **{
                     k: v
                     for k, v in d.items()
