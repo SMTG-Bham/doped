@@ -2020,7 +2020,8 @@ class DefectsSet(MSONable):
         is created.
 
         The `DefectEntry` objects are also written to `json` files in the defect
-        folders, to aid calculation provenance.
+        folders, as well as `self.defect_entries` (`self.json_obj`) in the top
+        folder, to aid calculation provenance.
 
         See the `RelaxSet.yaml` and `DefectSet.yaml` files in the
         `doped/VASP_sets` folder for the default `INCAR` and `KPOINT` settings,
