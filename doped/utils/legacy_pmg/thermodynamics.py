@@ -27,6 +27,20 @@ from doped.plotting import _get_backend
 # TODO: Cleanup and refactor this code
 # TODO: Need to set the str and repr functions for the final form of our DefectPhaseDiagram to give an
 #  informative output!
+# TODO: Previous `pymatgen` issues, fixed?
+#   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is
+#     used to group defect charge states for the transition level plot / transition level map outputs.
+#     For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly
+#     between charge states, this will give separate lines for each charge state. This is kind of ok,
+#     because they _are_ actually different defect sites, but should have intelligent defaults for dealing
+#     with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for
+#     similar defect types, an option to just show amalgamated lowest energy charge states for each
+#     _defect type_). NaP is an example for this - should have a test built for however we want to handle
+#     cases like this. See Ke's example case too with different interstitial sites.
+#   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think
+#     about how we want to refactor the `DefectPhaseDiagram` object!
+#   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to
+#     `dpd.find_stable_charges()` to update the transition level map etc.
 
 
 class DefectPhaseDiagram(MSONable):

@@ -136,16 +136,6 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         # was used
 
 
-# TODO: Add a function that loops over all the defects in a directory (with `defect_dir = .`,
-#  and `subfolder = vasp_ncl` options) and parses them all (use `SnB` defect-name-matching
-#  function?), returning a dictionary of defect entries, with the defect name as the key. (i.e.
-#  doing the loop in the example notebook). Show both this function and the individual function
-#  calls in the example notebook. Benefit of this one is that we can then auto-run
-#  `check_defects_compatibility()` at the end of parsing the full defects dict. - When doing
-#  this, look at `PostProcess` code, and then delete it once all functionality is moved here.
-# TODO: With function/class for parsing all defects, implement the doped naming scheme as our fallback
-#  option when the folder names aren't recognised (rather than defaulting to pmg name as currently the
-#  case)
 # TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
 #  (for later integration with `py-sc-fermi`).
 # TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
@@ -515,6 +505,15 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
     # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
+    # With this, `dpd_from_defect_dict()` should then be a classmethod
+    # TODO: Should loop over input defect entries and check that the same bulk (energy and
+    #  calculation_metadata) was used in each case (by proxy checks that same bulk/defect
+    #  incar/potcar/kpoints settings were used in all cases, from each bulk/defect combination being
+    #  checked when parsing) - if defects have been parsed separately and combined, rather than
+    #  altogether with DefectsParser (which ensures the same bulk in each case)
+    # TODO: Add warning if, when creating dpd, only one charge state for a defect is input (i.e. the
+    #  other charge states haven't been included), in case this isn't noticed by the user. Print a list of
+    #  all parsed charge states as a check if so
 
     if not defect_dict:
         raise ValueError(
@@ -893,6 +892,7 @@ class DefectsParser:
                 else it is set to the default `doped` name for that defect.
         """
         # TODO: Need to add `DefectPhaseDiagram.from_json()` etc methods as mention in docstring here
+        # TODO: Update tutorials to show DefectsParser and DefectParser (for finer control)
         self.output_path = output_path
         self.dielectric = dielectric
         self.skip_corrections = skip_corrections
@@ -1787,15 +1787,6 @@ class DefectParser:
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
         }
-        # TODO: Could have this test loop over all defects with our full defect parser object (maybe in
-        #  it and in dpd from defect dict (which should be a classmethod)), but either way here using
-        #  the same bulk in each case means we are also indirectly testing that each defect supercell
-        #  calc used compatible settings
-        #  Should recommend using this in the example notebook if a user has parsed the defects
-        #  individually (rather than with the DefectsParser class which loops over all). Also check that
-        #  the same type of correction was used in each case (FNV vs eFNV). If isotropic, shouldn't
-        #  really matter, but worth warning user as best to be consistent, and could give some
-        #  unexpected behaviour
 
         _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
         _compare_potcar_symbols(run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"])
