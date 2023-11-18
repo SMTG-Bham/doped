@@ -11,10 +11,17 @@ import warnings
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
+from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 from test_vasp import _potcars_available
 
-from doped.analysis import defect_entry_from_paths, defect_from_structures, defect_name_from_structures
+from doped.analysis import (
+    defect_entry_from_paths,
+    defect_from_structures,
+    defect_name_from_structures,
+    formation_energy_table,
+)
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
@@ -1454,3 +1461,77 @@ class ReorderedParsingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
+
+
+class AnalysisFunctionsTestCase(unittest.TestCase):
+    """
+    Test post-processing analysis functions.
+    """
+
+    def setUp(self):
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.sb2o5_chempots = loadfn(f"{self.data_dir}/Sb2O5/Sb2O5_chempots.json")
+        self.sb2o5_dpd = loadfn(f"{self.data_dir}/Sb2O5/sb2o5_dpd.json")
+
+    def tearDown(self):
+        if_present_rm("test.csv")
+
+    def test_formation_energy_table(self):
+        def _check_formation_energy_table(formation_energy_table_df, fermi_level=0, dpd=self.sb2o5_dpd):
+            defect_entry_names = [defect_entry.name for defect_entry in dpd.entries]
+            assert sorted(formation_energy_table_df["Defect"].tolist()) == sorted(defect_entry_names)
+
+            # for each row, assert sum of formation energy terms equals formation energy column
+            np.isclose(
+                np.asarray(sum(formation_energy_table_df.iloc[:, i] for i in range(2, 8))),
+                np.asarray(formation_energy_table_df.iloc[:, 8]),
+                atol=2e-3,
+            )
+
+            assert np.isclose(
+                formation_energy_table_df.iloc[:, 1] * fermi_level,
+                formation_energy_table_df.iloc[:, 4],
+                atol=2e-3,
+            ).all()
+
+        formation_energy_table_df = formation_energy_table(
+            self.sb2o5_dpd, self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
+        )
+        _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
+
+        formation_energy_table_df = formation_energy_table(  # test default with E_F = 0
+            self.sb2o5_dpd,
+            self.sb2o5_chempots,
+            facets=["Sb2O5-O2"],
+        )
+        _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
+
+        formation_energy_table_df_manual_chempots = formation_energy_table(  # test default with E_F = 0
+            self.sb2o5_dpd,
+            chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
+            el_refs=self.sb2o5_chempots["elemental_refs"],
+        )
+        _check_formation_energy_table(formation_energy_table_df_manual_chempots, fermi_level=0)
+
+        # check manual and auto chempots the same:
+        assert formation_energy_table_df_manual_chempots.equals(formation_energy_table_df)
+
+        # assert runs fine without chempots:
+        formation_energy_table_df = formation_energy_table(self.sb2o5_dpd)
+        _check_formation_energy_table(formation_energy_table_df)
+
+        # assert runs fine with only raw chempots:
+        formation_energy_table_df = formation_energy_table(
+            self.sb2o5_dpd, chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
+        )
+        _check_formation_energy_table(formation_energy_table_df)
+        # check same formation energies as with manual chempots plus el_refs:
+        assert formation_energy_table_df.iloc[:, 8].equals(
+            formation_energy_table_df_manual_chempots.iloc[:, 8]
+        )
+
+        # check saving to csv and reloading all works fine:
+        formation_energy_table_df.to_csv("test.csv", index=False)
+        formation_energy_table_df_reloaded = pd.read_csv("test.csv")
+        assert formation_energy_table_df_reloaded.equals(formation_energy_table_df)
