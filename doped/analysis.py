@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.generation import get_defect_name_from_entry
+from doped.generation import get_defect_name_from_entry, name_defect_entries
 from doped.plotting import _format_defect_name
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
@@ -42,6 +42,7 @@ from doped.utils.parsing import (
     get_vasprun,
     reorder_s1_like_s2,
 )
+from doped.utils.wyckoff import _frac_coords_sort_func
 from doped.vasp import DefectDictSet
 
 
@@ -806,6 +807,7 @@ class DefectsParser:
         error_tolerance: float = 0.05,
         bulk_bandgap_path: Optional[str] = None,
         processes: Optional[int] = None,
+        json_filename: Optional[str] = None,
     ):
         """
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -819,6 +821,9 @@ class DefectsParser:
         set to the default `doped` name for that defect. By default, searches for
         folders in `output_path` with `subfolder` containing `vasprun.xml(.gz)`
         files, and tries to parse them as `DefectEntry`s.
+
+        By default, tries to use multiprocessing to speed up defect parsing, which
+        can be controlled with the `processes` parameter.
 
         Defect charge states are automatically determined from the defect calculation
         outputs if `POTCAR`s are set up with `pymatgen` (see docs Installation page),
@@ -871,6 +876,14 @@ class DefectsParser:
             processes (int):
                 Number of processes to use for multiprocessing for expedited parsing.
                 If not set, defaults to one less than the number of CPUs available.
+            json_filename (str):
+                Filename to save the parsed defect entries dict (`DefectsParser.defect_dict`)
+                to, to avoid having to re-parse defects when later analysing further and
+                aiding calculation provenance. Can be reloaded using the `loadfn` function
+                from `monty.serialization` as shown in the docs, or
+                `DefectPhaseDiagram.from_json()`. If None (default), set as
+                "{Chemical Formula}_defect_dict.json" where {Chemical Formula} is the
+                chemical formula of the host material. If False, no json file is saved.
 
         Attributes:
             defect_dict (dict):
@@ -879,10 +892,13 @@ class DefectsParser:
                 defect calculation folder name (_if it is a recognised defect name_),
                 else it is set to the default `doped` name for that defect.
         """
+        # TODO: Need to add `DefectPhaseDiagram.from_json()` etc methods as mention in docstring here
         self.output_path = output_path
         self.dielectric = dielectric
         self.skip_corrections = skip_corrections
         self.error_tolerance = error_tolerance
+        self.bulk_path = bulk_path
+        self.subfolder = subfolder
         self.bulk_bandgap_path = bulk_bandgap_path
         self.processes = processes
 
@@ -897,7 +913,7 @@ class DefectsParser:
             )
         ]
 
-        if subfolder is None:  # determine subfolder to use
+        if self.subfolder is None:  # determine subfolder to use
             vasp_subfolders = [
                 subdir
                 for possible_defect_folder in possible_defect_folders
@@ -912,8 +928,8 @@ class DefectsParser:
             # take first entry with non-zero count, else use defect folder itself:
             self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
 
-        if bulk_path is None:  # determine bulk_path to use
-            possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in dir]
+        possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in dir]
+        if self.bulk_path is None:  # determine bulk_path to use
             if len(possible_bulk_folders) == 1:
                 self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
             elif len([dir for dir in possible_bulk_folders if dir.endswith("_bulk")]) == 1:
@@ -972,13 +988,20 @@ class DefectsParser:
                     charged_defect_folder = possible_charged_defect_folder
 
         parsing_warnings = []
+        defect_renaming_list = []
+        pbar = tqdm(total=len(self.defect_folders))
         try:
-            pbar = tqdm(total=len(self.defect_folders))
 
-            def _update_defect_dict_and_return_warnings_from_parsing(result, defect_folder, pbar):
-                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+            def _update_defect_dict_and_return_warnings_from_parsing(result, pbar):
                 if result[0] is not None:
-                    self.defect_dict[result[0].name] = result[0]
+                    defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
+                    pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+                    if result[0].name not in self.defect_dict:
+                        self.defect_dict[result[0].name] = result[0]
+                    else:  # add both to defect renaming list, to be renamed later:
+                        defect_renaming_list.append(self.defect_dict.pop(result[0].name))
+                        defect_renaming_list.append(result[0])
+
                 pbar.update()
                 return (
                     (
@@ -997,7 +1020,7 @@ class DefectsParser:
                 )
                 parsing_warnings.append(
                     _update_defect_dict_and_return_warnings_from_parsing(
-                        self._multiprocess_parse_defect(charged_defect_folder), charged_defect_folder, pbar
+                        self._multiprocess_parse_defect(charged_defect_folder), pbar
                     )
                 )
 
@@ -1008,31 +1031,85 @@ class DefectsParser:
             if self.processes > 1:
                 with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
                     for result in pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process):
-                        defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
                         parsing_warnings.append(
-                            _update_defect_dict_and_return_warnings_from_parsing(
-                                result, defect_folder, pbar
-                            )
+                            _update_defect_dict_and_return_warnings_from_parsing(result, pbar)
                         )
 
-        except Exception as e:
+        except Exception as exc:
             pbar.close()
-            raise e
+            raise exc
 
         finally:
             pbar.close()
+
+        if defect_renaming_list:  # TODO: Add test for this
+            with contextlib.suppress(AttributeError):  # sort by conventional cell fractional
+                # coordinates if these are defined, to aid deterministic naming:
+                defect_renaming_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+
+            new_named_defect_entries_dict = name_defect_entries(defect_renaming_list)
+            # set name attribute: (these are names without charges!)
+            for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
+                defect_entry.name = (
+                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
+                    f"{defect_entry.charge_state}"
+                )
+
+            # if any duplicate names, crash (and burn, b...)
+            duplicate_names = [
+                defect_entry.name
+                for defect_entry in defect_renaming_list
+                if defect_entry.name in list(self.defect_dict.values())
+            ]
+            if duplicate_names:
+                raise ValueError(
+                    f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
+                    f"defect folders. This would cause defect entries to be overwritten. Please check "
+                    f"your defect folder names in `output_path`!\nDuplicate defect names:\n"
+                    f"{duplicate_names}"
+                )
 
         parsing_warnings = [warning for warning in parsing_warnings if warning]  # remove empty strings
         if parsing_warnings:
             warnings.warn("\n".join(parsing_warnings))
 
+        # check if same type of charge correction was used in each case or not:
+        if (
+            len(
+                {
+                    k
+                    for defect_entry in self.defect_dict.values()
+                    for k in defect_entry.corrections
+                    if k.endswith("_charge_correction")
+                }
+            )
+            > 1
+        ):
+            warnings.warn(
+                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
+                "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
+                "this should be fine, and the results should be the same regardless (assuming a "
+                "relatively well-converged supercell size), while for _anisotropic_ materials this could "
+                "lead to some quantitative inaccuracies. You can use the `formation_energy_table(dpd)` "
+                "function to print out the calculated charge corrections for all defects, "
+                "and/or visualise the charge corrections using "
+                "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
+                "check."
+            )  # either way have the error analysis for the charge corrections so in theory should be grand
+        # note that we also check if multiple charge corrections have been applied to the same defect
+        # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
+
+        if json_filename is not False:  # save to json unless json_filename is False:
+            if json_filename is None:
+                formula = list(self.defect_dict.values())[
+                    0
+                ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+                json_filename = f"{formula}_defect_dict.json"
+
+            dumpfn(self.defect_dict, os.path.join(self.output_path, json_filename))
+
         # TODO: Test attribute setting
-        # TODO: Check same type of charge correction used in each case, otherwise warn - here because
-        #  both eFNV and FNV present, it uses eFNV when it can and FNV otherwise... For isotropic
-        #  materials usually fine so just warn and say can print out correction vals with
-        #  formation_energy_table to check no major outliers (either way have delocalisation analysis
-        #  checks so should be fine)
-        # TODO: Need to handle duplicate defect entry names like we do in generation
+        # TODO: Warning/error handling for failed parsing defect folders?
 
     def _multiprocess_parse_defect(self, defect_folder):
         """
