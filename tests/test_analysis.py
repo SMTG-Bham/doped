@@ -35,7 +35,6 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# TODO: Test reordered case - have we one from before? - Pretty sure this shouldn't be any issue now
 # TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
 # TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
 #  cases (no warning in those cases 'cause anisotropic)
@@ -385,12 +384,10 @@ class DopedParsingTestCase(unittest.TestCase):
         )
         assert len(warnings) == num_warnings
         assert all(issubclass(warning.category, UserWarning) for warning in warnings)
-        assert (
-            f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
-            f"_anisotropic_ Kumagai eFNV charge correction) in the defect (at "
-            f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at {self.CDTE_BULK_DATA_DIR}) folders "
-            f"were unable to be parsed, giving the following error message:\nUnable to parse atomic core "
-            f"potentials from defect `OUTCAR` at "
+        assert (  # different warning start depending on whether isotropic or anisotropic dielectric
+            f"in the defect (at {self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at "
+            f"{self.CDTE_BULK_DATA_DIR}) folders were unable to be parsed, giving the following error "
+            f"message:\nUnable to parse atomic core potentials from defect `OUTCAR` at "
             f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
             f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
             f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
@@ -1145,7 +1142,7 @@ class DopedParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             defect_entry_from_paths(
-                defect_path=f"{self.CDTE_EXAMPLE_DIR}/V_Cd_0/vasp_ncl",
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
                 bulk_path=f"{self.CDTE_BULK_DATA_DIR}",
                 charge_state=None if _potcars_available() else 0  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
@@ -1200,7 +1197,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             defect_entry_from_paths(
-                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_unperturbed_1/vasp_ncl",
+                defect_path=f"{self.CDTE_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
                 bulk_path=self.CDTE_BULK_DATA_DIR,
                 dielectric=9.13,
                 charge_state=None if _potcars_available() else +1,  # to allow testing on GH Actions
@@ -1457,7 +1454,3 @@ class ReorderedParsingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

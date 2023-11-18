@@ -63,6 +63,17 @@ warnings.formatwarning = _custom_formatwarning
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
+_aniso_dielectric_but_outcar_problem_warning = (
+    "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
+    "_anisotropic_ Kumagai eFNV charge correction) "
+)
+_aniso_dielectric_but_using_locpot_warning = (
+    "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) charge "
+    "correction developed for _isotropic_ materials will be applied here, which corresponds to using the "
+    "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
+    "errors for very anisotropic systems and/or relatively small supercells!"
+)
+
 
 def bold_print(string: str) -> None:
     """
@@ -1436,17 +1447,10 @@ class DefectParser:
                         self.load_FNV_data()
                         if not isotropic_dielectric:
                             warnings.warn(
-                                f"An anisotropic dielectric constant was supplied, but `OUTCAR` files "
-                                f"(needed to compute the _anisotropic_ Kumagai eFNV charge correction) "
-                                f"in the defect (at {defect_path}) & bulk (at {bulk_path}) folders were "
+                                _aniso_dielectric_but_outcar_problem_warning
+                                + f"in the defect (at {defect_path}) & bulk (at {bulk_path}) folders were "
                                 f"unable to be parsed, giving the following error message:"
-                                f"\n{kumagai_exc}\n"
-                                f"`LOCPOT` files were found in both defect & bulk folders, and so the "
-                                f"Freysoldt (FNV) charge correction developed for _isotropic_ materials "
-                                f"will be applied here, which corresponds to using the effective "
-                                f"isotropic average of the supplied anisotropic dielectric. This could "
-                                f"lead to significant errors for very anisotropic systems and/or "
-                                f"relatively small supercells!"
+                                f"\n{kumagai_exc}\n" + _aniso_dielectric_but_using_locpot_warning
                             )
                     except Exception as freysoldt_exc:
                         warnings.warn(
@@ -1488,14 +1492,9 @@ class DefectParser:
                 self.load_FNV_data()
                 if not isotropic_dielectric:
                     warnings.warn(
-                        f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
-                        f"compute the _anisotropic_ Kumagai eFNV charge correction) were not found in "
-                        f"the defect (at {defect_path}) & bulk (at {bulk_path}) folders.\n"
-                        f"`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt "
-                        f"(FNV) charge correction developed for _isotropic_ materials will be applied "
-                        f"here, which corresponds to using the effective isotropic average of the "
-                        f"supplied anisotropic dielectric. This could lead to significant errors for "
-                        f"very anisotropic systems and/or relatively small supercells!"
+                        _aniso_dielectric_but_outcar_problem_warning
+                        + f"were not found in the defect (at {defect_path}) & bulk (at {bulk_path}) "
+                        f"folders.\n" + _aniso_dielectric_but_using_locpot_warning
                     )
             except Exception as freysoldt_exc:
                 warnings.warn(
