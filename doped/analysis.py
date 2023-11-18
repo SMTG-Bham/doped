@@ -993,24 +993,26 @@ class DefectsParser:
         try:
 
             def _update_defect_dict_and_return_warnings_from_parsing(result, pbar):
+                pbar.update()
                 if result[0] is not None:
                     defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
                     pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-                    if result[0].name not in self.defect_dict:
+                    if result[0].name not in list(self.defect_dict.keys()):
                         self.defect_dict[result[0].name] = result[0]
                     else:  # add both to defect renaming list, to be renamed later:
                         defect_renaming_list.append(self.defect_dict.pop(result[0].name))
                         defect_renaming_list.append(result[0])
 
-                pbar.update()
-                return (
-                    (
-                        f"Warning(s) encountered when parsing {result[0].name} at "
-                        f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
-                    )
-                    if result[1]
-                    else ""
-                )
+                    if result[1]:
+                        return (
+                            f"Warning(s) encountered when parsing {result[0].name} at "
+                            f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
+                        )
+
+                if result[1]:  # should be failed parsing warning if result[0] is None:
+                    return result[1]
+
+                return ""
 
             if charged_defect_folder is not None:
                 # will throw warnings if dielectric is None / charge corrections not possible,
@@ -1030,7 +1032,8 @@ class DefectsParser:
             pbar.set_description("Setting up multiprocessing")
             if self.processes > 1:
                 with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
-                    for result in pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process):
+                    results = pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process)
+                    for result in results:
                         parsing_warnings.append(
                             _update_defect_dict_and_return_warnings_from_parsing(result, pbar)
                         )
