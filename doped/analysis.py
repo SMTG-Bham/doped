@@ -18,7 +18,7 @@ import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
-from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
@@ -143,7 +143,9 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 # Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 
 
-def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=False):
+def defect_from_structures(
+    bulk_supercell, defect_supercell, return_all_info=False, bulk_voronoi_node_dict=None
+):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
     defect structures, and returns a corresponding `Defect` object.
@@ -165,6 +167,9 @@ def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=Fal
         return_all_info (bool):
             If True, returns additional python objects related to the
             site-matching, listed above. (Default = False)
+        bulk_voronoi_node_dict (dict):
+            Dictionary of bulk supercell Voronoi node information, for
+            expedited site-matching. If None, will be re-calculated.
 
     Returns:
         defect (Defect):
@@ -184,6 +189,9 @@ def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=Fal
             pymatgen Structure object of the guessed initial defect structure.
         unrelaxed_defect_structure (Structure):
             pymatgen Structure object of the unrelaxed defect structure.
+        bulk_voronoi_node_dict (dict):
+            Dictionary of bulk supercell Voronoi node information, for
+            further expedited site-matching.
     """
     try:
         def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
@@ -225,36 +233,30 @@ def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=Fal
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
             try:
-                struc_and_node_dict = loadfn("./bulk_voronoi_nodes.json")
-                if not StructureMatcher(
+                if bulk_voronoi_node_dict is not None and not StructureMatcher(
                     stol=0.05,
                     primitive_cell=False,
                     scale=False,
                     attempt_supercell=False,
                     allow_subset=False,
-                ).fit(struc_and_node_dict["bulk_supercell"], bulk_supercell):
+                    comparator=ElementComparator(),
+                ).fit(bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
                     warnings.warn(
-                        "Previous bulk_voronoi_nodes.json detected, but does not match current bulk "
+                        "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
                         "supercell. Recalculating Voronoi nodes."
                     )
                     raise FileNotFoundError
 
-                voronoi_frac_coords = struc_and_node_dict["Voronoi nodes"]
+                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]
 
-            except FileNotFoundError:  # first time parsing
+            except Exception:  # first time parsing
                 from shakenbreak.input import _get_voronoi_nodes
 
                 voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
-                struc_and_node_dict = {
+                bulk_voronoi_node_dict = {
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,
                 }
-                dumpfn(struc_and_node_dict, "./bulk_voronoi_nodes.json")  # for efficient
-                # parsing of multiple defects at once
-                print(
-                    "Saving parsed Voronoi sites (for interstitial site-matching) to "
-                    "bulk_voronoi_sites.json to speed up future parsing."
-                )
 
             closest_node_frac_coords = min(
                 voronoi_frac_coords,
@@ -306,11 +308,11 @@ def defect_from_structures(bulk_supercell, defect_supercell, return_all_info=Fal
         bulk_site_idx,
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
+        bulk_voronoi_node_dict,
     )
 
 
 def defect_name_from_structures(bulk_structure, defect_structure):
-    # TODO: Test this using DefectsGenerator outputs
     """
     Get the doped/SnB defect name using the bulk and defect structures.
 
@@ -806,7 +808,7 @@ class DefectsParser:
         error_tolerance: float = 0.05,
         bulk_bandgap_path: Optional[str] = None,
         processes: Optional[int] = None,
-        json_filename: Optional[str] = None,
+        json_filename: Optional[Union[str, bool]] = None,
     ):
         """
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -877,9 +879,9 @@ class DefectsParser:
                 If not set, defaults to one less than the number of CPUs available.
             json_filename (str):
                 Filename to save the parsed defect entries dict (`DefectsParser.defect_dict`)
-                to, to avoid having to re-parse defects when later analysing further and
-                aiding calculation provenance. Can be reloaded using the `loadfn` function
-                from `monty.serialization` as shown in the docs, or
+                to in `output_path`, to avoid having to re-parse defects when later analysing
+                further and aiding calculation provenance. Can be reloaded using the `loadfn`
+                function from `monty.serialization` as shown in the docs, or
                 `DefectPhaseDiagram.from_json()`. If None (default), set as
                 "{Chemical Formula}_defect_dict.json" where {Chemical Formula} is the
                 chemical formula of the host material. If False, no json file is saved.
@@ -901,6 +903,7 @@ class DefectsParser:
         self.subfolder = subfolder
         self.bulk_bandgap_path = bulk_bandgap_path
         self.processes = processes
+        self.json_filename = json_filename
 
         possible_defect_folders = [
             dir
@@ -949,6 +952,12 @@ class DefectsParser:
             "vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
         ):
             self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
+        elif all("vasprun.xml" not in file for file in os.listdir(self.bulk_path)):
+            raise FileNotFoundError(
+                f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
+                f"{self.bulk_path} or subfolder: {self.subfolder} - please ensure `vasprun.xml(.gz)` "
+                f"files are present and/or specify `bulk_path` manually."
+            )
 
         self.defect_dict = {}
         self.defect_folders = [
@@ -962,6 +971,7 @@ class DefectsParser:
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
         }
+        parsed_defect_entries = []
 
         if self.processes is None:  # multiprocessing?
             self.processes = min(max(1, cpu_count() - 1), len(self.defect_folders) - 1)  # only
@@ -974,107 +984,138 @@ class DefectsParser:
                     # set tqdm progress bar description to defect folder being parsed:
                     parsed_defect_entry = self._parse_defect(defect_folder)
                     if parsed_defect_entry is not None:
-                        self.defect_dict[parsed_defect_entry.name] = parsed_defect_entry
+                        parsed_defect_entries.append(parsed_defect_entry)
 
-            return
+        else:  # otherwise multiprocessing:
+            # guess a charged defect in defect_folders, to try initially check if dielectric and
+            # corrections correctly set, before multiprocessing with the same settings for all folders:
+            charged_defect_folder = None
+            for possible_charged_defect_folder in self.defect_folders:
+                with contextlib.suppress(Exception):
+                    if abs(int(possible_charged_defect_folder[-1])) > 0:  # likely charged defect
+                        charged_defect_folder = possible_charged_defect_folder
 
-        # otherwise multiprocessing:
-        # guess a charged defect in defect_folders, to try initially check if dielectric and corrections
-        # correctly set, before multiprocessing with the same settings for all folders:
-        charged_defect_folder = None
-        for possible_charged_defect_folder in self.defect_folders:
-            with contextlib.suppress(Exception):
-                if abs(int(possible_charged_defect_folder[-1])) > 0:  # likely charged defect
-                    charged_defect_folder = possible_charged_defect_folder
-
-        parsing_warnings = []
-        defect_renaming_list = []
-        pbar = tqdm(total=len(self.defect_folders))
-        try:
-
-            def _update_defect_dict_and_return_warnings_from_parsing(result, pbar):
-                pbar.update()
-                if result[0] is not None:
-                    defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
-                    pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-                    if result[0].name not in list(self.defect_dict.keys()):
-                        self.defect_dict[result[0].name] = result[0]
-                    else:  # add both to defect renaming list, to be renamed later:
-                        defect_renaming_list.append(self.defect_dict.pop(result[0].name))
-                        defect_renaming_list.append(result[0])
-
-                    if result[1]:
-                        return (
-                            f"Warning(s) encountered when parsing {result[0].name} at "
-                            f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
-                        )
-
-                if result[1]:  # should be failed parsing warning if result[0] is None:
-                    return result[1]
-
-                return ""
-
-            if charged_defect_folder is not None:
-                # will throw warnings if dielectric is None / charge corrections not possible,
-                # and set self.skip_corrections appropriately
-                pbar.set_description(  # set this first as desc is only set after parsing run in function
-                    f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
-                )
-                parsing_warnings.append(
-                    _update_defect_dict_and_return_warnings_from_parsing(
-                        self._multiprocess_parse_defect(charged_defect_folder), pbar
+            parsing_warnings = []
+            pbar = tqdm(total=len(self.defect_folders))
+            try:
+                if charged_defect_folder is not None:
+                    # will throw warnings if dielectric is None / charge corrections not possible,
+                    # and set self.skip_corrections appropriately
+                    pbar.set_description(  # set this first as desc is only set after parsing in function
+                        f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
                     )
-                )
-
-            folders_to_process = [
-                folder for folder in self.defect_folders if folder != charged_defect_folder
-            ]
-            pbar.set_description("Setting up multiprocessing")
-            if self.processes > 1:
-                with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
-                    results = pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process)
-                    for result in results:
-                        parsing_warnings.append(
-                            _update_defect_dict_and_return_warnings_from_parsing(result, pbar)
+                    parsed_defect_entry, warnings_string = self._multiprocess_parse_defect(
+                        charged_defect_folder
+                    )
+                    parsing_warnings.append(
+                        self._update_pbar_and_return_warnings_from_parsing(
+                            (parsed_defect_entry, warnings_string),
+                            pbar,
                         )
+                    )
+                    if parsed_defect_entry is not None:
+                        parsed_defect_entries.append(parsed_defect_entry)
 
-        except Exception as exc:
-            pbar.close()
-            raise exc
+                # also load the other bulk corrections data if possible:
+                for k, v in self.bulk_corrections_data.items():
+                    if v is None:
+                        with contextlib.suppress(Exception):
+                            if k == "bulk_locpot_dict":
+                                self.bulk_corrections_data[k] = _get_bulk_locpot_dict(
+                                    self.bulk_path, quiet=True
+                                )
+                            elif k == "bulk_site_potentials":
+                                self.bulk_corrections_data[k] = _get_bulk_site_potentials(
+                                    self.bulk_path, quiet=True
+                                )
 
-        finally:
-            pbar.close()
+                folders_to_process = [
+                    folder for folder in self.defect_folders if folder != charged_defect_folder
+                ]
+                pbar.set_description("Setting up multiprocessing")
+                if self.processes > 1:
+                    with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
+                        results = pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process)
+                        for result in results:
+                            parsing_warnings.append(
+                                self._update_pbar_and_return_warnings_from_parsing(result, pbar)
+                            )
+                            if result[0] is not None:
+                                parsed_defect_entries.append(result[0])
 
-        if defect_renaming_list:  # TODO: Add test for this
-            with contextlib.suppress(AttributeError):  # sort by conventional cell fractional
-                # coordinates if these are defined, to aid deterministic naming:
-                defect_renaming_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+                parsing_warnings = [
+                    warning for warning in parsing_warnings if warning
+                ]  # remove empty strings
+                if parsing_warnings:
+                    warnings.warn("\n".join(parsing_warnings))
 
-            new_named_defect_entries_dict = name_defect_entries(defect_renaming_list)
-            # set name attribute: (these are names without charges!)
-            for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
-                defect_entry.name = (
-                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
-                )
+            except Exception as exc:
+                pbar.close()
+                raise exc
 
-            # if any duplicate names, crash (and burn, b...)
-            duplicate_names = [
-                defect_entry.name
-                for defect_entry in defect_renaming_list
-                if defect_entry.name in list(self.defect_dict.values())
-            ]
-            if duplicate_names:
-                raise ValueError(
-                    f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
-                    f"defect folders. This would cause defect entries to be overwritten. Please check "
-                    f"your defect folder names in `output_path`!\nDuplicate defect names:\n"
-                    f"{duplicate_names}"
-                )
+            finally:
+                pbar.close()
 
-        parsing_warnings = [warning for warning in parsing_warnings if warning]  # remove empty strings
-        if parsing_warnings:
-            warnings.warn("\n".join(parsing_warnings))
+        # get any defect entries in parsed_defect_entries that share the same name (without charge):
+        # first get any entries with duplicate names:
+        entries_to_rename = [  # TODO: Add test for this:
+            defect_entry
+            for defect_entry in parsed_defect_entries
+            if len(
+                [
+                    defect_entry
+                    for other_defect_entry in parsed_defect_entries
+                    if defect_entry.name == other_defect_entry.name
+                ]
+            )
+            > 1
+        ]
+        # then get all entries with the same name(s), ignoring charge state (in case e.g. only duplicate
+        # for one charge state etc):
+        entries_to_rename = [
+            defect_entry
+            for defect_entry in parsed_defect_entries
+            if any(
+                defect_entry.name.rsplit("_", 1)[0] == other_defect_entry.name.rsplit("_", 1)[0]
+                for other_defect_entry in entries_to_rename
+            )
+        ]
+
+        self.defect_dict = {
+            defect_entry.name: defect_entry
+            for defect_entry in parsed_defect_entries
+            if defect_entry not in entries_to_rename
+        }
+
+        with contextlib.suppress(AttributeError, TypeError):  # sort by supercell frac cooords,
+            # to aid deterministic naming:
+            entries_to_rename.sort(key=lambda x: _frac_coords_sort_func(x.sc_defect_frac_coords))
+
+        new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
+        # set name attribute: (these are names without charges!)
+        for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
+            defect_entry.name = (
+                f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
+                f"{defect_entry.charge_state}"
+            )
+
+        # if any duplicate names, crash (and burn, b...)
+        duplicate_names = [
+            defect_entry.name
+            for defect_entry in entries_to_rename
+            if defect_entry.name in list(self.defect_dict.values())
+        ]
+        if duplicate_names:
+            raise ValueError(
+                f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
+                f"defect folders. This would cause defect entries to be overwritten. Please check "
+                f"your defect folder names in `output_path`!\nDuplicate defect names:\n"
+                f"{duplicate_names}"
+            )
+
+        self.defect_dict.update(
+            {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
+        )
 
         # check if same type of charge correction was used in each case or not:
         if (
@@ -1102,17 +1143,31 @@ class DefectsParser:
         # note that we also check if multiple charge corrections have been applied to the same defect
         # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
-        if json_filename is not False:  # save to json unless json_filename is False:
-            if json_filename is None:
+        if self.json_filename is not False:  # save to json unless json_filename is False:
+            if self.json_filename is None:
                 formula = list(self.defect_dict.values())[
                     0
                 ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-                json_filename = f"{formula}_defect_dict.json"
+                self.json_filename = f"{formula}_defect_dict.json"
 
-            dumpfn(self.defect_dict, os.path.join(self.output_path, json_filename))
+            dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
 
-        # TODO: Test attribute setting
         # TODO: Warning/error handling for failed parsing defect folders?
+
+    def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
+        pbar.update()
+
+        if result[0] is not None:
+            defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
+            pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+
+            if result[1]:
+                return (
+                    f"Warning(s) encountered when parsing {result[0].name} at "
+                    f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
+                )
+
+        return result[1] if result[1] else ""  # failed parsing warning if result[0] is None
 
     def _multiprocess_parse_defect(self, defect_folder):
         """
@@ -1167,6 +1222,40 @@ class DefectsParser:
             return None
 
         return dp.defect_entry
+
+
+def _get_bulk_locpot_dict(bulk_path, quiet=False):
+    bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
+    if multiple and not quiet:
+        _multiple_files_warning(
+            "LOCPOT",
+            bulk_path,
+            bulk_locpot_path,
+            "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
+            dir_type="bulk",
+        )
+    bulk_locpot = get_locpot(bulk_locpot_path)
+    return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+
+
+def _get_bulk_site_potentials(bulk_path, quiet=False):
+    from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
+
+    bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
+    if multiple and not quiet:
+        _multiple_files_warning(
+            "OUTCAR",
+            bulk_path,
+            bulk_outcar_path,
+            "parse core levels and compute the Kumagai (eFNV) image charge correction.",
+            dir_type="bulk",
+        )
+    bulk_outcar = get_outcar(bulk_outcar_path)
+
+    if bulk_outcar.electrostatic_potential is None:
+        _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
+
+    return -1 * np.array(bulk_outcar.electrostatic_potential)
 
 
 class DefectParser:
@@ -1369,6 +1458,12 @@ class DefectParser:
             )
 
         # identify defect site, structural information, and create defect object:
+        # try load previous bulk_voronoi_node_dict if present:
+        if os.path.exists(os.path.join(bulk_path, "voronoi_nodes.json")):
+            bulk_voronoi_node_dict = loadfn(os.path.join(bulk_path, "voronoi_nodes.json"))
+        else:
+            bulk_voronoi_node_dict = None
+
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
         try:
@@ -1381,7 +1476,13 @@ class DefectParser:
                 bulk_site_index,
                 guessed_initial_defect_structure,
                 unrelaxed_defect_structure,
-            ) = defect_from_structures(bulk_supercell, defect_structure.copy(), return_all_info=True)
+                bulk_voronoi_node_dict,
+            ) = defect_from_structures(
+                bulk_supercell,
+                defect_structure.copy(),
+                return_all_info=True,
+                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+            )
 
         except RuntimeError:
             if initial_defect_structure_path:
@@ -1395,7 +1496,13 @@ class DefectParser:
                     bulk_site_index,
                     guessed_initial_defect_structure,
                     unrelaxed_defect_structure,
-                ) = defect_from_structures(bulk_supercell, defect_structure_for_ID, return_all_info=True)
+                    bulk_voronoi_node_dict,
+                ) = defect_from_structures(
+                    bulk_supercell,
+                    defect_structure_for_ID,
+                    return_all_info=True,
+                    bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                )
 
                 # then try get defect_site in final structure:
                 # need to check that this is the correct defect site, and hasn't been reordered/changed
@@ -1433,6 +1540,9 @@ class DefectParser:
             bulk_supercell=bulk_vr.final_structure,
             calculation_metadata=calculation_metadata,
         )
+
+        if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
+            dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(defect_entry, possible_defect_name)
 
@@ -1628,21 +1738,11 @@ class DefectParser:
             # no charge correction if charge is zero
             return None
 
-        bulk_locpot_dict = bulk_locpot_dict or self.kwargs.get("bulk_locpot_dict", None)
-        if bulk_locpot_dict is None:
-            bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple(
-                "LOCPOT", self.defect_entry.calculation_metadata["bulk_path"]
-            )
-            if multiple:
-                _multiple_files_warning(
-                    "LOCPOT",
-                    self.defect_entry.calculation_metadata["bulk_path"],
-                    bulk_locpot_path,
-                    "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
-                    dir_type="bulk",
-                )
-            bulk_locpot = get_locpot(bulk_locpot_path)
-            bulk_locpot_dict = {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+        bulk_locpot_dict = (
+            bulk_locpot_dict
+            or self.kwargs.get("bulk_locpot_dict", None)
+            or _get_bulk_locpot_dict(self.defect_entry.calculation_metadata["bulk_path"])
+        )
 
         defect_locpot_path, multiple = _get_output_files_and_check_if_multiple(
             "LOCPOT", self.defect_entry.calculation_metadata["defect_path"]
@@ -1700,25 +1800,10 @@ class DefectParser:
             return None
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
-
         if bulk_site_potentials is None:
-            bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
-                "OUTCAR", self.defect_entry.calculation_metadata["bulk_path"]
+            bulk_site_potentials = _get_bulk_site_potentials(
+                self.defect_entry.calculation_metadata["bulk_path"]
             )
-            if multiple:
-                _multiple_files_warning(
-                    "OUTCAR",
-                    self.defect_entry.calculation_metadata["bulk_path"],
-                    bulk_outcar_path,
-                    "parse core levels and compute the Kumagai (eFNV) image charge correction.",
-                    dir_type="bulk",
-                )
-            bulk_outcar = get_outcar(bulk_outcar_path)
-
-            if bulk_outcar.electrostatic_potential is None:
-                _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
-
-            bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
             "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]

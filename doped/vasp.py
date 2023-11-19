@@ -1902,8 +1902,8 @@ class DefectsSet(MSONable):
         ):  # also catches case where defect_entries is a single DefectEntry, from converting to list above
             # need to convert to dict with doped names as keys:
             defect_entry_list = copy.deepcopy(defect_entries)
-            with contextlib.suppress(AttributeError):  # sort by conventional cell fractional
-                # coordinates if these are defined, to aid deterministic naming
+            with contextlib.suppress(AttributeError, TypeError):  # sort by conventional cell
+                # fractional coordinates if these are defined, to aid deterministic naming
                 defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
 
             # figure out which DefectEntry objects need to be named (don't name if already named)
@@ -2104,7 +2104,7 @@ class DefectsSet(MSONable):
             ):
                 pass
 
-        dumpfn(self.json_obj, self.json_name)
+        dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
 
 
 # TODO: Remove these functions once confirmed all functionality is in `chemical_potentials.py`;
