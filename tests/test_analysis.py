@@ -80,6 +80,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.CDTE_EXAMPLE_DIR, "CdTe_defect_dict.json"))
         if_present_rm(os.path.join(self.CDTE_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
+        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating dpd and plot:
@@ -253,22 +254,39 @@ class DefectsParsingTestCase(unittest.TestCase):
                 )
 
         # skip_corrections:
-        with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.CDTE_EXAMPLE_DIR, skip_corrections=True)
-        print([str(warn.message) for warn in w])  # TODO:
+        dp = DefectsParser(output_path=self.CDTE_EXAMPLE_DIR, skip_corrections=True)
         self._check_DefectsParser(dp, skip_corrections=True)
 
         # anisotropic dielectric
         fake_aniso_dielectric = [1, 2, 3]
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CDTE_EXAMPLE_DIR, dielectric=fake_aniso_dielectric)
-        print([str(warn.message) for warn in w])  # TODO:
+
+        assert any(
+            "Estimated error in the Kumagai (eFNV) charge correction for defect Int_Te_3_2 is "
+            "0.157 eV (i.e. which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
+            for warn in w
+        )
+        assert any(
+            all(
+                i in str(warn.message)
+                for i in [
+                    f"An anisotropic dielectric constant was supplied, but `OUTCAR` files needed to "
+                    f"compute the _anisotropic_ Kumagai eFNV charge correction) were not found in the "
+                    f"defect (at {self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl) & bulk",
+                    "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
+                    "charge correction developed for _isotropic_ materials will be applied here, "
+                    "which corresponds to using the effective isotropic average of the supplied "
+                    "anisotropic dielectric. This could lead to significant errors for very anisotropic "
+                    "systems and/or relatively small supercells!",
+                ]
+            )
+            for warn in w
+        )
         self._check_DefectsParser(dp)
 
         # integration test using parsed CdTe dpd and chempots for plotting:
         cdte_chempots = loadfn(os.path.join(self.CDTE_EXAMPLE_DIR, "cdte_chempots.json"))
-        # test can plot multiple plots without specifying facets:
-        # TODO:
 
         return formation_energy_plot(cdte_dpd, chempots=cdte_chempots, facets=["CdTe-Te"])
 
@@ -279,7 +297,20 @@ class DefectsParsingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_DefectsParser_YTOS(self):
-        dp = DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, dielectric=self.ytos_dielectric)
+        # bulk path needs to be specified for YTOS as it's not the default name:
+        with self.assertRaises(ValueError) as exc:
+            dp = DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, dielectric=9.13)
+        assert (
+            f"Could not automatically determine bulk supercell calculation folder in "
+            f"{self.YTOS_EXAMPLE_DIR}, found 0 folders containing `vasprun.xml(.gz)` files (in "
+            f"subfolders) and 'bulk' in the folder name" in str(exc.exception)
+        )
+
+        dp = DefectsParser(
+            output_path=self.YTOS_EXAMPLE_DIR,
+            bulk_path=os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk"),
+            dielectric=self.ytos_dielectric,
+        )
         self._check_DefectsParser(dp)
         dpd = dpd_from_defect_dict(dp.defect_dict)
         dumpfn(dpd, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_dpd.json"))  # for test_plotting
@@ -1394,7 +1425,6 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=None if _potcars_available() else 0  # to allow testing
                 # on GH Actions (otherwise test auto-charge determination if POTCARs available)
             )
-        print([str(warning.message) for warning in w])
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
 

@@ -128,6 +128,7 @@ def formation_energy_plot(
         chempots
         and facets is None
         and el_refs is None
+        and "facets" not in chempots
         and any(np.isclose(chempot, 0, atol=0.1) for chempot in chempots.values())
     ):
         # if any chempot is close to zero, this is likely a formal chemical potential and so inaccurate
@@ -233,7 +234,6 @@ def _get_plot_setup(colormap, xy):
         )
 
     # generate plot:
-    plt.clf()
     styled_fig_size = plt.rcParams["figure.figsize"]
     fig, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
     # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default

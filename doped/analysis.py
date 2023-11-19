@@ -908,8 +908,7 @@ class DefectsParser:
         possible_defect_folders = [
             dir
             for dir in os.listdir(self.output_path)
-            if os.path.isdir(os.path.join(self.output_path, dir))
-            and any(
+            if any(
                 "vasprun.xml" in file
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
@@ -964,7 +963,9 @@ class DefectsParser:
             dir
             for dir in possible_defect_folders
             if dir not in possible_bulk_folders
-            and self.subfolder in os.listdir(os.path.join(self.output_path, dir))
+            and (
+                self.subfolder in os.listdir(os.path.join(self.output_path, dir)) or self.subfolder == "."
+            )
         ]
 
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
