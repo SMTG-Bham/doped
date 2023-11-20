@@ -53,9 +53,10 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# TODO: Test with Adair BiOI data and Xinwei Sb2Se3 data.
-# TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 and Xinwei`s
-#  cases (no warning in those cases 'cause anisotropic)
+# TODO: Test with Adair BiOI data
+# TODO: Add extrinsic defects test with our CdTe alkali defects (parsing & plotting)
+# TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 (no warning in
+#  this case 'cause anisotropic)
 # TODO: When adding full parsing tests (e.g. with full CdTe dpd or similar), add quick loop-over test of
 #  the symmetry determination functions
 
@@ -271,7 +272,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             all(
                 i in str(warn.message)
                 for i in [
-                    f"An anisotropic dielectric constant was supplied, but `OUTCAR` files needed to "
+                    f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
                     f"compute the _anisotropic_ Kumagai eFNV charge correction) were not found in the "
                     f"defect (at {self.CDTE_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl) & bulk",
                     "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
