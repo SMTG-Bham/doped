@@ -147,10 +147,10 @@ class FiniteSizeChargeCorrectionTest(PymatgenTest):
 class CorrectionsPlottingTestCase(unittest.TestCase):
     module_path: str
     example_dir: str
-    cdte_example_dir: str
+    CdTe_example_dir: str
     ytos_example_dir: str
-    cdte_bulk_data_dir: str
-    cdte_dielectric: np.ndarray
+    CdTe_bulk_data_dir: str
+    CdTe_dielectric: np.ndarray
     v_Cd_dict: Dict[Any, Any]
     v_Cd_dpd: DefectPhaseDiagram
     F_O_1_entry: DefectEntry
@@ -161,21 +161,21 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         # prepare parsed defect data (from doped parsing example)
         cls.module_path = os.path.dirname(os.path.abspath(__file__))
         cls.example_dir = os.path.join(cls.module_path, "../examples")
-        cls.cdte_example_dir = os.path.join(cls.module_path, "../examples/CdTe")
+        cls.CdTe_example_dir = os.path.join(cls.module_path, "../examples/CdTe")
         cls.ytos_example_dir = os.path.join(cls.module_path, "../examples/YTOS")
-        cls.cdte_bulk_data_dir = os.path.join(cls.cdte_example_dir, "CdTe_bulk/vasp_ncl")
-        cls.cdte_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+        cls.CdTe_bulk_data_dir = os.path.join(cls.CdTe_example_dir, "CdTe_bulk/vasp_ncl")
+        cls.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
         cls.v_Cd_dict = {}  # dictionary of parsed vacancy defect entries
 
-        for i in os.listdir(cls.cdte_example_dir):  # loops through the example directory
+        for i in os.listdir(cls.CdTe_example_dir):  # loops through the example directory
             if "v_Cd" in i:  # and parses folders that have "v_Cd" in their name
                 print(f"Parsing {i}...")
-                defect_path = f"{cls.cdte_example_dir}/{i}/vasp_ncl"
+                defect_path = f"{cls.CdTe_example_dir}/{i}/vasp_ncl"
                 cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(
                     defect_path,
-                    cls.cdte_bulk_data_dir,
-                    cls.cdte_dielectric,
+                    cls.CdTe_bulk_data_dir,
+                    cls.CdTe_dielectric,
                     charge_state=None if _potcars_available() else int(i.split("_")[-1])  # to allow
                     # testing on GH Actions (otherwise test auto-charge determination if POTCARs available
                 )
@@ -191,8 +191,8 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         )
 
         cls.Te_i_2_ent = analysis.defect_entry_from_paths(
-            defect_path=f"{cls.cdte_example_dir}/Int_Te_3_2/vasp_ncl",
-            bulk_path=f"{cls.cdte_bulk_data_dir}",
+            defect_path=f"{cls.CdTe_example_dir}/Int_Te_3_2/vasp_ncl",
+            bulk_path=f"{cls.CdTe_bulk_data_dir}",
             dielectric=9.13,
             charge_state=None if _potcars_available() else +2,  # to allow testing on GH Actions
         )
