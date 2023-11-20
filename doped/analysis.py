@@ -976,18 +976,19 @@ class DefectsParser:
             ]
             vasp_type_count_dict = {  # Count Dik
                 i: len([subdir for subdir in vasp_subfolders if i in subdir])
-                for i in ["vasp_ncl", "vasp_std", "vasp_gam"]
+                for i in ["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam"]
             }
             # take first entry with non-zero count, else use defect folder itself:
             self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
 
-        possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in dir]
+        possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in str(dir).lower()]
         if self.bulk_path is None:  # determine bulk_path to use
             if len(possible_bulk_folders) == 1:
                 self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
             elif len([dir for dir in possible_bulk_folders if dir.endswith("_bulk")]) == 1:
                 self.bulk_path = os.path.join(
-                    self.output_path, [dir for dir in possible_bulk_folders if dir.endswith("_bulk")][0]
+                    self.output_path,
+                    [dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")][0],
                 )
             else:
                 raise ValueError(
@@ -996,6 +997,15 @@ class DefectsParser:
                     f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
                     f"specify `bulk_path` manually."
                 )
+
+        self.defect_folders = [
+            dir
+            for dir in possible_defect_folders
+            if dir not in possible_bulk_folders
+            and (
+                self.subfolder in os.listdir(os.path.join(self.output_path, dir)) or self.subfolder == "."
+            )
+        ]
 
         # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is:
         if os.path.isdir(os.path.join(self.bulk_path, self.subfolder)) and any(
@@ -1010,15 +1020,6 @@ class DefectsParser:
             )
 
         self.defect_dict = {}
-        self.defect_folders = [
-            dir
-            for dir in possible_defect_folders
-            if dir not in possible_bulk_folders
-            and (
-                self.subfolder in os.listdir(os.path.join(self.output_path, dir)) or self.subfolder == "."
-            )
-        ]
-
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
@@ -1204,8 +1205,6 @@ class DefectsParser:
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
 
-        # TODO: Warning/error handling for failed parsing defect folders?
-
     def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
         pbar.update()
 
@@ -1390,9 +1389,8 @@ class DefectParser:
                 set to true.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
-                from the defect calculation outputs (requires `POTCAR`s to be set up
-                with `pymatgen`), or if that fails, using the defect folder name (must
-                end in "_+X" or "_-X" where +/-X is the defect charge state).
+                from the defect calculation outputs, or if that fails, using the defect
+                folder name (must end in "_+X" or "_-X" where +/-X is the defect charge state).
             initial_defect_structure_path (str):
                 Path to the initial/unrelaxed defect structure. Only recommended for use
                 if structure matching with the relaxed defect structure(s) fails (rare).
@@ -1539,44 +1537,38 @@ class DefectParser:
             )
 
         except RuntimeError:
-            if initial_defect_structure_path:
-                defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
-                (
-                    defect,
-                    defect_site_in_initial_struct,
-                    defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-                    # w/interstitials
-                    defect_site_index,  # in this initial_defect_structure
-                    bulk_site_index,
-                    guessed_initial_defect_structure,
-                    unrelaxed_defect_structure,
-                    bulk_voronoi_node_dict,
-                ) = defect_from_structures(
-                    bulk_supercell,
-                    defect_structure_for_ID,
-                    return_all_info=True,
-                    bulk_voronoi_node_dict=bulk_voronoi_node_dict,
-                )
-
-                # then try get defect_site in final structure:
-                # need to check that this is the correct defect site, and hasn't been reordered/changed
-                # compared to the initial_defect_structure used here, check same element and distance
-                # reasonable:
-                defect_site = defect_site_in_initial_struct
-
-                if defect.defect_type != core.DefectType.Vacancy:
-                    final_defect_site = defect_structure[defect_site_index]
-                    if (
-                        defect_site_in_initial_struct.species.elements[0].symbol
-                        == final_defect_site.species.elements[0].symbol
-                    ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
-                        defect_site = final_defect_site
-
-                        if defect.defect_type == core.DefectType.Interstitial:
-                            pass
-
-            else:
+            if not initial_defect_structure_path:
                 raise
+
+            defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
+            (
+                defect,
+                defect_site_in_initial_struct,
+                defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
+                defect_site_index,  # in this initial_defect_structure
+                bulk_site_index,
+                guessed_initial_defect_structure,
+                unrelaxed_defect_structure,
+                bulk_voronoi_node_dict,
+            ) = defect_from_structures(
+                bulk_supercell,
+                defect_structure_for_ID,
+                return_all_info=True,
+                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+            )
+
+            # then try get defect_site in final structure:
+            # need to check that it's the correct defect site and hasn't been reordered/changed compared to
+            # the initial_defect_structure used here -> check same element and distance reasonable:
+            defect_site = defect_site_in_initial_struct
+
+            if defect.defect_type != core.DefectType.Vacancy:
+                final_defect_site = defect_structure[defect_site_index]
+                if (
+                    defect_site_in_initial_struct.species.elements[0].symbol
+                    == final_defect_site.species.elements[0].symbol
+                ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
+                    defect_site = final_defect_site
 
         calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
         calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure

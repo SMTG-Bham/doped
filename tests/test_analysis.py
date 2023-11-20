@@ -1574,6 +1574,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 skip_corrections=True,
+                charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
             )
             assert len(w) == 3  # now INCAR and KPOINTS and POTCAR warnings!
             assert any(
@@ -1604,6 +1605,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 skip_corrections=True,
+                charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
             )
             assert any(
                 "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
