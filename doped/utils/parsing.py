@@ -467,8 +467,9 @@ def _compare_kpoints(bulk_kpoints, defect_kpoints):
     Check bulk and defect KPOINTS are the same.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
-    sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=lambda x: tuple(x))
-    sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=lambda x: tuple(x))
+    sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=tuple)
+    sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=tuple)
+
     if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
         warnings.warn(
             f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
