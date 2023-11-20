@@ -14,7 +14,7 @@ from doped.utils.wyckoff import get_wyckoff_dict_from_sgn, get_wyckoff_label_and
 class WyckoffTest(unittest.TestCase):
     def setUp(self):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
+        self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
         self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
