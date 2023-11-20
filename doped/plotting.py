@@ -431,8 +431,14 @@ def _format_defect_name(
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols:  # recognised point group symbol?
-            # from 2nd underscore to last underscore (before charge state):
-            doped_site_info = "-".join(defect_species.split("_")[2:-1])
+            # from 2nd underscore to last underscore (before charge state) is site info
+            # convert point group symbol to formatted version (e.g. C1 -> C_1):
+            formatted_point_group_symbol = (
+                f"{point_group_symbol[0]}_{{{point_group_symbol[1:]}}}"  # already in math mode here
+            )
+            doped_site_info = formatted_point_group_symbol
+            if defect_species.split("_")[3:-1]:  # if there is more site info after point group symbol
+                doped_site_info += "-" + "-".join(defect_species.split("_")[3:-1])
             trimmed_pre_charge_name = pre_charge_name.replace(
                 f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
             )
