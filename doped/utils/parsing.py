@@ -371,39 +371,59 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     `input_structure`.
     """
     ## Generate a site matching table between the input and the template
-    input_fcoords = [site.frac_coords for site in structure_a]
-    template_fcoords = [site.frac_coords for site in structure_b]
-
-    dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
     min_dist_with_index = []
-    for index in range(len(input_fcoords)):
-        dists = dmat[index]
-        template_index = dists.argmin()
-        current_dist = dists.min()
-        min_dist_with_index.append(
-            [
-                current_dist,
-                index,
-                template_index,
-            ]
-        )
+    all_input_fcoords = [list(site.frac_coords.round(3)) for site in structure_a]
+    all_template_fcoords = [list(site.frac_coords.round(3)) for site in structure_b]
 
-        if current_dist > threshold:
-            sitea = structure_a[index]
-            siteb = structure_b[template_index]
-            warnings.warn(
-                f"Large site displacement {current_dist:.4f} detected when matching atomic sites:"
-                f" {sitea}-> {siteb}."
-            )
+    for species in structure_a.composition.elements:
+        input_fcoords = [
+            list(site.frac_coords.round(3))
+            for site in structure_a
+            if site.species.elements[0].symbol == species.symbol
+        ]
+        template_fcoords = [
+            list(site.frac_coords.round(3))
+            for site in structure_b
+            if site.species.elements[0].symbol == species.symbol
+        ]
+
+        dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
+        for index, coords in enumerate(all_input_fcoords):
+            if coords in input_fcoords:
+                dists = dmat[input_fcoords.index(coords)]
+                current_dist = dists.min()
+                template_fcoord = template_fcoords[dists.argmin()]
+                template_index = all_template_fcoords.index(template_fcoord)
+                min_dist_with_index.append(
+                    [
+                        current_dist,
+                        index,
+                        template_index,
+                    ]
+                )
+
+                if current_dist > threshold:
+                    site_a = structure_a[index]
+                    site_b = structure_b[template_index]
+                    warnings.warn(
+                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
+                        f"sites: {site_a} -> {site_b}."
+                    )
+
     return min_dist_with_index
 
 
-def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=2.0):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0):
     """
     Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
     the atoms in s2_structure.
 
     s1/s2 structures may have a different species orderings.
+
+    Previously used to ensure correct site matching when pulling site
+    potentials for the eFNV Kumagai correction, though no longer used for this
+    purpose. If threshold is set to a low value, it will raise a warning if
+    there is a large site displacement detected.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
