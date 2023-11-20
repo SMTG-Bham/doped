@@ -7,7 +7,6 @@ user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
 import contextlib
-import io
 import itertools
 import os
 import warnings
@@ -1225,10 +1224,10 @@ class DefectsParser:
         Process defect and catch warnings along the way, so we can print which
         warnings came from which defect.
         """
-        str_io = io.StringIO()  # Redirect stderr to capture warnings
-        with contextlib.redirect_stderr(str_io):  # capture warnings
+        with warnings.catch_warnings(record=True) as captured_warnings:
             parsed_defect_entry = self._parse_defect(defect_folder)
-        warnings_string = str_io.getvalue()
+
+        warnings_string = "\n".join(str(warning.message) for warning in captured_warnings)
 
         return parsed_defect_entry, warnings_string
 

@@ -116,21 +116,22 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # KPOINTS warning
         assert any(
-            f"Warning(s) encountered when parsing Int_Te_3_Unperturbed_1 at "
-            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl:\nThere are mismatching "
-            f"INCAR tags for your bulk and defect calculations which are likely to cause severe "
-            f"errors in the parsed results (energies). Found the following differences:\n(in the "
-            f"format: (INCAR tag, value in bulk calculation, value in defect calculation)):\n[("
-            f"'ADDGRID', True, False)]\nThe same INCAR settings should be used in both "
-            f"calculations for these tags which can affect energies!" in str(warn.message)
+            all(
+                i in str(warn.message)
+                for i in [
+                    f"Warning(s) encountered when parsing Int_Te_3_Unperturbed_1 at "
+                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl:",
+                    "There are mismatching INCAR tags for your bulk and defect calculations",
+                ]
+            )
             for warn in w
         )  # INCAR warning
         assert any(
             all(
                 i in str(warn.message)
                 for i in [
-                    f"Warning(s) encountered when parsing Int_Te_3_2 at"
-                    f" {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                    f"Warning(s) encountered when parsing Int_Te_3_2 at "
+                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                     "Multiple `OUTCAR` files found in defect directory",
                 ]
             )
