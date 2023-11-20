@@ -1,6 +1,19 @@
 Change Log
 ==========
 
+v.2.2.0
+----------
+- Added `DefectsParser` class for parsing defect calculations:
+    - Uses multiprocessing and shared bulk data to massively speed up parsing of many defect supercell
+      calcs at once (e.g. from 17 min to < 3 mins for 54 defects in CdTe).
+    - Automatically checks `INCAR`, `KPOINTS`, `POTCAR` and charge correction compatibility between
+      all calculations, and warns the user if any are likely to affect formation energies.
+- Make `csv` input to `CompetingPhasesAnalyzer` more flexible, along with other code and docstrings updates.
+- Format point group symbol in formation energy plots.
+- Refactor `elt`/`elt_refs` to `el/el_refs` by @adair-nicolson
+
+Updates reflected in the `doped` parsing tutorial.
+
 v.2.1.0
 ----------
 - Update finite-size defect corrections implementations:
