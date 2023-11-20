@@ -53,10 +53,7 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# TODO: Test with Adair BiOI data
-# TODO: Add extrinsic defects test with our CdTe alkali defects (parsing & plotting)
-# TODO: Test negative corrections warning with our V_Cd^+1, and also with Adair`s V_Bi^+1 (no warning in
-#  this case 'cause anisotropic)
+# TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
 # TODO: When adding full parsing tests (e.g. with full CdTe dpd or similar), add quick loop-over test of
 #  the symmetry determination functions
 
@@ -320,6 +317,45 @@ class DefectsParsingTestCase(unittest.TestCase):
         dumpfn(dpd, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_dpd.json"))  # for test_plotting
         return formation_energy_plot(dpd)  # no chempots for YTOS formation energy plot test
 
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="O_Se_example_defects_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_extrinsic_Sb2Se3(self):
+        with warnings.catch_warnings(record=True) as w:  # no warning about negative corrections with
+            # strong anisotropic dielectric:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )
+        assert not w  # no warnings
+        Sb2Se3_O_dpd = dpd_from_defect_dict(Sb2Se3_O_dp.defect_dict)
+        dumpfn(Sb2Se3_O_dpd, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_dpd.json"))  # for
+        # test_plotting
+
+        # warning about negative corrections when using (fake) isotropic dielectric:
+        with warnings.catch_warnings(record=True) as w:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=40,  # fake isotropic dielectric
+            )
+        assert any(
+            all(
+                i in str(warn.message)
+                for i in [
+                    "The calculated finite-size charge corrections for defect at",
+                    "sum to a _negative_ value of -0.144.",
+                ]
+            )
+            for warn in w
+        )
+
+        return formation_energy_plot(Sb2Se3_O_dpd, chempots={"O": -8.9052, "Se": -5})  # example chempots
+
 
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
@@ -335,6 +371,9 @@ class DopedParsingTestCase(unittest.TestCase):
             [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
+
+        self.Sb2Se3_DATA_DIR = os.path.join(self.module_path, "data/Sb2Se3")
+        self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
