@@ -38,7 +38,7 @@
       with the original structure and get the difference (-> configurational degeneracy) from this. Not
       sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
       getting the difference in symm-ops according to `spglib`?
-  - Also add consideration of odd/even number of electrons to account for spin degeneracy. Note we can do this automatically even without `NELECT`, using magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge (can also use this to double check odd is odd and even even as expected, warn user if not)
+  - Also add consideration of odd/even number of electrons to account for spin degeneracy (can pull from `vr.parameters["NELECT"]` / magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge)(can also use this to double check odd is odd and even even as expected, warn user if not)
 - Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
   also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
   effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in

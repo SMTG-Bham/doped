@@ -11,6 +11,7 @@ v.2.2.0
 - Make `csv` input to `CompetingPhasesAnalyzer` more flexible, along with other code and docstrings updates.
 - Format point group symbol in formation energy plots.
 - Refactor `elt`/`elt_refs` to `el/el_refs` by @adair-nicolson
+- Charge states can now be automatically determined even when `POTCAR`s are not setup by the user.
 
 Updates reflected in the `doped` parsing tutorial.
 

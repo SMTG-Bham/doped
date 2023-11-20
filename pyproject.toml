@@ -21,7 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2023.8.10",
+    "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.2.0",
     "pandas",

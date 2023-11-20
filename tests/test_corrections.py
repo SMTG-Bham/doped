@@ -16,7 +16,6 @@ import pytest
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.testing import PymatgenTest
-from test_vasp import _potcars_available
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
@@ -176,8 +175,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
                     defect_path,
                     cls.CdTe_bulk_data_dir,
                     cls.CdTe_dielectric,
-                    charge_state=None if _potcars_available() else int(i.split("_")[-1])  # to allow
-                    # testing on GH Actions (otherwise test auto-charge determination if POTCARs available
+                    charge_state=int(i.split("_")[-1]),  # test manually specifying charge states here
                 )
 
         cls.v_Cd_dpd = analysis.dpd_from_defect_dict(cls.v_Cd_dict)
@@ -186,15 +184,12 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             defect_path=f"{cls.ytos_example_dir}/F_O_1",
             bulk_path=f"{cls.ytos_example_dir}/Bulk",
             dielectric=[40.7, 40.7, 25.2],
-            charge_state=None if _potcars_available() else 1  # to allow testing on GH Actions
-            # (otherwise test auto-charge determination if POTCARs available)
         )
 
         cls.Te_i_2_ent = analysis.defect_entry_from_paths(
             defect_path=f"{cls.CdTe_example_dir}/Int_Te_3_2/vasp_ncl",
             bulk_path=f"{cls.CdTe_bulk_data_dir}",
             dielectric=9.13,
-            charge_state=None if _potcars_available() else +2,  # to allow testing on GH Actions
         )
 
     @pytest.mark.mpl_image_compare(
