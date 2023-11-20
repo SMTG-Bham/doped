@@ -65,7 +65,7 @@ class DefectsGeneratorTest(unittest.TestCase):
             self.heavy_tests = True
 
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.cdte_data_dir = os.path.join(self.data_dir, "CdTe")
+        self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
         self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
@@ -75,12 +75,12 @@ class DefectsGeneratorTest(unittest.TestCase):
         self.structure_matcher = StructureMatcher(
             comparator=ElementComparator()
         )  # ignore oxidation states
-        self.cdte_bulk_supercell = self.conv_cdte * 2 * np.eye(3)
-        self.cdte_defect_gen_string = (
+        self.CdTe_bulk_supercell = self.conv_cdte * 2 * np.eye(3)
+        self.CdTe_defect_gen_string = (
             "DefectsGenerator for input composition CdTe, space group F-43m with 50 defect entries "
             "created."
         )
-        self.cdte_defect_gen_info = (
+        self.CdTe_defect_gen_info = (
             """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
 -----------  -----------------  -------------------  ---------
 v_Cd         [-2,-1,0,+1]       [0.000,0.000,0.000]  4a
@@ -322,7 +322,7 @@ Ag_i_C3v_Cu1.80               [0,+1]             [0.000,0.000,0.250]  6c
             "standard structure, for which doped uses the spglib convention."
         )
 
-        self.cd_i_cdte_supercell_defect_gen_info = (
+        self.cd_i_CdTe_supercell_defect_gen_info = (
             """Vacancies                    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------------------  -----------------  -------------------  ---------
 v_Cd_C1_Te2.83Cd4.62Te5.42a  [-1,0,+1]          [0.000,0.250,0.000]  18c
@@ -966,7 +966,7 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
 
         with self.assertRaises(ValueError) as e:
             fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
-            fd_up_random_defect_entry.defect.structure = self.cdte_bulk_supercell  # any structure that
+            fd_up_random_defect_entry.defect.structure = self.CdTe_bulk_supercell  # any structure that
             # isn't used as a primitive structure for any defect gen will do here
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
             assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
@@ -1004,19 +1004,19 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         return defect_gen, output
 
     def test_extrinsic(self):
-        def _split_and_check_orig_cdte_output(output):
-            # split self.cdte_defect_gen_info into lines and check each line is in the output:
-            for line in self.cdte_defect_gen_info.splitlines():
+        def _split_and_check_orig_CdTe_output(output):
+            # split self.CdTe_defect_gen_info into lines and check each line is in the output:
+            for line in self.CdTe_defect_gen_info.splitlines():
                 if "Cd" in line or "Te" in line:
                     assert line in output
 
-        def _test_cdte_interstitials_and_Te_sub(output, extrinsic_cdte_defect_gen, element="Se"):
+        def _test_CdTe_interstitials_and_Te_sub(output, extrinsic_CdTe_defect_gen, element="Se"):
             spacing = " " * (2 - len(element))
             charges = "[-2,-1,0,+1,+2]" if element == "S" else "[-2,-1,0]      "
             for info in [
                 output,
-                extrinsic_cdte_defect_gen._defect_generator_info(),
-                repr(extrinsic_cdte_defect_gen),
+                extrinsic_CdTe_defect_gen._defect_generator_info(),
+                repr(extrinsic_CdTe_defect_gen),
             ]:
                 assert (
                     f"{element}_i_C3v         {spacing}{charges}        [0.625,0.625,0.625]  16e" in info
@@ -1029,47 +1029,47 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                     in info
                 )
 
-        def _check_Se_Te(extrinsic_cdte_defect_gen, element="Se", idx=-1):
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].name == f"{element}_Te"
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].oxi_state == 0
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].multiplicity == 1
-            assert extrinsic_cdte_defect_gen.defects["substitutions"][idx].defect_site == PeriodicSite(
-                "Te", [0.25, 0.25, 0.25], extrinsic_cdte_defect_gen.primitive_structure.lattice
+        def _check_Se_Te(extrinsic_CdTe_defect_gen, element="Se", idx=-1):
+            assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].name == f"{element}_Te"
+            assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].oxi_state == 0
+            assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].multiplicity == 1
+            assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].defect_site == PeriodicSite(
+                "Te", [0.25, 0.25, 0.25], extrinsic_CdTe_defect_gen.primitive_structure.lattice
             )
-            assert str(extrinsic_cdte_defect_gen.defects["substitutions"][idx].site.specie) == f"{element}"
+            assert str(extrinsic_CdTe_defect_gen.defects["substitutions"][idx].site.specie) == f"{element}"
             assert np.isclose(
-                extrinsic_cdte_defect_gen.defects["substitutions"][idx].site.frac_coords,
+                extrinsic_CdTe_defect_gen.defects["substitutions"][idx].site.frac_coords,
                 np.array([0.25, 0.25, 0.25]),
             ).all()
             assert (
-                len(extrinsic_cdte_defect_gen.defects["substitutions"][idx].equiv_conv_cell_frac_coords)
+                len(extrinsic_CdTe_defect_gen.defects["substitutions"][idx].equiv_conv_cell_frac_coords)
                 == 4
             )  # 4x conv cell
 
         extrinsic_input = "Se"
-        cdte_se_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_se_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, extrinsic=extrinsic_input
         )
-        _split_and_check_orig_cdte_output(output)
-        _test_cdte_interstitials_and_Te_sub(output, cdte_se_defect_gen)
+        _split_and_check_orig_CdTe_output(output)
+        _test_CdTe_interstitials_and_Te_sub(output, CdTe_se_defect_gen)
         assert "Se_Cd            [-4,-3,-2,-1,0,+1,+2]  [0.000,0.000,0.000]  4a" in output
 
-        self._general_defect_gen_check(cdte_se_defect_gen)
-        assert cdte_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
+        self._general_defect_gen_check(CdTe_se_defect_gen)
+        assert CdTe_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
 
         # explicitly test defects
-        assert len(cdte_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
-        assert len(cdte_se_defect_gen.defects["vacancies"]) == 2
-        assert len(cdte_se_defect_gen.defects["substitutions"]) == 4  # 2 extra
-        assert len(cdte_se_defect_gen.defects["interstitials"]) == 9  # 3 extra
+        assert len(CdTe_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(CdTe_se_defect_gen.defects["vacancies"]) == 2
+        assert len(CdTe_se_defect_gen.defects["substitutions"]) == 4  # 2 extra
+        assert len(CdTe_se_defect_gen.defects["interstitials"]) == 9  # 3 extra
 
         # explicitly test some relevant defect attributes
-        _check_Se_Te(cdte_se_defect_gen)
+        _check_Se_Te(CdTe_se_defect_gen)
         # test defect entries
-        assert len(cdte_se_defect_gen.defect_entries) == 68  # 18 more
+        assert len(CdTe_se_defect_gen.defect_entries) == 68  # 18 more
 
         # explicitly test defect entry charge state log:
-        assert cdte_se_defect_gen.defect_entries["Se_Cd_-1"].charge_state_guessing_log == [
+        assert CdTe_se_defect_gen.defect_entries["Se_Cd_-1"].charge_state_guessing_log == [
             {
                 "input_parameters": {
                     "charge_state": -4.0,
@@ -1138,29 +1138,29 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
 
         # test extrinsic with a dict:
         extrinsic_input = {"Te": "Se"}
-        cdte_se_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_se_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, extrinsic=extrinsic_input
         )
-        _split_and_check_orig_cdte_output(output)
-        _test_cdte_interstitials_and_Te_sub(output, cdte_se_defect_gen)
+        _split_and_check_orig_CdTe_output(output)
+        _test_CdTe_interstitials_and_Te_sub(output, CdTe_se_defect_gen)
         assert "Se_Cd" not in output  # no Se_Cd substitution now
 
-        self._general_defect_gen_check(cdte_se_defect_gen)
-        assert cdte_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
+        self._general_defect_gen_check(CdTe_se_defect_gen)
+        assert CdTe_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
 
         # explicitly test defects
-        assert len(cdte_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
-        assert len(cdte_se_defect_gen.defects["vacancies"]) == 2
-        assert len(cdte_se_defect_gen.defects["substitutions"]) == 3  # only 1 extra
-        assert len(cdte_se_defect_gen.defects["interstitials"]) == 9  # 3 extra
+        assert len(CdTe_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(CdTe_se_defect_gen.defects["vacancies"]) == 2
+        assert len(CdTe_se_defect_gen.defects["substitutions"]) == 3  # only 1 extra
+        assert len(CdTe_se_defect_gen.defects["interstitials"]) == 9  # 3 extra
 
         # explicitly test some relevant defect attributes
-        _check_Se_Te(cdte_se_defect_gen)
+        _check_Se_Te(CdTe_se_defect_gen)
         # test defect entries
-        assert len(cdte_se_defect_gen.defect_entries) == 61  # 11 more
+        assert len(CdTe_se_defect_gen.defect_entries) == 61  # 11 more
 
         # explicitly test defect entry charge state log:
-        assert cdte_se_defect_gen.defect_entries["Se_Te_0"].charge_state_guessing_log == [
+        assert CdTe_se_defect_gen.defect_entries["Se_Te_0"].charge_state_guessing_log == [
             {
                 "input_parameters": {
                     "charge_state": 0.0,
@@ -1229,29 +1229,29 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
 
         # test extrinsic with a dict, with a list as value:
         extrinsic_input = {"Te": ["Se", "S"]}
-        cdte_se_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_se_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, extrinsic=extrinsic_input
         )
-        _split_and_check_orig_cdte_output(output)
-        _test_cdte_interstitials_and_Te_sub(output, cdte_se_defect_gen)
-        _test_cdte_interstitials_and_Te_sub(output, cdte_se_defect_gen, element="S")
+        _split_and_check_orig_CdTe_output(output)
+        _test_CdTe_interstitials_and_Te_sub(output, CdTe_se_defect_gen)
+        _test_CdTe_interstitials_and_Te_sub(output, CdTe_se_defect_gen, element="S")
         assert "Se_Cd" not in output  # no Se_Cd substitution now
         assert "S_Cd" not in output  # no S_Cd substitution
 
-        self._general_defect_gen_check(cdte_se_defect_gen)
-        assert cdte_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
+        self._general_defect_gen_check(CdTe_se_defect_gen)
+        assert CdTe_se_defect_gen.extrinsic == extrinsic_input  # explicitly test extrinsic attribute set
 
         # explicitly test defects
-        assert len(cdte_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
-        assert len(cdte_se_defect_gen.defects["vacancies"]) == 2
-        assert len(cdte_se_defect_gen.defects["substitutions"]) == 4  # now 2 extra
-        assert len(cdte_se_defect_gen.defects["interstitials"]) == 12  # 3 extra
+        assert len(CdTe_se_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(CdTe_se_defect_gen.defects["vacancies"]) == 2
+        assert len(CdTe_se_defect_gen.defects["substitutions"]) == 4  # now 2 extra
+        assert len(CdTe_se_defect_gen.defects["interstitials"]) == 12  # 3 extra
 
         # explicitly test some relevant defect attributes
-        _check_Se_Te(cdte_se_defect_gen, element="S", idx=-2)
-        _check_Se_Te(cdte_se_defect_gen, element="Se")
+        _check_Se_Te(CdTe_se_defect_gen, element="S", idx=-2)
+        _check_Se_Te(CdTe_se_defect_gen, element="Se")
         # test defect entries
-        assert len(cdte_se_defect_gen.defect_entries) == 78  # 28 more
+        assert len(CdTe_se_defect_gen.defect_entries) == 78  # 28 more
 
         # test warning when specifying an intrinsic element as extrinsic:
         for extrinsic_arg in [
@@ -1266,22 +1266,22 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         ]:
             with warnings.catch_warnings(record=True) as w:
                 warnings.resetwarnings()
-                cdte_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
+                CdTe_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
                 assert len(w) == 1
                 assert (
                     "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
                     "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
                     in str(w[-1].message)
                 )
-                assert cdte_defect_gen.extrinsic == extrinsic_arg  # explicitly test extrinsic attribute
+                assert CdTe_defect_gen.extrinsic == extrinsic_arg  # explicitly test extrinsic attribute
 
-        self.cdte_defect_gen_check(cdte_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
 
     def test_processes(self):
         # first test setting processes with a small primitive cell (so it makes no difference):
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, processes=4)
-        assert self.cdte_defect_gen_info in output
-        self.cdte_defect_gen_check(cdte_defect_gen)
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, processes=4)
+        assert self.CdTe_defect_gen_info in output
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
 
         # check with larger unit cell, where processes makes a difference:
         ytos_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1293,17 +1293,17 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
     def test_interstitial_coords(self):
         # first test that specifying the default interstitial coords for CdTe gives the same result as
         # default:
-        cdte_interstitial_coords = [
+        CdTe_interstitial_coords = [
             [0.625, 0.625, 0.625],  # C3v
             [0.750, 0.750, 0.750],  # Cd2.83
             [0.500, 0.500, 0.500],  # Te2.83
         ]
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
-            self.prim_cdte, interstitial_coords=cdte_interstitial_coords
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
+            self.prim_cdte, interstitial_coords=CdTe_interstitial_coords
         )
 
-        assert self.cdte_defect_gen_info in output
-        assert cdte_defect_gen.interstitial_coords == cdte_interstitial_coords  # check attribute set
+        assert self.CdTe_defect_gen_info in output
+        assert CdTe_defect_gen.interstitial_coords == CdTe_interstitial_coords  # check attribute set
 
         expected = [
             (
@@ -1330,23 +1330,23 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                     np.array_equal(r, e) for r, e in zip(r_list, e_list)
                 ), "List of arrays do not match"
 
-        _test_prim_interstitial_coords(cdte_defect_gen.prim_interstitial_coords, expected)
+        _test_prim_interstitial_coords(CdTe_defect_gen.prim_interstitial_coords, expected)
 
         # defect_gen_check changes defect_entries ordering, so save to json first:
-        self._save_defect_gen_jsons(cdte_defect_gen)
-        self.cdte_defect_gen_check(cdte_defect_gen)
-        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        self._save_defect_gen_jsons(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, interstitial_coords=[[0.5, 0.5, 0.5]], extrinsic={"Te": ["Se", "S"]}
         )
-        assert cdte_defect_gen.interstitial_coords == [[0.5, 0.5, 0.5]]  # check attribute set
+        assert CdTe_defect_gen.interstitial_coords == [[0.5, 0.5, 0.5]]  # check attribute set
         _test_prim_interstitial_coords(
-            cdte_defect_gen.prim_interstitial_coords,
+            CdTe_defect_gen.prim_interstitial_coords,
             [(np.array([0.5, 0.5, 0.5]), 1, [np.array([0.5, 0.5, 0.5])])],  # check attribute set
         )
 
-        assert self.cdte_defect_gen_info not in output
+        assert self.CdTe_defect_gen_info not in output
 
         assert (
             """Interstitials    Guessed Charges        Conv. Cell Coords    Wyckoff
@@ -1357,7 +1357,7 @@ S_i_Td           [-2,-1,0,+1,+2]        [0.500,0.500,0.500]  4b
 Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             in output
         )  # now only Td
-        self._general_defect_gen_check(cdte_defect_gen)
+        self._general_defect_gen_check(CdTe_defect_gen)
 
         # test with YTOS conventional cell input
         ytos_interstitial_coords = [  # in conventional structure! subset of Voronoi vertices
@@ -1411,23 +1411,23 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
         # test with CdTe supercell input:
-        cdte_supercell_interstitial_coords = [
+        CdTe_supercell_interstitial_coords = [
             [0.6875, 0.4375, 0.4375],  # C3v
             [0.625, 0.375, 0.375],  # Cd2.83
             [0.75, 0.5, 0.5],  # Te2.83
-        ]  # note that cdte_bulk_supercell has the slightly different orientation to
+        ]  # note that CdTe_bulk_supercell has the slightly different orientation to
         # defect_gen.bulk_supercell
 
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
-            self.cdte_bulk_supercell, interstitial_coords=cdte_supercell_interstitial_coords
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
+            self.CdTe_bulk_supercell, interstitial_coords=CdTe_supercell_interstitial_coords
         )
 
-        assert self.cdte_defect_gen_info in output
+        assert self.CdTe_defect_gen_info in output
         assert (
-            cdte_defect_gen.interstitial_coords == cdte_supercell_interstitial_coords
+            CdTe_defect_gen.interstitial_coords == CdTe_supercell_interstitial_coords
         )  # check attribute set
         _test_prim_interstitial_coords(
-            cdte_defect_gen.prim_interstitial_coords,
+            CdTe_defect_gen.prim_interstitial_coords,
             [
                 (
                     np.array([0.625, 0.625, 0.625]),
@@ -1444,16 +1444,16 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             ],
         )
 
-        self._save_defect_gen_jsons(cdte_defect_gen)
-        self.cdte_defect_gen_check(cdte_defect_gen)
-        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        self._save_defect_gen_jsons(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
         # with supercell input, single interstitial coord, within min_dist of host atom:
         te_cd_1_metastable_c2v_antisite_supercell_frac_coords = [0.9999, 0.9999, 0.0313]
 
         with warnings.catch_warnings(record=True) as w:
-            _cdte_defect_gen = DefectsGenerator(
-                self.cdte_bulk_supercell,
+            _CdTe_defect_gen = DefectsGenerator(
+                self.CdTe_bulk_supercell,
                 interstitial_coords=te_cd_1_metastable_c2v_antisite_supercell_frac_coords,
             )
             non_ignored_warnings = [
@@ -1468,23 +1468,23 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                 "by not setting the `interstitial_coords` argument)."
                 in str(non_ignored_warnings[-1].message)
             )
-            assert _cdte_defect_gen.interstitial_coords == [
+            assert _CdTe_defect_gen.interstitial_coords == [
                 te_cd_1_metastable_c2v_antisite_supercell_frac_coords
             ]
 
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
-            self.cdte_bulk_supercell,
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
+            self.CdTe_bulk_supercell,
             interstitial_coords=te_cd_1_metastable_c2v_antisite_supercell_frac_coords,
             interstitial_gen_kwargs={"min_dist": 0.01},
         )
         assert "Cd_i_C2v         [0,+1,+2]              [0.000,0.000,0.063]  24f" in output
         assert "Te_i_C2v         [-2,-1,0,+1,+2,+3,+4]  [0.000,0.000,0.063]  24f" in output
 
-        self._general_defect_gen_check(cdte_defect_gen)
-        assert cdte_defect_gen.interstitial_coords == [
+        self._general_defect_gen_check(CdTe_defect_gen)
+        assert CdTe_defect_gen.interstitial_coords == [
             te_cd_1_metastable_c2v_antisite_supercell_frac_coords
         ]
-        assert cdte_defect_gen.interstitial_gen_kwargs == {"min_dist": 0.01}  # check attribute set
+        assert CdTe_defect_gen.interstitial_gen_kwargs == {"min_dist": 0.01}  # check attribute set
 
     def test_target_frac_coords(self):
         defect_gen = DefectsGenerator(self.prim_cdte)
@@ -1516,76 +1516,76 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
     def test_supercell_gen_kwargs(self):
         # test setting supercell_gen_kwargs
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, supercell_gen_kwargs={"min_length": 15}
         )
-        assert self.cdte_defect_gen_info in output
-        self._general_defect_gen_check(cdte_defect_gen)
-        assert cdte_defect_gen.supercell_gen_kwargs == {"min_length": 15}  # check attribute set
+        assert self.CdTe_defect_gen_info in output
+        self._general_defect_gen_check(CdTe_defect_gen)
+        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_length": 15}  # check attribute set
 
         # check now with 216-atom supercell:
-        assert len(cdte_defect_gen.bulk_supercell) == 216
+        assert len(CdTe_defect_gen.bulk_supercell) == 216
 
         assert np.allclose(
-            cdte_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords, [8.9933965, 8.9933965, 10.6285595]
+            CdTe_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords, [8.9933965, 8.9933965, 10.6285595]
         )
 
-    def cdte_defect_gen_check(self, cdte_defect_gen):
-        self._general_defect_gen_check(cdte_defect_gen)
+    def CdTe_defect_gen_check(self, CdTe_defect_gen):
+        self._general_defect_gen_check(CdTe_defect_gen)
 
         # test attributes:
-        assert self.cdte_defect_gen_info in cdte_defect_gen._defect_generator_info()
-        assert cdte_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
-        assert self.structure_matcher.fit(cdte_defect_gen.primitive_structure, self.prim_cdte)
+        assert self.CdTe_defect_gen_info in CdTe_defect_gen._defect_generator_info()
+        assert CdTe_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
+        assert self.structure_matcher.fit(CdTe_defect_gen.primitive_structure, self.prim_cdte)
         assert np.allclose(
-            cdte_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
+            CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
         )  # same lattice
         np.testing.assert_allclose(
-            cdte_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
+            CdTe_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         )
 
         assert np.allclose(
-            (cdte_defect_gen.primitive_structure * cdte_defect_gen.supercell_matrix).lattice.matrix,
-            self.cdte_bulk_supercell.lattice.matrix,
+            (CdTe_defect_gen.primitive_structure * CdTe_defect_gen.supercell_matrix).lattice.matrix,
+            self.CdTe_bulk_supercell.lattice.matrix,
         )
-        assert self.structure_matcher.fit(cdte_defect_gen.conventional_structure, self.prim_cdte)
+        assert self.structure_matcher.fit(CdTe_defect_gen.conventional_structure, self.prim_cdte)
         assert np.allclose(
-            cdte_defect_gen.conventional_structure.lattice.matrix,
+            CdTe_defect_gen.conventional_structure.lattice.matrix,
             self.conv_cdte.lattice.matrix,
         )
 
         # explicitly test defects
-        assert len(cdte_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
-        assert len(cdte_defect_gen.defects["vacancies"]) == 2
-        assert len(cdte_defect_gen.defects["substitutions"]) == 2
-        assert len(cdte_defect_gen.defects["interstitials"]) == 6
+        assert len(CdTe_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
+        assert len(CdTe_defect_gen.defects["vacancies"]) == 2
+        assert len(CdTe_defect_gen.defects["substitutions"]) == 2
+        assert len(CdTe_defect_gen.defects["interstitials"]) == 6
 
         # explicitly test some relevant defect attributes
-        assert cdte_defect_gen.defects["vacancies"][0].name == "v_Cd"
-        assert cdte_defect_gen.defects["vacancies"][0].oxi_state == -2
-        assert cdte_defect_gen.defects["vacancies"][0].multiplicity == 1
-        assert cdte_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        assert CdTe_defect_gen.defects["vacancies"][0].name == "v_Cd"
+        assert CdTe_defect_gen.defects["vacancies"][0].oxi_state == -2
+        assert CdTe_defect_gen.defects["vacancies"][0].multiplicity == 1
+        assert CdTe_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
+            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
-        assert cdte_defect_gen.defects["vacancies"][0].site == PeriodicSite(
-            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        assert CdTe_defect_gen.defects["vacancies"][0].site == PeriodicSite(
+            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert (
-            len(cdte_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
+            len(CdTe_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
         )  # 4x conv cell
 
         # test defect entries
-        assert len(cdte_defect_gen.defect_entries) == 50
-        assert str(cdte_defect_gen) == self.cdte_defect_gen_string  # __str__()
+        assert len(CdTe_defect_gen.defect_entries) == 50
+        assert str(CdTe_defect_gen) == self.CdTe_defect_gen_string  # __str__()
         assert (  # __repr__()
-            repr(cdte_defect_gen)
-            == self.cdte_defect_gen_string
+            repr(CdTe_defect_gen)
+            == self.CdTe_defect_gen_string
             + "\n---------------------------------------------------------\n"
-            + self.cdte_defect_gen_info
+            + self.CdTe_defect_gen_info
         )
 
         # explicitly test defect entry charge state log:
-        assert cdte_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
+        assert CdTe_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
             {
                 "input_parameters": {"charge_state": -2},
                 "probability_factors": {"oxi_probability": 1},
@@ -1615,7 +1615,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                 "padding": 1,
             },
         ]
-        assert cdte_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
+        assert CdTe_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
             {
                 "input_parameters": {
                     "charge_state": 4.0,
@@ -1633,7 +1633,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                 "probability_threshold": 0.0075,
             }
         ]
-        assert cdte_defect_gen.defect_entries["Te_i_C3v_-1"].charge_state_guessing_log == [
+        assert CdTe_defect_gen.defect_entries["Te_i_C3v_-1"].charge_state_guessing_log == [
             {
                 "input_parameters": {
                     "charge_state": -2.0,
@@ -1701,63 +1701,63 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         ]
 
         # explicitly test defect entry attributes
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff == "16e"
+        assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect.defect_type == DefectType.Interstitial
+        assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].wyckoff == "16e"
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
+            CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
             np.array([0.625, 0.625, 0.625]),
         )
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
+            CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
             np.array([0.3125, 0.4375, 0.4375]),
         )
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
-        assert cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
+        assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
+        assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
+            CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect.site.frac_coords,
             np.array([0.625, 0.625, 0.625]),
         )
 
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.name == "v_Cd"
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.oxi_state == -2
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.multiplicity == 1
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
+            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
-        assert cdte_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
-            "Cd", [0, 0, 0], cdte_defect_gen.primitive_structure.lattice
+        assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
+            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["v_Cd_0"].conv_cell_frac_coords,
+            CdTe_defect_gen.defect_entries["v_Cd_0"].conv_cell_frac_coords,
             np.array([0, 0, 0]),
         )
         np.testing.assert_allclose(
-            cdte_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
+            CdTe_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
             np.array([0.5, 0.5, 0.5]),
         )
 
     def test_defects_generator_cdte(self):
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte)
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte)
 
-        assert self.cdte_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
+        assert self.CdTe_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
         # interstitials (https://doi.org/10.1016/j.solener.2013.12.017)
 
-        assert cdte_defect_gen.structure == self.prim_cdte
+        assert CdTe_defect_gen.structure == self.prim_cdte
 
         # defect_gen_check changes defect_entries ordering, so save to json first:
-        self._save_defect_gen_jsons(cdte_defect_gen)
-        self.cdte_defect_gen_check(cdte_defect_gen)
-        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        self._save_defect_gen_jsons(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
-        cdte_defect_gen.to_json(f"{self.data_dir}/cdte_defect_gen.json")  # for testing in test_vasp.py
+        CdTe_defect_gen.to_json(f"{self.data_dir}/CdTe_defect_gen.json")  # for testing in test_vasp.py
 
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             # suggested check function in `get_defect_name_from_entry`:
-            for defect_name, defect_entry in cdte_defect_gen.items():
+            for defect_name, defect_entry in CdTe_defect_gen.items():
                 print(
                     defect_name,
                     get_defect_name_from_entry(defect_entry, unrelaxed=True),
@@ -1776,65 +1776,65 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         ]
         assert len(non_ignored_warnings) == 0  # no warnings for CdTe, scalar matrix
 
-    def test_defects_generator_cdte_supercell_input(self):
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.cdte_bulk_supercell)
+    def test_defects_generator_CdTe_supercell_input(self):
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.CdTe_bulk_supercell)
 
-        assert self.cdte_defect_gen_info in output
-        assert cdte_defect_gen.structure == self.cdte_bulk_supercell
+        assert self.CdTe_defect_gen_info in output
+        assert CdTe_defect_gen.structure == self.CdTe_bulk_supercell
 
-        self._save_defect_gen_jsons(cdte_defect_gen)
-        self.cdte_defect_gen_check(cdte_defect_gen)
-        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        self._save_defect_gen_jsons(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
     def test_adding_charge_states(self):
-        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
 
-        cdte_defect_gen.add_charge_states("Cd_i_C3v_0", [-7, -6])
-        self._general_defect_gen_check(cdte_defect_gen)
+        CdTe_defect_gen.add_charge_states("Cd_i_C3v_0", [-7, -6])
+        self._general_defect_gen_check(CdTe_defect_gen)
 
-        assert "Cd_i_C3v_-6" in cdte_defect_gen.defect_entries
-        assert cdte_defect_gen["Cd_i_C3v_-7"].charge_state == -7
+        assert "Cd_i_C3v_-6" in CdTe_defect_gen.defect_entries
+        assert CdTe_defect_gen["Cd_i_C3v_-7"].charge_state == -7
         info_line = "Cd_i_C3v         [-7,-6,0,+1,+2]        [0.625,0.625,0.625]  16e"
-        assert info_line in repr(cdte_defect_gen)
+        assert info_line in repr(CdTe_defect_gen)
 
     def test_removing_charge_states(self):
-        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
-        cdte_defect_gen.remove_charge_states("Cd_i", [+1, +2])
-        self._general_defect_gen_check(cdte_defect_gen, charge_states_removed=True)
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
+        CdTe_defect_gen.remove_charge_states("Cd_i", [+1, +2])
+        self._general_defect_gen_check(CdTe_defect_gen, charge_states_removed=True)
 
-        assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Cd2.83_+2" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Te2.83_+1" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_C3v_0" in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Cd2.83_0" in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Te2.83_0" in cdte_defect_gen.defect_entries
+        assert "Cd_i_C3v_+1" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_+2" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_+1" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_C3v_0" in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_0" in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_0" in CdTe_defect_gen.defect_entries
         #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
         info_line = "Cd_i_C3v         [0]                    [0.625,0.625,0.625]  16e"
-        assert info_line in repr(cdte_defect_gen)
+        assert info_line in repr(CdTe_defect_gen)
 
         # check removing neutral charge state still fine:
-        cdte_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
-        cdte_defect_gen.remove_charge_states("Cd_i", [0, +1])
-        self._general_defect_gen_check(cdte_defect_gen, charge_states_removed=True)
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
+        CdTe_defect_gen.remove_charge_states("Cd_i", [0, +1])
+        self._general_defect_gen_check(CdTe_defect_gen, charge_states_removed=True)
 
-        assert "Cd_i_C3v_+1" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Cd2.83_+2" in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Te2.83_+1" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_C3v_0" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Cd2.83_0" not in cdte_defect_gen.defect_entries
-        assert "Cd_i_Td_Te2.83_0" not in cdte_defect_gen.defect_entries
+        assert "Cd_i_C3v_+1" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_+2" in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_+1" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_C3v_0" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Cd2.83_0" not in CdTe_defect_gen.defect_entries
+        assert "Cd_i_Td_Te2.83_0" not in CdTe_defect_gen.defect_entries
         #            Cd_i_C3v         [0,+1,+2]              [0.625,0.625,0.625]  16e
         info_line = "Cd_i_C3v         [+2]                   [0.625,0.625,0.625]  16e"
-        assert info_line in repr(cdte_defect_gen)
+        assert info_line in repr(CdTe_defect_gen)
 
-    def test_cdte_no_generate_supercell_supercell_input(self):
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(
-            self.cdte_bulk_supercell, generate_supercell=False
+    def test_CdTe_no_generate_supercell_supercell_input(self):
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
+            self.CdTe_bulk_supercell, generate_supercell=False
         )
 
-        self._save_defect_gen_jsons(cdte_defect_gen)
-        self.cdte_defect_gen_check(cdte_defect_gen)
-        self._load_and_test_defect_gen_jsons(cdte_defect_gen)
+        self._save_defect_gen_jsons(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_generator_tqdm(self, mock_stdout):
@@ -2554,17 +2554,17 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         self.agcu_defect_gen_check(agcu_defect_gen, generate_supercell=False)
         self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
-    def cd_i_cdte_supercell_defect_gen_check(self, cd_i_defect_gen):
+    def cd_i_CdTe_supercell_defect_gen_check(self, cd_i_defect_gen):
         self._general_defect_gen_check(cd_i_defect_gen)
-        assert self.cd_i_cdte_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
+        assert self.cd_i_CdTe_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
         assert cd_i_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert not self.structure_matcher.fit(cd_i_defect_gen.primitive_structure, self.prim_cdte)
         assert not self.structure_matcher.fit(
-            cd_i_defect_gen.primitive_structure, self.cdte_bulk_supercell
+            cd_i_defect_gen.primitive_structure, self.CdTe_bulk_supercell
         )
         assert np.allclose(  # primitive cell of defect supercell here is same as bulk supercell
-            cd_i_defect_gen.primitive_structure.lattice.matrix, self.cdte_bulk_supercell.lattice.matrix
+            cd_i_defect_gen.primitive_structure.lattice.matrix, self.CdTe_bulk_supercell.lattice.matrix
         )
 
         np.testing.assert_allclose(cd_i_defect_gen.supercell_matrix, np.eye(3), atol=1e-3)
@@ -2649,16 +2649,16 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             return
 
         # test inputting a defective supercell
-        cdte_defect_gen = DefectsGenerator(self.prim_cdte)
+        CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
 
         cd_i_defect_gen, output = self._generate_and_test_no_warnings(
-            cdte_defect_gen["Cd_i_C3v_0"].sc_entry.structure,
+            CdTe_defect_gen["Cd_i_C3v_0"].sc_entry.structure,
         )
 
-        assert self.cd_i_cdte_supercell_defect_gen_info in output
+        assert self.cd_i_CdTe_supercell_defect_gen_info in output
 
         self._save_defect_gen_jsons(cd_i_defect_gen)
-        self.cd_i_cdte_supercell_defect_gen_check(cd_i_defect_gen)
+        self.cd_i_CdTe_supercell_defect_gen_check(cd_i_defect_gen)
         self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
         # save reduced defect gen to json
@@ -2968,12 +2968,12 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
         Test initialising DefectsGenerator with elements that don't have
         tabulated ICSD oxidation states.
         """
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
         # Pt has no tabulated ICSD oxidation states via pymatgen
-        self._general_defect_gen_check(cdte_defect_gen)
+        self._general_defect_gen_check(CdTe_defect_gen)
 
-        cdte_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
-        self._general_defect_gen_check(cdte_defect_gen)
+        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
+        self._general_defect_gen_check(CdTe_defect_gen)
         # Cali baby!
 
     def test_agsbte2(self):

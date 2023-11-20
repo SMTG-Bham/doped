@@ -40,9 +40,9 @@ class DefectPlottingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CDTE_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CdTe_dpd = loadfn(f"{self.CDTE_EXAMPLE_DIR}/CdTe_example_dpd.json")
-        self.CdTe_chempots = loadfn(f"{self.CDTE_EXAMPLE_DIR}/cdte_chempots.json")
+        self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
+        self.CdTe_dpd = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_dpd.json")
+        self.CdTe_chempots = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_chempots.json")
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
         self.YTOS_dpd = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_dpd.json")
 
