@@ -8,6 +8,7 @@ publication-quality outputs.
 """
 import contextlib
 import io
+import itertools
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
@@ -21,7 +22,7 @@ from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, Poscar
 from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
@@ -74,6 +75,8 @@ _aniso_dielectric_but_using_locpot_warning = (
     "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
+
+potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
 
 
 def bold_print(string: str) -> None:
@@ -335,12 +338,62 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     return get_defect_name_from_defect(defect)
 
 
-def _determine_defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: Optional[int]):
+def _determine_defect_charge_from_vasprun(
+    bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]
+):
     try:
-        defect_nelect = defect_vr.incar.get("NELECT", None)
-        if defect_nelect is None:
+        defect_nelect = defect_vr.parameters.get("NELECT")
+        auto_charge = None
+
+        with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
+            # first check if bulk matches expected NELECT
+            bulk_grouped_symbols = [
+                list(group) for key, group in itertools.groupby(bulk_vr.atomic_symbols)
+            ]
+            defect_grouped_symbols = [
+                list(group) for key, group in itertools.groupby(defect_vr.atomic_symbols)
+            ]
+
+            for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
+                if all(
+                    potcar_summary_stats[trial_functional].get(
+                        bulk_vr.potcar_spec[i]["titel"].replace(" ", ""), False
+                    )
+                    for i in range(len(bulk_grouped_symbols))
+                ):
+                    break
+
+            bulk_nelect = sum(
+                np.array([len(i) for i in bulk_grouped_symbols])
+                * np.array(
+                    [
+                        potcar_summary_stats[trial_functional][
+                            bulk_vr.potcar_spec[i]["titel"].replace(" ", "")
+                        ][0]["ZVAL"]
+                        for i in range(len(bulk_grouped_symbols))
+                    ]
+                )
+            )
+            assert bulk_nelect == bulk_vr.parameters.get("NELECT")
+
+            neutral_nelect = sum(
+                np.array([len(i) for i in defect_grouped_symbols])
+                * np.array(
+                    [
+                        potcar_summary_stats[trial_functional][
+                            defect_vr.potcar_spec[i]["titel"].replace(" ", "")
+                        ][0]["ZVAL"]
+                        for i in range(len(defect_grouped_symbols))
+                    ]
+                )
+            )
+
+            auto_charge = -1 * (defect_nelect - neutral_nelect)
+
+        if defect_vr.incar.get("NELECT") is None and auto_charge is None:
             auto_charge = 0  # neutral defect if NELECT not specified
-        else:
+
+        elif auto_charge is None:
             potcar_symbols = [titel.split()[1] for titel in defect_vr.potcar_symbols]
             potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
             with warnings.catch_warnings():  # ignore POTCAR warnings if not available
@@ -427,8 +480,7 @@ def defect_entry_from_paths(
             set to true.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
-            from the defect calculation outputs (requires `POTCAR`s to be set up
-            with `pymatgen`).
+            from the defect calculation outputs.
         initial_defect_structure_path (str):
             Path to the initial/unrelaxed defect structure. Only recommended for use
             if structure matching with the relaxed defect structure(s) fails (rare).
@@ -894,7 +946,6 @@ class DefectsParser:
                 else it is set to the default `doped` name for that defect.
         """
         # TODO: Need to add `DefectPhaseDiagram.from_json()` etc methods as mention in docstring here
-        # TODO: Update tutorials to show DefectsParser and DefectParser (for finer control)
         self.output_path = output_path
         self.dielectric = dielectric
         self.skip_corrections = skip_corrections
@@ -1412,7 +1463,9 @@ class DefectParser:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
         try:
-            parsed_charge_state: int = _determine_defect_charge_from_vasprun(defect_vr, charge_state)
+            parsed_charge_state: int = _determine_defect_charge_from_vasprun(
+                bulk_vr, defect_vr, charge_state
+            )
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
             # try determine from folder name - must have "-" or "+" at end of name for this
             try:
