@@ -470,17 +470,33 @@ def _compare_kpoints(bulk_kpoints, defect_kpoints):
     sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=tuple)
 
-    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
-        warnings.warn(
-            f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
-            f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
-            f"\n{bulk_kpoints.kpts}\n"
-            f"and in the defect calculations:"
-            f"\n{defect_kpoints.kpts}\n"
-            f"The same KPOINTS settings should be used for both calculations for accurate results!"
+    kpoints_info_message = (
+        f"\n{bulk_kpoints.kpts}\nand in the defect calculations:\n{defect_kpoints.kpts}\n"
+    )
+
+    if np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+        if len(sorted_bulk_kpoints) != 1 or np.allclose(
+            bulk_kpoints.kpts_shift, defect_kpoints.kpts_shift
+        ):
+            return True
+
+        kpoints_info_message = (  # otherwise, kpoints shift differs for grid kpoints!
+            f"\n{bulk_kpoints.kpts} with shift: {bulk_kpoints.kpts_shift}\nand in the defect "
+            f"calculations:\n{defect_kpoints.kpts} with shift: {defect_kpoints.kpts_shift}\n"
         )
-        return False
-    return True
+
+    elif (np.isclose(np.product(sorted_bulk_kpoints[0]), len(sorted_defect_kpoints))) or (
+        np.isclose(np.product(sorted_defect_kpoints[0]), len(sorted_bulk_kpoints))
+    ):
+        return True  # assume matching grids if same number of kpoints
+
+    warnings.warn(
+        f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
+        f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
+        f"{kpoints_info_message}"
+        f"The same KPOINTS settings should be used for both calculations for accurate results!"
+    )
+    return False
 
 
 def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch_tags=None):
