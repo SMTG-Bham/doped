@@ -25,7 +25,7 @@ copyright = '2023, Seán R. Kavanagh'
 author = 'Seán R. Kavanagh'
 
 # The full version, including alpha/beta/rc tags
-release = '2.1.0'
+release = '2.2.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -109,7 +109,7 @@ html_context = {
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/3.8", None),
+    "python": ("https://docs.python.org/3.9", None),
     "numpy": ("http://docs.scipy.org/doc/numpy/", None),
     "pymatgen": ("http://pymatgen.org/", None),
     "matplotlib": ("http://matplotlib.org", None),
