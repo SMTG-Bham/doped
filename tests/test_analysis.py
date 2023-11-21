@@ -111,10 +111,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             CdTe_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        assert any(
+        assert not any(
             "The KPOINTS for your bulk and defect calculations do not match" in str(warn.message)
             for warn in w
-        )  # KPOINTS warning
+        )  # no KPOINTS warning
         assert any(
             all(
                 i in str(warn.message)

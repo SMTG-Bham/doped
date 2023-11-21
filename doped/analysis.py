@@ -11,7 +11,7 @@ import itertools
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Optional, Type, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -48,7 +48,7 @@ from doped.vasp import DefectDictSet
 
 def _custom_formatwarning(
     message: Union[Warning, str],
-    category: Type[Warning],
+    category: type[Warning],
     filename: str,
     lineno: int,
     line: Optional[str] = None,
@@ -628,9 +628,9 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
 
 def formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempots: Optional[Dict] = None,
-    el_refs: Optional[Dict] = None,
-    facets: Optional[List] = None,
+    chempots: Optional[dict] = None,
+    el_refs: Optional[dict] = None,
+    facets: Optional[list] = None,
     fermi_level: float = 0,
 ):
     """
@@ -733,8 +733,8 @@ def formation_energy_table(
 
 def _single_formation_energy_table(
     defect_phase_diagram: DefectPhaseDiagram,
-    chempots: Dict,
-    el_refs: Dict,
+    chempots: dict,
+    el_refs: dict,
     fermi_level: float = 0,
 ):
     """
@@ -1917,13 +1917,15 @@ class DefectParser:
             "bulk_incar": {k: v for k, v in self.bulk_vr.incar.as_dict().items() if "@" not in k},
             "defect_kpoints": self.defect_vr.kpoints,
             "bulk_kpoints": self.bulk_vr.kpoints,
+            "defect_actual_kpoints": self.defect_vr.actual_kpoints,
+            "bulk_actual_kpoints": self.bulk_vr.actual_kpoints,
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
         }
 
         _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
         _compare_potcar_symbols(run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"])
-        _compare_kpoints(run_metadata["bulk_kpoints"], run_metadata["defect_kpoints"])
+        _compare_kpoints(run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"])
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 

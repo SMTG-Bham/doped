@@ -462,41 +462,27 @@ def _compare_potcar_symbols(bulk_potcar_symbols, defect_potcar_symbols):
     return True
 
 
-def _compare_kpoints(bulk_kpoints, defect_kpoints):
+def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints):
     """
-    Check bulk and defect KPOINTS are the same.
+    Check bulk and defect KPOINTS are the same, using the
+    Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
     """
     # sort kpoints, in case same KPOINTS just different ordering:
-    sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=tuple)
-    sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=tuple)
+    sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
+    sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
 
-    kpoints_info_message = (
-        f"\n{bulk_kpoints.kpts}\nand in the defect calculations:\n{defect_kpoints.kpts}\n"
-    )
-
-    if np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
-        if len(sorted_bulk_kpoints) != 1 or np.allclose(
-            bulk_kpoints.kpts_shift, defect_kpoints.kpts_shift
-        ):
-            return True
-
-        kpoints_info_message = (  # otherwise, kpoints shift differs for grid kpoints!
-            f"\n{bulk_kpoints.kpts} with shift: {bulk_kpoints.kpts_shift}\nand in the defect "
-            f"calculations:\n{defect_kpoints.kpts} with shift: {defect_kpoints.kpts_shift}\n"
+    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+        warnings.warn(
+            f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
+            f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
+            f"\n{sorted_bulk_kpoints}\n"
+            f"and in the defect calculation:"
+            f"\n{sorted_defect_kpoints}\n"
+            f"The same KPOINTS settings should be used for both calculations for accurate results!"
         )
+        return False
 
-    elif (np.isclose(np.product(sorted_bulk_kpoints[0]), len(sorted_defect_kpoints))) or (
-        np.isclose(np.product(sorted_defect_kpoints[0]), len(sorted_bulk_kpoints))
-    ):
-        return True  # assume matching grids if same number of kpoints
-
-    warnings.warn(
-        f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
-        f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
-        f"{kpoints_info_message}"
-        f"The same KPOINTS settings should be used for both calculations for accurate results!"
-    )
-    return False
+    return True
 
 
 def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch_tags=None):
