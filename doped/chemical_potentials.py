@@ -268,6 +268,8 @@ def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
 
 
 class CompetingPhases:
+    # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
+    #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
     # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
