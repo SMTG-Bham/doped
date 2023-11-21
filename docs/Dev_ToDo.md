@@ -10,15 +10,11 @@
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
 - Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
+- Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
-- Automatically check the 'bulk' and 'defect' calculations used the same INCAR tags, KPOINTS and POTCAR
-  settings, and warn user if not. Should auto-check the magnetisation output; if it comes to around
+- Should auto-check the magnetisation output; if it comes to around
   zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
-- Profile defect parsing, identify bottlenecks and consider if multiprocessing could be used to speed up.
-- Add warning if, when parsing, only one charge state for a defect is parsed (i.e. the other charge
-  states haven't completed), in case this isn't noticed by the user. Print a list of all parsed charge
-  states as a check.
 - Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
   relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
   - Should be doable with current point symmetry tools, especially when both the defect and bulk
@@ -42,7 +38,7 @@
       with the original structure and get the difference (-> configurational degeneracy) from this. Not
       sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
       getting the difference in symm-ops according to `spglib`?
-  - Also add consideration of odd/even number of electrons to account for spin degeneracy. Note we can do this automatically even without `NELECT`, using magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge (can also use this to double check odd is odd and even even as expected, warn user if not)
+  - Also add consideration of odd/even number of electrons to account for spin degeneracy (can pull from `vr.parameters["NELECT"]` / magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge)(can also use this to double check odd is odd and even even as expected, warn user if not)
 - Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
   also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
   effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in
@@ -73,12 +69,8 @@
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
 - Automate `pydefect` shallow defect analysis? At least have notebook showing how to manually do this (Adair's done before?).
-- Previous `pymatgen` issues, fixed?
-  - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is used to group defect charge states for the transition level plot / transition level map outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly between charge states, this will give separate lines for each charge state. This is kind of ok, because they _are_ actually different defect sites, but should have intelligent defaults for dealing with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for similar defect types, an option to just show amalgamated lowest energy charge states for each _defect type_). NaP is an example for this – should have a test built for however we want to handle cases like this. See Ke's example case too with different interstitial sites.
-  - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think about how we want to refactor the `DefectPhaseDiagram` object!
-  - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to `dpd.find_stable_charges()` to update the transition level map etc.
-- Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
-  (and note this behaviour in examples/docs)
+  - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
+    (and note this behaviour in examples/docs)
 - Change formation energy plotting and tabulation to `DefectPhaseDiagram` methods rather than standalone
   functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -97,7 +89,6 @@
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
 - Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
-- Function(s) for exporting defect energies and corrections as Pandas DataFrame / HDF5 / json / yaml / csv etc for readily-accessible, easy-to-use reproducibility
 - Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
   - Alex Squires has functions/notebooks from Seán (-> Xinwei -> Jiayi) -> Alex, for transferring to
     `py-sc-fermi` and generating nice plots with the outputs, so add this and make it our suggested
@@ -113,14 +104,10 @@
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
-- `ShakeNBreak` related updates:
-  - Use doped defect entry generation functions in `ShakeNBreak`.
 - Code tidy up:
   - Test coverage?
-  - Go through docstrings and trim to 80 characters. Also make sure all tidy and understandable (idiot-proof). Should be able to generate docs with little to no warnings/errors.
+  - Auto-docs generation with little to no warnings/errors?
   - Add type hints for all functions.
-  - Check code for each function is relatively lean & efficient, can check with ChatGPT for any gnarly
-    ones.
 
 - Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations

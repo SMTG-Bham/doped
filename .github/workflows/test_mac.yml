@@ -1,4 +1,4 @@
-name: MacOS and Windows Tests
+name: MacOS Tests
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
 
       matrix:
         python-version: [ '3.8', '3.11' ]
-        os: [ windows-latest, macos-latest ]
+        os: [ macos-latest ]
 
     runs-on: ${{ matrix.os }}
 

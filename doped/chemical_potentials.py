@@ -181,16 +181,40 @@ def _calculate_formation_energies(data: list, elemental: dict):
             d[el] = Composition(d["formula"]).as_dict().get(el, 0)
 
     formation_energy_df = pd.DataFrame(data)
-    formation_energy_df["formation_energy"] = formation_energy_df["energy_per_fu"]
-    for k, v in elemental.items():
-        formation_energy_df["formation_energy"] -= formation_energy_df[k] * v
-
-    formation_energy_df["num_atoms_in_fu"] = (
-        formation_energy_df["energy_per_fu"] / formation_energy_df["energy_per_atom"]
+    formation_energy_df["num_atoms_in_fu"] = formation_energy_df["formula"].apply(
+        lambda x: Composition(x).num_atoms
     )
     formation_energy_df["num_species"] = formation_energy_df["formula"].apply(
         lambda x: len(Composition(x).as_dict())
     )
+
+    # get energy per fu then subtract elemental energies later, to get formation energies
+    if "energy_per_fu" in formation_energy_df.columns:
+        formation_energy_df["formation_energy_calc"] = formation_energy_df["energy_per_fu"]
+        if "energy_per_atom" not in formation_energy_df.columns:
+            formation_energy_df["energy_per_atom"] = formation_energy_df["energy_per_fu"] / (
+                formation_energy_df["num_atoms_in_fu"]
+            )
+
+    elif "energy_per_atom" in formation_energy_df.columns:
+        formation_energy_df["formation_energy_calc"] = (
+            formation_energy_df["energy_per_atom"] * formation_energy_df["num_atoms_in_fu"]
+        )
+        formation_energy_df["energy_per_fu"] = formation_energy_df["energy_per_atom"] * (
+            formation_energy_df["num_atoms_in_fu"]
+        )
+
+    else:
+        raise ValueError(
+            "No energy data (energy_per_atom or energy_per_fu) found in input data to calculate "
+            "formation energies!"
+        )
+
+    for k, v in elemental.items():
+        formation_energy_df["formation_energy_calc"] -= formation_energy_df[k] * v
+
+    formation_energy_df["formation_energy"] = formation_energy_df["formation_energy_calc"]
+    formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
 
     # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
     formation_energy_df = formation_energy_df.sort_values(
@@ -297,22 +321,32 @@ class CompetingPhases:
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
         #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
         #  any particularly bad cases. E.g. P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037
-        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for Li,
-        #  Na and K (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad cases).
+        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for all
+        #  alkali and alkaline earth metals (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad
+        #  cases).
+        # With Materials Project querying, can check if the structure has a database ID (i.e. is
+        # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
+        # which only outputs phases which are either on the MP-predicted hull or have an ICSD ID?
+        # Would want to test this to see if it is sufficient in most cases, then can recommend its use
+        # with a caution... From a quick test, this does cut down a good chunk of unnecessary phases,
+        # but still not all as often there are several ICSD phases for e.g. metals with a load of known
+        # polymorphs (at different temperatures/pressures).
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
         # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
-        # entries for the same composition, say which have database IDs, warn the user (that it would
-        # be prudent to manually confirm which are actually the groundstate, ICSD best bet) and direct to
-        # relevant section on the docs.
+        # entries for the same composition, warn the user (that if the groundstate phase at low/room
+        # temp is well-known, then likely best to prune to that) and direct to relevant section on the
+        # docs discussing this
 
         # all data collected from materials project
-        self.data = [
+        self.data = [  # can see available fields with MPRester.*.available_fields on new API
             "pretty_formula",
             "e_above_hull",
             "band_gap",
             "nsites",
             "volume",
             "icsd_id",
+            "icsd_ids",  # some entries have icsd_id and some have icsd_ids
+            "theoretical",
             "formation_energy_per_atom",
             "energy_per_atom",
             "energy",
@@ -822,7 +856,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
 
                 for entry in self.MP_full_pd_entries.copy():
-                    if any(sub_elt in entry.composition for sub_elt in self.extrinsic_species):
+                    if any(sub_el in entry.composition for sub_el in self.extrinsic_species):
                         if (
                             entry.data["pretty_formula"] in self._molecules_in_a_box
                             and entry.data["e_above_hull"] == 0
@@ -850,7 +884,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
             else:  # full_sub_approach but not co-doping
                 self.MP_full_pd_entries = []
-                for sub_elt in self.extrinsic_species:
+                for sub_el in self.extrinsic_species:
                     extrinsic_entries = []
                     with contextlib.ExitStack() as stack:
                         if self.api_key is None:
@@ -859,7 +893,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             mpr = stack.enter_context(MPRester(self.api_key))
 
                         MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                            [*self.intrinsic_species, sub_elt],
+                            [*self.intrinsic_species, sub_el],
                             inc_structure="initial",
                             property_data=self.data,
                         )
@@ -872,7 +906,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     for entry in MP_full_pd_entries.copy():
                         if entry not in self.MP_full_pd_entries:
                             self.MP_full_pd_entries.append(entry)
-                        if sub_elt in entry.composition:
+                        if sub_el in entry.composition:
                             if (
                                 entry.data["pretty_formula"] in self._molecules_in_a_box
                                 and entry.data["e_above_hull"] == 0
@@ -909,7 +943,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             # now compile substitution entries:
             self.MP_full_pd_entries = []
 
-            for sub_elt in self.extrinsic_species:
+            for sub_el in self.extrinsic_species:
                 extrinsic_pd_entries = []
                 with contextlib.ExitStack() as stack:
                     if self.api_key is None:
@@ -918,7 +952,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         mpr = stack.enter_context(MPRester(self.api_key))
 
                     MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                        [*self.intrinsic_species, sub_elt],
+                        [*self.intrinsic_species, sub_el],
                         inc_structure="initial",
                         property_data=self.data,
                     )
@@ -955,7 +989,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 if not extrinsic_pd_entries:
                     raise ValueError(
                         f"No Materials Project entries found for the given chemical "
-                        f"system: {[*self.intrinsic_species, sub_elt]}"
+                        f"system: {[*self.intrinsic_species, sub_el]}"
                     )
 
                 extrinsic_phase_diagram = PhaseDiagram(extrinsic_pd_entries)
@@ -969,7 +1003,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     # number of species in the bulk composition, then include the extrinsic phase(s)
                     # for this facet (full_sub_approach = False approach)
                     MP_intrinsic_bordering_phases = {
-                        phase for phase in facet.split("-") if sub_elt not in phase
+                        phase for phase in facet.split("-") if sub_el not in phase
                     }
                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                         # add to list of extrinsic bordering phases, if not already present:
@@ -977,7 +1011,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                             [
                                 phase
                                 for phase in facet.split("-")
-                                if sub_elt in phase and phase not in MP_extrinsic_bordering_phases
+                                if sub_el in phase and phase not in MP_extrinsic_bordering_phases
                             ]
                         )
 
@@ -987,7 +1021,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     if (
                         entry.name not in MP_extrinsic_bordering_phases
                         and not entry.is_element
-                        and sub_elt in entry.composition
+                        and sub_el in entry.composition
                     ):
                         # decrease entry energy per atom by `e_above_hull` eV/atom
                         renormalised_entry = _renormalise_entry(entry, e_above_hull)
@@ -1005,14 +1039,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                                 if facet not in MP_extrinsic_gga_chempots:
                                     # new facet, check if not an over-dependent facet:
                                     MP_intrinsic_bordering_phases = {
-                                        phase for phase in facet.split("-") if sub_elt not in phase
+                                        phase for phase in facet.split("-") if sub_el not in phase
                                     }
                                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                                         MP_extrinsic_bordering_phases.extend(
                                             [
                                                 phase
                                                 for phase in facet.split("-")
-                                                if sub_elt in phase
+                                                if sub_el in phase
                                                 and phase not in MP_extrinsic_bordering_phases
                                             ]
                                         )
@@ -1021,7 +1055,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     entry
                     for entry in extrinsic_pd_entries
                     if entry.name in MP_extrinsic_bordering_phases
-                    or (entry.is_element and sub_elt in entry.name)
+                    or (entry.is_element and sub_el in entry.name)
                 ]
 
                 # check that extrinsic competing phases list is not empty (can happen with
@@ -1035,7 +1069,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     )
                     full_sub_approach = True
                     extrinsic_entries = [
-                        entry for entry in self.MP_full_pd_entries if sub_elt in entry.composition
+                        entry for entry in self.MP_full_pd_entries if sub_el in entry.composition
                     ]
 
                 # sort entries by e_above_hull, and then by num_species, then alphabetically:
@@ -1061,8 +1095,18 @@ class CompetingPhasesAnalyzer:
         """
         Args:
             system (str): The  'reduced formula' of the bulk composition
-            extrinsic_species (str): Dopant species - can only deal with one at a time (see
-            notebook in examples folder for more complex cases).
+            extrinsic_species (str):
+                Extrinsic species - can only deal with one at a time (see
+                tutorial on the docs for more complex cases).
+
+        Attributes:
+            bulk_composition (str): The bulk (host) composition
+            elemental (list): List of elemental species in the bulk composition
+            extrinsic_species (str): Extrinsic species, if present
+            data (list):
+                List of dictionaries containing the parsed competing phases data
+            formation_energy_df (pandas.DataFrame):
+                DataFrame containing the parsed competing phases data
         """
         self.bulk_composition = Composition(system)
         self.elemental = [str(c) for c in self.bulk_composition.elements]
@@ -1071,27 +1115,40 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
-    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_fname=None):
+    # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
+    #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
+    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
         """
-        Reads in vaspruns, collates energies to csv.
+        Parses competing phase energies from `vasprun.xml(.gz)` outputs,
+        computes the formation energies and generates the
+        `CompetingPhasesAnalyzer` object.
 
         Args:
-            path (list, str, pathlib Path): Either a path to the base folder in which you have your
-                competing phase calculation outputs (e.g. formula_EaH_X/vasp_std/vasprun.xml(
-                .gz), or formula_EaH_X/vasprun.xml(.gz)), or a list of strings or Paths to
-                vasprun.xml(.gz) files.
-            folder (str): The subfolder in which your vasprun.xml output files are located (e.g.
-                a file-structure like: formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
-                search for `vasp_std` subfolders, or directly in the `formula_EaH_X` folder.
-            csv_fname (str): If set will save to csv with this name
+            path (list, str, pathlib Path):
+                Either a path to the base folder in which you have your
+                competing phase calculation outputs (e.g.
+                formula_EaH_X/vasp_std/vasprun.xml(.gz), or
+                formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
+                to vasprun.xml(.gz) files.
+            folder (str):
+                The subfolder in which your vasprun.xml(.gz) output files
+                are located (e.g. a file-structure like:
+                formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
+                search for `vasp_std` subfolders, or directly in the
+                `formula_EaH_X` folder.
+            csv_path (str):
+                If set will save the parsed data to a csv at this filepath.
+                Further customisation of the output csv can be achieved with
+                the CompetingPhasesAnalyzer.to_csv() method.
+
         Returns:
-            None, sets self.data and self.elemental_energies
+            None, sets self.data, self.formation_energy_df and self.elemental_energies
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
-        #  subfolders are found).
-        # TODO: Add check for matching INCAR and POTCARs from these calcs, as we also want with
-        #  defect parsing
+        #  subfolders are found). - see how this is done in DefectsParser in analysis.py
+        # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
+        #  analysis.py for this
         self.vasprun_paths = []
         # fetch data
         # if path is just a list of all competing phases
@@ -1108,41 +1165,10 @@ class CompetingPhasesAnalyzer:
                 else:
                     print(f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution")
 
-        # if path provided points to the doped created directories
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
-                if p.glob("EaH"):
-                    # add bulk simple properties
-                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
-                    if multiple:
-                        warnings.warn(
-                            f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
-                            f"{vr_path} to parse the calculation energy and metadata."
-                        )
-
-                    if os.path.exists(vr_path):
-                        self.vasprun_paths.append(vr_path)
-
-                    else:
-                        vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
-                        if multiple:
-                            warnings.warn(
-                                f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                                f"{vr_path} to parse the calculation energy and metadata."
-                            )
-
-                        if os.path.exists(vr_path):
-                            self.vasprun_paths.append(vr_path)
-
-                        else:
-                            warnings.warn(
-                                f"Can't find a vasprun.xml file in {p} or {p/folder}, "
-                                f"proceed with caution"
-                            )
-                            continue
-
-                else:
+                if not p.glob("EaH"):  # if path provided doesn't point to the doped created directories
                     # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
                     #  only if there's no *EaH* folders at all.
                     #  Seemed to be causing problems with .DS_Store files on Macs as well
@@ -1152,6 +1178,32 @@ class CompetingPhasesAnalyzer:
                         "folder name."
                     )
 
+                # add bulk simple properties
+                vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
+                if multiple:
+                    warnings.warn(
+                        f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                        f"{vr_path} to parse the calculation energy and metadata."
+                    )
+
+                if os.path.exists(vr_path):
+                    self.vasprun_paths.append(vr_path)
+
+                else:
+                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                    if multiple:
+                        warnings.warn(
+                            f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                            f"{vr_path} to parse the calculation energy and metadata."
+                        )
+
+                    if os.path.exists(vr_path):
+                        self.vasprun_paths.append(vr_path)
+
+                    else:
+                        warnings.warn(
+                            f"Can't find a vasprun.xml file in {p} or {p/folder}, proceed with caution"
+                        )
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
@@ -1177,16 +1229,16 @@ class CompetingPhasesAnalyzer:
 
             # check if elemental:
             if len(rcf) == 1:
-                elt = v["elements"][0]
-                if elt not in self.elemental_energies:
-                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
-                    if elt not in self.elemental:  # new (extrinsic) element
-                        self.extrinsic_species = elt
-                        self.elemental.append(elt)
+                el = v["elements"][0]
+                if el not in self.elemental_energies:
+                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    if el not in self.elemental:  # new (extrinsic) element
+                        self.extrinsic_species = el
+                        self.elemental.append(el)
 
-                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[elt]:
+                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[el]:
                     # only include lowest energy elemental polymorph
-                    self.elemental_energies[elt] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
 
             d = {
                 "formula": v["pretty_formula"],
@@ -1198,58 +1250,135 @@ class CompetingPhasesAnalyzer:
             temp_data.append(d)
 
         formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
-        if csv_fname is not None:
-            formation_energy_df.to_csv(csv_fname, index=False)
-            print(f"Competing phase formation energies have been saved to {csv_fname}.")
-
         self.data = formation_energy_df.to_dict(orient="records")
+        self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
 
-    def from_csv(self, csv):
+        if csv_path is not None:
+            self.to_csv(csv_path)
+
+    def _get_and_sort_formation_energy_data(self, sort_by_energy=False, prune_polymorphs=False):
+        data = copy.deepcopy(self.data)
+
+        if prune_polymorphs:  # only keep the lowest energy polymorphs
+            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
+            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
+            pruned_df = formation_energy_df.loc[indices]
+            data = pruned_df.to_dict(orient="records")
+
+        if sort_by_energy:
+            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
+
+        # moves the bulk composition to the top of the list
+        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
+
+        # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
+        # energy_per_fu, energy, kpoints, then by order of appearance in bulk_composition dict,
+        # then alphabetically for any remaining:
+        data = [
+            {
+                "formula": d["formula"],
+                "formation_energy": d["formation_energy"],
+                "energy_per_atom": d["energy_per_atom"],
+                "energy_per_fu": d["energy_per_fu"],
+                "energy": d.get("energy"),
+                "kpoints": d.get("kpoints"),
+                **{  # num elts columns, sorted by order of occurrence in bulk composition:
+                    str(elt): d.get(str(elt))
+                    for elt in sorted(
+                        self.bulk_composition.elements,
+                        key=lambda x: self.bulk_composition.reduced_formula.index(str(x)),
+                    )
+                },
+                **{
+                    k: v
+                    for k, v in d.items()
+                    if k
+                    not in [
+                        "formula",
+                        "formation_energy",
+                        "energy_per_atom",
+                        "energy_per_fu",
+                        "energy",
+                        "kpoints",
+                    ]
+                },
+            }
+            for d in data
+        ]
+        # if all values are None for a certain key, remove that key from all dicts in list:
+        keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
+        data = [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
+
+        return data
+
+    def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
+        """
+        Write parsed competing phases data to csv. Can be re-loaded with
+        CompetingPhasesAnalyzer.from_csv().
+
+        Args:
+            csv_path (str): Path to csv file to write to.
+            sort_by_energy (bool):
+                If True, sorts the csv by formation energy (highest to lowest).
+                Default is False (sorting by formula).
+            prune_polymorphs (bool):
+                Whether to only write the lowest energy polymorphs for each composition.
+                Doesn't affect chemical potential limits (only the ground-state
+                polymorphs matter for this).
+                Default is False.
+        """
+        formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
+        pd.DataFrame(formation_energy_data).to_csv(csv_path, index=False)
+        print(f"Competing phase formation energies have been saved to {csv_path}.")
+
+    def from_csv(self, csv_path):
         """
         Read in data from csv.
 
         Args:
-            csv (str): Path to csv file. Must have columns 'formula',
+            csv_path (str): Path to csv file. Must have columns 'formula',
                 'energy_per_fu', 'energy' and 'formation_energy'
         Returns:
             None, sets self.data and self.elemental_energies.
         """
-        formation_energy_df = pd.read_csv(csv)
-        columns = [
-            "formula",
-            "energy_per_fu",
-            "energy_per_atom",
-            "energy",
-            "formation_energy",
-        ]
-        if all(x in list(formation_energy_df.columns) for x in columns):
-            droplist = [i for i in formation_energy_df.columns if i not in columns]
-            formation_energy_df = formation_energy_df.drop(droplist, axis=1)
-            formation_energy_dict = formation_energy_df.to_dict(orient="records")
-            self.data = formation_energy_dict
+        formation_energy_df = pd.read_csv(csv_path)
+        if "formula" not in list(formation_energy_df.columns) or all(
+            x not in list(formation_energy_df.columns) for x in ["energy_per_fu", "energy_per_atom"]
+        ):
+            raise ValueError(
+                "Supplied csv does not contain the minimal columns required ('formula', "
+                "and 'energy_per_fu' or 'energy_per_atom'!"
+            )
 
-            self.elemental_energies = {}
-            for i in formation_energy_dict:
-                c = Composition(i["formula"])
-                if len(c.elements) == 1:
-                    elt = c.chemical_system
-                    if (
-                        elt not in self.elemental_energies
-                        or i["energy_per_atom"] < self.elemental_energies[elt]
-                    ):
-                        self.elemental_energies[elt] = i["energy_per_atom"]
+        self.data = formation_energy_df.to_dict(orient="records")
 
-        else:
-            raise ValueError("supplied csv does not contain the correct headers, cannot read in the data")
+        self.elemental_energies = {}
+        for i in self.data:
+            c = Composition(i["formula"])
+            if len(c.elements) == 1:
+                el = c.chemical_system
+                if "energy_per_atom" in list(formation_energy_df.columns):
+                    el_energy_per_atom = i["energy_per_atom"]
+                else:
+                    el_energy_per_atom = i["energy_per_fu"] / c.num_atoms
 
-    def calculate_chempots(self, csv_fname=None, verbose=True, sort_by=None):
+                if el not in self.elemental_energies or el_energy_per_atom < self.elemental_energies[el]:
+                    self.elemental_energies[el] = el_energy_per_atom
+
+        if "formation_energy" not in list(formation_energy_df.columns):
+            formation_energy_df = _calculate_formation_energies(self.data, self.elemental_energies)
+            self.data = formation_energy_df.to_dict(orient="records")
+
+        self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
+
+    def calculate_chempots(self, csv_path=None, verbose=True, sort_by=None):
         """
         Calculates chemical potential limits. For dopant species, it calculates
         the limiting potential based on the intrinsic chemical potentials (i.e.
         same as `full_sub_approach=False` in pycdt).
 
         Args:
-            csv_fname (str): If set, will save chemical potential limits to csv
+            csv_path (str): If set, will save chemical potential limits to csv
             verbose (bool): If True, will print out chemical potential limits.
             sort_by (str): If set, will sort the chemical potential limits in the output
                 dataframe according to the chemical potential of the specified element (from
@@ -1317,7 +1446,7 @@ class CompetingPhasesAnalyzer:
         self._intrinsic_chem_limits = {
             "facets": no_element_chem_lims,
             "elemental_refs": {
-                str(elt): ent.energy_per_atom for elt, ent in self._intrinsic_phase_diagram.el_refs.items()
+                str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
             },
             "facets_wrt_el_refs": {},
         }
@@ -1417,10 +1546,10 @@ class CompetingPhasesAnalyzer:
             self._chem_limits = self._intrinsic_chem_limits
 
         # save and print
-        if csv_fname is not None:
-            extrinsic_chempots_df.to_csv(csv_fname, index=False)
+        if csv_path is not None:
+            extrinsic_chempots_df.to_csv(csv_path, index=False)
             if verbose:
-                print("Saved chemical potential limits to csv file: ", csv_fname)
+                print("Saved chemical potential limits to csv file: ", csv_path)
 
         if verbose:
             print("Calculated chemical potential limits: \n")
@@ -1515,19 +1644,24 @@ class CompetingPhasesAnalyzer:
                     print(int(v), k, end=" ")
                 print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
 
-    def to_LaTeX_table(self, columns=1, sort_by_energy=False, prune_polymorphs=True):
+    def to_LaTeX_table(self, splits=1, sort_by_energy=False, prune_polymorphs=True):
         """
         A very simple function to print out the competing phase formation
-        energies in a LaTeX table format. Needs the mhchem package to work and
-        does *not* use the booktabs package -- change hline to toprule, midrule
-        and bottomrule if you want to use booktabs style.
+        energies in a LaTeX table format, showing the formula, kpoints (if
+        present in the parsed data) and formation energy.
+
+        Needs the mhchem package to work and does *not* use the booktabs package
+        -- change hline to toprule, midrule and bottomrule if you want to use
+        booktabs style.
 
         Args:
-            columns (int):
-                Number of columns to print out the table in; either 1 or 2
+            splits (int):
+                Number of splits for the table; either 1 (default) or 2 (with
+                two large columns, each with the formula, kpoints (if present)
+                and formation energy (sub-)columns).
             sort_by_energy (bool):
                 If True, sorts the table by formation energy (highest to lowest).
-                Default sorting by formula.
+                Default is False (sorting by formula).
             prune_polymorphs (bool):
                 Whether to only print out the lowest energy polymorphs for each composition.
                 Default is True.
@@ -1535,29 +1669,19 @@ class CompetingPhasesAnalyzer:
         Returns:
             str: LaTeX table string
         """
-        if columns not in [1, 2]:
-            raise ValueError("columns must be either 1 or 2")
+        if splits not in [1, 2]:
+            raise ValueError("`splits` must be either 1 or 2")
         # done in the pyscfermi report style
-        data = copy.deepcopy(self.data)
+        formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
 
-        if any("kpoints" not in item for item in data):
+        if any("kpoints" not in item for item in formation_energy_data):  # TODO: this is bad,
+            # should just not have the kpoints column if it's not present, and warn user
             raise (
                 ValueError(
                     "kpoints need to be present in data; run CompetingPhasesAnalyzer.from_vaspruns "
                     "instead of from_csv"
                 )
             )
-
-        if prune_polymorphs:  # only keep the lowest energy polymorphs
-            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
-            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
-            pruned_df = formation_energy_df.loc[indices]
-            data = pruned_df.to_dict(orient="records")
-
-        if sort_by_energy:
-            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
-        # moves the bulk composition to the top of the list
-        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
 
         string = "\\begin{table}[h]\n\\centering\n"
         string += (
@@ -1567,11 +1691,11 @@ class CompetingPhasesAnalyzer:
             + ("}\n" if not prune_polymorphs else " Only the lowest energy polymorphs are included}\n")
         )
         string += "\\label{tab:competing_phase_formation_energies}\n"
-        if columns == 1:
+        if splits == 1:
             string += "\\begin{tabular}{ccc}\n"
             string += "\\hline\n"
             string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
-            for i in data:
+            for i in formation_energy_data:
                 kpoints = i["kpoints"].split("x")
                 fe = i["formation_energy"]
                 string += (
@@ -1582,7 +1706,7 @@ class CompetingPhasesAnalyzer:
                     " & " + f"{fe:.3f} \\\\ \n"
                 )
 
-        elif columns == 2:
+        elif splits == 2:
             string += "\\begin{tabular}{ccc|ccc}\n"
             string += "\\hline\n"
             string += (
@@ -1590,9 +1714,9 @@ class CompetingPhasesAnalyzer:
                 "\\hline \n"
             )
 
-            mid = len(data) // 2
-            first_half = data[:mid]
-            last_half = data[mid:]
+            mid = len(formation_energy_data) // 2
+            first_half = formation_energy_data[:mid]
+            last_half = formation_energy_data[mid:]
 
             for i, j in zip(first_half, last_half):
                 kpoints = i["kpoints"].split("x")
@@ -1671,7 +1795,7 @@ def combine_extrinsic(first, second, extrinsic_species):
         v1[extrinsic_species] = v2.pop(extrinsic_species)
         new_facets[new_key] = v1
 
-    new_facets_wrt_elt = {}
+    new_facets_wrt_el = {}
     for (k1, v1), (k2, v2) in zip(
         list(cpa1["facets_wrt_el_refs"].items()),
         list(cpa2["facets_wrt_el_refs"].items()),
@@ -1682,7 +1806,7 @@ def combine_extrinsic(first, second, extrinsic_species):
             raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets_wrt_elt[new_key] = v1
+        new_facets_wrt_el[new_key] = v1
 
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
@@ -1691,7 +1815,7 @@ def combine_extrinsic(first, second, extrinsic_species):
     new_dict = {
         "elemental_refs": new_elements,
         "facets": new_facets,
-        "facets_wrt_el_refs": new_facets_wrt_elt,
+        "facets_wrt_el_refs": new_facets_wrt_el,
     }
 
     return new_dict
