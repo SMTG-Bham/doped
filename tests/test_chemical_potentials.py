@@ -7,10 +7,19 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 
 from doped import chemical_potentials
+
+
+def _compare_chempot_dicts(dict1, dict2):
+    for key, val in dict1.items():
+        if isinstance(val, dict):
+            _compare_chempot_dicts(val, dict2[key])
+        else:
+            assert np.isclose(val, dict2[key], atol=1e-5)
 
 
 class ChemPotsTestCase(unittest.TestCase):
@@ -78,7 +87,7 @@ class ChemPotsTestCase(unittest.TestCase):
         # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        assert stable_cpa.chem_limits == self.parsed_chempots
+        _compare_chempot_dicts(stable_cpa.chem_limits, self.parsed_chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
@@ -100,7 +109,7 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_vaspruns(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
         assert len(cpa.elemental) == 2
         assert cpa.data[0]["formula"] == "O2"
 
@@ -113,7 +122,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
         ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.extrinsic_species)
         path2 = self.path / "La_ZrO2"
-        ext_cpa.from_vaspruns(path=path2, folder="relax", csv_fname=self.csv_path_ext)
+        ext_cpa.from_vaspruns(path=path2, folder="relax", csv_path=self.csv_path_ext)
         assert len(ext_cpa.elemental) == 3
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
         # formation_energy
@@ -222,12 +231,9 @@ class ChemPotsTestCase(unittest.TestCase):
     def test_latex_table(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_fname=self.csv_path)
+        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
 
-        with self.assertRaises(ValueError):
-            cpa.to_LaTeX_table(columns="M")
-
-        string = cpa.to_LaTeX_table(columns=1)
+        string = cpa.to_LaTeX_table(splits=1)
         assert (
             string[28:209]
             == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
@@ -238,7 +244,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\"
         assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
 
-        string = cpa.to_LaTeX_table(columns=2)
+        string = cpa.to_LaTeX_table(splits=2)
         assert (
             string[28:209]
             == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
@@ -256,7 +262,121 @@ class ChemPotsTestCase(unittest.TestCase):
         cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa_csv.from_csv(self.csv_path)
         with self.assertRaises(ValueError):
-            cpa_csv.to_LaTeX_table(columns=2)
+            cpa_csv.to_LaTeX_table(splits=3)
+
+    def test_to_csv(self):
+        self.tearDown()  # clear out previous csvs
+        stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        stable_cpa.from_csv(self.csv_path)
+        stable_cpa_data = stable_cpa._get_and_sort_formation_energy_data()
+
+        stable_cpa.to_csv("competing_phases.csv")
+        reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        reloaded_cpa.from_csv("competing_phases.csv")
+        reloaded_cpa_data = reloaded_cpa._get_and_sort_formation_energy_data()
+        assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
+
+        # check chem limits the same:
+        _compare_chempot_dicts(stable_cpa.chem_limits, reloaded_cpa.chem_limits)
+
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        self.ext_cpa.from_csv(self.csv_path_ext)
+        self.ext_cpa.to_csv("competing_phases.csv")
+        reloaded_ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        reloaded_ext_cpa.from_csv("competing_phases.csv")
+        reloaded_ext_cpa._get_and_sort_formation_energy_data()
+
+        assert reloaded_ext_cpa.formation_energy_df.equals(self.ext_cpa.formation_energy_df)
+
+        # test pruning:
+        self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
+        reloaded_ext_cpa.from_csv("competing_phases.csv")
+        assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
+        assert len(self.ext_cpa.data) == 11
+
+        formulas = [i["formula"] for i in reloaded_ext_cpa.data]
+        assert len(formulas) == len(set(formulas))  # no polymorphs
+
+        reloaded_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
+        reloaded_cpa.from_csv("competing_phases.csv")
+
+        # check chem limits the same:
+        _compare_chempot_dicts(reloaded_cpa.chem_limits, stable_cpa.chem_limits)
+
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        self.ext_cpa.from_csv(self.csv_path_ext)
+        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
+
+        # test correct sorting:
+        self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True, sort_by_energy=True)
+        reloaded_ext_cpa_energy_sorted = chemical_potentials.CompetingPhasesAnalyzer(
+            self.stable_system, self.extrinsic_species
+        )
+        reloaded_ext_cpa_energy_sorted.from_csv("competing_phases.csv")
+        assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
+
+        assert reloaded_ext_cpa_energy_sorted.data != reloaded_ext_cpa.data  # different order
+        sorted_data = sorted(reloaded_ext_cpa.data, key=lambda x: x["formation_energy"], reverse=True)
+        chemical_potentials._move_dict_to_start(
+            sorted_data, "formula", self.ext_cpa.bulk_composition.reduced_formula
+        )
+        assert reloaded_ext_cpa_energy_sorted.data == sorted_data  # energy sorted data
+
+    def test_from_csv_minimal(self):
+        """
+        Test that CompetingPhasesAnalyzer.from_csv() works with minimal data.
+        """
+        self.tearDown()  # clear out previous csvs
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+        cpa.from_vaspruns(path=path, folder="relax")
+        formation_energy_data = cpa._get_and_sort_formation_energy_data()
+        formation_energy_df = pd.DataFrame(formation_energy_data)
+
+        # drop all but the formula and energy_per_fu columns:
+        for i in ["energy_per_fu", "energy_per_atom"]:
+            minimal_formation_energy_df = formation_energy_df[["formula", i]]
+            minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
+
+            reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+            reloaded_cpa.from_csv("competing_phases.csv")
+            assert not cpa.formation_energy_df.equals(
+                reloaded_cpa.formation_energy_df
+            )  # no kpoints or raw energy, but should have formula, energy_per_fu, energy_per_atom,
+            # elemental amounts (i.e. Zr and O here) and formation_energy:
+            minimal_columns = [
+                "formula",
+                "energy_per_fu",
+                "energy_per_atom",
+                "formation_energy",
+                "Zr",  # ordered by appearance in bulk composition
+                "O",
+            ]
+            trimmed_df = cpa.formation_energy_df[
+                [column for column in cpa.formation_energy_df.columns if column in minimal_columns]
+            ]
+            # trimmed_df is formation_energy_df with min columns but in same order as original
+
+            trimmed_df = trimmed_df.round(5)  # round to avoid slight numerical differences
+            reloaded_cpa.formation_energy_df = reloaded_cpa.formation_energy_df.round(5)
+            assert trimmed_df.equals(reloaded_cpa.formation_energy_df)
+
+            # check chem limits the same:
+            _compare_chempot_dicts(cpa.chem_limits, reloaded_cpa.chem_limits)
+
+        # test ValueError without energy_per_fu/energy_per_atom column:
+        too_minimal_formation_energy_df = formation_energy_df[["formula"]]
+        too_minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
+        reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        with self.assertRaises(ValueError) as exc:
+            reloaded_cpa.from_csv("competing_phases.csv")
+        assert "Supplied csv does not contain the minimal columns required" in str(exc.exception)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):

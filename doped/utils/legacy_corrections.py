@@ -211,7 +211,7 @@ def lany_zunger_corrected_defect_dict(defect_dict: dict):
             Dictionary of parsed defect calculations (presumably created
             using DefectParser (see tutorials)
             Must have 'freysoldt_meta' in defect.calculation_metadata for each charged defect (from
-            DefectParser.freysoldt_loader())
+            DefectParser.load_FNV_data())
 
     Returns:
         Parsed defect dictionary with Lany-Zunger charge corrections.

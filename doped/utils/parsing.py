@@ -69,13 +69,13 @@ def get_outcar(outcar_path):
     Read the OUTCAR(.gz) file as a pymatgen Outcar object.
     """
     outcar_path = str(outcar_path)  # convert to string if Path object
-    if os.path.exists(outcar_path) and os.path.isfile(outcar_path):
-        outcar = Outcar(outcar_path)
-    else:
+    try:
+        outcar = Outcar(find_archived_fname(outcar_path))
+    except FileNotFoundError:
         raise FileNotFoundError(
             f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
             f"image charge correction."
-        )
+        ) from None
     return outcar
 
 
@@ -371,39 +371,59 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     `input_structure`.
     """
     ## Generate a site matching table between the input and the template
-    input_fcoords = [site.frac_coords for site in structure_a]
-    template_fcoords = [site.frac_coords for site in structure_b]
-
-    dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
     min_dist_with_index = []
-    for index in range(len(input_fcoords)):
-        dists = dmat[index]
-        template_index = dists.argmin()
-        current_dist = dists.min()
-        min_dist_with_index.append(
-            [
-                current_dist,
-                index,
-                template_index,
-            ]
-        )
+    all_input_fcoords = [list(site.frac_coords.round(3)) for site in structure_a]
+    all_template_fcoords = [list(site.frac_coords.round(3)) for site in structure_b]
 
-        if current_dist > threshold:
-            sitea = structure_a[index]
-            siteb = structure_b[template_index]
-            warnings.warn(
-                f"Large site displacement {current_dist:.4f} detected when matching atomic sites:"
-                f" {sitea}-> {siteb}."
-            )
+    for species in structure_a.composition.elements:
+        input_fcoords = [
+            list(site.frac_coords.round(3))
+            for site in structure_a
+            if site.species.elements[0].symbol == species.symbol
+        ]
+        template_fcoords = [
+            list(site.frac_coords.round(3))
+            for site in structure_b
+            if site.species.elements[0].symbol == species.symbol
+        ]
+
+        dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
+        for index, coords in enumerate(all_input_fcoords):
+            if coords in input_fcoords:
+                dists = dmat[input_fcoords.index(coords)]
+                current_dist = dists.min()
+                template_fcoord = template_fcoords[dists.argmin()]
+                template_index = all_template_fcoords.index(template_fcoord)
+                min_dist_with_index.append(
+                    [
+                        current_dist,
+                        index,
+                        template_index,
+                    ]
+                )
+
+                if current_dist > threshold:
+                    site_a = structure_a[index]
+                    site_b = structure_b[template_index]
+                    warnings.warn(
+                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
+                        f"sites: {site_a} -> {site_b}."
+                    )
+
     return min_dist_with_index
 
 
-def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=2.0):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0):
     """
     Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
     the atoms in s2_structure.
 
     s1/s2 structures may have a different species orderings.
+
+    Previously used to ensure correct site matching when pulling site
+    potentials for the eFNV Kumagai correction, though no longer used for this
+    purpose. If threshold is set to a low value, it will raise a warning if
+    there is a large site displacement detected.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
@@ -420,3 +440,102 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     assert len(new_structure) == len(s1_structure)
 
     return new_structure
+
+
+def _compare_potcar_symbols(bulk_potcar_symbols, defect_potcar_symbols):
+    """
+    Check all POTCAR symbols in the bulk are the same in the defect
+    calculation.
+    """
+    for symbol in bulk_potcar_symbols:
+        if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
+            warnings.warn(
+                f"The POTCAR symbols for your bulk and defect calculations do not match, which is likely "
+                f"to cause severe errors in the parsed results. Found the following symbol in the bulk "
+                f"calculation:"
+                f"\n{symbol['titel']}\n"
+                f"but not in the defect calculation:"
+                f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
+                f"The same POTCAR settings should be used for both calculations for accurate results!"
+            )
+            return False
+    return True
+
+
+def _compare_kpoints(bulk_kpoints, defect_kpoints):
+    """
+    Check bulk and defect KPOINTS are the same.
+    """
+    # sort kpoints, in case same KPOINTS just different ordering:
+    sorted_bulk_kpoints = sorted(np.array(bulk_kpoints.kpts), key=tuple)
+    sorted_defect_kpoints = sorted(np.array(defect_kpoints.kpts), key=tuple)
+
+    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+        warnings.warn(
+            f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
+            f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
+            f"\n{bulk_kpoints.kpts}\n"
+            f"and in the defect calculations:"
+            f"\n{defect_kpoints.kpts}\n"
+            f"The same KPOINTS settings should be used for both calculations for accurate results!"
+        )
+        return False
+    return True
+
+
+def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch_tags=None):
+    """
+    Check bulk and defect INCAR tags (that can affect energies) are the same.
+    """
+    if fatal_incar_mismatch_tags is None:
+        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
+            "AEXX": 0.25,  # default 0.25
+            "ENCUT": 0,
+            "LREAL": False,  # default False
+            "HFSCREEN": 0,  # default 0 (None)
+            "GGA": "PE",  # default PE
+            "LHFCALC": False,  # default False
+            "ADDGRID": False,  # default False
+            "ISIF": 2,
+            "LASPH": False,  # default False
+            "PREC": "Normal",  # default Normal
+            "PRECFOCK": "Normal",  # default Normal
+            "LDAU": False,  # default False
+        }
+
+    def _compare_incar_vals(val1, val2):
+        if isinstance(val1, str):
+            return val1.split()[0].lower() == val2.split()[0].lower()
+        if isinstance(val1, float):
+            return np.isclose(val1, val2, rtol=1e-3)
+
+        return val1 == val2
+
+    mismatch_list = []
+    for key, val in bulk_incar_dict.items():
+        if key in fatal_incar_mismatch_tags:
+            defect_val = defect_incar_dict.get(key, fatal_incar_mismatch_tags[key])
+            if not _compare_incar_vals(val, defect_val):
+                mismatch_list.append((key, val, defect_val))
+
+    # get any missing keys:
+    defect_incar_keys_not_in_bulk = set(defect_incar_dict.keys()) - set(bulk_incar_dict.keys())
+
+    for key in defect_incar_keys_not_in_bulk:
+        if key in fatal_incar_mismatch_tags and not _compare_incar_vals(
+            defect_incar_dict[key], fatal_incar_mismatch_tags[key]
+        ):
+            mismatch_list.append((key, fatal_incar_mismatch_tags[key], defect_incar_dict[key]))
+
+    if mismatch_list:
+        # compare to defaults:
+        warnings.warn(
+            f"There are mismatching INCAR tags for your bulk and defect calculations which are likely to "
+            f"cause severe errors in the parsed results (energies). Found the following differences:\n"
+            f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+            f"\n{mismatch_list}\n"
+            f"The same INCAR settings should be used in both calculations for these tags which can affect "
+            f"energies!"
+        )
+        return False
+    return True
