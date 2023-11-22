@@ -837,3 +837,118 @@ def _skip_to_spacegroup(f, spacegroup, setting=None):
         if line.startswith(name):
             break
     return line
+
+
+# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
+_PTG_IDS = [
+    ("C1", "1", 1),
+    ("Ci", "-1", 2),
+    ("C2", "2", 3),
+    ("Cs", "m", 6),
+    ("C2h", "2/m", 10),
+    ("D2", "222", 16),
+    ("C2v", "mm2", 25),
+    ("D2h", "mmm", 47),
+    ("C4", "4", 75),
+    ("S4", "-4", 81),
+    ("C4h", "4/m", 83),
+    ("D4", "422", 89),
+    ("C4v", "4mm", 99),
+    ("D2d", "-42m", 111),
+    ("D4h", "4/mmm", 123),
+    ("C3", "3", 143),
+    ("C3i", "-3", 147),
+    ("D3", "32", 149),
+    ("C3v", "3m", 156),
+    ("D3d", "-3m", 162),
+    ("C6", "6", 168),
+    ("C3h", "-6", 174),
+    ("C6h", "6/m", 175),
+    ("D6", "622", 177),
+    ("C6v", "6mm", 183),
+    ("D3h", "-6m2", 189),
+    ("D6h", "6/mmm", 191),
+    ("T", "23", 195),
+    ("Th", "m-3", 200),
+    ("O", "432", 207),
+    ("Td", "-43m", 215),
+    ("Oh", "m-3m", 221),
+]
+
+_SCH_to_HERM = {t[0]: t[1] for t in _PTG_IDS}
+_HERM_to_SCH = {t[1]: t[0] for t in _PTG_IDS}
+_SPGID_to_SCH = {t[2]: t[0] for t in _PTG_IDS}
+_SCH_to_SPGID = {t[0]: t[2] for t in _PTG_IDS}
+
+sch_symbols = list(_SCH_to_HERM.keys())
+
+
+def schoenflies_from_hermann(herm_symbol):
+    """
+    Convert from Hermann-Mauguin to Schoenflies.
+    """
+    herm_symbol = herm_symbol.replace(".", "")
+    schoenflies = _HERM_to_SCH.get(herm_symbol)
+    if schoenflies is None:
+        # try rearranging, symbols in spglib can be rearranged vs _HERM_to_SCH dict
+        # get _HERM_to_SCH key that has the same characters as herm_symbol
+        # (i.e. same characters, but possibly in a different order)
+        from collections import Counter
+
+        def find_matching_key(input_str, input_dict):
+            input_str_counter = Counter(input_str)
+            for key in input_dict:
+                if Counter(key) == input_str_counter:
+                    return key
+            return None
+
+        herm_key = find_matching_key(herm_symbol, _HERM_to_SCH)
+        if herm_key is not None:
+            schoenflies = _HERM_to_SCH[herm_key]
+
+    return schoenflies
+
+
+_point_group_order = {
+    "C1": 1,
+    "Ci": 2,  # aka. S2, -1 in Hermann-Mauguin
+    "C2": 2,
+    "Cs": 2,  # aka. C1h (m in Hermann-Mauguin)
+    "C3": 3,
+    "C4": 4,
+    "S4": 4,  # C4 with improper rotation
+    "C2h": 4,  # 2/m in Hermann-Mauguin
+    "D2": 4,  # 222 in Hermann-Mauguin
+    "C2v": 4,  # mm2 in Hermann-Mauguin
+    "C3i": 6,  # aka. S6, -3 in Hermann-Mauguin
+    "C6": 6,
+    "C3h": 6,
+    "D3": 6,  # 32 in Hermann-Mauguin
+    "C3v": 6,  # 3m in Hermann-Mauguin
+    "D2h": 8,  # mmm in Hermann-Mauguin
+    "C4h": 8,  # 4/m in Hermann-Mauguin
+    "D4": 8,  # 422 in Hermann-Mauguin
+    "C4v": 8,  # 4mm in Hermann-Mauguin
+    "D2d": 8,  # 42m in Hermann-Mauguin
+    "C6h": 12,  # 6/m in Hermann-Mauguin
+    "T": 12,  # 23 in Hermann-Mauguin
+    "D3d": 12,  # 3m1 in Hermann-Mauguin
+    "D6": 12,  # 622 in Hermann-Mauguin
+    "C6v": 12,  # 6mm in Hermann-Mauguin
+    "D3h": 12,  # 6m2 in Hermann-Mauguin
+    "D4h": 16,  # 4/mmm in Hermann-Mauguin
+    "D6h": 24,  # 6/mmm in Hermann-Mauguin
+    "Th": 24,  # m3 in Hermann-Mauguin
+    "O": 24,  # 432 in Hermann-Mauguin
+    "Td": 24,  # 43m in Hermann-Mauguin
+    "Oh": 48,  # m3m in Hermann-Mauguin
+}
+
+
+def group_order_from_schoenflies(sch_symbol):
+    """
+    Return the order of the point group from the Schoenflies symbol.
+
+    Useful for symmetry and orientational degeneracy analysis.
+    """
+    return _point_group_order[sch_symbol]
