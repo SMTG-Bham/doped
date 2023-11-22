@@ -55,6 +55,7 @@ from doped.utils.symmetry import (
     get_primitive_structure,
     get_wyckoff,
     get_wyckoff_label_and_equiv_coord_list,
+    schoenflies_from_hermann,
 )
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
@@ -258,7 +259,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
-    spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
+    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
     else:  # symm_ops approach failed, just use diagonal defect supercell approach:
@@ -268,7 +269,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
         sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = herm2sch(sga.get_point_group_symbol())
+        point_group_symbol = schoenflies_from_hermann(sga.get_point_group_symbol())
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
 
@@ -292,7 +293,7 @@ def _check_unrelaxed_defect_symmetry_determination(
             symm_ops=symm_ops,
             symprec=symprec,
         )
-        unrelaxed_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
+        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
 
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_entry.defect_supercell_site.frac_coords,
@@ -300,7 +301,7 @@ def _check_unrelaxed_defect_symmetry_determination(
             symm_ops=symm_ops,
             symprec=symprec,
         )
-        bulk_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
+        bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
             if verbose:
@@ -442,14 +443,14 @@ def get_defect_name_from_entry(
         # site_symmetry_symbols[-1] works better for unrelaxed defects (as sometimes with the equivalent
         # sites population it can change the overall point group symbol (but site symmetry symbol is
         # still correct))
-        spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
+        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
 
     else:
         # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
         # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
         # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
         # possibility with the equivalent sites, as when unrelaxed=True)
-        spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
+        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
 
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
@@ -467,7 +468,7 @@ def get_defect_name_from_entry(
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
         sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = herm2sch(sga.get_point_group_symbol())
+        point_group_symbol = schoenflies_from_hermann(sga.get_point_group_symbol())
 
     return (
         f"{defect_entry.defect.name}_{point_group_symbol}"
@@ -695,32 +696,6 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
             f"Please report this issue to the developers."
         )
     return defect_naming_dict
-
-
-def herm2sch(herm_symbol):
-    """
-    Convert from Hermann-Mauguin to Schoenflies.
-    """
-    herm_symbol = herm_symbol.replace(".", "")
-    schoenflies = _HERM2SCH.get(herm_symbol, None)
-    if schoenflies is None:
-        # try rearranging, symbols in spglib can be rearranged vs _HERM2SCH dict
-        # get _HERM2SCH key that has the same characters as herm_symbol
-        # (i.e. same characters, but possibly in a different order)
-        from collections import Counter
-
-        def find_matching_key(input_str, input_dict):
-            input_str_counter = Counter(input_str)
-            for key in input_dict:
-                if Counter(key) == input_str_counter:
-                    return key
-            return None
-
-        herm_key = find_matching_key(herm_symbol, _HERM2SCH)
-        if herm_key is not None:
-            schoenflies = _HERM2SCH[herm_key]
-
-    return schoenflies
 
 
 def get_oxi_probabilities(element_symbol: str) -> dict:
@@ -2339,47 +2314,3 @@ def _get_interstitial_candidate_sites(args):
     """
     interstitial_generator, structure = args
     return [*interstitial_generator._get_candidate_sites(structure)]
-
-
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
-_PTG_IDS = [
-    ("C1", "1", 1),
-    ("Ci", "-1", 2),
-    ("C2", "2", 3),
-    ("Cs", "m", 6),
-    ("C2h", "2/m", 10),
-    ("D2", "222", 16),
-    ("C2v", "mm2", 25),
-    ("D2h", "mmm", 47),
-    ("C4", "4", 75),
-    ("S4", "-4", 81),
-    ("C4h", "4/m", 83),
-    ("D4", "422", 89),
-    ("C4v", "4mm", 99),
-    ("D2d", "-42m", 111),
-    ("D4h", "4/mmm", 123),
-    ("C3", "3", 143),
-    ("C3i", "-3", 147),
-    ("D3", "32", 149),
-    ("C3v", "3m", 156),
-    ("D3d", "-3m", 162),
-    ("C6", "6", 168),
-    ("C3h", "-6", 174),
-    ("C6h", "6/m", 175),
-    ("D6", "622", 177),
-    ("C6v", "6mm", 183),
-    ("D3h", "-6m2", 189),
-    ("D6h", "6/mmm", 191),
-    ("T", "23", 195),
-    ("Th", "m-3", 200),
-    ("O", "432", 207),
-    ("Td", "-43m", 215),
-    ("Oh", "m-3m", 221),
-]
-
-_SCH2HERM = {t[0]: t[1] for t in _PTG_IDS}
-_HERM2SCH = {t[1]: t[0] for t in _PTG_IDS}
-_SPGID2SCH = {t[2]: t[0] for t in _PTG_IDS}
-_SCH2SPGID = {t[0]: t[2] for t in _PTG_IDS}
-
-sch_symbols = list(_SCH2HERM.keys())

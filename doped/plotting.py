@@ -18,7 +18,7 @@ from matplotlib import colormaps, colors, ticker
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
-from doped.generation import sch_symbols  # point group symbols
+from doped.utils.symmetry import sch_symbols  # point group symbols
 
 
 # TODO: Make a specific tutorial in docs for editing return Matplotlib figures, or with rcParams,
