@@ -41,7 +41,7 @@ from doped.core import (
     _guess_and_set_struct_oxi_states,
     doped_defect_from_pmg_defect,
 )
-from doped.utils.wyckoff import (
+from doped.utils.symmetry import (
     _custom_round,
     _frac_coords_sort_func,
     _get_equiv_frac_coords_in_primitive,

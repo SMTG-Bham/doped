@@ -20,10 +20,10 @@ doped.utils.parsing module
    :undoc-members:
    :show-inheritance:
 
-doped.utils.wyckoff module
+doped.utils.symmetry module
 --------------------------
 
-.. automodule:: doped.utils.wyckoff
+.. automodule:: doped.utils.symmetry
    :members:
    :undoc-members:
    :show-inheritance:

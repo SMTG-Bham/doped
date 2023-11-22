@@ -1,7 +1,7 @@
 """
 Tests for the `doped.generation` module.
 
-Implicitly tests the `doped.utils.wyckoff` module as well.
+Implicitly tests the `doped.utils.symmetry` module as well.
 """
 import copy
 import filecmp
@@ -30,7 +30,7 @@ from pymatgen.util.coord import pbc_diff
 
 from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
-from doped.utils.wyckoff import get_BCS_conventional_structure, swap_axes
+from doped.utils.symmetry import get_BCS_conventional_structure, swap_axes
 
 
 def if_present_rm(path):
