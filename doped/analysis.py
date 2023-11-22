@@ -42,7 +42,7 @@ from doped.utils.parsing import (
     get_vasprun,
     reorder_s1_like_s2,
 )
-from doped.utils.wyckoff import _frac_coords_sort_func
+from doped.utils.symmetry import _frac_coords_sort_func
 from doped.vasp import DefectDictSet
 
 
