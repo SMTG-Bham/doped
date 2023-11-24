@@ -35,6 +35,7 @@ from doped.utils.parsing import (
     _compare_kpoints,
     _compare_potcar_symbols,
     _get_output_files_and_check_if_multiple,
+    check_atom_mapping_far_from_defect,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
     get_locpot,
@@ -229,6 +230,8 @@ def defect_from_structures(
         )
     else:
         defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
+
+    check_atom_mapping_far_from_defect(bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords)
 
     if unrelaxed_defect_structure:
         if def_type == "interstitial":
