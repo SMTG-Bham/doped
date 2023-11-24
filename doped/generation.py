@@ -1315,14 +1315,16 @@ class DefectsGenerator(MSONable):
                     f"(which can then be specified with the `supercell_matrix` argument)."
                 )
 
-            _bulk_oxi_states: Union[
+            self._bulk_oxi_states: Union[
                 bool, Dict
             ] = True  # to check if pymatgen can guess the bulk oxidation states
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
                 isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
             ):
-                _bulk_oxi_states = {el.symbol: el.oxi_state for el in self.structure.composition.elements}
+                self._bulk_oxi_states = {
+                    el.symbol: el.oxi_state for el in self.structure.composition.elements
+                }
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
                 queue: Queue = Queue()
@@ -1346,7 +1348,7 @@ class DefectsGenerator(MSONable):
                     # otherwise revert to all Defect oxi states being set to 0
 
                     if guess_oxi_process.is_alive():
-                        _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
+                        self._bulk_oxi_states = False  # couldn't guess oxi states, so set to False
                         warnings.warn(
                             "\nOxidation states could not be guessed for the input structure. This is "
                             "required for charge state guessing, so defects will still be generated but "
@@ -1359,9 +1361,9 @@ class DefectsGenerator(MSONable):
                         guess_oxi_process.terminate()
                         guess_oxi_process.join()
 
-                if _bulk_oxi_states is not False:
+                if self._bulk_oxi_states is not False:
                     self.primitive_structure = queue.get()
-                    _bulk_oxi_states = {
+                    self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
 
@@ -1375,7 +1377,8 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, oxi_state=0
             )  # set oxi_state using doped functions; more robust and efficient
             self.defects["vacancies"] = [
-                Vacancy._from_pmg_defect(vac, bulk_oxi_states=_bulk_oxi_states) for vac in vac_generator
+                Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states)
+                for vac in vac_generator
             ]
             pbar.update(5)  # 20% of progress bar
 
@@ -1384,7 +1387,7 @@ class DefectsGenerator(MSONable):
             antisite_generator_obj = AntiSiteGenerator()
             as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
             self.defects["substitutions"] = [
-                Substitution._from_pmg_defect(anti, bulk_oxi_states=_bulk_oxi_states)
+                Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
                 for anti in as_generator
             ]
             pbar.update(5)  # 25% of progress bar
@@ -1435,7 +1438,7 @@ class DefectsGenerator(MSONable):
                     self.primitive_structure, substitution=substitutions, oxi_state=0
                 )
                 sub_defects = [
-                    Substitution._from_pmg_defect(sub, bulk_oxi_states=_bulk_oxi_states)
+                    Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
                     for sub in sub_generator
                 ]
                 if "substitutions" in self.defects:
@@ -1589,7 +1592,7 @@ class DefectsGenerator(MSONable):
                     )
                     self.defects["interstitials"].extend(
                         [
-                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=_bulk_oxi_states)
+                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
                             for inter in inter_generator
                         ]
                     )
@@ -1701,7 +1704,7 @@ class DefectsGenerator(MSONable):
                 # warnings from tqdm
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                if _bulk_oxi_states is not False:
+                if self._bulk_oxi_states is not False:
                     charge_state_guessing_output = guess_defect_charge_states(
                         neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
                     )
