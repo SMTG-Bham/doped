@@ -31,7 +31,6 @@ centroid of charge difference between bulk/defect LOCPOTs (for FNV) or bulk/defe
 eFNV) were developed, they should be used here.
 """
 
-import logging
 import os
 import warnings
 from typing import Optional, Union
@@ -358,6 +357,8 @@ def get_kumagai_correction(
         the matplotlib figure object if `plot` is True.
     """
     # suppress pydefect INFO messages
+    import logging
+
     from vise import user_settings  #
 
     user_settings.logger.setLevel(logging.CRITICAL)
@@ -411,8 +412,8 @@ def get_kumagai_correction(
     bulk_supercell = defect_entry.bulk_entry.structure.copy()
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
-        # check if the difference is tolerable (< 0.001 Å)
-        if np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-3):
+        # check if the difference is tolerable (< 0.01 Å)
+        if np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
             # scale bulk lattice to match defect lattice:
             bulk_supercell.scale_lattice(defect_supercell.lattice.volume)
         else:
