@@ -1445,6 +1445,11 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         # TODO: Try rattling the structures (and modifying symprec a little to test tolerance?)
 
+    def tearDown(self):
+        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
+        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
+        if_present_rm("./vasprun.xml")
+
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
         for struct in [
@@ -1614,10 +1619,14 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 for warning in w
             )
 
-    def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
-        if_present_rm("./vasprun.xml")
+    def test_checking_defect_bulk_cell_definitions(self):
+        with warnings.catch_warnings(record=True) as w:
+            DefectParser.from_paths(
+                defect_path=f"{self.data_dir}/Doped_CdTe",
+                bulk_path=self.CdTe_BULK_DATA_DIR,
+                skip_corrections=True,
+            )
+        assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
