@@ -433,7 +433,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
             f"both of which will likely cause errors in parsing. The mean displacement of the "
             f"following species, at sites far from the determined defect position, is >0.5 Å:"
             f"{specie_list}\n"
-        )  # TODO: Add test for this!
+        )
 
 
 def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=2.0):
