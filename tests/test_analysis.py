@@ -54,7 +54,8 @@ def if_present_rm(path):
 
 # TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
 # TODO: When adding full parsing tests (e.g. with full CdTe dpd or similar), add quick loop-over test of
-#  the symmetry determination functions
+#  the symmetry determination functions -> Use saved CdTe defect dict, and apply get_name function to
+#  these defect entries
 
 
 class DefectsParsingTestCase(unittest.TestCase):
