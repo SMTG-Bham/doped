@@ -100,10 +100,10 @@
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
   - Some nice defect structure and eigenvalue analysis
   - GKFO correction
-- Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting. Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
+- Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
 
 ## Housekeeping
-- Clean `README` with bullet-point summary of key features, and sidebar like `SnB`.
+- Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
 - Code tidy up:
   - Test coverage?
   - Auto-docs generation with little to no warnings/errors?
