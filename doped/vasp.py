@@ -23,10 +23,10 @@ from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
     _custom_formatwarning,
-    _frac_coords_sort_func,
     get_defect_name_from_entry,
     name_defect_entries,
 )
+from doped.utils.symmetry import _frac_coords_sort_func
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
 #  KPOINTS settings etc)

@@ -839,6 +839,38 @@ def _skip_to_spacegroup(f, spacegroup, setting=None):
     return line
 
 
+def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
+    """
+    Get the defect site point symmetry from a Defect object.
+
+    Args:
+        defect (Defect): Defect object.
+        symm_ops (list):
+            List of symmetry operations of defect.structure, to avoid
+            re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for spglib. Default is 0.01.
+
+    Returns:
+        str: Defect name.
+    """
+    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
+    )
+    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+    if spglib_point_group_symbol is not None:
+        return spglib_point_group_symbol
+
+    # symm_ops approach failed, just use diagonal defect supercell approach:
+    defect_diagonal_supercell = defect.get_supercell_structure(
+        sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
+        dummy_species="X",
+    )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
+    # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
+    sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
+    return schoenflies_from_hermann(sga.get_point_group_symbol())
+
+
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
 _PTG_IDS = [
     ("C1", "1", 1),
