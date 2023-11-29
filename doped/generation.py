@@ -41,22 +41,7 @@ from doped.core import (
     _guess_and_set_struct_oxi_states,
     doped_defect_from_pmg_defect,
 )
-from doped.utils.symmetry import (
-    _custom_round,
-    _frac_coords_sort_func,
-    _get_equiv_frac_coords_in_primitive,
-    _get_sga,
-    _get_supercell_matrix_and_possibly_rotate_prim,
-    _get_symm_dataset_of_struc_with_all_equiv_sites,
-    _round_floats,
-    _vectorized_custom_round,
-    get_BCS_conventional_structure,
-    get_conv_cell_site,
-    get_primitive_structure,
-    get_wyckoff,
-    get_wyckoff_label_and_equiv_coord_list,
-    schoenflies_from_hermann,
-)
+from doped.utils import symmetry
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -219,7 +204,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (_custom_round(x[0]), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0]), element_list.index(x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -233,7 +218,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
+    return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
 
 def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, symprec=0.01):
@@ -256,20 +241,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
     Returns:
         str: Defect name.
     """
-    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
-    )
-    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
-    if spglib_point_group_symbol is not None:
-        point_group_symbol = spglib_point_group_symbol
-    else:  # symm_ops approach failed, just use diagonal defect supercell approach:
-        defect_diagonal_supercell = defect.get_supercell_structure(
-            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species="X",
-        )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
-        # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = schoenflies_from_hermann(sga.get_point_group_symbol())
+    point_group_symbol = symmetry.point_symmetry_from_defect(defect, symm_ops=symm_ops, symprec=symprec)
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
 
@@ -287,21 +259,21 @@ def _check_unrelaxed_defect_symmetry_determination(
         )
     unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
     if unrelaxed_defect_structure is not None:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        symm_dataset, _unique_sites = symmetry._get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_entry.defect_supercell_site.frac_coords,
             unrelaxed_defect_structure,
             symm_ops=symm_ops,
             symprec=symprec,
         )
-        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        unrelaxed_spglib_point_group_symbol = symmetry.schoenflies_from_hermann(symm_dataset["pointgroup"])
 
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        symm_dataset, _unique_sites = symmetry._get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_entry.defect_supercell_site.frac_coords,
             defect_entry.bulk_supercell,
             symm_ops=symm_ops,
             symprec=symprec,
         )
-        bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        bulk_spglib_point_group_symbol = symmetry.schoenflies_from_hermann(symm_dataset["pointgroup"])
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
             if verbose:
@@ -414,7 +386,7 @@ def get_defect_name_from_entry(
     _failed = False
     if defect_entry.defect_supercell_site is not None:
         try:
-            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            symm_dataset, _unique_sites = symmetry._get_symm_dataset_of_struc_with_all_equiv_sites(
                 defect_entry.defect_supercell_site.frac_coords,
                 supercell,
                 symm_ops=symm_ops,
@@ -443,14 +415,16 @@ def get_defect_name_from_entry(
         # site_symmetry_symbols[-1] works better for unrelaxed defects (as sometimes with the equivalent
         # sites population it can change the overall point group symbol (but site symmetry symbol is
         # still correct))
-        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+        spglib_point_group_symbol = symmetry.schoenflies_from_hermann(
+            symm_dataset["site_symmetry_symbols"][-1]
+        )
 
     else:
         # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
         # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
         # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
         # possibility with the equivalent sites, as when unrelaxed=True)
-        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        spglib_point_group_symbol = symmetry.schoenflies_from_hermann(symm_dataset["pointgroup"])
 
     if spglib_point_group_symbol is not None:
         point_group_symbol = spglib_point_group_symbol
@@ -467,8 +441,8 @@ def get_defect_name_from_entry(
             dummy_species="X",
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = schoenflies_from_hermann(sga.get_point_group_symbol())
+        sga = symmetry._get_sga(defect_diagonal_supercell, symprec=symprec)
+        point_group_symbol = symmetry.schoenflies_from_hermann(sga.get_point_group_symbol())
 
     return (
         f"{defect_entry.defect.name}_{point_group_symbol}"
@@ -512,31 +486,33 @@ def _get_neutral_defect_entry(
     ) = conventional_structure
 
     try:
-        wyckoff_label, conv_cell_sites = get_wyckoff(
-            get_conv_cell_site(neutral_defect_entry).frac_coords,
+        wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
+            symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
             conventional_structure,
             symm_ops,
             equiv_sites=True,
         )
         conv_cell_coord_list = [
-            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.to_unit_cell().frac_coords), 1))
+            symmetry._vectorized_custom_round(
+                np.mod(symmetry._vectorized_custom_round(site.to_unit_cell().frac_coords), 1)
+            )
             for site in conv_cell_sites
         ]
 
     except Exception as e:  # (slightly) less efficient algebraic matching:
         try:
-            wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
+            wyckoff_label, conv_cell_coord_list = symmetry.get_wyckoff_label_and_equiv_coord_list(
                 defect_entry=neutral_defect_entry,
                 wyckoff_dict=wyckoff_label_dict,
             )
-            conv_cell_coord_list = _vectorized_custom_round(
-                np.mod(_vectorized_custom_round(conv_cell_coord_list), 1)
+            conv_cell_coord_list = symmetry._vectorized_custom_round(
+                np.mod(symmetry._vectorized_custom_round(conv_cell_coord_list), 1)
             ).tolist()
         except Exception as e2:
             raise e2 from e
 
-    # sort array with _frac_coords_sort_func:
-    conv_cell_coord_list.sort(key=_frac_coords_sort_func)
+    # sort array with symmetry._frac_coords_sort_func:
+    conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
     neutral_defect_entry.conv_cell_frac_coords = (
@@ -1214,18 +1190,20 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = _get_sga(self.structure)
+            sga = symmetry._get_sga(self.structure)
 
-            prim_struct = get_primitive_structure(sga)
+            prim_struct = symmetry.get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
-                primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
+                primitive_structure = Structure.from_dict(symmetry._round_floats(prim_struct.as_dict()))
 
             else:  # primitive cell is the same as input structure, use input structure to avoid rotations
                 # wrap to unit cell:
                 primitive_structure = Structure.from_sites(
                     [site.to_unit_cell() for site in self.structure]
                 )
-                primitive_structure = Structure.from_dict(_round_floats(primitive_structure.as_dict()))
+                primitive_structure = Structure.from_dict(
+                    symmetry._round_floats(primitive_structure.as_dict())
+                )
 
             pbar.update(5)  # 5% of progress bar
 
@@ -1276,7 +1254,9 @@ class DefectsGenerator(MSONable):
                     (
                         self.primitive_structure,
                         self.supercell_matrix,
-                    ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
+                    ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
+                        primitive_structure, self.structure
+                    )
                 else:
                     self.primitive_structure = primitive_structure
                     self.supercell_matrix = pmg_supercell_matrix
@@ -1293,7 +1273,9 @@ class DefectsGenerator(MSONable):
                 (
                     self.primitive_structure,
                     self.supercell_matrix,
-                ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
+                ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
+                    primitive_structure, self.structure
+                )
 
             else:
                 self.primitive_structure = primitive_structure
@@ -1455,12 +1437,12 @@ class DefectsGenerator(MSONable):
                 pbar.set_description("Generating interstitials")
                 if self.interstitial_coords:
                     # map interstitial coords to primitive structure, and get multiplicities
-                    sga = _get_sga(self.structure)
+                    sga = symmetry._get_sga(self.structure)
                     symm_ops = sga.get_symmetry_operations(cartesian=False)
                     self.prim_interstitial_coords = []
 
                     for interstitial_frac_coords in self.interstitial_coords:
-                        prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                        prim_inter_coords, equiv_coords = symmetry._get_equiv_frac_coords_in_primitive(
                             interstitial_frac_coords,
                             self.structure,
                             self.primitive_structure,
@@ -1543,7 +1525,7 @@ class DefectsGenerator(MSONable):
 
                         # take the site with the lower multiplicity (higher symmetry). If multiplicities
                         # equal, then take site with larger distance to host atoms (then most ideal site
-                        # according to _frac_coords_sort_func if also equal):
+                        # according to symmetry._frac_coords_sort_func if also equal):
                         output_sites_mul_and_equiv_fpos.append(
                             min(
                                 [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
@@ -1561,9 +1543,10 @@ class DefectsGenerator(MSONable):
                                         )
                                     ),
                                     # return the minimum _frac_coords_sort_func for all equiv fpos:
-                                    *_frac_coords_sort_func(
+                                    *symmetry._frac_coords_sort_func(
                                         sorted(
-                                            cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func
+                                            cand_site_mul_and_equiv_fpos[2],
+                                            key=symmetry._frac_coords_sort_func,
                                         )[0]
                                     ),
                                 ),
@@ -1572,8 +1555,8 @@ class DefectsGenerator(MSONable):
 
                     sorted_sites_mul_and_equiv_fpos = []
                     for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
-                        # take site with equiv_fpos sorted by _frac_coords_sort_func:
-                        sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
+                        # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
+                        sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
                         ideal_cand_site = sorted_equiv_fpos[0]
                         sorted_sites_mul_and_equiv_fpos.append(
                             (ideal_cand_site, multiplicity, sorted_equiv_fpos)
@@ -1624,11 +1607,11 @@ class DefectsGenerator(MSONable):
                 self.conventional_structure,
                 self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict,
-            ) = get_BCS_conventional_structure(
+            ) = symmetry.get_BCS_conventional_structure(
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
-            sga = _get_sga(self.conventional_structure)
+            sga = symmetry._get_sga(self.conventional_structure)
             symm_ops = sga.get_symmetry_operations(cartesian=False)
 
             # process defects into defect entries:
@@ -1667,7 +1650,7 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating DefectEntry objects")
             # sort defect_entry_list by _frac_coords_sort_func applied to the conv_cell_frac_coords,
             # in order for naming and defect generation output info to be deterministic
-            defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+            defect_entry_list.sort(key=lambda x: symmetry._frac_coords_sort_func(x.conv_cell_frac_coords))
 
             # redefine defects dict with DefectEntry.defect objects (as attributes have been updated in
             # _get_neutral_defect_entry):
@@ -1691,7 +1674,7 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            prim_sga = _get_sga(self.primitive_structure)
+            prim_sga = symmetry._get_sga(self.primitive_structure)
             prim_symm_ops = prim_sga.get_symmetry_operations(cartesian=False)
             named_defect_dict = name_defect_entries(
                 defect_entry_list, element_list=self._element_list, symm_ops=prim_symm_ops
@@ -2271,7 +2254,7 @@ def _sort_defects(defects_dict, element_list=None):
 
     Sorts defects by defect type (vacancies, substitutions, interstitials),
     then by order of appearance of elements in the composition, then
-    alphabetically, then according to _frac_coords_sort_func.
+    alphabetically, then according to symmetry._frac_coords_sort_func.
     """
     if element_list is None:
         all_elements = []
@@ -2297,7 +2280,7 @@ def _sort_defects(defects_dict, element_list=None):
                 element_list.index(_first_and_second_element(d.name)[0]),
                 element_list.index(_first_and_second_element(d.name)[1]),
                 d.name,  # bare name without charge
-                _frac_coords_sort_func(d.conv_cell_frac_coords),
+                symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
             ),
         )
         for defect_type, defect_list in defects_dict.items()
