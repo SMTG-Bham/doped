@@ -1117,6 +1117,8 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
+    # TODO: Need to be able to deal with cases where the bulk composition is found to be
+    #  unstable (in `pymatgen-analysis-defects` it just drops it to the convex hull)
     # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
     #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
