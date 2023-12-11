@@ -38,7 +38,7 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --mpl -vv tests  # test everything
+          pytest --mpl -vv --log-level=INFO tests  # test everything
 
       - name: Generate GH Actions test plots
         if: always()  # always generate the plots, even if the tests fail
