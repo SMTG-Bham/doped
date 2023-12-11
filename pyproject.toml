@@ -117,6 +117,3 @@ wrap-descriptions = 79
 ignore-words-list = """
 titel,te,bu,aack,unx,nd,efect,vise
 """
-
-[tool.pytest.ini_options]
-log_level = "INFO"
