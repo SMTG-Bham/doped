@@ -449,19 +449,26 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
         with contextlib.suppress(Exception):
             structure.add_oxidation_state_by_guess()
             # check all oxidation states are whole numbers:
-            if all(specie.oxi_state.is_integer() for specie in structure.species):
+            if all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
                 if queue is not None:
                     queue.put(structure)
                 return
 
     # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
     try:
+        attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
-        # check oxi_states assigned and not all zero
-        if all(specie.oxi_state == 0 for specie in structure.species) or not all(
-            specie.oxi_state.is_integer() for specie in structure.species
+        # check oxi_states assigned and not all zero:
+        while (
+            attempt < 3
+            and all(specie.oxi_state == 0 for specie in structure.species)
+            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
         ):
-            structure.add_oxidation_state_by_guess()
+            attempt += 1
+            if attempt == 1:
+                structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
+            elif attempt == 2:
+                structure.add_oxidation_state_by_guess()
     except Exception:
         structure.add_oxidation_state_by_guess()
 
