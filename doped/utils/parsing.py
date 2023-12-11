@@ -296,9 +296,14 @@ def get_coords_and_idx_of_species(structure, species_name):
     Get arrays of the coordinates and indices of the given species in the
     structure.
     """
-    coords = np.array([site.frac_coords for site in structure if site.specie.name == species_name])
-    idx = np.array([structure.index(site) for site in structure if site.specie.name == species_name])
-    return coords, idx
+    coords = []
+    idx = []
+    for i, site in enumerate(structure):
+        if site.specie.name == species_name:
+            coords.append(site.frac_coords)
+            idx.append(i)
+
+    return np.array(coords), np.array(idx)
 
 
 def find_nearest_coords(
@@ -405,21 +410,32 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
 
     wigner_seitz_radius = calc_max_sphere_radius(bulk.lattice.matrix)
 
+    bulk_sites_outside_or_at_wigner_radius = [
+        site
+        for site in bulk
+        if site.distance_and_image_from_frac_coords(defect_coords)[0] > np.max((wigner_seitz_radius, 1))
+    ]
+
+    bulk_species_coord_dict = {}
+    for species in bulk.composition.elements:  # avoid recomputing coords for each site
+        bulk_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
+            bulk_sites_outside_or_at_wigner_radius, species.name
+        )
+        bulk_species_coord_dict[species.name] = bulk_species_coords
+
     for site in defect:
         if site.distance_and_image_from_frac_coords(defect_coords)[0] > wigner_seitz_radius:
-            # get closest site in bulk:
-            bulk_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
-                bulk, site.specie.name
-            )
-            bulk_site_arg_idx = find_nearest_coords(
-                bulk_species_coords,
+            bulk_site_arg_idx = find_nearest_coords(  # get closest site in bulk to defect site
+                bulk_species_coord_dict[site.specie.name],
                 site.frac_coords,
                 bulk.lattice.matrix,
                 defect_type="substitution",
                 searched_structure="bulk",
             )
             far_from_defect_disps[site.specie.name].append(
-                site.distance_and_image_from_frac_coords(bulk_species_coords[bulk_site_arg_idx])[0]
+                site.distance_and_image_from_frac_coords(
+                    bulk_species_coord_dict[site.specie.name][bulk_site_arg_idx]
+                )[0]
             )
 
     if any(np.mean(far_from_defect_disps[specie]) > 0.5 for specie in far_from_defect_disps):
