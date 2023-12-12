@@ -26,6 +26,7 @@ dependencies = [
     "shakenbreak>=3.2.0",
     "pandas",
     "pydefect",  # for Kumagai (eFNV) correction
+    "filelock",
 ]
 
 [project.urls]
