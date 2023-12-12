@@ -15,6 +15,7 @@ from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
+from filelock import FileLock
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
@@ -27,7 +28,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.generation import get_defect_name_from_entry, name_defect_entries
+from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.plotting import _format_defect_name
 from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
 from doped.utils.parsing import (
@@ -330,8 +331,6 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     Returns:
         str: Defect name.
     """
-    from doped.generation import get_defect_name_from_defect
-
     defect = defect_from_structures(bulk_structure, defect_structure)
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
@@ -1042,6 +1041,9 @@ class DefectsParser:
                         parsed_defect_entries.append(parsed_defect_entry)
 
         else:  # otherwise multiprocessing:
+            with FileLock("voronoi_nodes.json.lock"):  # avoid reading/writing simultaneously
+                pass  # create and release lock, to be used in multiprocessing parsing
+
             # guess a charged defect in defect_folders, to try initially check if dielectric and
             # corrections correctly set, before multiprocessing with the same settings for all folders:
             charged_defect_folder = None
@@ -1098,10 +1100,9 @@ class DefectsParser:
                             if result[0] is not None:
                                 parsed_defect_entries.append(result[0])
 
-                parsing_warnings = [
-                    warning for warning in parsing_warnings if warning
-                ]  # remove empty strings
-                if parsing_warnings:
+                if parsing_warnings := [
+                    warning for warning in parsing_warnings if warning  # remove empty strings
+                ]:
                     warnings.warn("\n".join(parsing_warnings))
 
             except Exception as exc:
@@ -1110,6 +1111,9 @@ class DefectsParser:
 
             finally:
                 pbar.close()
+
+        if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
+            os.remove("voronoi_nodes.json.lock")
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
@@ -1154,13 +1158,11 @@ class DefectsParser:
                 f"{defect_entry.charge_state}"
             )
 
-        # if any duplicate names, crash (and burn, b...)
-        duplicate_names = [
+        if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
             defect_entry.name
             for defect_entry in entries_to_rename
             if defect_entry.name in list(self.defect_dict.values())
-        ]
-        if duplicate_names:
+        ]:
             raise ValueError(
                 f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
                 f"defect folders. This would cause defect entries to be overwritten. Please check "
@@ -1513,10 +1515,16 @@ class DefectParser:
 
         # identify defect site, structural information, and create defect object:
         # try load previous bulk_voronoi_node_dict if present:
-        if os.path.exists(os.path.join(bulk_path, "voronoi_nodes.json")):
-            bulk_voronoi_node_dict = loadfn(os.path.join(bulk_path, "voronoi_nodes.json"))
+        def _read_bulk_voronoi_node_dict(bulk_path):
+            if os.path.exists(os.path.join(bulk_path, "voronoi_nodes.json")):
+                return loadfn(os.path.join(bulk_path, "voronoi_nodes.json"))
+            return {}
+
+        if os.path.exists("voronoi_nodes.json.lock"):
+            with FileLock("voronoi_nodes.json.lock"):
+                bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
         else:
-            bulk_voronoi_node_dict = None
+            bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
 
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
@@ -1590,7 +1598,11 @@ class DefectParser:
         )
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
-            dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
+            if os.path.exists("voronoi_nodes.json.lock"):
+                with FileLock("voronoi_nodes.json.lock"):
+                    dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
+            else:
+                dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(defect_entry, possible_defect_name)
 
