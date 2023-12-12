@@ -1192,6 +1192,8 @@ class DefectsSetTest(unittest.TestCase):
                 defects_set.write_files(unperturbed_poscar=True)
 
             self.tearDown()  # delete generated folders each time
+            del defects_set
+            del defect_gen  # delete python objects to ensure memory released
 
 
 if __name__ == "__main__":

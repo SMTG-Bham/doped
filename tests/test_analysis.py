@@ -723,6 +723,7 @@ class DopedParsingTestCase(unittest.TestCase):
             dielectric=fake_aniso_dielectric,
             charge_state=2,
         )
+        print([warn.message for warn in w])  # for debugging
         assert len(w) == num_warnings
         # defect and bulk)
         assert all(issubclass(warning.category, UserWarning) for warning in w)
