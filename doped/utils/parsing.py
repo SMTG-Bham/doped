@@ -413,7 +413,8 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     bulk_sites_outside_or_at_wigner_radius = [
         site
         for site in bulk
-        if site.distance_and_image_from_frac_coords(defect_coords)[0] > np.max((wigner_seitz_radius, 1))
+        if site.distance_and_image_from_frac_coords(defect_coords)[0]
+        > np.max((wigner_seitz_radius - 1, 1))
     ]
 
     bulk_species_coord_dict = {}
@@ -438,17 +439,17 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
                 )[0]
             )
 
-    if any(np.mean(far_from_defect_disps[specie]) > 0.5 for specie in far_from_defect_disps):
-        specie_list = [
-            specie for specie in far_from_defect_disps if np.mean(far_from_defect_disps[specie]) > 0.5
-        ]
+    if far_from_defect_large_disps := {
+        specie: list for specie, list in far_from_defect_disps.items() if list and np.mean(list) > 0.5
+    }:
         warnings.warn(
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>0.5 Å) in the defect supercell. This likely indicates a mismatch "
             f"between the bulk and defect supercell definitions or an unconverged supercell size, "
             f"both of which will likely cause errors in parsing. The mean displacement of the "
-            f"following species, at sites far from the determined defect position, is >0.5 Å:"
-            f"{specie_list}\n"
+            f"following species, at sites far from the determined defect position, is >0.5 Å: "
+            f"{list(far_from_defect_large_disps.keys())}, with displacements (Å): "
+            f"{far_from_defect_large_disps}"
         )
 
 
