@@ -88,11 +88,8 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        if not _potcars_available():  # don't run heavy tests on GH Actions, these are run locally
-            self.heavy_tests = False  # (too slow without multiprocessing etc)
-        else:
-            self.heavy_tests = True
-
+        self.heavy_tests = bool(_potcars_available())  # don't run heavy tests on GH Actions, these are
+        # run locally (too slow without multiprocessing etc)
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
@@ -135,44 +132,7 @@ class DefectDictSetTest(unittest.TestCase):
 
     def _general_defect_dict_set_check(self, dds, struct, incar_check=True, **dds_kwargs):
         if incar_check:
-            expected_incar_settings = self.neutral_def_incar_min.copy()
-            expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
-            expected_incar_settings.update(dds.user_incar_settings)
-            expected_incar_settings_w_none_vals = expected_incar_settings.copy()
-            # remove any entries where value is None:
-            expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
-            assert expected_incar_settings.items() <= dds.incar.items()
-            if dds.incar.get("NSW", 0) > 0:
-                assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
-            else:
-                assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
-
-            for k, v in default_defect_relax_set["INCAR"].items():
-                if k in [
-                    "EDIFF_PER_ATOM",
-                    *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
-                    # -> None in singleshot calcs
-                ]:  # already tested
-                    continue
-
-                assert k in dds.incar
-                if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
-                    try:
-                        val = float(v[:2])
-                        if k in dds.user_incar_settings:  # has been overwritten
-                            assert val != dds.incar[k]
-                        else:
-                            assert val == dds.incar[k]
-                    except ValueError:
-                        if k in dds.user_incar_settings:
-                            assert v.lower().capitalize() == dds.user_incar_settings[k]
-                        else:
-                            assert v.lower().capitalize() == dds.incar[k]
-                elif k in dds.user_incar_settings:
-                    assert dds.incar[k] == dds.user_incar_settings[k]
-                else:
-                    assert v == dds.incar[k]
-
+            self._check_dds_incar(dds, struct)
         if _potcars_available():
             for potcar_functional in [
                 dds.potcar_functional,
@@ -197,37 +157,7 @@ class DefectDictSetTest(unittest.TestCase):
                     _test_pop = dds.incar
                 assert _check_nelect_nupdown_error(e.exception)
             else:
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    _test_pop = dds.incar
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    dds.write_input("test_pop")
-
-                assert any(
-                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
-                )
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-                assert any(
-                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-                    for warning in w
-                )
-
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    dds.write_input("test_pop", unperturbed_poscar=False)
-
-                assert any(
-                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
-                )
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-                assert any(
-                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-                    for warning in w
-                )
-
+                self._check_dds_incar_and_writing_warnings(dds)
         assert dds.structure == struct
         # test no unwanted structure reordering
         assert len(Poscar(dds.structure).site_symbols) == len(set(Poscar(dds.structure).site_symbols))
@@ -244,6 +174,70 @@ class DefectDictSetTest(unittest.TestCase):
             )
         else:
             assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
+
+    def _check_potcar_nupdown_dds_warnings(self, w, dds):
+        assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
+        assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+        assert any(
+            _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
+            for warning in w
+        )
+
+    def _check_dds_incar(self, dds, struct):
+        expected_incar_settings = self.neutral_def_incar_min.copy()
+        expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
+        expected_incar_settings.update(dds.user_incar_settings)
+        expected_incar_settings_w_none_vals = expected_incar_settings.copy()
+        # remove any entries where value is None:
+        expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
+        assert expected_incar_settings.items() <= dds.incar.items()
+        if dds.incar.get("NSW", 0) > 0:
+            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+        else:
+            assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
+
+        for k, v in default_defect_relax_set["INCAR"].items():
+            if k in [
+                "EDIFF_PER_ATOM",
+                *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
+                # -> None in singleshot calcs
+            ]:  # already tested
+                continue
+
+            assert k in dds.incar
+            if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
+                try:
+                    val = float(v[:2])
+                    if k in dds.user_incar_settings:  # has been overwritten
+                        assert val != dds.incar[k]
+                    else:
+                        assert val == dds.incar[k]
+                except ValueError:
+                    if k in dds.user_incar_settings:
+                        assert v.lower().capitalize() == dds.user_incar_settings[k]
+                    else:
+                        assert v.lower().capitalize() == dds.incar[k]
+            elif k in dds.user_incar_settings:
+                assert dds.incar[k] == dds.user_incar_settings[k]
+            else:
+                assert v == dds.incar[k]
+
+    def _check_dds_incar_and_writing_warnings(self, dds):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            _test_pop = dds.incar
+        assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            dds.write_input("test_pop")
+
+        self._check_potcar_nupdown_dds_warnings(w, dds)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            dds.write_input("test_pop", unperturbed_poscar=False)
+
+        self._check_potcar_nupdown_dds_warnings(w, dds)
 
     def _check_dds(self, dds, struct, **kwargs):
         # INCARs only generated for charged defects when POTCARs available:
@@ -789,6 +783,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 class DefectsSetTest(unittest.TestCase):
     def setUp(self):
         self.dds_test = DefectDictSetTest()
+        self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
@@ -1170,14 +1165,21 @@ class DefectsSetTest(unittest.TestCase):
         Test initialising DefectsSet with our generation-tests materials, and
         writing files to disk.
         """
-        for defect_gen_name in [
+        defect_gens_to_test = [
             "ytos_defect_gen",
-            "ytos_defect_gen_supercell",
             "lmno_defect_gen",
             "cu_defect_gen",
-            "agcu_defect_gen",
-            "cd_i_supercell_defect_gen",
-        ]:
+        ]
+        if self.heavy_tests:  # uses too much memory on GH Actions
+            defect_gens_to_test.extend(
+                [
+                    "ytos_defect_gen_supercell",
+                    "agcu_defect_gen",
+                    "cd_i_supercell_defect_gen",
+                ]
+            )
+
+        for defect_gen_name in defect_gens_to_test:
             print(f"Initialising and testing:{defect_gen_name}")
             defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
             defects_set = DefectsSet(
