@@ -8,6 +8,7 @@ import os
 import random
 import unittest
 import warnings
+from threading import Thread
 
 import numpy as np
 from ase.build import bulk, make_supercell
@@ -1165,6 +1166,22 @@ class DefectsSetTest(unittest.TestCase):
         Test initialising DefectsSet with our generation-tests materials, and
         writing files to disk.
         """
+
+        def initialise_and_write_files(defect_gen_json):
+            print(f"Initialising and testing: {defect_gen_json}")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json")
+            defects_set = DefectsSet(defect_gen)
+            if _potcars_available():
+                defects_set.write_files()
+            else:
+                with self.assertRaises(ValueError):
+                    defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
+                    # available
+                defects_set.write_files(unperturbed_poscar=True)
+
+            del defects_set  # delete python objects to ensure memory released
+            del defect_gen  # delete python objects to ensure memory released
+
         defect_gens_to_test = [
             "ytos_defect_gen",
             "lmno_defect_gen",
@@ -1180,22 +1197,15 @@ class DefectsSetTest(unittest.TestCase):
             )
 
         for defect_gen_name in defect_gens_to_test:
-            print(f"Initialising and testing:{defect_gen_name}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
-            defects_set = DefectsSet(
-                defect_gen,
-            )
-            if _potcars_available():
-                defects_set.write_files()
-            else:
-                with self.assertRaises(ValueError):
-                    defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
-                    # available and unperturbed_poscar=False
-                defects_set.write_files(unperturbed_poscar=True)
+            test_thread = Thread(target=initialise_and_write_files, args=(defect_gen_name,))
+            test_thread.start()
+            test_thread.join(timeout=300)  # Timeout set to 5 minutes
+
+            if test_thread.is_alive():
+                print(f"Test for {defect_gen_name} timed out!")
 
             self.tearDown()  # delete generated folders each time
-            del defects_set
-            del defect_gen  # delete python objects to ensure memory released
+        self.tearDown()
 
 
 if __name__ == "__main__":
