@@ -151,6 +151,7 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
 def _format_defect_name(
     defect_species: str,
     include_site_info_in_name: bool,
+    wout_charge: bool = False,
 ) -> Optional[str]:
     """
     Format defect name for plot titles. (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$
@@ -162,11 +163,17 @@ def _format_defect_name(
         include_site_info_in_name (:obj:`bool`):
             Whether to include site info in name (e.g. $Cd_{i}^{0}$ or
             $Cd_{i_{C3v}}^{0}$).
+        wout_charge (:obj:`bool`, optional):
+            Whether the charge state is included in the defect_species name.
+            Defaults to False.
 
     Returns:
         :obj:`str`:
             formatted defect name
     """
+    if wout_charge:
+        defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
+
     if not isinstance(defect_species, str):  # Check inputs
         raise (TypeError(f"`defect_species` {defect_species} should be a string"))
     try:
@@ -579,9 +586,9 @@ def _format_defect_name(
                 elif defect_type.capitalize() != "Int":
                     raise ValueError(f"Defect type {defect_type} not recognized. Please check spelling.")
         except Exception:
-            defect_name = None
+            return None
 
-    return defect_name
+    return f"{defect_name.rsplit('^', 1)[0]}$" if wout_charge else defect_name
 
 
 def _get_legends_txt(for_legend, all_entries=False):
@@ -595,9 +602,8 @@ def _get_legends_txt(for_legend, all_entries=False):
             defect_name = _format_defect_name(
                 defect_species=defect_entry_name,
                 include_site_info_in_name=include_site_info,
+                wout_charge=not all_entries,  # defect names without charge
             )
-            if all_entries is not True:
-                defect_name = f"{defect_name.rsplit('^', 1)[0]}$"  # exclude charge
 
         except Exception:  # if formatting fails, just use the defect_species name
             defect_name = defect_entry_name
@@ -633,8 +639,8 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
     ymin = 0
 
-    for defect_entry in defect_thermodynamics.entries:
-        defect_entry_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge state
+    for defect_entry in defect_thermodynamics.defect_entries:
+        defect_entry_name = defect_entry.name  # all_lines name includes charge state
         all_lines_xy[defect_entry_name] = [[], []]
         for x_extrem in [lower_cap, upper_cap]:
             all_lines_xy[defect_entry_name][0].append(x_extrem)
@@ -695,9 +701,10 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             xy[def_name][1].append(form_en)
             y_range_vals.append(fe_right)
 
-        else:  # no transition level -> only one stable charge state, add all_line_xy and extend
+        else:  # no transition level -> only one stable charge state, add all_lines_xy and extend
             # y_range_vals; means this is only a 1-pump (chmp) loop
-            xy[def_name] = all_lines_xy[def_name]  # get xy from all_lines_xy
+            def_name_w_charge = [i for i in all_lines_xy if i.startswith(f"{def_name}_")][0]
+            xy[def_name] = all_lines_xy[def_name_w_charge]  # get xy from all_lines_xy, using name w/charge
             defect_entry = defect_thermodynamics.stable_entries[def_name][0]
             y_range_vals.extend(
                 defect_thermodynamics._formation_energy(
@@ -850,7 +857,7 @@ def _TLD_plot(
 
     ax.legend(
         _get_legends_txt(
-            [defect_entry.name for defect_entry in defect_thermodynamics.entries]
+            [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
             if all_entries is True
             else defect_names_for_legend,
             all_entries=all_entries,
