@@ -18,7 +18,7 @@ Submodules
    doped.chemical_potentials
    doped.core
    doped.generation
-   doped.plotting
+   doped.thermodynamics
    doped.utils
    doped.vasp
    doped.VASP_sets
