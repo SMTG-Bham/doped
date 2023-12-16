@@ -20,7 +20,7 @@ from pymatgen.util.testing import PymatgenTest
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
-from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
+from doped.utils.legacy_pmg.thermodynamics import DefectThermodynamics
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -151,7 +151,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     CdTe_bulk_data_dir: str
     CdTe_dielectric: np.ndarray
     v_Cd_dict: Dict[Any, Any]
-    v_Cd_dpd: DefectPhaseDiagram
+    v_Cd_thermo: DefectThermodynamics
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 
@@ -178,7 +178,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
                     charge_state=int(i.split("_")[-1]),  # test manually specifying charge states here
                 )
 
-        cls.v_Cd_dpd = analysis.dpd_from_defect_dict(cls.v_Cd_dict)
+        cls.v_Cd_thermo = analysis.thermo_from_defect_dict(cls.v_Cd_dict)
 
         cls.F_O_1_entry = analysis.defect_entry_from_paths(
             defect_path=f"{cls.ytos_example_dir}/F_O_1",

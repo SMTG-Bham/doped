@@ -2168,7 +2168,7 @@ def _first_and_second_element(defect_name):
 def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     """
     Sort defect entries for deterministic behaviour (for output and when
-    reloading DefectsGenerator objects, and with DefectPhaseDiagram entries
+    reloading DefectsGenerator objects, and with DefectThermodynamics entries
     (particularly for deterministic plotting behaviour)).
 
     Sorts defect entries by defect type (vacancies, substitutions,

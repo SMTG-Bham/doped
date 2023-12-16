@@ -29,8 +29,7 @@ from tqdm import tqdm
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
-from doped.plotting import _format_defect_name
-from doped.utils.legacy_pmg.thermodynamics import DefectPhaseDiagram
+from doped.utils.legacy_pmg.thermodynamics import DefectThermodynamics
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -44,6 +43,7 @@ from doped.utils.parsing import (
     get_vasprun,
     reorder_s1_like_s2,
 )
+from doped.utils.plotting import _format_defect_name
 from doped.utils.symmetry import _frac_coords_sort_func
 from doped.vasp import DefectDictSet
 
@@ -523,9 +523,9 @@ def defect_entry_from_paths(
     return dp.defect_entry
 
 
-def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
+def thermo_from_defect_dict(defect_dict: dict) -> DefectThermodynamics:
     """
-    Generates a DefectPhaseDiagram object from a dictionary of parsed defect
+    Generates a DefectThermodynamics object from a dictionary of parsed defect
     calculations in the format: {"defect_name": defect_entry}), likely created
     using defect_entry_from_paths() (or DefectParser), which can then be used to
     analyse and plot the defect thermodynamics (formation energies, transition
@@ -542,11 +542,11 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
             DefectParser.load_bulk_gap_data())
 
     Returns:
-        doped DefectPhaseDiagram object (DefectPhaseDiagram)
+        doped DefectThermodynamics object (DefectThermodynamics)
     """
-    # TODO: Can we make the dpd generation more efficient? What's the bottleneck in it's
+    # TODO: Can we make the thermo generation more efficient? What's the bottleneck in it's
     #  initialisation? `pymatgen` site-matching that can be avoided?
-    # TODO: Write our own DefectPhaseDiagram class, to (1) refactor the site-matching to just
+    # TODO: Write our own DefectThermodynamics class, to (1) refactor the site-matching to just
     #  use the already-parsed site positions, and then merge interstitials according to this
     #  algorithm:
     # 1. For each interstitial defect type, count the number of parsed calculations per charge
@@ -560,13 +560,13 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
     #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
     #  default range of (VBM - 1eV, CBM + 1eV))...
     # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
-    # With this, `dpd_from_defect_dict()` should then be a classmethod
+    # With this, `thermo_from_defect_dict()` should then be a classmethod
     # TODO: Should loop over input defect entries and check that the same bulk (energy and
     #  calculation_metadata) was used in each case (by proxy checks that same bulk/defect
     #  incar/potcar/kpoints settings were used in all cases, from each bulk/defect combination being
     #  checked when parsing) - if defects have been parsed separately and combined, rather than
     #  altogether with DefectsParser (which ensures the same bulk in each case)
-    # TODO: Add warning if, when creating dpd, only one charge state for a defect is input (i.e. the
+    # TODO: Add warning if, when creating thermo, only one charge state for a defect is input (i.e. the
     #  other charge states haven't been included), in case this isn't noticed by the user. Print a list of
     #  all parsed charge states as a check if so
 
@@ -578,47 +578,24 @@ def dpd_from_defect_dict(defect_dict: dict) -> DefectPhaseDiagram:
     if not isinstance(defect_dict, dict):
         raise TypeError(f"Expected `defect_dict` to be a dictionary, but got {type(defect_dict)} instead.")
 
-    vbm_vals = []
-    bandgap_vals = []
-    for defect_entry in defect_dict.values():
-        if "vbm" in defect_entry.calculation_metadata:
-            vbm_vals.append(defect_entry.calculation_metadata["vbm"])
-        if "gap" in defect_entry.calculation_metadata:
-            bandgap_vals.append(defect_entry.calculation_metadata["gap"])
-
-    def _raise_VBM_bandgap_value_error(vals, type="VBM"):
-        raise ValueError(
-            f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
-            f"and so are incompatible for thermodynamic analysis with DefectPhaseDiagram. The {type} "
-            f"values in the dictionary are: {vals}. You should recheck the correct/same bulk files were "
-            f"used when parsing."
-        )
-
-    # get the max difference in VBM & bandgap vals:
-    if max(vbm_vals) - min(vbm_vals) > 0.05:  # Check if all defects give same vbm
-        _raise_VBM_bandgap_value_error(vbm_vals, type="VBM")
-
-    if max(bandgap_vals) - min(bandgap_vals) > 0.05:  # Check if all defects give same bandgap
-        _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
-
-    return DefectPhaseDiagram(list(defect_dict.values()), vbm_vals[0], bandgap_vals[0])
+    return DefectThermodynamics(list(defect_dict.values()))
 
 
-def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
+def thermo_transition_levels(defect_thermodynamics: DefectThermodynamics):
     """
     Iteratively prints the charge transition levels for the input
     DefectPhaseDiagram object (via the from a
-    defect_phase_diagram.transition_level_map attribute).
+    defect_thermodynamics.transition_level_map attribute).
 
     Args:
-        defect_phase_diagram (DefectPhaseDiagram):
+        defect_thermodynamics (DefectThermodynamics):
             DefectPhaseDiagram object (likely created from
-            analysis.dpd_from_defect_dict)
+            analysis.thermo_from_defect_dict)
 
     Returns:
         None
     """
-    for def_type, tl_info in defect_phase_diagram.transition_level_map.items():
+    for def_type, tl_info in defect_thermodynamics.transition_level_map.items():
         bold_print(f"\nDefect: {def_type.split('@')[0]}")
         for tl_efermi, chargeset in tl_info.items():
             print(
@@ -629,7 +606,7 @@ def dpd_transition_levels(defect_phase_diagram: DefectPhaseDiagram):
 
 
 def formation_energy_table(
-    defect_phase_diagram: DefectPhaseDiagram,
+    defect_thermodynamics: DefectThermodynamics,
     chempots: Optional[dict] = None,
     el_refs: Optional[dict] = None,
     facets: Optional[list] = None,
@@ -663,9 +640,9 @@ def formation_energy_table(
                 Equals the sum of all other terms.
 
     Args:
-        defect_phase_diagram (DefectPhaseDiagram):
+        defect_thermodynamics (DefectThermodynamics):
             DefectPhaseDiagram for which to plot defect formation energies
-            (typically created from analysis.dpd_from_defect_dict).
+            (typically created from analysis.thermo_from_defect_dict).
         chempots (dict):
             Dictionary of chemical potentials to use for calculating the defect
             formation energies. This can have the form of
@@ -714,7 +691,7 @@ def formation_energy_table(
             # potentials, to tabulate formation energies
         for facet in facets:
             single_formation_energy_df = _single_formation_energy_table(
-                defect_phase_diagram,
+                defect_thermodynamics,
                 chempots=chempots["facets_wrt_el_refs"][facet],
                 el_refs=chempots["elemental_refs"],
                 fermi_level=fermi_level,
@@ -725,7 +702,7 @@ def formation_energy_table(
 
     # else return {El: Energy} dict for chempot_limits, or if unspecified, all zero energy
     single_formation_energy_df = _single_formation_energy_table(
-        defect_phase_diagram,
+        defect_thermodynamics,
         chempots=chempots,
         el_refs={el: 0 for el in chempots} if el_refs is None else el_refs,
         fermi_level=fermi_level,
@@ -734,7 +711,7 @@ def formation_energy_table(
 
 
 def _single_formation_energy_table(
-    defect_phase_diagram: DefectPhaseDiagram,
+    defect_thermodynamics: DefectThermodynamics,
     chempots: dict,
     el_refs: dict,
     fermi_level: float = 0,
@@ -758,9 +735,9 @@ def _single_formation_energy_table(
                 Equals the sum of all other terms.
 
     Args:
-        defect_phase_diagram (DefectPhaseDiagram):
+        defect_thermodynamics (DefectThermodynamics):
             DefectPhaseDiagram for which to plot defect formation energies
-            (typically created from analysis.dpd_from_defect_dict).
+            (typically created from analysis.thermo_from_defect_dict).
         chempots (dict):
             Dictionary of chosen absolute/DFT chemical potentials: {El: Energy}.
             If not specified, chemical potentials are not included in the
@@ -786,7 +763,7 @@ def _single_formation_energy_table(
     """
     table = []
 
-    defect_entries = defect_phase_diagram.entries
+    defect_entries = defect_thermodynamics.entries
     # sort by defect name, then charge state (most positive to most negative), then energy:
     defect_entries = sorted(
         defect_entries, key=lambda entry: (entry.defect.name, -entry.charge_state, entry.get_ediff())
@@ -802,11 +779,11 @@ def _single_formation_energy_table(
         else:
             row += [0]
         row += [defect_entry.charge_state * fermi_level]
-        row += [defect_phase_diagram._get_chempot_term(defect_entry, el_refs)]
-        row += [defect_phase_diagram._get_chempot_term(defect_entry, chempots)]
+        row += [defect_thermodynamics._get_chempot_term(defect_entry, el_refs)]
+        row += [defect_thermodynamics._get_chempot_term(defect_entry, chempots)]
         row += [sum(defect_entry.corrections.values())]
         dft_chempots = {el: energy + el_refs[el] for el, energy in chempots.items()}
-        formation_energy = defect_phase_diagram._formation_energy(
+        formation_energy = defect_thermodynamics._formation_energy(
             defect_entry, chemical_potentials=dft_chempots, fermi_level=fermi_level
         )
         row += [formation_energy]
@@ -935,7 +912,7 @@ class DefectsParser:
                 to in `output_path`, to avoid having to re-parse defects when later analysing
                 further and aiding calculation provenance. Can be reloaded using the `loadfn`
                 function from `monty.serialization` as shown in the docs, or
-                `DefectPhaseDiagram.from_json()`. If None (default), set as
+                `DefectThermodynamics.from_json()`. If None (default), set as
                 "{Chemical Formula}_defect_dict.json" where {Chemical Formula} is the
                 chemical formula of the host material. If False, no json file is saved.
 
@@ -946,7 +923,7 @@ class DefectsParser:
                 defect calculation folder name (_if it is a recognised defect name_),
                 else it is set to the default `doped` name for that defect.
         """
-        # TODO: Need to add `DefectPhaseDiagram.from_json()` etc methods as mention in docstring here
+        # TODO: Need to add `DefectThermodynamics.from_json()` etc methods as mention in docstring here
         self.output_path = output_path
         self.dielectric = dielectric
         self.skip_corrections = skip_corrections
@@ -1191,7 +1168,7 @@ class DefectsParser:
                 "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
                 "this should be fine, and the results should be the same regardless (assuming a "
                 "relatively well-converged supercell size), while for _anisotropic_ materials this could "
-                "lead to some quantitative inaccuracies. You can use the `formation_energy_table(dpd)` "
+                "lead to some quantitative inaccuracies. You can use the `formation_energy_table(thermo)` "
                 "function to print out the calculated charge corrections for all defects, "
                 "and/or visualise the charge corrections using "
                 "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "

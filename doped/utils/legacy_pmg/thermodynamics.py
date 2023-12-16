@@ -1,31 +1,32 @@
-# Copyright (c) Pymatgen Development Team.
-# Distributed under the terms of the MIT License.
 """
-This code has been copied over from pymatgen==2022.7.25, as it was deleted in
-later versions. This is a temporary measure while refactoring to use the new
-pymatgen-analysis-defects package takes place.
+Code for analysing the thermodynamics of defect formation in solids, including
+calculation of formation energies as functions of Fermi level and chemical
+potentials.
 
-Defect thermodynamics, such as defect phase diagrams, etc.
+This code for calculating defect formation energies was originally templated
+from the pyCDT (pymatgen<=2022.7.25) DefectThermodynamics code (deleted in
+later versions), before heavy modification to work with doped DefectEntry
+objects and add additional functionality.
 """
-import copy
+import os
 import warnings
 from itertools import chain
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import cm
+from matplotlib import colors
 from monty.json import MSONable
+from monty.serialization import dumpfn, loadfn
 from pymatgen.core.periodic_table import Element
-from pymatgen.electronic_structure.dos import FermiDos
-from scipy.optimize import bisect
 from scipy.spatial import HalfspaceIntersection
 
 from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
-from doped.plotting import _get_backend
+from doped.utils.plotting import _TLD_plot
 
 # TODO: Cleanup and refactor this code
-# TODO: Need to set the str and repr functions for the final form of our DefectPhaseDiagram to give an
+# TODO: Need to set the str and repr functions for the final form of our DefectThermodynamics to give an
 #  informative output!
 # TODO: Previous `pymatgen` issues, fixed?
 #   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is
@@ -33,21 +34,23 @@ from doped.plotting import _get_backend
 #     For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly
 #     between charge states, this will give separate lines for each charge state. This is kind of ok,
 #     because they _are_ actually different defect sites, but should have intelligent defaults for dealing
-#     with this (see `TODO` in `dpd_from_defect_dict` in `analysis.py`; at least similar colours for
+#     with this (see `TODO` in `thermo_from_defect_dict` in `analysis.py`; at least similar colours for
 #     similar defect types, an option to just show amalgamated lowest energy charge states for each
 #     _defect type_). NaP is an example for this - should have a test built for however we want to handle
 #     cases like this. See Ke's example case too with different interstitial sites.
-#   - GitHub issue related to `DefectPhaseDiagram`: https://github.com/SMTG-Bham/doped/issues/3 -> Think
-#     about how we want to refactor the `DefectPhaseDiagram` object!
-#   - Note that if you edit the entries in a DefectPhaseDiagram after creating it, you need to
-#     `dpd.find_stable_charges()` to update the transition level map etc.
+#   - GitHub issue related to `DefectThermodynamics`: https://github.com/SMTG-Bham/doped/issues/3 -> Think
+#     about how we want to refactor the `DefectThermodynamics` object!
+#   - Note that if you edit the entries in a DefectThermodynamics after creating it, you need to
+#     `thermo.find_stable_charges()` to update the transition level map etc.
+
+# TODO: Add `from_defect_dict` as method here as well, as `get_defect_thermodynamics()`
 
 
-class DefectPhaseDiagram(MSONable):
+class DefectThermodynamics(MSONable):
     """
-    Class for analysing the thermodynamics of defects in solids. Similar to a
-    pymatgen PhaseDiagram object, having the ability to quickly analyse defect
-    formation energies when fed DefectEntry objects.
+    Class for analysing the calculated thermodynamics of defects in solids.
+    Similar to a pymatgen PhaseDiagram object, having the ability to quickly
+    analyse defect formation energies when fed DefectEntry objects.
 
     This class is able to get:
         a) stability of charge states for a given defect,
@@ -56,8 +59,23 @@ class DefectPhaseDiagram(MSONable):
         d) used as input to doped plotting/analysis functions
     """
 
-    def __init__(self, entries, vbm, band_gap, metadata=None):
+    def __init__(
+        self,
+        entries: List[DefectEntry],
+        chempots: Optional[Dict] = None,
+        el_refs: Optional[Dict] = None,
+        vbm: Optional[float] = None,
+        band_gap: Optional[float] = None,
+    ):
         """
+        Create a DefectThermodynamics object, which can be used to analyse the
+        calculated thermodynamics of defects in solids.
+
+        Direct initiation with DefectThermodynamics() is typically not recommended.
+        Rather DefectsParser.get_defect_thermodynamics() or
+        DefectThermodynamics.from_defect_dict() as shown in the doped parsing tutorials.
+
+
         Args:
             entries ([DefectEntry]):
                 A list of DefectEntry objects. Note that `DefectEntry.name` attributes
@@ -66,77 +84,187 @@ class DefectPhaseDiagram(MSONable):
                  the DefectEntry.name attribute is not defined or does not end with
                  the charge state, then the entry will be renamed with the doped
                  default name.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies. This can have the form of
+                {"facets": [{'facet': [chempot_dict]}]} (the format generated by
+                doped's chemical potential parsing functions (see tutorials)) which
+                allows easy analysis over a range of chemical potentials - where facet(s)
+                (chemical potential limit(s)) to analyse/plot can later be chosen using
+                the `facets` argument.
+                Alternatively this can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!) for a single facet (limit),
+                in the format: {element symbol: chemical potential} - if manually
+                specifying chemical potentials this way, you can set the `el_refs` option
+                with the DFT reference energies of the elemental phases in order to show
+                the formal (relative) chemical potentials above the formation energy
+                plot.
+                If None (default), sets all chemical potentials to zero. Chemical
+                potentials can also be supplied later in each analysis function.
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                {element symbol: reference energy} (to determine the formal chemical
+                potentials, when chempots has been manually specified as
+                {element symbol: chemical potential}). Unnecessary if chempots is
+                provided in format generated by doped (see tutorials).
+                (Default: None)
             vbm (float):
-                VBM energy to use as Fermi level reference point for all defect entries.
+                VBM energy to use as Fermi level reference point for analysis.
+                If None (default), will use "vbm" from the calculation_metadata
+                dict attributes of the DefectEntry objects in `entries`.
             band_gap (float):
-                Band gap value to use for all defect entries.
-            metadata (dict):
-                Dictionary of metadata to store with the PhaseDiagram. Has no impact on
-                calculations.
+                Band gap of the host, to use for analysis.
+                If None (default), will use "gap" from the calculation_metadata
+                dict attributes of the DefectEntry objects in `entries`.
         """
+        # TODO: Update plot to pull chempots from attributes now, if None. Should have this behaviour for
+        # defect_thermo methods, where chempots can be supplied as input parameter, or otherwise will use
+        # saved chempots (and can specify facet)
+        self.entries = entries
+        self.chempots, self.el_refs = self._parse_chempots(chempots, el_refs)
+
+        # get and check VBM/bandgap values:
+        def _raise_VBM_bandgap_value_error(vals, type="VBM"):
+            raise ValueError(
+                f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
+                f"and so are incompatible for thermodynamic analysis with DefectThermodynamics. The "
+                f"{type} values in the dictionary are: {vals}. You should recheck the correct/same bulk "
+                f"files were used when parsing. If this is acceptable, you can instead manually specify "
+                f"{type} in DefectThermodynamics initialisation."
+            )
+
         self.vbm = vbm
         self.band_gap = band_gap
-        self.entries = entries
+        if self.vbm is None or self.band_gap is None:
+            vbm_vals = []
+            bandgap_vals = []
+            for defect_entry in self.entries:
+                if "vbm" in defect_entry.calculation_metadata:
+                    vbm_vals.append(defect_entry.calculation_metadata["vbm"])
+                if "gap" in defect_entry.calculation_metadata:
+                    bandgap_vals.append(defect_entry.calculation_metadata["gap"])
 
-        for ent_ind, ent in enumerate(self.entries):
-            if "vbm" not in ent.calculation_metadata.keys() or ent.calculation_metadata["vbm"] != vbm:
-                # logger.info(
-                #     f"Entry {ent.name} did not have vbm equal to given DefectPhaseDiagram value."
-                #     " Manually overriding."
-                # )
-                new_ent = copy.deepcopy(ent)
-                new_ent.calculation_metadata["vbm"] = vbm
-                self.entries[ent_ind] = new_ent
+            # get the max difference in VBM & bandgap vals:
+            if max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
+                _raise_VBM_bandgap_value_error(vbm_vals, type="VBM")
+            elif self.vbm is None:
+                self.vbm = vbm_vals[0]
 
-        self.metadata = metadata or {}
+            if max(bandgap_vals) - min(bandgap_vals) > 0.05 and self.band_gap is None:
+                _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
+            elif self.band_gap is None:
+                self.band_gap = bandgap_vals[0]
+
         # order entries for deterministic behaviour (particularly for plotting)
         entries_dict = {entry.name: entry for entry in self.entries}
         sorted_entries_dict = _sort_defect_entries(entries_dict)
         self.entries = list(sorted_entries_dict.values())
         self.find_stable_charges()
 
+    def _parse_chempots(self, chempots: Optional[Dict] = None, el_refs: Optional[Dict] = None):
+        """
+        Parse the chemical potentials input to the DefectThermodynamics object,
+        formatting them in the doped format for use in analysis functions.
+
+        Can be either doped format or user-specified format.
+
+        Returns parsed chempots and el_refs
+        """
+        if chempots is None:
+            return None, None
+
+        if "facets" in chempots:  # doped format, use as is and get el_refs
+            return chempots, chempots.get("elemental_refs")
+
+        # otherwise user-specified format, convert to doped format
+        # TODO: Add catch later, that if no chempot is set for an element, warn user and set to 0
+        chempots = {"facets": {"User Chemical Potentials": chempots}}
+        if el_refs is not None:
+            chempots["elemental_refs"] = el_refs
+            chempots["facets_wrt_el_refs"] = {
+                "User Chemical Potentials": {el: chempot - el_refs[el] for el, chempot in chempots.items()}
+            }
+        return chempots, el_refs
+
     def as_dict(self):
         """
         Returns:
-            JSON-serializable dict representation of DefectPhaseDiagram.
+            JSON-serializable dict representation of DefectThermodynamics.
         """
         return {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
             "entries": [entry.as_dict() for entry in self.entries],
+            "chempots": self.chempots,
+            "el_refs": self.el_refs,
             "vbm": self.vbm,
             "band_gap": self.band_gap,
-            "metadata": self.metadata,
         }
 
     @classmethod
     def from_dict(cls, d):
         """
-        Reconstitute a DefectPhaseDiagram object from a dict representation
+        Reconstitute a DefectThermodynamics object from a dict representation
         created using as_dict().
 
         Args:
-            d (dict): dict representation of DefectPhaseDiagram.
+            d (dict): dict representation of DefectThermodynamics.
 
         Returns:
-            DefectPhaseDiagram object
+            DefectThermodynamics object
         """
         warnings.filterwarnings(
             "ignore", "Use of properties is"
         )  # `message` only needs to match start of message
         entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
-        vbm = d["vbm"]
-        band_gap = d["band_gap"]
-        metadata = d.get("metadata", {})
-        if "entry_id" in d and "entry_id" not in metadata:
-            metadata["entry_id"] = d["entry_id"]
 
         return cls(
             entries,
-            vbm,
-            band_gap,
-            metadata=metadata,
+            chempots=d.get(
+                "chempots"
+            ),  # TODO: Check if this works in each case, may need to be refactored
+            el_refs=d.get("el_refs"),
+            vbm=d.get("vbm"),
+            band_gap=d.get("band_gap"),
         )
+
+    def to_json(self, filename: Optional[str] = None):
+        """
+        Save the DefectThermodynamics object as a json file, which can be
+        reloaded with the DefectThermodynamics.from_json() class method.
+
+        Args:
+            filename (str): Filename to save json file as. If None, the filename will be
+                set as "{Chemical Formula}_defect_thermodynamics.json" where
+                {Chemical Formula} is the chemical formula of the host material.
+        """
+        if filename is None:
+            bulk_entry = self.entries[0].bulk_entry
+            if bulk_entry is not None:
+                formula = bulk_entry.structure.composition.get_reduced_formula_and_factor(
+                    iupac_ordering=True
+                )[0]
+                filename = f"{formula}_defect_thermodynamics.json"
+            else:
+                filename = "defect_thermodynamics.json"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: str):
+        """
+        Load a DefectThermodynamics object from a json file.
+
+        Args:
+            filename (str): Filename of json file to load DefectThermodynamics
+            object from.
+
+        Returns:
+            DefectThermodynamics object
+        """
+        return loadfn(filename)
 
     def _get_chempot_term(self, defect_entry, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}
@@ -149,19 +277,17 @@ class DefectPhaseDiagram(MSONable):
 
     def _formation_energy(self, defect_entry, chemical_potentials=None, fermi_level=0):
         """
-        Compute the formation energy for a defect taking into account a given chemical potential and
-        fermi_level
-         Args:
+        Compute the formation energy for a defect taking into account a given
+        chemical potential and fermi_level.
+
+        Args:
              defect_entry (DefectEntry): DefectEntry object to compute formation energy for.
              chemical_potentials (dict): Dictionary of elemental chemical potential values.
                 Keys are Element objects within the defect structure's composition.
                 Values are float numbers equal to the atomic chemical potential for that element.
-             fermi_level (float):  Value corresponding to the electron chemical potential.
-                If "vbm" is supplied in calculation_metadata dict, then fermi_level is referenced to
-                the VBM. If "vbm" is NOT supplied in calculation_metadata dict, then fermi_level is
-                referenced to the
-                calculation's absolute Kohn-Sham potential (and should include the vbm value provided
-                by a band structure calculation).
+             fermi_level (float):  Value corresponding to the electron chemical potential,
+                referenced to the VBM. The VBM value is taken from the calculation_metadata dict
+                attribute if present, otherwise self.vbm.
 
         Returns:
             Formation energy value (float)
@@ -175,7 +301,7 @@ class DefectPhaseDiagram(MSONable):
                 defect_entry.calculation_metadata["vbm"] + fermi_level
             )
         else:
-            formation_energy += defect_entry.charge_state * fermi_level
+            formation_energy += defect_entry.charge_state * (self.vbm + fermi_level)
 
         return formation_energy
 
@@ -226,7 +352,7 @@ class DefectPhaseDiagram(MSONable):
         #     grp_def_indices = []
         #     for ent_ind, ent in enumerate(entryset):
         #         # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
-        #         # this is currently most time intensive part of DefectPhaseDiagram
+        #         # this is currently most time intensive part of DefectThermodynamics
         #         matched_ind = None
         #         for grp_ind, defgrp in enumerate(grp_def_sets):
         #             if pdc.are_equal(ent.defect, defgrp[0].defect):
@@ -396,162 +522,127 @@ class DefectPhaseDiagram(MSONable):
     @property
     def defect_types(self):
         """
-        List types of defects existing in the DefectPhaseDiagram.
+        List types of defects existing in the DefectThermodynamics.
         """
         return list(self.finished_charges.keys())
 
     @property
     def all_stable_entries(self):
         """
-        List all stable entries (defect+charge) in the DefectPhaseDiagram.
+        List all stable entries (defect+charge) in the DefectThermodynamics.
         """
-        return set(chain.from_iterable(self.stable_entries.values()))
+        return list(chain.from_iterable(self.stable_entries.values()))
 
     @property
     def all_unstable_entries(self):
         """
-        List all unstable entries (defect+charge) in the DefectPhaseDiagram.
+        List all unstable entries (defect+charge) in the DefectThermodynamics.
         """
         all_stable_entries = self.all_stable_entries
         return [e for e in self.entries if e not in all_stable_entries]
 
-    def defect_concentrations(self, chemical_potentials, temperature=300, fermi_level=0.0):
-        """
-        Give list of all concentrations at specified efermi in the DefectPhaseDiagram
-        args:
-            chemical_potentials = {Element: number} is dict of chemical potentials to provide formation
-                energies for temperature = temperature to produce concentrations from
-            fermi_level: (float) is fermi level relative to valence band maximum
-                Default efermi = 0 = VBM energy
-        returns:
-            list of dictionaries of defect concentrations.
-        """
-        return [
-            {
-                "conc": dfct.defect_concentration(
-                    chemical_potentials=chemical_potentials,
-                    temperature=temperature,
-                    fermi_level=fermi_level,
-                ),
-                "name": dfct.name,
-                "charge": dfct.charge_state,
-            }
-            for dfct in self.all_stable_entries
-        ]
+    # Doesn't work as .defect_concentration() no longer a DefectEntry method, but can be done with
+    # pmg-analysis-defects FormationEnergyDiagram (or py-sc-fermi ofc)
+    # def defect_concentrations(self, chemical_potentials, temperature=300, fermi_level=0.0):
+    #     """
+    #     Give list of all concentrations at specified efermi in the DefectThermodynamics
+    #     args:
+    #         chemical_potentials = {Element: number} is dict of chemical potentials to provide formation
+    #             energies for temperature = temperature to produce concentrations from
+    #         fermi_level: (float) is fermi level relative to valence band maximum
+    #             Default efermi = 0 = VBM energy
+    #     returns:
+    #         list of dictionaries of defect concentrations.
+    #     """
+    #     return [
+    #         {
+    #             "conc": dfct.defect_concentration(
+    #                 chemical_potentials=chemical_potentials,
+    #                 temperature=temperature,
+    #                 fermi_level=fermi_level,
+    #             ),
+    #             "name": dfct.name,
+    #             "charge": dfct.charge_state,
+    #         }
+    #         for dfct in self.all_stable_entries
+    #     ]
 
-    def suggest_charges(self, tolerance=0.1):
-        """
-        Suggest possible charges for defects to compute based on proximity of
-        known transitions from entries to VBM and CBM.
+    # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
+    # but can be done with pmg-analysis-defects MultiFormationEnergyDiagram (or py-sc-fermi ofc)
+    # def solve_for_fermi_energy(self, temperature, chemical_potentials, bulk_dos):
+    #     """
+    #     Solve for the Fermi energy self-consistently as a function of T
+    #     Observations are Defect concentrations, electron and hole conc
+    #     Args:
+    #         temperature: Temperature to equilibrate fermi energies for
+    #         chemical_potentials: dict of chemical potentials to use for calculation fermi level
+    #         bulk_dos: bulk system dos (pymatgen Dos object).
+    #
+    #     Returns:
+    #         Fermi energy dictated by charge neutrality.
+    #     """
+    #     fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
+    #     _, fdos_vbm = fdos.get_cbm_vbm()
+    #
+    #     def _get_total_q(ef):
+    #         qd_tot = sum(
+    #             d["charge"] * d["conc"]
+    #             for d in self.defect_concentrations(
+    #                 chemical_potentials=chemical_potentials,
+    #                 temperature=temperature,
+    #                 fermi_level=ef,
+    #             )
+    #         )
+    #         qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
+    #         return qd_tot
+    #
+    #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
 
-        Args:
-            tolerance (float): tolerance with respect to the VBM and CBM to
-                    `          continue to compute new charges
-        """
-        recommendations = {}
+    # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
+    # and can;t be done with pmg-analysis-defects, but can with py-sc-fermi ofc.
+    # TODO: Worth seeing if this code works properly (agrees with py-sc-fermi), in which case could be
+    #  useful to have as an option for quick checking?
+    # def solve_for_non_equilibrium_fermi_energy(
+    #     self, temperature, quench_temperature, chemical_potentials, bulk_dos
+    # ):
+    #     """
+    #     Solve for the Fermi energy after quenching in the defect concentrations
+    #     at a higher temperature (the quench temperature), as outlined in P.
+    #     Canepa et al (2017) Chemistry of Materials (doi:
+    #     10.1021/acs.chemmater.7b02909).
+    #
+    #     Args:
+    #         temperature: Temperature to equilibrate fermi energy at after quenching in defects
+    #         quench_temperature: Temperature to equilibrate defect concentrations at (higher temperature)
+    #         chemical_potentials: dict of chemical potentials to use for calculation fermi level
+    #         bulk_dos: bulk system dos (pymatgen Dos object)
+    #
+    #     Returns:
+    #         Fermi energy dictated by charge neutrality with respect to frozen in defect concentrations
+    #     """
+    #     high_temp_fermi_level = self.solve_for_fermi_energy(
+    #         quench_temperature, chemical_potentials, bulk_dos
+    #     )
+    #     fixed_defect_charge = sum(
+    #         d["charge"] * d["conc"]
+    #         for d in self.defect_concentrations(
+    #             chemical_potentials=chemical_potentials,
+    #             temperature=quench_temperature,
+    #             fermi_level=high_temp_fermi_level,
+    #         )
+    #     )
+    #
+    #     fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
+    #     _, fdos_vbm = fdos.get_cbm_vbm()
+    #
+    #     def _get_total_q(ef):
+    #         qd_tot = fixed_defect_charge
+    #         qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
+    #         return qd_tot
+    #
+    #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
 
-        for def_type in self.defect_types:
-            test_charges = np.arange(
-                np.min(self.stable_charges[def_type]) - 1,
-                np.max(self.stable_charges[def_type]) + 2,
-            )
-            test_charges = [
-                charge for charge in test_charges if charge not in self.finished_charges[def_type]
-            ]
-
-            if len(self.transition_level_map[def_type].keys()):
-                # More positive charges will shift the minimum transition level down
-                # Max charge is limited by this if its transition level is close to VBM
-                min_tl = min(self.transition_level_map[def_type].keys())
-                if min_tl < tolerance:
-                    max_charge = max(self.transition_level_map[def_type][min_tl])
-                    test_charges = [charge for charge in test_charges if charge < max_charge]
-
-                # More negative charges will shift the maximum transition level up
-                # Minimum charge is limited by this if transition level is near CBM
-                max_tl = max(self.transition_level_map[def_type].keys())
-                if max_tl > (self.band_gap - tolerance):
-                    min_charge = min(self.transition_level_map[def_type][max_tl])
-                    test_charges = [charge for charge in test_charges if charge > min_charge]
-            else:
-                test_charges = [
-                    charge for charge in test_charges if charge not in self.stable_charges[def_type]
-                ]
-
-            recommendations[def_type] = test_charges
-
-        return recommendations
-
-    def solve_for_fermi_energy(self, temperature, chemical_potentials, bulk_dos):
-        """
-        Solve for the Fermi energy self-consistently as a function of T
-        Observations are Defect concentrations, electron and hole conc
-        Args:
-            temperature: Temperature to equilibrate fermi energies for
-            chemical_potentials: dict of chemical potentials to use for calculation fermi level
-            bulk_dos: bulk system dos (pymatgen Dos object).
-
-        Returns:
-            Fermi energy dictated by charge neutrality.
-        """
-        fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
-        _, fdos_vbm = fdos.get_cbm_vbm()
-
-        def _get_total_q(ef):
-            qd_tot = sum(
-                d["charge"] * d["conc"]
-                for d in self.defect_concentrations(
-                    chemical_potentials=chemical_potentials,
-                    temperature=temperature,
-                    fermi_level=ef,
-                )
-            )
-            qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
-            return qd_tot
-
-        return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
-
-    def solve_for_non_equilibrium_fermi_energy(
-        self, temperature, quench_temperature, chemical_potentials, bulk_dos
-    ):
-        """
-        Solve for the Fermi energy after quenching in the defect concentrations
-        at a higher temperature (the quench temperature), as outlined in P.
-        Canepa et al (2017) Chemistry of Materials (doi:
-        10.1021/acs.chemmater.7b02909).
-
-        Args:
-            temperature: Temperature to equilibrate fermi energy at after quenching in defects
-            quench_temperature: Temperature to equilibrate defect concentrations at (higher temperature)
-            chemical_potentials: dict of chemical potentials to use for calculation fermi level
-            bulk_dos: bulk system dos (pymatgen Dos object)
-
-        Returns:
-            Fermi energy dictated by charge neutrality with respect to frozen in defect concentrations
-        """
-        high_temp_fermi_level = self.solve_for_fermi_energy(
-            quench_temperature, chemical_potentials, bulk_dos
-        )
-        fixed_defect_charge = sum(
-            d["charge"] * d["conc"]
-            for d in self.defect_concentrations(
-                chemical_potentials=chemical_potentials,
-                temperature=quench_temperature,
-                fermi_level=high_temp_fermi_level,
-            )
-        )
-
-        fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
-        _, fdos_vbm = fdos.get_cbm_vbm()
-
-        def _get_total_q(ef):
-            qd_tot = fixed_defect_charge
-            qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
-            return qd_tot
-
-        return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
-
-    def get_dopability_limits(self, chemical_potentials):
+    def get_dopability_limits(self, chemical_potentials):  # works, somewhat useful tbf. Not in pmg defects
         """
         Find Dopability limits for a given chemical potential. This is defined
         by the defect formation energies which first cross zero in formation
@@ -600,207 +691,174 @@ class DefectPhaseDiagram(MSONable):
 
         return lower_lim, upper_lim
 
+    # TODO: Make a specific tutorial in docs for editing return Matplotlib figures, or with rcParams,
+    #  or with a stylesheet
+    # TODO: Add option to only plot defect states that are stable at some point in the bandgap
+    # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
+    #  make this the default if no chempots are specified? Or better default to plot both the most (
+    #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
     def plot(
         self,
-        mu_elts=None,
-        xlim=None,
-        ylim=None,
-        ax_fontsize=1.3,
-        lg_fontsize=1.0,
-        lg_position=None,
-        fermi_level=None,
-        title=None,
-        saved=False,
+        chempots: Optional[Dict] = None,
+        facets: Optional[Union[List, str]] = None,
+        el_refs: Optional[Dict] = None,
+        chempot_table: bool = True,
+        all_entries: Union[bool, str] = False,
+        style_file: Optional[str] = None,
+        xlim: Optional[Tuple] = None,
+        ylim: Optional[Tuple] = None,
+        fermi_level: Optional[float] = None,
+        colormap: Union[str, colors.Colormap] = "Dark2",
+        auto_labels: bool = False,
+        filename: Optional[str] = None,
     ):
         """
-        Produce defect Formation energy vs Fermi energy plot.
+        Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
+        formation energy / transition level diagram). Returns the Matplotlib
+        Figure object to allow further plot customisation.
 
         Args:
-            mu_elts:
-                a dictionary of {Element:value} giving the chemical
-                potential of each element
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies. This can have the form of
+                {"facets": [{'facet': [chempot_dict]}]} (the format generated by
+                doped's chemical potential parsing functions (see tutorials)) and
+                facet(s) (chemical potential limit(s)) to plot can be chosen using
+                `facets`, or a dictionary of **DFT**/absolute chemical potentials
+                (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential} - if manually specifying
+                chemical potentials this way, you can set the el_refs option with
+                the DFT reference energies of the elemental phases in order to show
+                the formal (relative) chemical potentials above the plot.
+                (Default: None)
+            facets (list, str):
+                A string or list of facet(s) (chemical potential limit(s)) for which
+                to plot the defect formation energies, corresponding to 'facet' in
+                {"facets": [{'facet': [chempot_dict]}]} (the format generated by
+                doped's chemical potential parsing functions (see tutorials)). If
+                not specified, will plot for each facet in `chempots`. (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                {element symbol: reference energy} (to determine the formal chemical
+                potentials, when chempots has been manually specified as
+                {element symbol: chemical potential}). Unnecessary if chempots is
+                provided in format generated by doped (see tutorials).
+                (Default: None)
+            chempot_table (bool):
+                Whether to print the chemical potential table above the plot.
+                (Default: True)
+            all_entries (bool, str):
+                Whether to plot the formation energy lines of _all_ defect entries,
+                rather than the default of showing only the equilibrium states at each
+                Fermi level position (traditional). If instead set to "faded", will plot
+                the equilibrium states in bold, and all unstable states in faded grey
+                (Default: False)
+            style_file (str):
+                Path to a mplstyle file to use for the plot. If None (default), uses
+                the default doped style (from doped/utils/doped.mplstyle).
             xlim:
-                Tuple (min,max) giving the range of the x (fermi energy) axis
+                Tuple (min,max) giving the range of the x-axis (Fermi level). May want
+                to set manually when including transition level labels, to avoid crossing
+                the axes. Default is to plot from -0.3 to +0.3 eV above the band gap.
             ylim:
-                Tuple (min,max) giving the range for the formation energy axis
-            ax_fontsize:
-                float  multiplier to change axis label fontsize
-            lg_fontsize:
-                float  multiplier to change legend label fontsize
-            lg_position:
-                Tuple (horizontal-position, vertical-position) giving the position
-                to place the legend.
-                Example: (0.5,-0.75) will likely put it below the x-axis.
-            saved:
-                Boolean to save the figure as a png file
-            fermi_level:
-                float to plot a vertical line at a specific fermi level
-            title:
-                string to set the title of the plot
-
+                Tuple (min,max) giving the range for the y-axis (formation energy). May
+                want to set manually when including transition level labels, to avoid
+                crossing the axes. Default is from 0 to just above the maximum formation
+                energy value in the band gap.
+            fermi_level (float):
+                If set, plots a dashed vertical line at this Fermi level value, typically
+                used to indicate the equilibrium Fermi level position (e.g. calculated
+                with py-sc-fermi). (Default: None)
+            colormap (str, matplotlib.colors.Colormap):
+                Colormap to use for the formation energy lines, either as a string (i.e.
+                name from https://matplotlib.org/stable/users/explain/colors/colormaps.html)
+                or a Colormap / ListedColormap object. (default: "Dark2")
+            auto_labels (bool):
+                Whether to automatically label the transition levels with their charge
+                states. If there are many transition levels, this can be quite ugly.
+                (Default: False)
+            filename (str): Filename to save the plot to. (Default: None (not saved))
 
         Returns:
-            a matplotlib object
+            Matplotlib Figure object, or list of Figure objects if multiple facets
+            chosen.
         """
-        if xlim is None:
-            xlim = (-0.5, self.band_gap + 0.5)
-        xy = {}
-        lower_cap = -100.0
-        upper_cap = 100.0
-        y_range_vals = []  # for finding max/min values on y-axis based on x-limits
-        for defnom, def_tl in self.transition_level_map.items():
-            xy[defnom] = [[], []]
-            if def_tl:
-                org_x = sorted(def_tl.keys())  # list of transition levels
+        from shakenbreak.plotting import _install_custom_font
 
-                # establish lower x-bound
-                first_charge = max(def_tl[org_x[0]])
-                for chg_ent in self.stable_entries[defnom]:
-                    if chg_ent.charge_state == first_charge:
-                        form_en = self._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=lower_cap
-                        )
-                        fe_left = self._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=xlim[0]
-                        )
+        _install_custom_font()
+        # check input options:
+        if all_entries not in [False, True, "faded"]:
+            raise ValueError(
+                f"`all_entries` option must be either False, True, or 'faded', not {all_entries}"
+            )
 
-                xy[defnom][0].append(lower_cap)
-                xy[defnom][1].append(form_en)
-                y_range_vals.append(fe_left)
+        if (
+            chempots
+            and facets is None
+            and el_refs is None
+            and "facets" not in chempots
+            and any(np.isclose(chempot, 0, atol=0.1) for chempot in chempots.values())
+        ):
+            # if any chempot is close to zero, this is likely a formal chemical potential and so inaccurate
+            # here (trying to make this as idiotproof as possible to reduce unnecessary user queries...)
+            warnings.warn(
+                "At least one of your manually-specified chemical potentials is close to zero, "
+                "which is likely a _formal_ chemical potential (i.e. relative to the elemental "
+                "reference energies), but you have not specified the elemental reference "
+                "energies with `el_refs`. This will give large errors in the absolute values "
+                "of formation energies, but the transition level positions will be unaffected."
+            )
 
-                # iterate over stable charge state transitions
-                for fl in org_x:
-                    charge = max(def_tl[fl])
-                    for chg_ent in self.stable_entries[defnom]:
-                        if chg_ent.charge_state == charge:
-                            form_en = self._formation_energy(
-                                chg_ent, chemical_potentials=mu_elts, fermi_level=fl
-                            )
-                    xy[defnom][0].append(fl)
-                    xy[defnom][1].append(form_en)
-                    y_range_vals.append(form_en)
-
-                # establish upper x-bound
-                last_charge = min(def_tl[org_x[-1]])
-                for chg_ent in self.stable_entries[defnom]:
-                    if chg_ent.charge_state == last_charge:
-                        form_en = self._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=upper_cap
-                        )
-                        fe_right = self._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=xlim[1]
-                        )
-                xy[defnom][0].append(upper_cap)
-                xy[defnom][1].append(form_en)
-                y_range_vals.append(fe_right)
-            else:
-                # no transition - just one stable charge
-                chg_ent = self.stable_entries[defnom][0]
-                for x_extrem in [lower_cap, upper_cap]:
-                    xy[defnom][0].append(x_extrem)
-                    xy[defnom][1].append(
-                        self._formation_energy(chg_ent, chemical_potentials=mu_elts, fermi_level=x_extrem)
+        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        with plt.style.context(style_file):
+            if chempots and "facets" in chempots:
+                if facets is None:
+                    facets = chempots["facets"].keys()  # Phase diagram facets to use for chemical
+                    # potentials, to calculate and plot formation energies
+                figs = []
+                for facet in facets:
+                    dft_chempots = chempots["facets"][facet]
+                    el_refs = chempots["elemental_refs"]
+                    plot_title = facet
+                    plot_filename = (
+                        f"{filename.rsplit('.', 1)[0]}_{facet}.{filename.rsplit('.', 1)[1]}"
+                        if filename
+                        else None
                     )
-                y_range_vals.extend(
-                    self._formation_energy(chg_ent, chemical_potentials=mu_elts, fermi_level=x_window)
-                    for x_window in xlim
-                )
-        if ylim is None:
-            window = max(y_range_vals) - min(y_range_vals)
-            spacer = 0.1 * window
-            ylim = (min(y_range_vals) - spacer, max(y_range_vals) + spacer)
 
-        if len(xy) <= 8:
-            colors = cm.Dark2(np.linspace(0, 1, len(xy)))  # pylint: disable=E1101
-        else:
-            colors = cm.gist_rainbow(np.linspace(0, 1, len(xy)))  # pylint: disable=E1101
+                    fig = _TLD_plot(
+                        self,
+                        dft_chempots=dft_chempots,
+                        el_refs=el_refs,
+                        chempot_table=chempot_table,
+                        all_entries=all_entries,
+                        xlim=xlim,
+                        ylim=ylim,
+                        fermi_level=fermi_level,
+                        title=plot_title,
+                        colormap=colormap,
+                        auto_labels=auto_labels,
+                        filename=plot_filename,
+                    )
+                    figs.append(fig)
 
-        plt.figure()
-        plt.clf()
-        width = 12
-        # plot formation energy lines
-        for_legend = []
-        for cnt, defnom in enumerate(xy.keys()):
-            plt.plot(xy[defnom][0], xy[defnom][1], linewidth=3, color=colors[cnt])
-            for_legend.append(copy.deepcopy(self.stable_entries[defnom][0]))
+                return figs[0] if len(figs) == 1 else figs
 
-        # plot transition levels
-        for cnt, defnom in enumerate(xy.keys()):
-            x_trans, y_trans = [], []
-            for x_val, chargeset in self.transition_level_map[defnom].items():
-                x_trans.append(x_val)
-                for chg_ent in self.stable_entries[defnom]:
-                    if chg_ent.charge_state == chargeset[0]:
-                        form_en = self._formation_energy(
-                            chg_ent, chemical_potentials=mu_elts, fermi_level=x_val
-                        )
-                y_trans.append(form_en)
-            if x_trans:
-                plt.plot(
-                    x_trans,
-                    y_trans,
-                    marker="*",
-                    color=colors[cnt],
-                    markersize=12,
-                    fillstyle="full",
-                )
-
-        # get latex-like legend titles
-        legends_txt = []
-        for dfct in for_legend:
-            flds = dfct.name.split("_")
-            if flds[0] == "Vac":
-                base = "$Vac"
-                sub_str = "_{" + flds[1] + "}$"
-            elif flds[0] == "Sub":
-                flds = dfct.name.split("_")
-                base = f"${flds[1]}"
-                sub_str = "_{" + flds[3] + "}$"
-            elif flds[0] == "Int":
-                base = f"${flds[1]}"
-                sub_str = "_{inter}$"
-            else:
-                base = dfct.name
-                sub_str = ""
-
-            legends_txt.append(base + sub_str)
-
-        if not lg_position:
-            plt.legend(legends_txt, fontsize=lg_fontsize * width, loc=0)
-        else:
-            plt.legend(
-                legends_txt,
-                fontsize=lg_fontsize * width,
-                ncol=3,
-                loc="lower center",
-                bbox_to_anchor=lg_position,
+            # else manually specified chemical potentials, or no chempots specified
+            fig = _TLD_plot(
+                self,
+                dft_chempots=chempots,
+                el_refs=el_refs,
+                chempot_table=chempot_table,
+                all_entries=all_entries,
+                xlim=xlim,
+                ylim=ylim,
+                fermi_level=fermi_level,
+                title=None,
+                colormap=colormap,
+                auto_labels=auto_labels,
+                filename=filename,
             )
-
-        plt.ylim(ylim)
-        plt.xlim(xlim)
-
-        plt.plot([xlim[0], xlim[1]], [0, 0], "k-")  # black dashed line for Eformation = 0
-        plt.axvline(x=0.0, linestyle="--", color="k", linewidth=3)  # black dashed lines for gap edges
-        plt.axvline(x=self.band_gap, linestyle="--", color="k", linewidth=3)
-
-        if fermi_level is not None:
-            plt.axvline(
-                x=fermi_level, linestyle="-.", color="k", linewidth=2
-            )  # smaller dashed lines for gap edges
-
-        plt.xlabel("Fermi energy (eV)", size=ax_fontsize * width)
-        plt.ylabel("Defect Formation\nEnergy (eV)", size=ax_fontsize * width)
-        if title:
-            plt.title(f"{title}", size=ax_fontsize * width)
-
-        if saved:
-            plt.savefig(
-                f"{title!s}FreyplnravgPlot.pdf",
-                backend=_get_backend("pdf"),
-                transparent=True,
-                bbox_inches="tight",
-            )
-        else:
-            return plt
-
-        return None
+        return fig
