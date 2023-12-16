@@ -4,10 +4,26 @@ doped.utils package
 Submodules
 ----------
 
+doped.utils.legacy_corrections module
+--------------------------
+
+.. automodule:: doped.utils.legacy_corrections
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 doped.utils.parsing module
 --------------------------
 
 .. automodule:: doped.utils.parsing
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+doped.utils.plotting module
+--------------------------
+
+.. automodule:: doped.utils.plotting
    :members:
    :undoc-members:
    :show-inheritance:

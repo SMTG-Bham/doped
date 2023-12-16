@@ -22,6 +22,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core.periodic_table import Element
 from scipy.spatial import HalfspaceIntersection
 
+from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
 from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
 from doped.utils.plotting import _TLD_plot
@@ -54,6 +55,28 @@ def bold_print(string: str) -> None:
     print("\033[1m" + string + "\033[0m")
 
 
+def _raise_facet_with_user_chempots_error():
+    raise ValueError(
+        "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped format "
+        "(i.e. with `facets` in the chempots dict), and instead correspond to just a single phase diagram "
+        "facet / chemical potential limit, so `facet` cannot be used here!"
+    )
+
+
+def _parse_facet(chempots: Dict, facet: Optional[str] = None):
+    if facet is not None:
+        if "rich" in facet:
+            if "facets" not in chempots:  # user specified chempots
+                _raise_facet_with_user_chempots_error()
+            facet = get_X_rich_facet(facet.split("-")[0], chempots)
+        elif "poor" in facet:
+            if "facets" not in chempots:  # user specified chempots
+                _raise_facet_with_user_chempots_error()
+            facet = get_X_poor_facet(facet.split("-")[0], chempots)
+
+    return facet
+
+
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -71,6 +94,8 @@ class DefectThermodynamics(MSONable):
 
     # TODO: Need a `get_formation_energy(name, chempots/facet, fermi_level)` method, which also prints
     #  out the possible entry names if no match found
+    # TODO: Allow "Te-rich" etc as facet choice, in which case it'll identify the most Te-rich facet and
+    #  use it for analysis, in analysis functions
 
     def __init__(
         self,
@@ -136,6 +161,7 @@ class DefectThermodynamics(MSONable):
         # defect_thermo methods, where chempots can be supplied as input parameter, or otherwise will use
         # saved chempots (and can specify facet)
         self.entries = entries
+        self.chempots, self.el_refs = None, None
         self.chempots, self.el_refs = self._parse_chempots(chempots, el_refs)
 
         # get and check VBM/bandgap values:
@@ -186,7 +212,7 @@ class DefectThermodynamics(MSONable):
         Returns parsed chempots and el_refs
         """
         if chempots is None:
-            return None, None
+            return self.chempots, self.el_refs
 
         if "facets" in chempots:  # doped format, use as is and get el_refs
             return chempots, chempots.get("elemental_refs")
@@ -199,6 +225,7 @@ class DefectThermodynamics(MSONable):
             chempots["facets_wrt_el_refs"] = {
                 "User Chemical Potentials": {el: chempot - el_refs[el] for el, chempot in chempots.items()}
             }
+
         return chempots, el_refs
 
     def as_dict(self):
@@ -532,11 +559,11 @@ class DefectThermodynamics(MSONable):
         limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
 
         stable_entries = {}
-        finished_charges = {}
+        defect_charge_map = {}
         transition_level_map = {}
 
         # Grouping by defect types
-        for grouped_defect_entries, index_list in similar_defects(self.entries):
+        for grouped_defect_entries, _index_list in similar_defects(self.entries):
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are
             # the variables in the hyperplanes
@@ -572,20 +599,45 @@ class DefectThermodynamics(MSONable):
             # sort based on transition level
             ints_and_facets = sorted(ints_and_facets, key=lambda int_and_facet: int_and_facet[0][0])
 
-            # log a defect name for tracking (using full index list to avoid naming in-equivalent defects
-            # with same name)
-            str_index_list = [str(ind) for ind in sorted(index_list)]
-            track_name = f"{grouped_defect_entries[0].name}@" + "-".join(str_index_list)  # TODO: Needs to
-            # be consistent with plotting
+            defect_name_wout_charge = grouped_defect_entries[0].name.rsplit("_", 1)[
+                0
+            ]  # name without charge
+            if any(
+                defect_name_wout_charge in i for i in transition_level_map
+            ):  # defects with same name, rename to prevent overwriting:
+                # append "a,b,c.." for different defect species with the same name
+                i = 3
+
+                if (
+                    defect_name_wout_charge in transition_level_map
+                ):  # first repeat, direct match, rename previous entry
+                    for output_dict in [transition_level_map, stable_entries, defect_charge_map]:
+                        val = output_dict.pop(defect_name_wout_charge)
+                        output_dict[f"{defect_name_wout_charge}$_{{-{chr(96 + 1)}}}$"] = val  # a
+
+                    defect_name_wout_charge = f"{defect_name_wout_charge}$_{{-{chr(96 + 2)}}}$"  # b
+
+                else:
+                    defect_name_wout_charge = f"{defect_name_wout_charge}$_{{-{chr(96 + i)}}}$"  # c
+
+                while defect_name_wout_charge in transition_level_map:
+                    i += 1
+                    defect_name_wout_charge = (
+                        f"{defect_name_wout_charge}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
+                    )
 
             if len(ints_and_facets) > 0:  # unpack into lists
                 _, facets = zip(*ints_and_facets)
-                transition_level_map[track_name] = {  # map of transition level: charge states
+                transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
                     intersection[0]: [grouped_defect_entries[i].charge_state for i in facet]
                     for intersection, facet in ints_and_facets
                 }
-                stable_entries[track_name] = [grouped_defect_entries[i] for dual in facets for i in dual]
-                finished_charges[track_name] = [entry.charge_state for entry in grouped_defect_entries]
+                stable_entries[defect_name_wout_charge] = [
+                    grouped_defect_entries[i] for dual in facets for i in dual
+                ]
+                defect_charge_map[defect_name_wout_charge] = [
+                    entry.charge_state for entry in grouped_defect_entries
+                ]
 
             else:
                 # if ints_and_facets is empty, then there is likely only one defect...
@@ -614,15 +666,15 @@ class DefectThermodynamics(MSONable):
                             f"energies: {vb_list}\nList of CBM formation energies: {cb_list}"
                         )
 
-                    transition_level_map[track_name] = {}
-                    stable_entries[track_name] = [grouped_defect_entries[vbm_def_index]]
-                    finished_charges[track_name] = [
-                        one_def.charge_state for one_def in grouped_defect_entries
+                    transition_level_map[defect_name_wout_charge] = {}
+                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[vbm_def_index]]
+                    defect_charge_map[defect_name_wout_charge] = [
+                        entry.charge_state for entry in grouped_defect_entries
                     ]
                 else:
-                    transition_level_map[track_name] = {}
-                    stable_entries[track_name] = [grouped_defect_entries[0]]
-                    finished_charges[track_name] = [grouped_defect_entries[0].charge_state]
+                    transition_level_map[defect_name_wout_charge] = {}
+                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[0]]
+                    defect_charge_map[defect_name_wout_charge] = [grouped_defect_entries[0].charge_state]
 
         self.transition_level_map = transition_level_map
         self.transition_levels = {
@@ -630,18 +682,18 @@ class DefectThermodynamics(MSONable):
             for defect_name, defect_tls in transition_level_map.items()
         }
         self.stable_entries = stable_entries
-        self.finished_charges = finished_charges
+        self.defect_charge_map = defect_charge_map
         self.stable_charges = {
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
         }
 
     @property
-    def defect_types(self):
+    def defect_names(self):
         """
-        List types of defects existing in the DefectThermodynamics set.
+        List of names of defects in the DefectThermodynamics set.
         """
-        return list(self.finished_charges.keys())
+        return list(self.defect_charge_map.keys())
 
     @property
     def all_stable_entries(self):
@@ -762,14 +814,18 @@ class DefectThermodynamics(MSONable):
     #
     #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
 
-    def get_dopability_limits(self, chempots):
+    def get_dopability_limits(self, chempots: Optional[Dict] = None, facet: Optional[str] = None):
         """
-        Find the dopability limits for a given chemical potential limit. This
-        is defined by the (first) points at which defect formation energies
-        become negative as the Fermi level moves towards/beyond the band edges,
-        thus determining the maximum possible Fermi level range upon doping for
-        this chemical potential limit. Returns the dopability limits and the
-        names of the corresponding compensating defect species.
+        Find the dopability limits of the defect system, searching over all
+        facets (chemical potential limits) in `chempots` and returning the most
+        p/n-type conditions, or for a given chemical potential limit (if
+        `facet` is set or `chempots` corresponds to a single chemical potential
+        limit; i.e. {element symbol: chemical potential}).
+
+        The dopability limites are defined by the (first) Fermi level positions at
+        which defect formation energies become negative as the Fermi level moves
+        towards/beyond the band edges, thus determining the maximum possible Fermi
+        level range upon doping for this chemical potential limit.
 
         This is computed by obtaining the formation energy for every stable defect
         with non-zero charge, and then finding the highest Fermi level position at
@@ -780,51 +836,139 @@ class DefectThermodynamics(MSONable):
 
         Args:
             chempots (dict):
-                TODO
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies. If None (default), will use self.chempots.
+                This can have the form of {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                (Default: None)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating formation energies (and thus dopability limits). Can be:
+                - None, in which case we search over all facets (chemical potential
+                  limits) in `chempots` and return the most n/p-type conditions,
+                  unless `chempots` corresponds to a single chemical potential limit.
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich")
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                (Default: None)
 
         Returns:
-            (Compensating donor name, hole dopability limit),
-            (compensating acceptor name, electron dopability limit)
+            pandas DataFrame of dopability limits, with columns:
+            "Facet", "Compensating Defect", "Dopability Limit" for both p/n-type
+            where 'Dopability limit' are the corresponding Fermi level positions in
+            eV, relative to the VBM.
         """
-        donor_intercepts = []
-        acceptor_intercepts = []
+        chempots, _el_refs = self._parse_chempots(chempots)  # returns self.chempots if chempots is None
+        if chempots is None:
+            raise ValueError(
+                "No chemical potentials supplied or present in "
+                "DefectThermodynamics.chempots, so dopability limits cannot be calculated."
+            )
+
+        facet = _parse_facet(chempots, facet)
+        facets = [facet] if facet is not None else list(chempots["facets"].keys())
+
+        donor_intercepts: List[Tuple] = []
+        acceptor_intercepts: List[Tuple] = []
 
         for entry in self.all_stable_entries:
-            if entry.charge_state != 0:
-                vbm_formation_energy = self._formation_energy(
-                    entry, chemical_potentials=chempots, fermi_level=0
+            if entry.charge_state > 0:  # donor
+                # formation energy is y = mx + c where m = charge_state, c = vbm_formation_energy
+                # so x-intercept is -c/m:
+                donor_intercepts.extend(
+                    (
+                        facet,
+                        entry.name,
+                        -self._formation_energy(
+                            entry, chemical_potentials=chempots["facets"][facet], fermi_level=0
+                        )
+                        / entry.charge_state,
+                    )
+                    for facet in facets
                 )
-                if entry.charge_state > 0:  # donor
-                    # formation energy is y = mx + c where m = charge_state, c = vbm_formation_energy
-                    # so x-intercept is -c/m:
-                    donor_intercepts.append((entry.name, -vbm_formation_energy / entry.charge_state))
-                else:  # acceptor
-                    acceptor_intercepts.append((entry.name, -vbm_formation_energy / entry.charge_state))
+            elif entry.charge_state < 0:  # acceptor
+                acceptor_intercepts.extend(
+                    (
+                        facet,
+                        entry.name,
+                        -self._formation_energy(
+                            entry, chemical_potentials=chempots["facets"][facet], fermi_level=0
+                        )
+                        / entry.charge_state,
+                    )
+                    for facet in facets
+                )
 
         if not donor_intercepts:
-            donor_intercepts = [("N/A", -np.inf)]
+            if not acceptor_intercepts:
+                raise ValueError("No stable charged defects found in the system!")
+            donor_intercepts = [("N/A", "N/A", -np.inf)]
         if not acceptor_intercepts:
-            acceptor_intercepts = [("N/A", np.inf)]
+            acceptor_intercepts = [("N/A", "N/A", np.inf)]
+
+        donor_intercepts_df = pd.DataFrame(donor_intercepts, columns=["facet", "name", "intercept"])
+        acceptor_intercepts_df = pd.DataFrame(acceptor_intercepts, columns=["facet", "name", "intercept"])
+
+        # get the most p/n-type limit, by getting the facet with the minimum/maximum max/min-intercept,
+        # where max/min-intercept is the max/min intercept for that facet (i.e. the compensating intercept)
+        idx = (
+            donor_intercepts_df.groupby("facet")["intercept"].transform(max)
+            == donor_intercepts_df["intercept"]
+        )
+        limiting_donor_intercept_row = donor_intercepts_df.iloc[
+            donor_intercepts_df[idx]["intercept"].idxmin()
+        ]
+        idx = (
+            acceptor_intercepts_df.groupby("facet")["intercept"].transform(min)
+            == acceptor_intercepts_df["intercept"]
+        )
+        limiting_acceptor_intercept_row = acceptor_intercepts_df.iloc[
+            acceptor_intercepts_df[idx]["intercept"].idxmax()
+        ]
 
         # TODO: Test this function, and warnings etc
-        if max(donor_intercepts, key=lambda x: x[1])[1] > min(acceptor_intercepts, key=lambda x: x[1])[1]:
+        if limiting_donor_intercept_row["intercept"] > limiting_acceptor_intercept_row["intercept"]:
             warnings.warn(
                 "Donor and acceptor doping limits intersect at negative defect formation energies "
                 "(unphysical)!"
             )
 
-        return max(donor_intercepts, key=lambda x: x[1]), min(acceptor_intercepts, key=lambda x: x[1])
+        return pd.DataFrame(
+            [
+                [
+                    limiting_donor_intercept_row["facet"],
+                    limiting_donor_intercept_row["name"],
+                    round(limiting_donor_intercept_row["intercept"], 3),
+                ],
+                [
+                    limiting_acceptor_intercept_row["facet"],
+                    limiting_acceptor_intercept_row["name"],
+                    round(limiting_acceptor_intercept_row["intercept"], 3),
+                ],
+            ],
+            columns=["Facet", "Compensating Defect", "Dopability Limit"],
+            index=["p-type", "n-type"],
+        )
 
-    def get_doping_windows(self, chempots):
+    def get_doping_windows(self, chempots: Optional[Dict] = None, facet: Optional[str] = None):
         """
-        Find the doping windows for a given chemical potential limit. This is
-        defined by the formation energies of the lowest energy compensating
-        defect species at the corresponding band edge (i.e. VBM for hole doping
-        and CBM for electron doping), as these set uppers limit to the
-        formation energy of dopants which could push the Fermi level close to
+        Find the doping windows of the defect system, searching over all facets
+        (chemical potential limits) in `chempots` and returning the most
+        p/n-type conditions, or for a given chemical potential limit (if
+        `facet` is set or `chempots` corresponds to a single chemical potential
+        limit; i.e. {element symbol: chemical potential}).
+
+        Doping window is defined by the formation energy of the lowest energy
+        compensating defect species at the corresponding band edge (i.e. VBM for
+        hole doping and CBM for electron doping), as these set the upper limit to
+        the formation energy of dopants which could push the Fermi level close to
         the band edge without being negated by defect charge compensation.
-        Returns the doping windows and the names of the corresponding
-        compensating defect species.
 
         If a dopant has a higher formation energy than the doping window at the
         band edge, then its charge will be compensated by formation of the
@@ -832,40 +976,106 @@ class DefectThermodynamics(MSONable):
 
         Args:
             chempots (dict):
-                TODO
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies. If None (default), will use self.chempots.
+                This can have the form of {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                (Default: None)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating formation energies (and thus doping windows). Can be:
+                - None, in which case we search over all facets (chemical potential
+                  limits) in `chempots` and return the most n/p-type conditions,
+                  unless `chempots` corresponds to a single chemical potential limit.
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich")
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                (Default: None)
 
         Returns:
-            (Compensating donor name, hole doping window),
-            (compensating acceptor name, electron doping window)
+            pandas DataFrame of doping windows, with columns:
+            "Facet", "Compensating Defect", "Doping Window" for both p/n-type
+            where 'Doping Window' are the corresponding doping windows in eV.
         """
-        vbm_donor_intercepts = []
-        cbm_acceptor_intercepts = []
+        chempots, _el_refs = self._parse_chempots(chempots)  # returns self.chempots if chempots is None
+        if chempots is None:
+            raise ValueError(
+                "No chemical potentials supplied or present in "
+                "DefectThermodynamics.chempots, so doping windows cannot be calculated."
+            )
+
+        facet = _parse_facet(chempots, facet)
+        facets = [facet] if facet is not None else list(chempots["facets"].keys())
+
+        vbm_donor_intercepts: List[Tuple] = []
+        cbm_acceptor_intercepts: List[Tuple] = []
 
         for entry in self.all_stable_entries:
             if entry.charge_state > 0:  # donor
-                vbm_donor_intercepts.append(
+                vbm_donor_intercepts.extend(
                     (
-                        entry.name,
-                        self._formation_energy(entry, chemical_potentials=chempots, fermi_level=0),
-                    )
-                )
-            else:  # acceptor
-                cbm_acceptor_intercepts.append(
-                    (
+                        facet,
                         entry.name,
                         self._formation_energy(
-                            entry, chemical_potentials=chempots, fermi_level=self.band_gap
+                            entry,
+                            chemical_potentials=chempots["facets"][facet],
+                            fermi_level=0,
                         ),
                     )
+                    for facet in facets
                 )
-
+            else:  # acceptor
+                cbm_acceptor_intercepts.extend(
+                    (
+                        facet,
+                        entry.name,
+                        self._formation_energy(
+                            entry,
+                            chemical_potentials=chempots["facets"][facet],
+                            fermi_level=self.band_gap,
+                        ),
+                    )
+                    for facet in facets
+                )
         if not vbm_donor_intercepts:
-            vbm_donor_intercepts = [("N/A", np.inf)]
+            if cbm_acceptor_intercepts:
+                vbm_donor_intercepts = [("N/A", "N/A", np.inf)]
+            else:
+                raise ValueError("No stable charged defects found in the system!")
         if not cbm_acceptor_intercepts:
-            cbm_acceptor_intercepts = [("N/A", -np.inf)]
+            cbm_acceptor_intercepts = [("N/A", "N/A", -np.inf)]
 
-        return min(vbm_donor_intercepts, key=lambda x: x[1]), min(
-            cbm_acceptor_intercepts, key=lambda x: x[1]
+        vbm_donor_intercepts_df = pd.DataFrame(
+            vbm_donor_intercepts, columns=["facet", "name", "intercept"]
+        )
+        cbm_acceptor_intercepts_df = pd.DataFrame(
+            cbm_acceptor_intercepts, columns=["facet", "name", "intercept"]
+        )
+
+        # get the most p/n-type limit, by getting the facet with the maximum min-intercept, where
+        # min-intercept is the min intercept for that facet (i.e. the compensating intercept)
+        limiting_intercept_rows = []
+        for intercepts_df in [vbm_donor_intercepts_df, cbm_acceptor_intercepts_df]:
+            idx = intercepts_df.groupby("facet")["intercept"].transform(min) == intercepts_df["intercept"]
+            limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
+            limiting_intercept_rows.append(
+                [
+                    limiting_intercept_row["facet"],
+                    limiting_intercept_row["name"],
+                    round(limiting_intercept_row["intercept"], 3),
+                ]
+            )
+
+        return pd.DataFrame(
+            limiting_intercept_rows,
+            columns=["Facet", "Compensating Defect", "Doping Window"],
+            index=["p-type", "n-type"],
         )
 
     # TODO: Need to update docstrings of plot and table methods accordingly (how chempots handled etc)
@@ -971,6 +1181,9 @@ class DefectThermodynamics(MSONable):
                 f"`all_entries` option must be either False, True, or 'faded', not {all_entries}"
             )
 
+        if isinstance(facets, str):
+            facets = [facets]
+
         if (
             chempots
             and facets is None
@@ -1047,14 +1260,15 @@ class DefectThermodynamics(MSONable):
         DefectThermodynamics object (stored in the transition_level_map
         attribute).
         """
-        for def_type, tl_info in self.transition_level_map.items():
-            bold_print(f"\nDefect: {def_type.split('@')[0]}")
+        for defect_name, tl_info in self.transition_level_map.items():
+            bold_print(f"Defect: {defect_name}")
             for tl_efermi, chargeset in tl_info.items():
                 print(
                     f"Transition Level ({max(chargeset):{'+' if max(chargeset) else ''}}/"
                     f"{min(chargeset):{'+' if min(chargeset) else ''}}) at {tl_efermi:.3f}"
                     f" eV above the VBM"
                 )
+            print("\n")
 
     def formation_energy_table(
         self,
