@@ -459,6 +459,7 @@ class DefectThermodynamics(MSONable):
         #  slow PointDefectComparator; Bonan did this via hashing to avoid the old approach (see
         #  archived branch, but I think with updated comparisons this is unnecessary).
         # TODO: Should have an adjustable site-displacement tolerance for matching and grouping entries?
+        # (i.e. distance between (equivalent) defect sites?)
         #  Along with option to just group all grouped_defect_entries of the same type and only show the
         #  lowest energy state (equivalent to setting this displacement tolerance to infinity).
         # def similar_defects(entry_list):

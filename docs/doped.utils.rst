@@ -1,14 +1,6 @@
 doped.utils package
 ===================
 
-Subpackages
------------
-
-.. toctree::
-   :maxdepth: 4
-
-   doped.utils.legacy_pmg
-
 Submodules
 ----------
 
