@@ -53,7 +53,6 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 [tool.setuptools.package-data]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
-"doped.utils.legacy_pmg" = ["*.rst"]
 
 [tool.black]
 line-length = 107
