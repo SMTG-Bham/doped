@@ -10,7 +10,6 @@ pymatgen-analysis-defects>=2023.7.12
 ase
 matplotlib
 pandas>=1.1.0
-seaborn
 hiphive
 monty
 click

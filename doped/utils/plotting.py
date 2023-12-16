@@ -88,7 +88,7 @@ def _plot_formation_energy_lines(
             markersize=styled_markersize * (4 / 6),
             alpha=alpha,
         )
-        defect_names_for_legend.append(def_name.split("@")[0])
+        defect_names_for_legend.append(def_name)
 
     return defect_names_for_legend
 
@@ -604,7 +604,7 @@ def _get_legends_txt(for_legend, all_entries=False):
 
         # append "a,b,c.." for different defect species with the same name
         if any(defect_name in i for i in legends_txt):
-            i = 1
+            i = 3
 
             if defect_name in legends_txt:  # first repeat, direct match, rename previous entry
                 # find index of previous defect_name, and rename
@@ -612,9 +612,12 @@ def _get_legends_txt(for_legend, all_entries=False):
                 legends_txt[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
                 defect_name = f"{defect_name}$_{{-{chr(96 + 2)}}}$"  # b
 
+            else:
+                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # c
+
             while defect_name in legends_txt:
                 i += 1
-                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # a, b, c etc
+                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
 
         legends_txt.append(defect_name)
 
@@ -631,7 +634,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     ymin = 0
 
     for defect_entry in defect_thermodynamics.entries:
-        defect_entry_name = defect_entry.name  # name includes charge state
+        defect_entry_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge state
         all_lines_xy[defect_entry_name] = [[], []]
         for x_extrem in [lower_cap, upper_cap]:
             all_lines_xy[defect_entry_name][0].append(x_extrem)
@@ -694,7 +697,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
 
         else:  # no transition level -> only one stable charge state, add all_line_xy and extend
             # y_range_vals; means this is only a 1-pump (chmp) loop
-            xy[def_name] = all_lines_xy[def_name.rsplit("@", 1)[0]]  # get xy from all_lines_xy
+            xy[def_name] = all_lines_xy[def_name]  # get xy from all_lines_xy
             defect_entry = defect_thermodynamics.stable_entries[def_name][0]
             y_range_vals.extend(
                 defect_thermodynamics._formation_energy(
@@ -707,7 +710,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
         yvals = _get_in_gap_yvals(xy[def_name][0], xy[def_name][1], (0, defect_thermodynamics.band_gap))
         if all(y < 0 for y in yvals):  # Check if all y-values are below zero
             warnings.warn(
-                f"All formation energies for {def_name.rsplit('@', 1)[0]} are below zero across the "
+                f"All formation energies for {def_name} are below zero across the "
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
                 f"mis-specification of chemical potentials (see docstrings and/or tutorials). "
             )

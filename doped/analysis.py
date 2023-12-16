@@ -870,9 +870,9 @@ class DefectsParser:
                 "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
                 "this should be fine, and the results should be the same regardless (assuming a "
                 "relatively well-converged supercell size), while for _anisotropic_ materials this could "
-                "lead to some quantitative inaccuracies. You can use the `formation_energy_table(thermo)` "
-                "function to print out the calculated charge corrections for all defects, "
-                "and/or visualise the charge corrections using "
+                "lead to some quantitative inaccuracies. You can use the "
+                "`DefectThermodynamics.formation_energy_table()` method to print out the calculated "
+                "charge corrections for all defects, and/or visualise the charge corrections using "
                 "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
                 "check."
             )  # either way have the error analysis for the charge corrections so in theory should be grand
