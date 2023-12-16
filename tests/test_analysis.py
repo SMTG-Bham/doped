@@ -23,11 +23,10 @@ from doped.analysis import (
     defect_entry_from_paths,
     defect_from_structures,
     defect_name_from_structures,
-    dpd_from_defect_dict,
     formation_energy_table,
+    thermo_from_defect_dict,
 )
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
-from doped.plotting import formation_energy_plot
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
@@ -53,7 +52,7 @@ def if_present_rm(path):
 
 
 # TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
-# TODO: When adding full parsing tests (e.g. with full CdTe dpd or similar), add quick loop-over test of
+# TODO: When adding full parsing tests (e.g. with full CdTe thermo or similar), add quick loop-over test of
 #  the symmetry determination functions -> Use saved CdTe defect dict, and apply get_name function to
 #  these defect entries
 
@@ -84,10 +83,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
-        # check generating dpd and plot:
-        dpd = dpd_from_defect_dict(dp.defect_dict)
+        # check generating thermo and plot:
+        thermo = thermo_from_defect_dict(dp.defect_dict)
         with warnings.catch_warnings(record=True) as w:
-            formation_energy_plot(dpd)
+            thermo.plot()
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
 
         # test attributes:
@@ -144,10 +143,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # multiple corrections warning
 
-        CdTe_dpd = dpd_from_defect_dict(CdTe_dp.defect_dict)
-        dumpfn(CdTe_dpd, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_dpd.json"))  # for test_plotting
+        CdTe_thermo = thermo_from_defect_dict(CdTe_dp.defect_dict)
+        dumpfn(
+            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
+        )  # for test_plotting
         with warnings.catch_warnings(record=True) as w:
-            formation_energy_plot(CdTe_dpd)
+            CdTe_thermo.formation_energy_plot()
         print([warn.message for warn in w])  # for debugging
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         assert any(
@@ -291,10 +292,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         self._check_DefectsParser(dp)
 
-        # integration test using parsed CdTe dpd and chempots for plotting:
+        # integration test using parsed CdTe thermo and chempots for plotting:
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
-        return formation_energy_plot(CdTe_dpd, chempots=CdTe_chempots, facets=["CdTe-Te"])
+        return CdTe_thermo.formation_energy_plot(chempots=CdTe_chempots, facets=["CdTe-Te"])
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -310,9 +311,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=self.ytos_dielectric,
         )
         self._check_DefectsParser(dp)
-        dpd = dpd_from_defect_dict(dp.defect_dict)
-        dumpfn(dpd, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_dpd.json"))  # for test_plotting
-        return formation_energy_plot(dpd)  # no chempots for YTOS formation energy plot test
+        thermo = thermo_from_defect_dict(dp.defect_dict)
+        dumpfn(
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )  # for test_plotting
+        return thermo.formation_energy_plot()  # no chempots for YTOS formation energy plot test
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -341,8 +344,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         print([warn.message for warn in w])  # for debugging
         assert not w  # no warnings
-        Sb2Se3_O_dpd = dpd_from_defect_dict(Sb2Se3_O_dp.defect_dict)
-        dumpfn(Sb2Se3_O_dpd, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_dpd.json"))  # for
+        Sb2Se3_O_thermo = thermo_from_defect_dict(Sb2Se3_O_dp.defect_dict)
+        dumpfn(Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json"))  # for
         # test_plotting
 
         # warning about negative corrections when using (fake) isotropic dielectric:
@@ -364,7 +367,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
 
-        return formation_energy_plot(Sb2Se3_O_dpd, chempots={"O": -8.9052, "Se": -5})  # example chempots
+        return Sb2Se3_O_thermo.formation_energy_plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -1757,14 +1760,16 @@ class AnalysisFunctionsTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.sb2o5_chempots = loadfn(f"{self.data_dir}/Sb2O5/Sb2O5_chempots.json")
-        self.sb2o5_dpd = loadfn(f"{self.data_dir}/Sb2O5/sb2o5_dpd.json")
+        self.sb2o5_thermo = loadfn(f"{self.data_dir}/Sb2O5/sb2o5_thermo.json")
 
     def tearDown(self):
         if_present_rm("test.csv")
 
     def test_formation_energy_table(self):
-        def _check_formation_energy_table(formation_energy_table_df, fermi_level=0, dpd=self.sb2o5_dpd):
-            defect_entry_names = [defect_entry.name for defect_entry in dpd.entries]
+        def _check_formation_energy_table(
+            formation_energy_table_df, fermi_level=0, thermo=self.sb2o5_thermo
+        ):
+            defect_entry_names = [defect_entry.name for defect_entry in thermo.entries]
             assert sorted(formation_energy_table_df["Defect"].tolist()) == sorted(defect_entry_names)
 
             # for each row, assert sum of formation energy terms equals formation energy column
@@ -1781,19 +1786,19 @@ class AnalysisFunctionsTestCase(unittest.TestCase):
             ).all()
 
         formation_energy_table_df = formation_energy_table(
-            self.sb2o5_dpd, self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
+            self.sb2o5_thermo, self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
         )
         _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
 
         formation_energy_table_df = formation_energy_table(  # test default with E_F = 0
-            self.sb2o5_dpd,
+            self.sb2o5_thermo,
             self.sb2o5_chempots,
             facets=["Sb2O5-O2"],
         )
         _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
 
         formation_energy_table_df_manual_chempots = formation_energy_table(  # test default with E_F = 0
-            self.sb2o5_dpd,
+            self.sb2o5_thermo,
             chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
             el_refs=self.sb2o5_chempots["elemental_refs"],
         )
@@ -1803,12 +1808,12 @@ class AnalysisFunctionsTestCase(unittest.TestCase):
         assert formation_energy_table_df_manual_chempots.equals(formation_energy_table_df)
 
         # assert runs fine without chempots:
-        formation_energy_table_df = formation_energy_table(self.sb2o5_dpd)
+        formation_energy_table_df = formation_energy_table(self.sb2o5_thermo)
         _check_formation_energy_table(formation_energy_table_df)
 
         # assert runs fine with only raw chempots:
         formation_energy_table_df = formation_energy_table(
-            self.sb2o5_dpd, chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
+            self.sb2o5_thermo, chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
         )
         _check_formation_energy_table(formation_energy_table_df)
         # check same formation energies as with manual chempots plus el_refs:

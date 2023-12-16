@@ -15,7 +15,8 @@ import matplotlib as mpl
 import pytest
 from monty.serialization import loadfn
 
-from doped import analysis, plotting
+from doped import analysis
+from doped.utils import plotting
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -41,10 +42,10 @@ class DefectPlottingTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CdTe_dpd = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_dpd.json")
+        self.CdTe_thermo = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_thermo.json")
         self.CdTe_chempots = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_chempots.json")
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.YTOS_dpd = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_dpd.json")
+        self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json")
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -53,7 +54,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_plot_CdTe(self):
-        return plotting.formation_energy_plot(self.CdTe_dpd, self.CdTe_chempots, facets=["CdTe-Te"])
+        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, facets=["CdTe-Te"])
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -65,7 +66,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         from matplotlib.colors import ListedColormap
 
         cmap = ListedColormap(["#D4447E", "#E9A66C", "#507BAA", "#5FABA2", "#63666A"])
-        return plotting.formation_energy_plot(self.CdTe_dpd, self.CdTe_chempots, colormap=cmap)[1]
+        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, colormap=cmap)[1]
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -74,7 +75,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_plot_CdTe_custom_str_colormap(self):
-        return plotting.formation_energy_plot(self.CdTe_dpd, self.CdTe_chempots, colormap="viridis")[1]
+        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, colormap="viridis")[1]
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -84,7 +85,7 @@ class DefectPlottingTestCase(unittest.TestCase):
     )
     def test_plot_CdTe_multiple_figs(self):
         # when facets not specified, plots all of them (second should be Te-rich here)
-        return plotting.formation_energy_plot(self.CdTe_dpd, self.CdTe_chempots)[1]
+        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots)[1]
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -94,7 +95,7 @@ class DefectPlottingTestCase(unittest.TestCase):
     )
     def test_plot_CdTe_Cd_rich(self):
         # when facets not specified, plots all of them (first should be Cd-rich here)
-        return plotting.formation_energy_plot(self.CdTe_dpd, self.CdTe_chempots)[0]
+        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots)[0]
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -104,7 +105,7 @@ class DefectPlottingTestCase(unittest.TestCase):
     )
     def test_plot_YTOS(self):
         with warnings.catch_warnings(record=True) as w:
-            plot = plotting.formation_energy_plot(self.YTOS_dpd)  # no chempots
+            plot = plotting.formation_energy_plot(self.YTOS_thermo)  # no chempots
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
 
@@ -414,5 +415,5 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect: analysis.defect_entry_from_paths(f"{data_dir}/V2O5/{defect}", bulk_path, dielectric)
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
-        dpd = analysis.dpd_from_defect_dict(defect_dict)
-        return plotting.formation_energy_plot(dpd, chempots, facets=["VO2-V2O5"])
+        thermo = analysis.thermo_from_defect_dict(defect_dict)
+        return plotting.formation_energy_plot(thermo, chempots, facets=["VO2-V2O5"])

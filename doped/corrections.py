@@ -47,8 +47,8 @@ from shakenbreak.plotting import _install_custom_font
 
 from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
-from doped.plotting import _format_defect_name, _get_backend
 from doped.utils.parsing import get_locpot, get_outcar
+from doped.utils.plotting import _format_defect_name, _get_backend
 
 warnings.simplefilter("default")
 # `message` only needs to match start of message:
