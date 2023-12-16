@@ -1748,6 +1748,54 @@ class CompetingPhasesAnalyzer:
         return string
 
 
+def get_X_rich_facet(X: str, chempots: dict):
+    """
+    Determine the phase diagram facet of the input chemical potentials limit
+    dict which corresponds to the most X-rich conditions.
+
+    Args:
+        X (str): Elemental species (e.g. "Te")
+        chempots (dict):
+            The chemical potential limits dict, as returned by
+            `CompetingPhasesAnalyzer.chem_limits`
+    """
+    X_rich_facet = None
+    X_rich_facet_chempot = None
+    for facet, chempot_dict in chempots["facets"].items():
+        if X in chempot_dict and (X_rich_facet is None or chempot_dict[X] > X_rich_facet_chempot):
+            X_rich_facet = facet
+            X_rich_facet_chempot = chempot_dict[X]
+
+    if X_rich_facet is None:
+        raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
+
+    return X_rich_facet
+
+
+def get_X_poor_facet(X: str, chempots: dict):
+    """
+    Determine the phase diagram facet of the input chemical potentials limit
+    dict which corresponds to the most X-poor conditions.
+
+    Args:
+        X (str): Elemental species (e.g. "Te")
+        chempots (dict):
+            The chemical potential limits dict, as returned by
+            `CompetingPhasesAnalyzer.chem_limits`
+    """
+    X_poor_facet = None
+    X_poor_facet_chempot = None
+    for facet, chempot_dict in chempots["facets"].items():
+        if X in chempot_dict and (X_poor_facet is None or chempot_dict[X] < X_poor_facet_chempot):
+            X_poor_facet = facet
+            X_poor_facet_chempot = chempot_dict[X]
+
+    if X_poor_facet is None:
+        raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
+
+    return X_poor_facet
+
+
 def _move_dict_to_start(data, key, value):
     for index, item in enumerate(data):
         if key in item and item[key] == value:
