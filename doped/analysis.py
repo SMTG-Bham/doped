@@ -28,7 +28,7 @@ from tqdm import tqdm
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
-from doped.utils.legacy_pmg.thermodynamics import DefectThermodynamics
+from doped.thermodynamics import DefectThermodynamics
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
