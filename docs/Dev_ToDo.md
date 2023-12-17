@@ -71,8 +71,6 @@
 - Automate `pydefect` shallow defect analysis? At least have notebook showing how to manually do this (Adair's done before?).
   - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
     (and note this behaviour in examples/docs)
-- Change formation energy plotting and tabulation to `DefectPhaseDiagram` methods rather than standalone
-  functions – with `pymatgen` update what's the new architecture?
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting)
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
@@ -88,19 +86,13 @@
   workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
-- Brouwer diagrams. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
-- Functions to output data and python objects to plug and play with `py-sc-fermi`, `AiiDA`, `CarrierCapture`.
-  - Alex Squires has functions/notebooks from Seán (-> Xinwei -> Jiayi) -> Alex, for transferring to
-    `py-sc-fermi` and generating nice plots with the outputs, so add this and make it our suggested
-    workflow in the docs etc.
-  - `py-sc-fermi` may have functionality for dealing with complex defect concentrations in the future
-    (see Slack with Alex; 07/06/23)
-- `pydefect` integration, so we can use:
+- `pydefect` integration? So we can use:
   - Handling of shallow defects
   - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
   - Some nice defect structure and eigenvalue analysis
   - GKFO correction
 - Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
+  Brouwer diagrams; show examples of these in docs using `py-sc-fermi` interface tools. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 
 ## Housekeeping
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
@@ -130,7 +122,7 @@
     possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
   - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `CarrierCapture`, and give some
-    examples. Add as optional dependencies.
+    quick examples? Add as optional dependencies.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
   - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no
     magnetic ordering!** – which you can check in the `OUTCAR` by looking at `magnetization (x)` `y`
