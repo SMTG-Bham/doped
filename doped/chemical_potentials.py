@@ -1448,7 +1448,7 @@ class CompetingPhasesAnalyzer:
                 sorted(no_element_chem_lims.items(), key=lambda x: x[1][sort_by], reverse=True)
             )
 
-        self._intrinsic_chem_limits = {
+        self._intrinsic_chempots = {
             "facets": no_element_chem_lims,
             "elemental_refs": {
                 str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
@@ -1457,15 +1457,15 @@ class CompetingPhasesAnalyzer:
         }
 
         # relate the facets to the elemental energies
-        for facet, chempot_dict in self._intrinsic_chem_limits["facets"].items():
+        for facet, chempot_dict in self._intrinsic_chempots["facets"].items():
             relative_chempot_dict = copy.deepcopy(chempot_dict)
             for e in relative_chempot_dict:
-                relative_chempot_dict[e] -= self._intrinsic_chem_limits["elemental_refs"][e]
-            self._intrinsic_chem_limits["facets_wrt_el_refs"].update({facet: relative_chempot_dict})
+                relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
+            self._intrinsic_chempots["facets_wrt_el_refs"].update({facet: relative_chempot_dict})
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
-        for _, chempot_dict in self._intrinsic_chem_limits["facets_wrt_el_refs"].items():
+        for _, chempot_dict in self._intrinsic_chempots["facets_wrt_el_refs"].items():
             phase_energy_list = []
             phase_name_columns = []
             for k, v in chempot_dict.items():
@@ -1529,10 +1529,10 @@ class CompetingPhasesAnalyzer:
             # print(f"df4: {df4}")  # debugging
 
             for i, d in enumerate(df4):
-                key = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+                key = list(self._intrinsic_chempots["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
                 print(f"key: {key}")  # TODO: Remove any unnecessary print statements when this
                 # has been fixed
-                new_vals = list(self._intrinsic_chem_limits["facets_wrt_el_refs"].values())[i]
+                new_vals = list(self._intrinsic_chempots["facets_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals
             # print(f"cl2: {cl2}")  # debugging
@@ -1545,10 +1545,10 @@ class CompetingPhasesAnalyzer:
                     relative_chempot_dict[e] += cl2["elemental_refs"][e]
                 cl2["facets"].update({facet: relative_chempot_dict})
 
-            self._chem_limits = cl2
+            self._chempots = cl2
 
         else:  # intrinsic only
-            self._chem_limits = self._intrinsic_chem_limits
+            self._chempots = self._intrinsic_chempots
 
         # save and print
         if csv_path is not None:
@@ -1563,22 +1563,22 @@ class CompetingPhasesAnalyzer:
         return extrinsic_chempots_df
 
     @property
-    def chem_limits(self) -> dict:
+    def chempots(self) -> dict:
         """
         Returns the calculated chemical potential limits.
         """
-        if not hasattr(self, "_chem_limits"):
+        if not hasattr(self, "_chempots"):
             self.calculate_chempots()
-        return self._chem_limits
+        return self._chempots
 
     @property
-    def intrinsic_chem_limits(self) -> dict:
+    def intrinsic_chempots(self) -> dict:
         """
         Returns the calculated intrinsic chemical potential limits.
         """
-        if not hasattr(self, "_intrinsic_chem_limits"):
+        if not hasattr(self, "_intrinsic_chempots"):
             self.calculate_chempots()
-        return self._intrinsic_chem_limits
+        return self._intrinsic_chempots
 
     @property
     def intrinsic_phase_diagram(self) -> dict:
@@ -1598,7 +1598,7 @@ class CompetingPhasesAnalyzer:
         Returns
             None, writes input.dat file.
         """
-        if not hasattr(self, "chem_limits"):
+        if not hasattr(self, "chempots"):
             self.calculate_chempots(verbose=False)
 
         with open(filename, "w", encoding="utf-8") as f, contextlib.redirect_stdout(f):
@@ -1621,10 +1621,8 @@ class CompetingPhasesAnalyzer:
                 print(f"{self.elemental[0]}  # dependent variable (element)")
 
             # get only the lowest energy entries of compositions in self.data which are on a
-            # facet in self._intrinsic_chem_limits
-            bordering_phases = {
-                phase for facet in self._chem_limits["facets"] for phase in facet.split("-")
-            }
+            # facet in self._intrinsic_chempots
+            bordering_phases = {phase for facet in self._chempots["facets"] for phase in facet.split("-")}
             entries_for_cplap = [
                 entry_dict
                 for entry_dict in self.data
@@ -1758,7 +1756,7 @@ def get_X_rich_facet(X: str, chempots: dict):
         X (str): Elemental species (e.g. "Te")
         chempots (dict):
             The chemical potential limits dict, as returned by
-            `CompetingPhasesAnalyzer.chem_limits`
+            `CompetingPhasesAnalyzer.chempots`
     """
     X_rich_facet = None
     X_rich_facet_chempot = None
@@ -1782,7 +1780,7 @@ def get_X_poor_facet(X: str, chempots: dict):
         X (str): Elemental species (e.g. "Te")
         chempots (dict):
             The chemical potential limits dict, as returned by
-            `CompetingPhasesAnalyzer.chem_limits`
+            `CompetingPhasesAnalyzer.chempots`
     """
     X_poor_facet = None
     X_poor_facet_chempot = None
