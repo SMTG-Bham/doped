@@ -533,7 +533,9 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     return new_structure
 
 
-def _compare_potcar_symbols(bulk_potcar_symbols, defect_potcar_symbols):
+def _compare_potcar_symbols(
+    bulk_potcar_symbols, defect_potcar_symbols, bulk_name="bulk", defect_name="defect"
+):
     """
     Check all POTCAR symbols in the bulk are the same in the defect
     calculation.
@@ -541,19 +543,19 @@ def _compare_potcar_symbols(bulk_potcar_symbols, defect_potcar_symbols):
     for symbol in bulk_potcar_symbols:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
             warnings.warn(
-                f"The POTCAR symbols for your bulk and defect calculations do not match, which is likely "
-                f"to cause severe errors in the parsed results. Found the following symbol in the bulk "
-                f"calculation:"
+                f"The POTCAR symbols for your {bulk_name} and {defect_name} calculations do not match, "
+                f"which is likely to cause severe errors in the parsed results. Found the following "
+                f"symbol in the {bulk_name} calculation:"
                 f"\n{symbol['titel']}\n"
-                f"but not in the defect calculation:"
+                f"but not in the {defect_name} calculation:"
                 f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
-                f"The same POTCAR settings should be used for both calculations for accurate results!"
+                f"The same POTCAR settings should be used for all calculations for accurate results!"
             )
             return False
     return True
 
 
-def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints):
+def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk", defect_name="defect"):
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
@@ -564,19 +566,26 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints):
 
     if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
         warnings.warn(
-            f"The KPOINTS for your bulk and defect calculations do not match, which is likely to cause "
-            f"severe errors in the parsed results. Found the following KPOINTS in the bulk:"
+            f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
+            f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
+            f"{bulk_name} calculation:"
             f"\n{sorted_bulk_kpoints}\n"
-            f"and in the defect calculation:"
+            f"and in the {defect_name} calculation:"
             f"\n{sorted_defect_kpoints}\n"
-            f"The same KPOINTS settings should be used for both calculations for accurate results!"
+            f"The same KPOINTS settings should be used for all final calculations for accurate results!"
         )
         return False
 
     return True
 
 
-def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch_tags=None):
+def _compare_incar_tags(
+    bulk_incar_dict,
+    defect_incar_dict,
+    fatal_incar_mismatch_tags=None,
+    bulk_name="bulk",
+    defect_name="defect",
+):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
     """
@@ -623,12 +632,14 @@ def _compare_incar_tags(bulk_incar_dict, defect_incar_dict, fatal_incar_mismatch
     if mismatch_list:
         # compare to defaults:
         warnings.warn(
-            f"There are mismatching INCAR tags for your bulk and defect calculations which are likely to "
-            f"cause severe errors in the parsed results (energies). Found the following differences:\n"
-            f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+            f"There are mismatching INCAR tags for your {bulk_name} and {defect_name} calculations which "
+            f"are likely to cause errors in the parsed results (energies). Found the following "
+            f"differences:\n"
+            f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
+            f"calculation)):"
             f"\n{mismatch_list}\n"
-            f"The same INCAR settings should be used in both calculations for these tags which can affect "
-            f"energies!"
+            f"The same INCAR settings should be used in all final calculations for these tags which can "
+            f"affect energies!"
         )
         return False
     return True
