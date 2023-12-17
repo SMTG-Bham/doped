@@ -1023,6 +1023,21 @@ class DefectsParser:
             list(self.defect_dict.values()), chempots=chempots, el_refs=el_refs, vbm=vbm, band_gap=band_gap
         )
 
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectsParser object.
+        """
+        formula = list(self.defect_dict.values())[
+            0
+        ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectsParser for bulk composition {formula}, with {len(self.defect_dict)} parsed "
+            f"defect entries in self.defect_dict. Available attributes:\n{attrs}\n\nAvailable "
+            f"methods:\n{methods}"
+        )
+
 
 def _get_bulk_locpot_dict(bulk_path, quiet=False):
     bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
@@ -1879,3 +1894,17 @@ class DefectParser:
                 f"the charge correction (i.e. dielectric constant, LOCPOT files for Freysoldt "
                 f"correction, OUTCAR (with ICORELEVEL = 0) for Kumagai correction etc)."
             )
+
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectParser object.
+        """
+        formula = self.bulk_vr.final_structure.composition.get_reduced_formula_and_factor(
+            iupac_ordering=True
+        )[0]
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectParser for bulk composition {formula}. "
+            f"Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+        )
