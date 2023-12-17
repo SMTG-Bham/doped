@@ -32,11 +32,10 @@ from doped.utils.symmetry import _frac_coords_sort_func
 #  KPOINTS settings etc)
 # TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons to
 #  written folders as well (but off by default)
-# TODO: Likewise, add same to/from json, __repr__ etc. functions for DefectRelaxSet. Dict methods apply
-#  to `.defect_sets` etc
+# TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
+#  to `.defect_sets` etc?
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
 #  and the structures don't match (otherwise overwrite)
-# TODO: Cleanup; look at refactoring these functions as much as possible to avoid code duplication
 
 _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
@@ -430,6 +429,17 @@ class DefectDictSet(DictSet):
 
             if unperturbed_poscar:
                 self.poscar.write_file(f"{output_path}/POSCAR")
+
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectDictet object.
+        """
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectDictSet with supercell composition {self.structure.composition}."
+            f"Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+        )
 
 
 def scaled_ediff(natoms: int) -> float:
@@ -1711,6 +1721,18 @@ class DefectRelaxSet(MSONable):
                 **kwargs,
             )
 
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectRelaxSet object.
+        """
+        formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
+            f"{self.defect_entry.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+        )
+
 
 class DefectsSet(MSONable):
     def __init__(
@@ -2105,6 +2127,21 @@ class DefectsSet(MSONable):
                 pass
 
         dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
+
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectsSet object.
+        """
+        formula = list(self.defect_entries.values())[
+            0
+        ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
+            f"defect entries in self.defect_entries. Available attributes:\n{attrs}\n\nAvailable "
+            f"methods:\n{methods}"
+        )
 
 
 # TODO: Remove these functions once confirmed all functionality is in `chemical_potentials.py`;

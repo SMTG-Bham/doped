@@ -44,7 +44,7 @@ warnings.filterwarnings(
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary`.
-# TODO: Refactor 'facet' to 'limit' in chempot dicts
+# TODO: Refactor 'facet' to 'limit' in chempot dicts?
 
 
 def make_molecule_in_a_box(element: str):
@@ -326,6 +326,7 @@ class CompetingPhases:
         #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for all
         #  alkali and alkaline earth metals (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad
         #  cases).
+        # Can have a data file with a list of known, common cases?
         # With Materials Project querying, can check if the structure has a database ID (i.e. is
         # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
         # which only outputs phases which are either on the MP-predicted hull or have an ICSD ID?

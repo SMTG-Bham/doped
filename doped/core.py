@@ -19,9 +19,6 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
-# TODO: Need to set the str and repr functions for these to give an informative output! Same for our
-#  parsing functions/classes
-
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -110,7 +107,8 @@ class DefectEntry(thermo.DefectEntry):
     defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Should be able to refactor SnB to use
     # this, in the from_structures approach, and just show general doped workflow on the docs and
     # from_structures, and mention can also do other input options. Also add `from_structures` method to
-    # doped DefectEntry??
+    # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
+    # codes etc)
     equivalent_supercell_sites: List[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
 
@@ -438,6 +436,25 @@ class DefectEntry(thermo.DefectEntry):
             return_correction_error,
             type="eFNV",
             error_tolerance=error_tolerance,
+        )
+
+    def __repr__(self):
+        """
+        Returns a string representation of the DefectEntry object.
+        """
+        if self.bulk_entry is not None:
+            formula = self.bulk_entry.structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )[0]
+        else:
+            formula = self.defect.structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )[0]
+        attrs = {k for k in vars(self) if not k.startswith("_")}
+        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        return (
+            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
+            f"{self.defect.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -816,6 +833,13 @@ class Vacancy(core.Vacancy, Defect):
         """
         super().__init__(*args, **kwargs)
 
+    def __repr__(self) -> str:
+        """
+        String representation of a vacancy defect.
+        """
+        frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
+        return f"{self.name} vacancy defect at site [{frac_coords_string}] in structure"
+
 
 class Substitution(core.Substitution, Defect):
     def __init__(self, *args, **kwargs):
@@ -825,6 +849,13 @@ class Substitution(core.Substitution, Defect):
         """
         super().__init__(*args, **kwargs)
 
+    def __repr__(self) -> str:
+        """
+        String representation of a substitutional defect.
+        """
+        frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
+        return f"{self.name} substitution defect at site [{frac_coords_string}] in structure"
+
 
 class Interstitial(core.Interstitial, Defect):
     def __init__(self, *args, **kwargs):
@@ -833,3 +864,10 @@ class Interstitial(core.Interstitial, Defect):
         attributes and methods used by doped.
         """
         super().__init__(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        """
+        String representation of an interstitial defect.
+        """
+        frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
+        return f"{self.name} interstitial defect at site [{frac_coords_string}] in structure"
