@@ -27,10 +27,9 @@ from doped.generation import _sort_defect_entries
 from doped.utils.parsing import _compare_incar_tags, _compare_kpoints, _compare_potcar_symbols
 from doped.utils.plotting import _TLD_plot
 
-# TODO: Add dpd_all_transition_levels function to dope_stuff (or wherever these functions go when
-#  modularised), which iteratively prints all potential charge transition levels for the input
-#  DefectPhaseDiagram object, including metastable states. Template using the dpd_transition_levels
-#  function that's already in dope_stuff; see https://github.com/SMTG-Bham/doped/issues/3 for code
+# TODO: Add all_transition_levels functions, which iteratively print all potential charge transition
+#  levels for the DefectThermodynamics object, including metastable states. Template using the
+#  print_transition_levels; see https://github.com/SMTG-Bham/doped/issues/3 for code
 
 
 def bold_print(string: str) -> None:
@@ -74,18 +73,33 @@ def _parse_chempots(chempots: Optional[Dict] = None, el_refs: Optional[Dict] = N
     Returns parsed chempots and el_refs
     """
     if chempots is None:
+        if el_refs is not None:
+            chempots = {
+                "facets": {"User Chemical Potentials": {el: 0 for el in el_refs}},
+                "elemental_refs": el_refs,
+            }
+            chempots["facets_wrt_el_refs"] = {
+                "User Chemical Potentials": {el: -ref for el, ref in el_refs.items()}
+            }
+
         return chempots, el_refs
 
-    if "facets" in chempots:  # doped format, use as is and get el_refs
-        return chempots, chempots.get("elemental_refs")
+    if "facets" in chempots:
+        if "elemental_refs" in chempots:  # doped format, use as is and get el_refs
+            return chempots, chempots.get("elemental_refs")
+
+    else:
+        chempots = {"facets": {"User Chemical Potentials": chempots}}
 
     # otherwise user-specified format, convert to doped format
     # TODO: Add catch later, that if no chempot is set for an element, warn user and set to 0
-    chempots = {"facets": {"User Chemical Potentials": chempots}}
     if el_refs is not None:
         chempots["elemental_refs"] = el_refs
         chempots["facets_wrt_el_refs"] = {
-            "User Chemical Potentials": {el: chempot - el_refs[el] for el, chempot in chempots.items()}
+            "User Chemical Potentials": {
+                el: chempot - el_refs[el]
+                for el, chempot in chempots["facets"]["User Chemical Potentials"].items()
+            }
         }
 
     return chempots, el_refs
@@ -184,7 +198,7 @@ class DefectThermodynamics(MSONable):
             defect_entries = list(defect_entries.values())
 
         self.defect_entries = defect_entries
-        self.chempots, self.el_refs = _parse_chempots(chempots, el_refs)
+        self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
 
         # get and check VBM/bandgap values:
         def _raise_VBM_bandgap_value_error(vals, type="VBM"):
@@ -292,9 +306,7 @@ class DefectThermodynamics(MSONable):
 
         return cls(
             defect_entries,
-            chempots=d.get(
-                "chempots"
-            ),  # TODO: Check if this works in each case, may need to be refactored
+            chempots=d.get("chempots"),
             el_refs=d.get("el_refs"),
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
@@ -661,6 +673,40 @@ class DefectThermodynamics(MSONable):
                     f"Incompatible defect/bulk calculation settings detected for defect "
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
+
+    @property
+    def chempots(self):
+        """
+        Get the chemical potentials dictionary used for calculating the defect
+        formation energies.
+        """
+        return self._chempots
+
+    # TODO: Show on chemical potentials docs how chempots can be later set as attribute for
+    #  DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations
+    #  first, and then finished chemical potential calculations after).
+    @chempots.setter
+    def chempots(self, input_chempots):
+        """
+        Set the chemical potentials dictionary (`chempots`), and reparse to
+        have the required `doped` format.
+        """
+        self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
+
+    @property
+    def el_refs(self):
+        """
+        Get the elemental reference energies for the chemical potentials.
+        """
+        return self._el_refs
+
+    @el_refs.setter
+    def el_refs(self, input_el_refs):
+        """
+        Set the elemental reference energies for the chemical potentials
+        (`el_refs`), and reparse to have the required `doped` format.
+        """
+        self._chempots, self._el_refs = _parse_chempots(self._chempots, input_el_refs)
 
     @property
     def defect_names(self):
