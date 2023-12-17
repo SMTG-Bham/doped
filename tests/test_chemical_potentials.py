@@ -68,7 +68,7 @@ class ChemPotsTestCase(unittest.TestCase):
         chempot_df = stable_cpa.calculate_chempots()
         assert list(chempot_df["O"])[0] == 0
         # check if it's no longer Element
-        assert type(list(stable_cpa.intrinsic_chem_limits["elemental_refs"].keys())[0]) == str
+        assert type(list(stable_cpa.intrinsic_chempots["elemental_refs"].keys())[0]) == str
 
         self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.unstable_system)
         self.unstable_cpa.from_csv(self.csv_path)
@@ -83,17 +83,17 @@ class ChemPotsTestCase(unittest.TestCase):
         assert list(chempot_df["La_limiting_phase"])[0] == "La2Zr2O7"
         assert np.isclose(list(chempot_df["La"])[0], -9.46298748)
 
-    def test_cpa_chem_limits(self):
-        # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
+    def test_ext_cpa_chempots(self):
+        # test accessing cpa.chempots without previously calling cpa.calculate_chempots()
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        _compare_chempot_dicts(stable_cpa.chem_limits, self.parsed_chempots)
+        _compare_chempot_dicts(stable_cpa.chempots, self.parsed_chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
+        assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
     def test_sort_by(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -277,7 +277,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
 
         # check chem limits the same:
-        _compare_chempot_dicts(stable_cpa.chem_limits, reloaded_cpa.chem_limits)
+        _compare_chempot_dicts(stable_cpa.chempots, reloaded_cpa.chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
@@ -305,13 +305,13 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_cpa.from_csv("competing_phases.csv")
 
         # check chem limits the same:
-        _compare_chempot_dicts(reloaded_cpa.chem_limits, stable_cpa.chem_limits)
+        _compare_chempot_dicts(reloaded_cpa.chempots, stable_cpa.chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
+        assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
         # test correct sorting:
         self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True, sort_by_energy=True)
@@ -368,7 +368,7 @@ class ChemPotsTestCase(unittest.TestCase):
             assert trimmed_df.equals(reloaded_cpa.formation_energy_df)
 
             # check chem limits the same:
-            _compare_chempot_dicts(cpa.chem_limits, reloaded_cpa.chem_limits)
+            _compare_chempot_dicts(cpa.chempots, reloaded_cpa.chempots)
 
         # test ValueError without energy_per_fu/energy_per_atom column:
         too_minimal_formation_energy_df = formation_energy_df[["formula"]]
