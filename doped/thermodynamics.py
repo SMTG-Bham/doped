@@ -26,20 +26,10 @@ from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
 from doped.utils.plotting import _TLD_plot
 
-# TODO: Previous `pymatgen` issues, fixed?
-#   - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics` is
-#     used to group defect charge states for the transition level plot / transition level map outputs.
-#     For interstitials, if the closest Voronoi site from the relaxed structure thus differs significantly
-#     between charge states, this will give separate lines for each charge state. This is kind of ok,
-#     because they _are_ actually different defect sites, but should have intelligent defaults for dealing
-#     with this (see `TODO` in `thermo_from_defect_dict` in `analysis.py`; at least similar colours for
-#     similar defect types, an option to just show amalgamated lowest energy charge states for each
-#     _defect type_). NaP is an example for this - should have a test built for however we want to handle
-#     cases like this. See Ke's example case too with different interstitial sites.
-#   - GitHub issue related to `DefectThermodynamics`: https://github.com/SMTG-Bham/doped/issues/3 -> Think
-#     about how we want to refactor the `DefectThermodynamics` object!
-#   - Note that if you edit the entries in a DefectThermodynamics after creating it, you need to
-#     `thermo.find_stable_charges()` to update the transition level map etc.
+# TODO: Add dpd_all_transition_levels function to dope_stuff (or wherever these functions go when
+#  modularised), which iteratively prints all potential charge transition levels for the input
+#  DefectPhaseDiagram object, including metastable states. Template using the dpd_transition_levels
+#  function that's already in dope_stuff; see https://github.com/SMTG-Bham/doped/issues/3 for code
 
 
 def bold_print(string: str) -> None:
@@ -117,7 +107,7 @@ class DefectThermodynamics(MSONable):
 
     def __init__(
         self,
-        defect_entries: List[DefectEntry],
+        defect_entries: Union[List[DefectEntry], Dict[str, DefectEntry]],
         chempots: Optional[Dict] = None,
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
@@ -133,13 +123,13 @@ class DefectThermodynamics(MSONable):
 
 
         Args:
-            defect_entries ([DefectEntry]):
-                A list of DefectEntry objects. Note that `DefectEntry.name` attributes
-                 are used for grouping and plotting purposes! These should end be in
-                 the format "{defect_name}_{optional_site_info}_{charge_state}". If
-                 the DefectEntry.name attribute is not defined or does not end with
-                 the charge state, then the entry will be renamed with the doped
-                 default name.
+            defect_entries ([DefectEntry] or {str: DefectEntry}):
+                A list or dict of DefectEntry objects. Note that `DefectEntry.name`
+                attributes are used for grouping and plotting purposes! These should
+                be in the format "{defect_name}_{optional_site_info}_{charge_state}".
+                If the DefectEntry.name attribute is not defined or does not end with
+                the charge state, then the entry will be renamed with the doped
+                default name.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies. This can have the form of
@@ -176,6 +166,8 @@ class DefectThermodynamics(MSONable):
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in `defect_entries`.
         """
+        if isinstance(defect_entries, dict):
+            defect_entries = list(defect_entries.values())
         self.defect_entries = defect_entries
         self.chempots, self.el_refs = _parse_chempots(chempots, el_refs)
 
@@ -364,8 +356,6 @@ class DefectThermodynamics(MSONable):
         Returns:
             doped DefectThermodynamics object (DefectThermodynamics)
         """
-        # TODO: Can we make the thermo generation more efficient? What's the bottleneck in it's
-        #  initialisation? `pymatgen` site-matching that can be avoided?
         # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
         #  merge interstitials according to this algorithm:
         # 1. For each interstitial defect type, count the number of parsed calculations per charge
@@ -379,6 +369,18 @@ class DefectThermodynamics(MSONable):
         #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
         #  default range of (VBM - 1eV, CBM + 1eV))...
         # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
+
+        # Related TODO: Previous `pymatgen` issues, fixed?
+        # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
+        #   is used to group defect charge states for the transition level plot / transition level map
+        #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
+        #   differs significantly between charge states, this will give separate lines for each charge
+        #   state. This is kind of ok, because they _are_ actually different defect sites, but should
+        #   have intelligent defaults for dealing with this (at least similar colours for similar defect
+        #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
+        #   NaP is an example for this - should have a test built for however we want to handle cases like
+        #   this. See Ke's example case too with different interstitial sites.
+
         # TODO: Should loop over input defect entries and check that the same bulk (energy and
         #  calculation_metadata) was used in each case (by proxy checks that same bulk/defect
         #  incar/potcar/kpoints settings were used in all cases, from each bulk/defect combination being
@@ -422,6 +424,11 @@ class DefectThermodynamics(MSONable):
         DefectEntry.name attribute is not defined or does not end with the
         charge state, then the entry will be renamed with the doped default
         name.
+
+        Note that if the entries in DefectThermodynamics are edited after
+        initialisation, then DefectThermodynamics._parse_transition_levels()
+        should be called if the attributes (transition_level_map etc.) and
+        outputs (plotting and tabulation) are to be updated properly.
 
         Code for parsing the transition levels was originally templated from
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later

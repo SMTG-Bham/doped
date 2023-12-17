@@ -613,10 +613,10 @@ class DefectsParser:
                 Filename to save the parsed defect entries dict (`DefectsParser.defect_dict`)
                 to in `output_path`, to avoid having to re-parse defects when later analysing
                 further and aiding calculation provenance. Can be reloaded using the `loadfn`
-                function from `monty.serialization` as shown in the docs, or
-                `DefectThermodynamics.from_json()`. If None (default), set as
-                "{Chemical Formula}_defect_dict.json" where {Chemical Formula} is the
-                chemical formula of the host material. If False, no json file is saved.
+                function from `monty.serialization` (and then input to `DefectThermodynamics`
+                etc). If None (default), set as "{Chemical Formula}_defect_dict.json" where
+                {Chemical Formula} is the chemical formula of the host material.
+                If False, no json file is saved.
 
         Attributes:
             defect_dict (dict):
@@ -625,7 +625,6 @@ class DefectsParser:
                 defect calculation folder name (_if it is a recognised defect name_),
                 else it is set to the default `doped` name for that defect.
         """
-        # TODO: Need to add `DefectThermodynamics.from_json()` etc methods as mention in docstring here
         self.output_path = output_path
         self.dielectric = dielectric
         self.skip_corrections = skip_corrections

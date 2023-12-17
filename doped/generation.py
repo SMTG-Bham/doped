@@ -2212,35 +2212,26 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     except ValueError as value_err:
         # possibly defect entries with names not in doped format, try sorting without using name:
         try:
+
+            def _defect_entry_sorting_func(defect_entry):
+                name_from_defect = get_defect_name_from_defect(
+                    defect_entry.defect,
+                    element_list=element_list,
+                    symm_ops=symm_ops,
+                )
+                return (
+                    defect_entry.defect.defect_type.value,
+                    element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
+                    element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
+                    # name without charge:
+                    name_from_defect,
+                    defect_entry.charge_state,  # charge state
+                )
+
             return dict(
                 sorted(
                     defect_entries_dict.items(),
-                    key=lambda s: (
-                        s[1].defect.defect_type.value,
-                        element_list.index(
-                            _first_and_second_element(
-                                get_defect_name_from_defect(
-                                    s[1].defect,
-                                    element_list=element_list,
-                                    symm_ops=symm_ops,
-                                )
-                            )[0]
-                        ),
-                        element_list.index(
-                            _first_and_second_element(
-                                get_defect_name_from_defect(
-                                    s[1].defect,
-                                    element_list=element_list,
-                                    symm_ops=symm_ops,
-                                )
-                            )[1]
-                        ),
-                        # name without charge:
-                        get_defect_name_from_defect(
-                            s[1].defect, element_list=element_list, symm_ops=symm_ops
-                        ),
-                        s[1].charge_state,  # charge state
-                    ),
+                    key=lambda s: _defect_entry_sorting_func(s[1]),  # sort by defect entry object
                 )
             )
         except ValueError:
