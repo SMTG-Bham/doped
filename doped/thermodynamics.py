@@ -256,31 +256,6 @@ class DefectThermodynamics(MSONable):
         if check_compatibility:
             self._check_bulk_compatibility()
 
-    # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
-    #  merge interstitials according to this algorithm:
-    # 1. For each interstitial defect type, count the number of parsed calculations per charge
-    # state, and take the charge state with the most calculations present as our starting point (
-    # if multiple charge states have the same number of calculations, take the closest to neutral).
-    # 2. For each interstitial in a different charge state, determine which of the starting
-    # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
-    # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
-    # structure will be easiest), and merge with this.
-    # Also add option to just amalgamate and show only the lowest energy states.
-    #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
-    #  default range of (VBM - 1eV, CBM + 1eV))...
-    # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
-
-    # Related TODO: Previous `pymatgen` issues, fixed?
-    # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
-    #   is used to group defect charge states for the transition level plot / transition level map
-    #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
-    #   differs significantly between charge states, this will give separate lines for each charge
-    #   state. This is kind of ok, because they _are_ actually different defect sites, but should
-    #   have intelligent defaults for dealing with this (at least similar colours for similar defect
-    #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
-    #   NaP is an example for this - should have a test built for however we want to handle cases like
-    #   this. See Ke's example case too with different interstitial sites.
-
     def as_dict(self):
         """
         Returns:
@@ -401,6 +376,31 @@ class DefectThermodynamics(MSONable):
         This code was modeled after the Halfspace Intersection code for
         the Pourbaix Diagram.
         """
+        # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
+        #  merge interstitials according to this algorithm:
+        # 1. For each interstitial defect type, count the number of parsed calculations per charge
+        # state, and take the charge state with the most calculations present as our starting point (
+        # if multiple charge states have the same number of calculations, take the closest to neutral).
+        # 2. For each interstitial in a different charge state, determine which of the starting
+        # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
+        # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
+        # structure will be easiest), and merge with this.
+        # Also add option to just amalgamate and show only the lowest energy states.
+        #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
+        #  default range of (VBM - 1eV, CBM + 1eV))...
+        # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
+
+        # Related TODO: Previous `pymatgen` issues, fixed?
+        # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
+        #   is used to group defect charge states for the transition level plot / transition level map
+        #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
+        #   differs significantly between charge states, this will give separate lines for each charge
+        #   state. This is kind of ok, because they _are_ actually different defect sites, but should
+        #   have intelligent defaults for dealing with this (at least similar colours for similar defect
+        #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
+        #   NaP is an example for this - should have a test built for however we want to handle cases like
+        #   this. See Ke's example case too with different interstitial sites.
+
         # Old pymatgen defect-matching code: # TODO: Reconsider this approach. For now, we group based
         #  on defect entry names (which themselves should contain the information on inequivalent (
         #  initial) defect sites). Could match based on the entry.defect objects as was done before,
@@ -796,6 +796,7 @@ class DefectThermodynamics(MSONable):
         return [e for e in self.defect_entries if e not in all_stable_entries]
 
     # TODO: Deal with these commented out methods:
+    # TODO: Add similar function to get formation energies and concentrations for all defect entries
     # Doesn't work as .defect_concentration() no longer a DefectEntry method, but can be done with
     # pmg-analysis-defects FormationEnergyDiagram (or py-sc-fermi ofc)
     # def defect_concentrations(self, chemical_potentials, temperature=300, fermi_level=0.0):
