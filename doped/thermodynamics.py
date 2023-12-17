@@ -24,6 +24,7 @@ from scipy.spatial import HalfspaceIntersection
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
 from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
+from doped.utils.parsing import _compare_incar_tags, _compare_kpoints, _compare_potcar_symbols
 from doped.utils.plotting import _TLD_plot
 
 # TODO: Add dpd_all_transition_levels function to dope_stuff (or wherever these functions go when
@@ -112,14 +113,18 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
+        check_compatibility: bool = True,
     ):
         """
         Create a DefectThermodynamics object, which can be used to analyse the
-        calculated thermodynamics of defects in solids.
+        calculated thermodynamics of defects in solids (formation energies,
+        transition levels, concentrations etc).
 
-        Direct initiation with DefectThermodynamics() is typically not recommended.
-        Rather DefectsParser.get_defect_thermodynamics() or
-        DefectThermodynamics.from_defect_dict() as shown in the doped parsing tutorials.
+        Usually initialised using DefectsParser.get_defect_thermodynamics(), but
+        can also be initialised with a list or dict of DefectEntry objects.
+
+        Note that the DefectEntry.name attributes are used to label the defects in
+        plots.
 
 
         Args:
@@ -165,9 +170,19 @@ class DefectThermodynamics(MSONable):
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in `defect_entries`.
+            check_compatibility (bool):
+                Whether to check the compatibility of the bulk entry for each defect
+                entry (i.e. that all reference bulk energies are the same).
+                (Default: True)
         """
         if isinstance(defect_entries, dict):
+            if not defect_entries:
+                raise ValueError(
+                    "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
+                    "correct format (i.e. {'defect_name': defect_entry}), or as a list: [defect_entry]."
+                )
             defect_entries = list(defect_entries.values())
+
         self.defect_entries = defect_entries
         self.chempots, self.el_refs = _parse_chempots(chempots, el_refs)
 
@@ -215,6 +230,33 @@ class DefectThermodynamics(MSONable):
         sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
         self.defect_entries = list(sorted_defect_entries_dict.values())
         self._parse_transition_levels()
+        if check_compatibility:
+            self._check_bulk_compatibility()
+
+    # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
+    #  merge interstitials according to this algorithm:
+    # 1. For each interstitial defect type, count the number of parsed calculations per charge
+    # state, and take the charge state with the most calculations present as our starting point (
+    # if multiple charge states have the same number of calculations, take the closest to neutral).
+    # 2. For each interstitial in a different charge state, determine which of the starting
+    # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
+    # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
+    # structure will be easiest), and merge with this.
+    # Also add option to just amalgamate and show only the lowest energy states.
+    #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
+    #  default range of (VBM - 1eV, CBM + 1eV))...
+    # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
+
+    # Related TODO: Previous `pymatgen` issues, fixed?
+    # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
+    #   is used to group defect charge states for the transition level plot / transition level map
+    #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
+    #   differs significantly between charge states, this will give separate lines for each charge
+    #   state. This is kind of ok, because they _are_ actually different defect sites, but should
+    #   have intelligent defaults for dealing with this (at least similar colours for similar defect
+    #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
+    #   NaP is an example for this - should have a test built for however we want to handle cases like
+    #   this. See Ke's example case too with different interstitial sites.
 
     def as_dict(self):
         """
@@ -293,116 +335,6 @@ class DefectThermodynamics(MSONable):
             DefectThermodynamics object
         """
         return loadfn(filename)
-
-    @classmethod
-    def from_defect_dict(
-        cls,
-        defect_dict: Dict,
-        chempots: Optional[Dict] = None,
-        el_refs: Optional[Dict] = None,
-        vbm: Optional[float] = None,
-        band_gap: Optional[float] = None,
-    ):
-        """
-        Create a DefectThermodynamics object from a dictionary of parsed defect
-        calculations in the format: {"defect_name": defect_entry}), likely
-        created using DefectParser.from_paths().
-        Can then be used to analyse and plot the defect thermodynamics (formation
-        energies, transition levels, concentrations etc).
-
-        Note that the DefectEntry.name attributes (rather than the defect_name
-        key in the defect_dict) are used to label the defects in plots.
-
-        Args:
-            defect_dict(dict):
-                Dictionary of parsed defect calculations in the format:
-                {"defect_name": defect_entry}), likely created using
-                DefectParser.from_paths().
-            chempots (dict):
-                Dictionary of chemical potentials to use for calculating the defect
-                formation energies. This can have the form of
-                {"facets": [{'facet': [chempot_dict]}]} (the format generated by
-                doped's chemical potential parsing functions (see tutorials)) which
-                allows easy analysis over a range of chemical potentials - where facet(s)
-                (chemical potential limit(s)) to analyse/plot can later be chosen using
-                the `facets` argument.
-                Alternatively this can be a dictionary of **DFT**/absolute chemical
-                potentials (not formal chemical potentials!) for a single facet (limit),
-                in the format: {element symbol: chemical potential} - if manually
-                specifying chemical potentials this way, you can set the `el_refs` option
-                with the DFT reference energies of the elemental phases in order to show
-                the formal (relative) chemical potentials above the formation energy
-                plot.
-                If None (default), sets all chemical potentials to zero. Chemical
-                potentials can also be supplied later in each analysis function.
-                (Default: None)
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical potentials
-                in the format:
-                {element symbol: reference energy} (to determine the formal chemical
-                potentials, when chempots has been manually specified as
-                {element symbol: chemical potential}). Unnecessary if chempots is
-                provided in format generated by doped (see tutorials).
-                (Default: None)
-            vbm (float):
-                VBM energy to use as Fermi level reference point for analysis.
-                If None (default), will use "vbm" from the calculation_metadata
-                dict attributes of the parsed DefectEntry objects.
-            band_gap (float):
-                Band gap of the host, to use for analysis.
-                If None (default), will use "gap" from the calculation_metadata
-                dict attributes of the parsed DefectEntry objects.
-
-        Returns:
-            doped DefectThermodynamics object (DefectThermodynamics)
-        """
-        # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
-        #  merge interstitials according to this algorithm:
-        # 1. For each interstitial defect type, count the number of parsed calculations per charge
-        # state, and take the charge state with the most calculations present as our starting point (
-        # if multiple charge states have the same number of calculations, take the closest to neutral).
-        # 2. For each interstitial in a different charge state, determine which of the starting
-        # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
-        # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
-        # structure will be easiest), and merge with this.
-        # Also add option to just amalgamate and show only the lowest energy states.
-        #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
-        #  default range of (VBM - 1eV, CBM + 1eV))...
-        # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
-
-        # Related TODO: Previous `pymatgen` issues, fixed?
-        # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
-        #   is used to group defect charge states for the transition level plot / transition level map
-        #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
-        #   differs significantly between charge states, this will give separate lines for each charge
-        #   state. This is kind of ok, because they _are_ actually different defect sites, but should
-        #   have intelligent defaults for dealing with this (at least similar colours for similar defect
-        #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
-        #   NaP is an example for this - should have a test built for however we want to handle cases like
-        #   this. See Ke's example case too with different interstitial sites.
-
-        # TODO: Should loop over input defect entries and check that the same bulk (energy and
-        #  calculation_metadata) was used in each case (by proxy checks that same bulk/defect
-        #  incar/potcar/kpoints settings were used in all cases, from each bulk/defect combination being
-        #  checked when parsing) - if defects have been parsed separately and combined, rather than
-        #  altogether with DefectsParser (which ensures the same bulk in each case)
-        # TODO: Add warning if, when creating thermo, only one charge state for a defect is input (i.e. the
-        #  other charge states haven't been included), in case this isn't noticed by the user. Print a
-        #  list of all parsed charge states as a check if so
-
-        if not defect_dict:
-            raise ValueError(
-                "No defects found in `defect_dict`. Please check the supplied dictionary is in the "
-                "correct format (i.e. {'defect_name': defect_entry})."
-            )
-        if not isinstance(defect_dict, dict):
-            raise TypeError(
-                f"Expected `defect_dict` to be a dictionary, but got {type(defect_dict)} instead."
-            )
-
-        return cls(
-            list(defect_dict.values()), chempots=chempots, el_refs=el_refs, vbm=vbm, band_gap=band_gap
-        )
 
     def _get_chempots(self, chempots: Optional[Dict] = None, el_refs: Optional[Dict] = None):
         """
@@ -656,6 +588,79 @@ class DefectThermodynamics(MSONable):
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
         }
+
+    def _check_bulk_compatibility(self):
+        """
+        Helper function to quickly check if all bulk entries have the same
+        energy (by proxy checks that same bulk/defect calculation settings were
+        used in all cases, from each bulk/defect combination being checked when
+        parsing).
+
+        This is to catch any cases where defects may have been parsed
+        separately and combined (rather than altogether with DefectsParser,
+        which ensures the same bulk in each case), and where a different bulk
+        reference calculation was (mistakenly) used.
+        """
+        # check that the energy of defect_entry.bulk_entry is the same for all defect entries:
+        bulk_energies = [entry.bulk_entry.energy for entry in self.defect_entries]
+        if max(bulk_energies) - min(bulk_energies) > 0.02:  # 0.02 eV tolerance
+            warnings.warn(
+                f"Note that not all defects in `defect_entries` have the same reference bulk energy (bulk "
+                f"supercell calculation at `bulk_path` when parsing), with energies differing by >0.02 "
+                f"eV. This can lead to inaccuracies in predicted formation energies! The bulk energies of "
+                f"defect entries in `defect_entries` are:\n"
+                f"{[(entry.name, entry.bulk_entry.energy) for entry in self.defect_entries]}\n"
+                f"You can suppress this warning by setting `check_compatibility=False` in "
+                "`DefectThermodynamics` initialisation."
+            )
+
+    def _check_bulk_defects_compatibility(self):
+        """
+        Helper function to quickly check if all entries have compatible
+        defect/bulk calculation settings.
+
+        Currently not used, as the bulk/defect compatibility is checked when
+        parsing, and the compatibility across bulk calculations is checked with
+        _check_bulk_compatibility().
+        """
+        # check each defect entry against its own bulk, and also check each bulk against each other
+        reference_defect_entry = self.defect_entries[0]
+        reference_run_metadata = reference_defect_entry.calculation_metadata["run_metadata"]
+        for defect_entry in self.defect_entries:
+            with warnings.catch_warnings(record=True) as captured_warnings:
+                run_metadata = defect_entry.calculation_metadata["run_metadata"]
+                # compare defect and bulk:
+                _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
+                _compare_potcar_symbols(
+                    run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
+                )
+                _compare_kpoints(
+                    run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"]
+                )
+
+                # compare bulk and reference bulk:
+                _compare_incar_tags(
+                    reference_run_metadata["bulk_incar"],
+                    run_metadata["bulk_incar"],
+                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                )
+                _compare_potcar_symbols(
+                    reference_run_metadata["bulk_potcar_symbols"],
+                    run_metadata["bulk_potcar_symbols"],
+                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                )
+                _compare_kpoints(
+                    reference_run_metadata["bulk_actual_kpoints"],
+                    run_metadata["bulk_actual_kpoints"],
+                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                )
+
+            if captured_warnings:
+                concatenated_warnings = "\n".join(str(warning.message) for warning in captured_warnings)
+                warnings.warn(
+                    f"Incompatible defect/bulk calculation settings detected for defect "
+                    f"{defect_entry.name}: \n{concatenated_warnings}"
+                )
 
     @property
     def defect_names(self):

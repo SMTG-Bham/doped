@@ -962,6 +962,7 @@ class DefectsParser:
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
+        **kwargs,
     ) -> DefectThermodynamics:
         """
         Generates a DefectThermodynamics object from the parsed `DefectEntry`
@@ -1007,6 +1008,9 @@ class DefectsParser:
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
+            **kwargs:
+                Additional keyword arguments to pass to `DefectThermodynamics()`,
+                such as `check_compatibility`.
 
         Returns:
             doped DefectThermodynamics object (DefectThermodynamics)
@@ -1019,7 +1023,12 @@ class DefectsParser:
             )
 
         return DefectThermodynamics(
-            list(self.defect_dict.values()), chempots=chempots, el_refs=el_refs, vbm=vbm, band_gap=band_gap
+            list(self.defect_dict.values()),
+            chempots=chempots,
+            el_refs=el_refs,
+            vbm=vbm,
+            band_gap=band_gap,
+            **kwargs,
         )
 
     def __repr__(self):
