@@ -197,7 +197,7 @@ class DefectThermodynamics(MSONable):
                 )
             defect_entries = list(defect_entries.values())
 
-        self.defect_entries = defect_entries
+        self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
 
         # get and check VBM/bandgap values:
@@ -240,9 +240,18 @@ class DefectThermodynamics(MSONable):
                 )
 
         # order entries for deterministic behaviour (particularly for plotting)
+        self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
+
+    def _sort_parse_and_check_entries(self, check_compatibility: bool = True):
+        """
+        Sort the defect entries, parse the transition levels, and check the
+        compatibility of the bulk entries (if check_compatibility is True).
+        """
+        # TODO: Currently with this code, entries with the same name will overwrite each other. Should only
+        #  do this if they have the same energy, otherwise rename to avoid overwriting:
         defect_entries_dict = {entry.name: entry for entry in self.defect_entries}
         sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
-        self.defect_entries = list(sorted_defect_entries_dict.values())
+        self._defect_entries = list(sorted_defect_entries_dict.values())
         self._parse_transition_levels()
         if check_compatibility:
             self._check_bulk_compatibility()
@@ -673,6 +682,60 @@ class DefectThermodynamics(MSONable):
                     f"Incompatible defect/bulk calculation settings detected for defect "
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
+
+    def add_entries(
+        self,
+        defect_entries: Union[List[DefectEntry], Dict[str, DefectEntry]],
+        check_compatibility: bool = True,
+    ):
+        """
+        Add additional defect entries to the DefectThermodynamics object.
+
+        Args:
+            defect_entries ([DefectEntry] or {str: DefectEntry}):
+                A list or dict of DefectEntry objects, to add to the
+                DefectThermodynamics.defect_entries list. Note that `DefectEntry.name`
+                attributes are used for grouping and plotting purposes! These should
+                be in the format "{defect_name}_{optional_site_info}_{charge_state}".
+                If the DefectEntry.name attribute is not defined or does not end with
+                the charge state, then the entry will be renamed with the doped
+                default name.
+            check_compatibility (bool):
+                Whether to check the compatibility of the bulk entry for each defect
+                entry (i.e. that all reference bulk energies are the same).
+                (Default: True)
+        """
+        if isinstance(defect_entries, dict):
+            if not defect_entries:
+                raise ValueError(
+                    "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
+                    "correct format (i.e. {'defect_name': defect_entry}), or as a list: [defect_entry]."
+                )
+            defect_entries = list(defect_entries.values())
+
+        self._defect_entries += defect_entries
+        self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
+
+    # TODO: Show example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries /
+    #  combining multiple DefectThermodynamics objects
+
+    @property
+    def defect_entries(self):
+        """
+        Get the list of parsed DefectEntry objects in the DefectThermodynamics
+        analysis object.
+        """
+        return self._defect_entries
+
+    @defect_entries.setter
+    def defect_entries(self, input_defect_entries):
+        """
+        Set the list of parsed `DefectEntry`s to include in the
+        DefectThermodynamics object, and reparse the thermodynamic information
+        (transition levels etc).
+        """
+        self._defect_entries = input_defect_entries
+        self._sort_parse_and_check_entries()
 
     @property
     def chempots(self):
