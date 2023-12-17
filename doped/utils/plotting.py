@@ -645,13 +645,13 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
         for x_extrem in [lower_cap, upper_cap]:
             all_lines_xy[defect_entry_name][0].append(x_extrem)
             all_lines_xy[defect_entry_name][1].append(
-                defect_thermodynamics._formation_energy(
-                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_extrem
+                defect_thermodynamics.get_formation_energy(
+                    defect_entry, chempots=dft_chempots, fermi_level=x_extrem
                 )
             )
             all_entries_y_range_vals.extend(
-                defect_thermodynamics._formation_energy(
-                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
+                defect_thermodynamics.get_formation_energy(
+                    defect_entry, chempots=dft_chempots, fermi_level=x_window
                 )
                 for x_window in xlim
             )
@@ -665,11 +665,11 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             first_charge = max(def_tl[org_x[0]])
             for defect_entry in defect_thermodynamics.stable_entries[def_name]:
                 if defect_entry.charge_state == first_charge:
-                    form_en = defect_thermodynamics._formation_energy(
-                        defect_entry, chemical_potentials=dft_chempots, fermi_level=lower_cap
+                    form_en = defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=lower_cap
                     )
-                    fe_left = defect_thermodynamics._formation_energy(
-                        defect_entry, chemical_potentials=dft_chempots, fermi_level=xlim[0]
+                    fe_left = defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=xlim[0]
                     )
             xy[def_name][0].append(lower_cap)
             xy[def_name][1].append(form_en)
@@ -680,8 +680,8 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
                 charge = max(def_tl[fl])
                 for defect_entry in defect_thermodynamics.stable_entries[def_name]:
                     if defect_entry.charge_state == charge:
-                        form_en = defect_thermodynamics._formation_energy(
-                            defect_entry, chemical_potentials=dft_chempots, fermi_level=fl
+                        form_en = defect_thermodynamics.get_formation_energy(
+                            defect_entry, chempots=dft_chempots, fermi_level=fl
                         )
                 xy[def_name][0].append(fl)
                 xy[def_name][1].append(form_en)
@@ -691,11 +691,11 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             last_charge = min(def_tl[org_x[-1]])
             for defect_entry in defect_thermodynamics.stable_entries[def_name]:
                 if defect_entry.charge_state == last_charge:
-                    form_en = defect_thermodynamics._formation_energy(
-                        defect_entry, chemical_potentials=dft_chempots, fermi_level=upper_cap
+                    form_en = defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=upper_cap
                     )
-                    fe_right = defect_thermodynamics._formation_energy(
-                        defect_entry, chemical_potentials=dft_chempots, fermi_level=xlim[1]
+                    fe_right = defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=xlim[1]
                     )
             xy[def_name][0].append(upper_cap)
             xy[def_name][1].append(form_en)
@@ -707,8 +707,8 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             xy[def_name] = all_lines_xy[def_name_w_charge]  # get xy from all_lines_xy, using name w/charge
             defect_entry = defect_thermodynamics.stable_entries[def_name][0]
             y_range_vals.extend(
-                defect_thermodynamics._formation_energy(
-                    defect_entry, chemical_potentials=dft_chempots, fermi_level=x_window
+                defect_thermodynamics.get_formation_energy(
+                    defect_entry, chempots=dft_chempots, fermi_level=x_window
                 )
                 for x_window in xlim
             )
@@ -817,9 +817,9 @@ def _TLD_plot(
             x_trans.append(x_val)
             y_trans.append(
                 [
-                    defect_thermodynamics._formation_energy(
+                    defect_thermodynamics.get_formation_energy(
                         defect_entry,
-                        chemical_potentials=dft_chempots,
+                        chempots=dft_chempots,
                         fermi_level=x_val,
                     )
                     for defect_entry in defect_thermodynamics.stable_entries[def_name]
