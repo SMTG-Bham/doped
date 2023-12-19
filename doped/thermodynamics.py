@@ -10,7 +10,7 @@ objects and add additional functionality.
 """
 import os
 import warnings
-from itertools import chain
+from itertools import chain, product
 from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -26,10 +26,6 @@ from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
 from doped.utils.parsing import _compare_incar_tags, _compare_kpoints, _compare_potcar_symbols
 from doped.utils.plotting import _TLD_plot
-
-# TODO: Add all_transition_levels functions, which iteratively print all potential charge transition
-#  levels for the DefectThermodynamics object, including metastable states. Template using the
-#  print_transition_levels; see https://github.com/SMTG-Bham/doped/issues/3 for code
 
 
 def bold_print(string: str) -> None:
@@ -1407,52 +1403,154 @@ class DefectThermodynamics(MSONable):
 
             return figs[0] if len(figs) == 1 else figs
 
-    def get_transition_levels(self):
+    def get_transition_levels(
+        self,
+        all: bool = False,
+        format_charges: bool = True,
+    ):
         """
         Return a DataFrame of the charge transition levels for the defects in
         the DefectThermodynamics object (stored in the transition_level_map
         attribute).
+
+        By default, only returns the thermodynamic ground-state transition
+        levels (i.e. those visible on the defect formation energy diagram),
+        not including metastable defect states (which can be important for
+        recombination, migration, degeneracy/concentrations etc, see e.g.
+        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        e.g. negative-U defects will show the 2-electron transition level
+        (N+1/N-1) rather than (N+1/N) and (N/N-1).
+        If instead all single-electron transition levels are desired, set
+        `all = True`.
+
+        Returns a DataFrame with columns:
+        - "Defect": Defect name
+        - "Charges": Defect charge states which make up the transition level
+            (as a string if `format_charges=True`, otherwise as a list of integers)
+        - "eV from VBM": Transition level position in eV from the VBM
+        - "In Band Gap?": Whether the transition level is within the host band gap
+        - "N(Metastable)": Number of metastable states involved in the transition level
+            (0, 1 or 2). Only included if all = True.
+
+        Args:
+              all (bool):
+                    Whether to print all single-electron transition levels (i.e.
+                    including metastable defect states), or just the thermodynamic
+                    ground-state transition levels (default).
+              format_charges (bool):
+                    Whether to format the transition level charge states as strings
+                    (e.g. "ε(+1/+2)") or keep in list format (e.g. [1,2]).
+                    (Default: True)
         """
         # create a dataframe from the transition level map, with defect name, transition level charges and
         # TL position in eV from the VBM:
         transition_level_map_list = []
+
+        def _TL_naming_func(TL_charges, i_meta=False, j_meta=False):
+            if not format_charges:
+                return TL_charges
+            i, j = TL_charges
+            return (
+                f"ε({'+' if i > 0 else ''}{i}{'*' if i_meta else ''}/"
+                f"{'+' if j > 0 else ''}{j}{'*' if j_meta else ''})"
+            )
+
         for defect_name, transition_level_dict in self.transition_level_map.items():
             if not transition_level_dict:
                 transition_level_map_list.append(  # add defects with no TL to dataframe as "None"
                     {
                         "Defect": defect_name,
-                        "Transition Level (TL)": "None",
-                        "TL Position (eV from VBM)": np.inf,
+                        "Charges": "None",
+                        "eV from VBM": np.inf,
+                        "In Band Gap?": False,
                     }
                 )
-            transition_level_map_list.extend(
-                {
-                    "Defect": defect_name,
-                    "Transition Level (TL)": transition_level_charges,
-                    "TL Position (eV from VBM)": round(TL, 3),
-                }
-                for TL, transition_level_charges in transition_level_dict.items()
-            )
+                if all:
+                    transition_level_map_list[-1]["N(Metastable)"] = 0
+
+            if not all:
+                transition_level_map_list.extend(
+                    {
+                        "Defect": defect_name,
+                        "Charges": _TL_naming_func(transition_level_charges),
+                        "eV from VBM": round(TL, 3),
+                        "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                    }
+                    for TL, transition_level_charges in transition_level_dict.items()
+                )
+
+        if all:
+            for i, j in product(self.defect_entries, repeat=2):
+                defect_name_wout_charge = i.name.rsplit("_", 1)[0]
+                if (defect_name_wout_charge == j.name.rsplit("_", 1)[0]) and (
+                    i.charge_state - j.charge_state == 1
+                ):
+                    TL = j.get_ediff() - i.get_ediff() - self.vbm
+                    i_meta = not any(i == y for y in self.all_stable_entries)
+                    j_meta = not any(j == y for y in self.all_stable_entries)
+                    transition_level_map_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charges": _TL_naming_func(
+                                [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
+                            ),
+                            "eV from VBM": round(TL, 3),
+                            "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                            "N(Metastable)": [i_meta, j_meta].count(True),
+                        }
+                    )
+
+        # TODO: Show example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta
+        #  charge state, and TLs with two meta charge states, using df output from this function (i.e. to
+        #  get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
 
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect, then by TL position:
-        return tl_df.sort_values(by=["Defect", "TL Position (eV from VBM)"])
+        return tl_df.sort_values(by=["Defect", "eV from VBM"])
 
-    def print_transition_levels(self):
+    def print_transition_levels(self, all: bool = False):
         """
         Iteratively prints the charge transition levels for the defects in the
         DefectThermodynamics object (stored in the transition_level_map
         attribute).
+
+        By default, only returns the thermodynamic ground-state transition
+        levels (i.e. those visible on the defect formation energy diagram),
+        not including metastable defect states (which can be important for
+        recombination, migration, degeneracy/concentrations etc, see e.g.
+        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        e.g. negative-U defects will show the 2-electron transition level
+        (N+1/N-1) rather than (N+1/N) and (N/N-1).
+        If instead all single-electron transition levels are desired, set
+        `all = True`.
+
+        Args:
+              all (bool):
+                    Whether to print all single-electron transition levels (i.e.
+                    including metastable defect states), or just the thermodynamic
+                    ground-state transition levels (default).
         """
-        for defect_name, tl_info in self.transition_level_map.items():
-            bold_print(f"Defect: {defect_name}")
-            for tl_efermi, chargeset in tl_info.items():
-                print(
-                    f"Transition Level ({max(chargeset):{'+' if max(chargeset) else ''}}/"
-                    f"{min(chargeset):{'+' if min(chargeset) else ''}}) at {tl_efermi:.3f}"
-                    f" eV above the VBM"
-                )
-            print("")  # add space
+        if not all:
+            for defect_name, tl_info in self.transition_level_map.items():
+                bold_print(f"Defect: {defect_name}")
+                for tl_efermi, chargeset in tl_info.items():
+                    print(
+                        f"Transition level ε({max(chargeset):{'+' if max(chargeset) else ''}}/"
+                        f"{min(chargeset):{'+' if min(chargeset) else ''}}) at {tl_efermi:.3f} eV above "
+                        f"the VBM"
+                    )
+                print("")  # add space
+
+        else:
+            all_TLs_df = self.get_transition_levels(all=True)
+            for defect_name, tl_df in all_TLs_df.groupby("Defect"):
+                bold_print(f"Defect: {defect_name}")
+                for _, row in tl_df.iterrows():
+                    if row["Charges"] != "None":
+                        print(
+                            f"Transition level {row['Charges']} at {row['eV from VBM']} eV above the VBM"
+                        )
+                print("")  # add space
 
     def get_formation_energies(
         self,
