@@ -870,7 +870,7 @@ class DefectsParser:
                 "this should be fine, and the results should be the same regardless (assuming a "
                 "relatively well-converged supercell size), while for _anisotropic_ materials this could "
                 "lead to some quantitative inaccuracies. You can use the "
-                "`DefectThermodynamics.formation_energy_table()` method to print out the calculated "
+                "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
                 "charge corrections for all defects, and/or visualise the charge corrections using "
                 "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
                 "check."

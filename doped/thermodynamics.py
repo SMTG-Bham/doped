@@ -797,6 +797,10 @@ class DefectThermodynamics(MSONable):
 
     # TODO: Deal with these commented out methods:
     # TODO: Add similar function to get formation energies and concentrations for all defect entries
+
+    # def get_concentrations():
+    #     pass  # formation energies and concentrations
+
     # Doesn't work as .defect_concentration() no longer a DefectEntry method, but can be done with
     # pmg-analysis-defects FormationEnergyDiagram (or py-sc-fermi ofc)
     # def defect_concentrations(self, chemical_potentials, temperature=300, fermi_level=0.0):
@@ -1403,9 +1407,40 @@ class DefectThermodynamics(MSONable):
 
             return figs[0] if len(figs) == 1 else figs
 
+    def get_transition_levels(self):
+        """
+        Return a DataFrame of the charge transition levels for the defects in
+        the DefectThermodynamics object (stored in the transition_level_map
+        attribute).
+        """
+        # create a dataframe from the transition level map, with defect name, transition level charges and
+        # TL position in eV from the VBM:
+        transition_level_map_list = []
+        for defect_name, transition_level_dict in self.transition_level_map.items():
+            if not transition_level_dict:
+                transition_level_map_list.append(  # add defects with no TL to dataframe as "None"
+                    {
+                        "Defect": defect_name,
+                        "Transition Level (TL)": "None",
+                        "TL Position (eV from VBM)": np.inf,
+                    }
+                )
+            transition_level_map_list.extend(
+                {
+                    "Defect": defect_name,
+                    "Transition Level (TL)": transition_level_charges,
+                    "TL Position (eV from VBM)": round(TL, 3),
+                }
+                for TL, transition_level_charges in transition_level_dict.items()
+            )
+
+        tl_df = pd.DataFrame(transition_level_map_list)
+        # sort df by Defect, then by TL position:
+        return tl_df.sort_values(by=["Defect", "TL Position (eV from VBM)"])
+
     def print_transition_levels(self):
         """
-        Iteratively prints the charge transition levels for the
+        Iteratively prints the charge transition levels for the defects in the
         DefectThermodynamics object (stored in the transition_level_map
         attribute).
         """
@@ -1419,7 +1454,7 @@ class DefectThermodynamics(MSONable):
                 )
             print("")  # add space
 
-    def formation_energy_table(
+    def get_formation_energies(
         self,
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,

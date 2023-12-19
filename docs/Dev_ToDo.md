@@ -147,10 +147,10 @@
     automatically in `doped`, excited-state degeneracy (e.g. with bipolarons/dimers with single and triplet
     states) are not, so the user should manually account for this if present. Also note that
     temperature effects can be important in certain cases so see this review if that's the case.
-  - Should have recommendation somewhere about open science practices. The doped defect dict and thermo jsons should always be shared in e.g. Zenodo when publishing, as contains all info on the parsed defect data in a lean format. Also using the `formation_energy_table` etc. functions for SI tables is recommended.
+  - Should have recommendation somewhere about open science practices. The doped defect dict and thermo jsons should always be shared in e.g. Zenodo when publishing, as contains all info on the parsed defect data in a lean format. Also using the `get_formation_energies` etc. functions for SI tables is recommended.
   - Add our general rule-of-thumbs/expectations regarding charge corrections:
     - Potential alignment terms should rarely ever be massive
-    - In general, the correction terms should follow somewhat consistent trends (for a given charge state, across defects), so if you see a large outlier in the corrections, it's implying something odd is happening there. This is can be fairly easily scanned with `formation_energy_table`.
+    - In general, the correction terms should follow somewhat consistent trends (for a given charge state, across defects), so if you see a large outlier in the corrections, it's implying something odd is happening there. This is can be fairly easily scanned with `get_formation_energies`.
   - The Wyckoff analysis code is very useful and no other package can do this afaik. See
     https://github.com/spglib/spglib/issues/135. Should describe and exemplify this in the docs (i.e. the
     `get_wyckoff_label_and_equiv_coord_list()` from just a `pymatgen` site and spacegroup 🔥) and JOSS
