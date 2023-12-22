@@ -39,36 +39,11 @@
       sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
       getting the difference in symm-ops according to `spglib`?
   - Also add consideration of odd/even number of electrons to account for spin degeneracy (can pull from `vr.parameters["NELECT"]` / magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge)(can also use this to double check odd is odd and even even as expected, warn user if not)
-- Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
-  also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
-  effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in
-  Xinwei's https://arxiv.org/abs/2302.04901), so it would be really nice to have this automatic parsing
-  built-in, and can either use in SnB or recommend SnB users to check with this.
-  - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
-    more common than thought.
-  - Kumagai's atom-pairing defect analysis code for identifying 'non-trivial' defects is essentially
-    this, could be used here?
-  - Could do by using the site displacements, with atoms moving outside their vdW radius being flagged
-    as (possibly) defective? And see if their stoichiometric sum matches the expected point defect
-    stoichiometry. Expected to match one of these transformation motifs:
-    - Substitutions:
-      - `A_B` -> `A_C` + `C_B`
-      - `A_B` -> `A_i` + `V_B`
-      - `A_B` -> `A_i` + `C_B` + `V_C`
-      - `A_B` -> `C_i` + `A_B` + `V_C` (same defect but inducing a neighbouring Frenkel pair)
-    - Vacancies:
-      - `V_B` -> `A_B` + `V_A`
-      - `A_B` -> 2`V_A` + `A_i` (split-vacancy)
-      - `V_B` -> `A_i` + `V_B` + `V_A` (same defect but inducing a neighbouring Frenkel pair)
-    - Interstitials:
-      - `A_i` -> `A_B` + `B_i`
-      - `A_i` -> 2`A_i` + `V_A` (split-interstitial)
-      - `A_i` -> `B_i` + `A_i` + `V_B` (same defect but inducing a neighbouring Frenkel pair)
-  - How does this change the thermodynamics (i.e. entropic cost to clustering)?
-  - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
-    Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
-    colour just different linestyles? (or something similar)
-- Automate `pydefect` shallow defect analysis? At least have notebook showing how to manually do this (Adair's done before?).
+- **`pydefect`** Interface:
+  - Having an interface module for `pydefect` to convert parsed outputs to the `pydefect`/`vise` output, would allow the easy:
+    - Automation of shallow defect analysis (and allow for easy further analysis of eigenvalues etc) – Adair's done before
+    - Ready automation with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
+    - Some nice defect structure and eigenvalue analysis
   - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
     (and note this behaviour in examples/docs)
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -77,20 +52,7 @@
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
   - Don't show transition levels outside of the bandgap (or within a certain range of the band edge, possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
   - Use the update defect name info in `plotting` plotting? i.e. Legend with the inequivalent site naming used in the subscripts?
-- Add LDOS plotting, big selling point for defects and disorder!
-- Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
-- `transition_levels_table()`. Also ensure we have functionality to print all single-electron TLs (useful to know when deciding what TLs to do carrier capture for. @SeánK has code for this in jupyter notebooks)
-- **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
-  plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Needs to be at
-  this point because we need relaxed structures. Sensible naming scheme. Would be useful as this is a
-  workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
-  scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
-- Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
-- `pydefect` integration? So we can use:
-  - Handling of shallow defects
-  - Readily automated with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
-  - Some nice defect structure and eigenvalue analysis
-  - GKFO correction
+- Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
 - Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?)
   Brouwer diagrams; show examples of these in docs using `py-sc-fermi` interface tools. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 
@@ -100,6 +62,7 @@
   - Test coverage?
   - Auto-docs generation with little to no warnings/errors?
   - Add type hints for all functions.
+- Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
@@ -121,7 +84,7 @@
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
     possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
   - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
-  - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `CarrierCapture`, and give some
+  - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `vise`, `CarrierCapture`, and give some
     quick examples? Add as optional dependencies.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
   - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no
@@ -130,7 +93,7 @@
     bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
     will be added to `doped` VASP calc scripts.
   - Setting `LREAL = Auto` can sometimes be worth doing if you have a very large supercell for speed up, _but_ it's important to do a final calculation with `LREAL = False` for accurate energies/forces, so only do if you're a power user and have a very large supercell.
-  - Show usage of `get_conv_cell_site` in notebooks/docs.
+  - Show usage of `get_conv_cell_site` in notebooks/docs (in an advanced analysis tutorial with other possibly useful functions being showcased?)
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).

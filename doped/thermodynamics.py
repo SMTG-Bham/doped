@@ -1008,7 +1008,7 @@ class DefectThermodynamics(MSONable):
         #  functions are written
         # TODO: Test this against py-sc-fermi results for CdTe
         fermi_dos = FermiDos(bulk_dos, bandgap=self.band_gap)
-        _, fdos_vbm = fermi_dos.get_cbm_vbm()  # TODO: Check here vbm matches up?
+        _, fdos_vbm = fermi_dos.get_cbm_vbm()  # TODO: Check here vbm matches up? Warning!
 
         def _get_total_q(fermi_level):
             conc_df = self.get_equilibrium_concentrations(
