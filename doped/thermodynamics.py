@@ -794,12 +794,27 @@ class DefectThermodynamics(MSONable):
         all_stable_entries = self.all_stable_entries
         return [e for e in self.defect_entries if e not in all_stable_entries]
 
+    def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
+        """
+        Handle the input Fermi level choice.
+
+        If Fermi level not set, defaults to mid-gap Fermi level (E_g/2) and
+        prints an info message to the user.
+        """
+        if fermi_level is None:
+            fermi_level = 0.5 * self.band_gap  # type: ignore
+            print(
+                f"Fermi level was not set, so using mid-gap Fermi level (E_g/2 = {fermi_level:.2f} eV "
+                f"relative to the VBM)."
+            )
+        return fermi_level
+
     def get_equilibrium_concentrations(
         self,
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
+        fermi_level: Optional[float] = None,
         temperature: float = 300,
-        fermi_level: float = 0,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
@@ -851,11 +866,12 @@ class DefectThermodynamics(MSONable):
                 - None (default), if `chempots` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
+            fermi_level (float):
+                Value corresponding to the electron chemical potential, referenced
+                to the VBM. If None (default), set to the mid-gap Fermi level (E_g/2).
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium concentrations.
-            fermi_level (float):
-                Value corresponding to the electron chemical potential,
-                referenced to the VBM. Default is 0 (i.e. the VBM).
+                Default is 300 K.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual defect charge
                 states (e.g. v_Cd_0, v_Cd_-1, v_Cd_-2 instead of v_Cd). (default: True)
@@ -870,8 +886,7 @@ class DefectThermodynamics(MSONable):
             pandas DataFrame of defect concentrations (and formation energies) for each
             defect entry in the DefectThermodynamics object.
         """
-        # TODO: Set fermi_level default here to actually solve for the Fermi level, print the result and
-        #  return the DataFrame?
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
         energy_concentration_list = []
 
         for defect_entry in self.defect_entries:
@@ -969,6 +984,8 @@ class DefectThermodynamics(MSONable):
         the defect_entry.defect.multiplicity attributes.
 
         Args:
+            bulk_dos (pymatgen Dos object):
+                Density of states (as a pymatgen Dos object) for the bulk (host) system.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level). This
@@ -994,8 +1011,7 @@ class DefectThermodynamics(MSONable):
                   limit in the doped chempots dict.
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium Fermi level.
-            bulk_dos (pymatgen Dos object):
-                Density of states (as a pymatgen Dos object) for the bulk (host) system.
+                Default is 300 K.
             return_concs (bool):
                 Whether to return the corresponding hole and electron concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
@@ -1090,7 +1106,7 @@ class DefectThermodynamics(MSONable):
         defect_entry: Union[str, DefectEntry],
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
-        fermi_level: float = 0,
+        fermi_level: Optional[float] = None,
     ) -> float:
         """
         Compute the formation energy for a DefectEntry at a given chemical
@@ -1130,10 +1146,13 @@ class DefectThermodynamics(MSONable):
                 referenced to the VBM. The VBM value is taken from
                 DefectEntry.calculation_metadata if present, otherwise
                 from self.vbm.
+                If None (default), set to the mid-gap Fermi level (E_g/2).
 
         Returns:
             Formation energy value (float)
         """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
+
         if isinstance(defect_entry, DefectEntry):
             return defect_entry.formation_energy(
                 chempots=chempots, facet=facet, vbm=self.vbm, fermi_level=fermi_level
@@ -1749,7 +1768,7 @@ class DefectThermodynamics(MSONable):
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,
         facet: Optional[str] = None,
-        fermi_level: float = 0,
+        fermi_level: Optional[float] = None,
     ) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Generates defect formation energy tables (DataFrames) for either a
@@ -1804,11 +1823,12 @@ class DefectThermodynamics(MSONable):
                 referenced to the VBM. The VBM value is taken from the
                 calculation_metadata dict attributes of `DefectEntry`s in
                 self.defect_entries if present, otherwise self.vbm.
-                Default = 0 (i.e. at the VBM)
+                If None (default), set to the mid-gap Fermi level (E_g/2).
 
         Returns:
             pandas DataFrame or list of DataFrames
         """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
