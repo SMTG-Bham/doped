@@ -7,7 +7,6 @@ user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
 import contextlib
-import itertools
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
@@ -21,7 +20,7 @@ from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
-from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, Poscar
+from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
@@ -38,13 +37,13 @@ from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
     get_locpot,
+    get_neutral_nelect_from_vasprun,
     get_outcar,
     get_vasprun,
     reorder_s1_like_s2,
 )
 from doped.utils.plotting import _format_defect_name
 from doped.utils.symmetry import _frac_coords_sort_func
-from doped.vasp import DefectDictSet
 
 
 def _custom_formatwarning(
@@ -75,8 +74,6 @@ _aniso_dielectric_but_using_locpot_warning = (
     "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
-
-potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
 
 
 def _convert_dielectric_to_tensor(dielectric):
@@ -332,86 +329,43 @@ def defect_name_from_structures(bulk_structure, defect_structure):
 def _determine_defect_charge_from_vasprun(
     bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]
 ):
+    auto_charge = None
+
     try:
-        defect_nelect = defect_vr.parameters.get("NELECT")
-        auto_charge = None
-
-        with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
-            # first check if bulk matches expected NELECT
-            bulk_grouped_symbols = [
-                list(group) for key, group in itertools.groupby(bulk_vr.atomic_symbols)
-            ]
-            defect_grouped_symbols = [
-                list(group) for key, group in itertools.groupby(defect_vr.atomic_symbols)
-            ]
-
-            for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
-                if all(
-                    potcar_summary_stats[trial_functional].get(
-                        bulk_vr.potcar_spec[i]["titel"].replace(" ", ""), False
-                    )
-                    for i in range(len(bulk_grouped_symbols))
-                ):
-                    break
-
-            bulk_nelect = sum(
-                np.array([len(i) for i in bulk_grouped_symbols])
-                * np.array(
-                    [
-                        potcar_summary_stats[trial_functional][
-                            bulk_vr.potcar_spec[i]["titel"].replace(" ", "")
-                        ][0]["ZVAL"]
-                        for i in range(len(bulk_grouped_symbols))
-                    ]
-                )
-            )
-            assert bulk_nelect == bulk_vr.parameters.get("NELECT")
-
-            neutral_nelect = sum(
-                np.array([len(i) for i in defect_grouped_symbols])
-                * np.array(
-                    [
-                        potcar_summary_stats[trial_functional][
-                            defect_vr.potcar_spec[i]["titel"].replace(" ", "")
-                        ][0]["ZVAL"]
-                        for i in range(len(defect_grouped_symbols))
-                    ]
-                )
-            )
-
-            auto_charge = -1 * (defect_nelect - neutral_nelect)
-
-        if defect_vr.incar.get("NELECT") is None and auto_charge is None:
+        if defect_vr.incar.get("NELECT") is None:
             auto_charge = 0  # neutral defect if NELECT not specified
 
-        elif auto_charge is None:
-            potcar_symbols = [titel.split()[1] for titel in defect_vr.potcar_symbols]
-            potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
-            with warnings.catch_warnings():  # ignore POTCAR warnings if not available
-                warnings.simplefilter("ignore", UserWarning)
-                neutral_defect_dict_set = DefectDictSet(
-                    defect_vr.structures[-1],
-                    charge_state=0,
-                    user_potcar_settings=potcar_settings,
-                )
-            try:
-                auto_charge = -1 * (defect_nelect - neutral_defect_dict_set.nelect)
+        else:
+            defect_nelect = defect_vr.parameters.get("NELECT")
+            bulk_nelect = get_neutral_nelect_from_vasprun(bulk_vr)
+            neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
 
-            except Exception as e:
-                auto_charge = None
-                if charge_state is None:
+            if bulk_vr.parameters.get("NELECT", False):
+                assert bulk_nelect == bulk_vr.parameters["NELECT"]
+
+            auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+
+            if auto_charge is None or abs(auto_charge) >= 10:
+                neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr, skip_potcar_init=True)
+                try:
+                    auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+
+                except Exception as e:
+                    auto_charge = None
+                    if charge_state is None:
+                        raise RuntimeError(
+                            "Defect charge cannot be automatically determined as POTCARs have not been "
+                            "setup with pymatgen (see Step 2 at "
+                            "https://github.com/SMTG-Bham/doped#installation). Please specify defect "
+                            "charge manually using the `charge_state` argument, or set up POTCARs with "
+                            "pymatgen."
+                        ) from e
+
+                if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
                     raise RuntimeError(
-                        "Defect charge cannot be automatically determined as POTCARs have not been setup "
-                        "with pymatgen (see Step 2 at https://github.com/SMTG-Bham/doped#installation). "
-                        "Please specify defect charge manually using the `charge_state` argument, "
-                        "or set up POTCARs with pymatgen."
-                    ) from e
-
-            if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
-                raise RuntimeError(
-                    f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
-                    f"Please specify defect charge manually using the `charge` argument."
-                )
+                        f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
+                        f"Please specify defect charge manually using the `charge` argument."
+                    )
 
         if (
             charge_state is not None
@@ -423,7 +377,8 @@ def _determine_defect_charge_from_vasprun(
                 f"Auto-determined defect charge q={int(auto_charge):+} does not match specified charge "
                 f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
             )
-        elif charge_state is None and auto_charge is not None:
+
+        if charge_state is None and auto_charge is not None:
             charge_state = auto_charge
 
     except Exception as e:
@@ -447,7 +402,7 @@ def defect_entry_from_paths(
     initial_defect_structure_path: Optional[str] = None,
     skip_corrections: bool = False,
     error_tolerance: float = 0.05,
-    bulk_bandgap_path: Optional[str] = None,
+    bulk_band_gap_path: Optional[str] = None,
     **kwargs,
 ):
     """
@@ -483,7 +438,7 @@ def defect_entry_from_paths(
         error_tolerance (float):
             If the estimated error in the defect charge correction is greater
             than this value (in eV), then a warning is raised. (default: 0.05 eV)
-        bulk_bandgap_path (str):
+        bulk_band_gap_path (str):
             Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
             occur at reciprocal space points not included in the bulk supercell
             calculation, you should use this tag to point to a bulk bandstructure
@@ -507,7 +462,7 @@ def defect_entry_from_paths(
         initial_defect_structure_path=initial_defect_structure_path,
         skip_corrections=skip_corrections,
         error_tolerance=error_tolerance,
-        bulk_bandgap_path=bulk_bandgap_path,
+        bulk_band_gap_path=bulk_band_gap_path,
         **kwargs,
     )
     return dp.defect_entry
@@ -538,7 +493,7 @@ class DefectsParser:
         bulk_path: Optional[str] = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_bandgap_path: Optional[str] = None,
+        bulk_band_gap_path: Optional[str] = None,
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
     ):
@@ -597,7 +552,7 @@ class DefectsParser:
             error_tolerance (float):
                 If the estimated error in any charge correction is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            bulk_bandgap_path (str):
+            bulk_band_gap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
                 occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure
@@ -631,7 +586,7 @@ class DefectsParser:
         self.error_tolerance = error_tolerance
         self.bulk_path = bulk_path
         self.subfolder = subfolder
-        self.bulk_bandgap_path = bulk_bandgap_path
+        self.bulk_band_gap_path = bulk_band_gap_path
         self.processes = processes
         self.json_filename = json_filename
 
@@ -922,7 +877,7 @@ class DefectsParser:
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
-                bulk_bandgap_path=self.bulk_bandgap_path,
+                bulk_band_gap_path=self.bulk_band_gap_path,
                 **self.bulk_corrections_data,
             )
 
@@ -1137,7 +1092,7 @@ class DefectParser:
         initial_defect_structure_path: Optional[str] = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_bandgap_path: Optional[str] = None,
+        bulk_band_gap_path: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -1174,7 +1129,7 @@ class DefectParser:
             error_tolerance (float):
                 If the estimated error in the defect charge correction is greater
                 than this value (in eV), then a warning is raised. (default: 0.05 eV)
-            bulk_bandgap_path (str):
+            bulk_band_gap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
                 occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure
@@ -1384,7 +1339,7 @@ class DefectParser:
         )
 
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
-        dp.load_bulk_gap_data(bulk_bandgap_path=bulk_bandgap_path)  # Load band gap data
+        dp.load_bulk_gap_data(bulk_band_gap_path=bulk_band_gap_path)  # Load band gap data
 
         if not skip_corrections and defect_entry.charge_state != 0:
             # no finite-size charge corrections by default for neutral defects
@@ -1728,7 +1683,7 @@ class DefectParser:
             {"eigenvalues": eigenvalues, "kpoint_weights": kpoint_weights}
         )
 
-    def load_bulk_gap_data(self, bulk_bandgap_path=None, use_MP=False, mpid=None, api_key=None):
+    def load_bulk_gap_data(self, bulk_band_gap_path=None, use_MP=False, mpid=None, api_key=None):
         """
         Get bulk band gap data from bulk OUTCAR file, or OUTCAR located at
         `actual_bulk_path`.
@@ -1741,7 +1696,7 @@ class DefectParser:
         bandgap!
 
         Args:
-            bulk_bandgap_path (str):
+            bulk_band_gap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
                 occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure
@@ -1768,7 +1723,7 @@ class DefectParser:
 
         bulk_sc_structure = self.bulk_vr.initial_structure
 
-        vbm, cbm, bandgap = None, None, None
+        band_gap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
         gap_calculation_metadata = {}
 
         use_MP = use_MP or self.kwargs.get("use_MP", False)
@@ -1828,39 +1783,37 @@ class DefectParser:
             if bs:
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]
-                bandgap = bs.get_band_gap()["energy"]
+                band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
 
-        if vbm is None or bandgap is None or cbm is None or not bulk_bandgap_path:
-            if mpid and bandgap is None:
-                print(
-                    f"WARNING: Mpid {mpid} was provided, but no bandstructure entry currently "
-                    "exists for it. \nReverting to use of bulk supercell calculation for band "
-                    "edge extrema."
-                )
-
+        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_path) and (
+            mpid and band_gap is None
+        ):
+            warnings.warn(
+                f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
+                f"Reverting to use of bulk supercell calculation for band edge extrema."
+            )
             gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
-            bandgap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
 
-        if bulk_bandgap_path:
-            print(f"Using actual bulk path: {bulk_bandgap_path}")
+        if bulk_band_gap_path:
+            print(f"Using actual bulk path: {bulk_band_gap_path}")
             actual_bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
-                "vasprun.xml", bulk_bandgap_path
+                "vasprun.xml", bulk_band_gap_path
             )
             if multiple:
                 warnings.warn(
                     f"Multiple `vasprun.xml` files found in specified directory: "
-                    f"{bulk_bandgap_path}. Using {actual_bulk_vr_path} to  parse the calculation "
+                    f"{bulk_band_gap_path}. Using {actual_bulk_vr_path} to  parse the calculation "
                     f"energy and metadata."
                 )
             actual_bulk_vr = get_vasprun(actual_bulk_vr_path)
-            bandgap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
+            band_gap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
 
         gap_calculation_metadata = {
             "mpid": mpid,
             "cbm": cbm,
             "vbm": vbm,
-            "gap": bandgap,
+            "gap": band_gap,
         }
         self.defect_entry.calculation_metadata.update(gap_calculation_metadata)
 
