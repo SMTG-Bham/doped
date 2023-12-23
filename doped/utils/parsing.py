@@ -1,10 +1,13 @@
 """
 Helper functions for parsing VASP supercell defect calculations.
 """
+import contextlib
+import itertools
 import os
 import warnings
 
 import numpy as np
+from monty.serialization import loadfn
 from pymatgen.core import Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
@@ -643,3 +646,55 @@ def _compare_incar_tags(
         )
         return False
     return True
+
+
+def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
+    """
+    Determine the number of electrons (NELECT) from a Vasprun object,
+    corresponding to a neutral charge state for the structure.
+    """
+    from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
+
+    potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
+
+    nelect = None
+    if not skip_potcar_init:
+        with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
+            grouped_symbols = [list(group) for key, group in itertools.groupby(vasprun.atomic_symbols)]
+
+            for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
+                if all(
+                    potcar_summary_stats[trial_functional].get(
+                        vasprun.potcar_spec[i]["titel"].replace(" ", ""), False
+                    )
+                    for i in range(len(grouped_symbols))
+                ):
+                    break
+
+            nelect = sum(  # this is always the NELECT for the bulk
+                np.array([len(i) for i in grouped_symbols])
+                * np.array(
+                    [
+                        potcar_summary_stats[trial_functional][
+                            vasprun.potcar_spec[i]["titel"].replace(" ", "")
+                        ][0]["ZVAL"]
+                        for i in range(len(grouped_symbols))
+                    ]
+                )
+            )
+
+    if nelect is not None:
+        return nelect
+
+    # else try reverse engineer NELECT using DefectDictSet
+    from doped.vasp import DefectDictSet
+
+    potcar_symbols = [titel.split()[1] for titel in vasprun.potcar_symbols]
+    potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
+    with warnings.catch_warnings():  # ignore POTCAR warnings if not available
+        warnings.simplefilter("ignore", UserWarning)
+        return DefectDictSet(
+            vasprun.structures[-1],
+            charge_state=0,
+            user_potcar_settings=potcar_settings,
+        ).nelect
