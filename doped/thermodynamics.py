@@ -20,14 +20,21 @@ from matplotlib import colors
 from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.electronic_structure.dos import Dos, FermiDos, f0
+from pymatgen.electronic_structure.dos import FermiDos, f0
+from pymatgen.io.vasp.outputs import Vasprun
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
 from doped.core import DefectEntry
 from doped.generation import _sort_defect_entries
-from doped.utils.parsing import _compare_incar_tags, _compare_kpoints, _compare_potcar_symbols
+from doped.utils.parsing import (
+    _compare_incar_tags,
+    _compare_kpoints,
+    _compare_potcar_symbols,
+    get_neutral_nelect_from_vasprun,
+    get_vasprun,
+)
 from doped.utils.plotting import _TLD_plot
 
 
@@ -200,7 +207,7 @@ class DefectThermodynamics(MSONable):
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
 
         # get and check VBM/bandgap values:
-        def _raise_VBM_bandgap_value_error(vals, type="VBM"):
+        def _raise_VBM_band_gap_value_error(vals, type="VBM"):
             raise ValueError(
                 f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
                 f"and so are incompatible for thermodynamic analysis with DefectThermodynamics. The "
@@ -213,23 +220,23 @@ class DefectThermodynamics(MSONable):
         self.band_gap = band_gap
         if self.vbm is None or self.band_gap is None:
             vbm_vals = []
-            bandgap_vals = []
+            band_gap_vals = []
             for defect_entry in self.defect_entries:
                 if "vbm" in defect_entry.calculation_metadata:
                     vbm_vals.append(defect_entry.calculation_metadata["vbm"])
                 if "gap" in defect_entry.calculation_metadata:
-                    bandgap_vals.append(defect_entry.calculation_metadata["gap"])
+                    band_gap_vals.append(defect_entry.calculation_metadata["gap"])
 
-            # get the max difference in VBM & bandgap vals:
+            # get the max difference in VBM & band_gap vals:
             if max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
-                _raise_VBM_bandgap_value_error(vbm_vals, type="VBM")
+                _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
             elif self.vbm is None:
                 self.vbm = vbm_vals[0]
 
-            if max(bandgap_vals) - min(bandgap_vals) > 0.05 and self.band_gap is None:
-                _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
+            if max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
+                _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
             elif self.band_gap is None:
-                self.band_gap = bandgap_vals[0]
+                self.band_gap = band_gap_vals[0]
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
             if i is None:
@@ -948,7 +955,7 @@ class DefectThermodynamics(MSONable):
 
     def get_equilibrium_fermi_level(
         self,
-        bulk_dos: Dos,
+        bulk_dos_vr: Union[str, Vasprun, FermiDos],
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
         temperature: float = 300,
@@ -974,8 +981,8 @@ class DefectThermodynamics(MSONable):
         re-equilibrate at the lower (room) temperature. See discussion in
         doi.org/10.1039/D3CS00432E and `doped` tutorials for more information.
 
-        Note that the bulk_dos should be well-converged with respect to k-points
-        for accurate Fermi level predictions!
+        Note that the bulk DOS calculation should be well-converged with respect to
+        k-points for accurate Fermi level predictions!
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
@@ -984,8 +991,17 @@ class DefectThermodynamics(MSONable):
         the defect_entry.defect.multiplicity attributes.
 
         Args:
-            bulk_dos (pymatgen Dos object):
-                Density of states (as a pymatgen Dos object) for the bulk (host) system.
+            bulk_dos_vr (str or Vasprun or FermiDos):
+                Path to the vasprun.xml(.gz) output of a bulk electronic density of states
+                (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
+                this is a static calculation with the _primitive_ cell of the bulk, with
+                relatively dense k-point sampling (especially for materials with disperse
+                band edges) to ensure an accurately-converged DOS and thus Fermi level.
+                ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
+                convergence. Consistent functional settings should be used for the bulk
+                DOS and defect supercell calculations.
+                Alternatively, a pymatgen FermiDos object can be supplied directly (e.g.
+                in case you are using a DFT code other than VASP).
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level). This
@@ -1023,8 +1039,29 @@ class DefectThermodynamics(MSONable):
         # TODO: Update docstrings (of this and others?) if/when quenched Fermi level and concentrations
         #  functions are written
         # TODO: Test this against py-sc-fermi results for CdTe
-        fermi_dos = FermiDos(bulk_dos, bandgap=self.band_gap)
-        _, fdos_vbm = fermi_dos.get_cbm_vbm()  # TODO: Check here vbm matches up? Warning!
+
+        if isinstance(bulk_dos_vr, FermiDos):
+            fermi_dos = bulk_dos_vr
+        else:
+            if isinstance(bulk_dos_vr, str):
+                bulk_dos_vr = get_vasprun(bulk_dos_vr)
+
+            fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
+            if abs(fermi_dos_vbm - self.vbm) > 0.1:
+                warnings.warn(
+                    f"The VBM eigenvalue of the bulk DOS calculation ({fermi_dos_vbm:.2f} eV, with band "
+                    f"gap of {fermi_dos_band_gap:.2f} eV) differs from that of the bulk supercell "
+                    f"calculations ({self.vbm:.2f} eV, with band gap of {self.band_gap:.2f} eV) by more "
+                    f"than 0.1 eV. If this is only due to slight differences in kpoint sampling for the "
+                    f"bulk DOS vs defect supercell calculations, and consistent functional settings "
+                    f"(LHFCALC, AEXX etc) were used, then the eigenvalue references should be consistent "
+                    f"and this warning can be ignored. If not, then this could lead to inaccuracies in "
+                    f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
+                    f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
+                )
+            fermi_dos = FermiDos(
+                bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr)
+            )
 
         def _get_total_q(fermi_level):
             conc_df = self.get_equilibrium_concentrations(
@@ -1035,26 +1072,38 @@ class DefectThermodynamics(MSONable):
                 skip_formatting=True,
             )
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += fermi_dos.get_doping(fermi_level=fermi_level + fdos_vbm, temperature=temperature)
+            qd_tot += fermi_dos.get_doping(fermi_level=fermi_level + self.vbm, temperature=temperature)
             return qd_tot
 
-        eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
-        if return_concs:
-            # code for obtaining the electron and hole concentrations here is taken from
-            # FermiDos.get_doping():
-            e_conc: float = np.sum(
-                fermi_dos.tdos[fermi_dos.idx_cbm :]
-                * f0(fermi_dos.energies[fermi_dos.idx_cbm :], eq_fermi_level, temperature)
-                * fermi_dos.de[fermi_dos.idx_cbm :],
-                axis=0,
-            ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-            h_conc: float = np.sum(
-                fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
-                * f0(-fermi_dos.energies[: fermi_dos.idx_vbm + 1], -eq_fermi_level, temperature)
-                * fermi_dos.de[: fermi_dos.idx_vbm + 1],
-                axis=0,
-            ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-            return eq_fermi_level, h_conc, e_conc
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+
+            eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
+            if return_concs:
+                # code for obtaining the electron and hole concentrations here is taken from
+                # FermiDos.get_doping():
+                e_conc: float = np.sum(
+                    fermi_dos.tdos[fermi_dos.idx_cbm :]
+                    * f0(
+                        fermi_dos.energies[fermi_dos.idx_cbm :],
+                        eq_fermi_level + self.vbm,  # type: ignore
+                        temperature,
+                    )
+                    * fermi_dos.de[fermi_dos.idx_cbm :],
+                    axis=0,
+                ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+                h_conc: float = np.sum(
+                    fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
+                    * f0(
+                        -fermi_dos.energies[: fermi_dos.idx_vbm + 1],
+                        -(eq_fermi_level + self.vbm),  # type: ignore
+                        temperature,
+                    )
+                    * fermi_dos.de[: fermi_dos.idx_vbm + 1],
+                    axis=0,
+                ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+                return eq_fermi_level, h_conc, e_conc
+
         return eq_fermi_level
 
     # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
@@ -1091,7 +1140,7 @@ class DefectThermodynamics(MSONable):
     #         )
     #     )
     #
-    #     fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
+    #     fdos = FermiDos(bulk_dos, band_gap=self.band_gap)
     #     _, fdos_vbm = fdos.get_cbm_vbm()
     #
     #     def _get_total_q(ef):
