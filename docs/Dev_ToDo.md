@@ -8,7 +8,7 @@
 - Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?)
   - Also see `Cs2SnTiI6` notebooks for template code for this.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
-- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old modified-pycdt `_chemical_potentials.py` code.
+- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old code in `vasp.py`.
 - Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
 - Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
@@ -66,7 +66,7 @@
 
 - Docs:
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe)).
+  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check (with Kumagai), and note this in the tutorial
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
