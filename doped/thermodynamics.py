@@ -832,17 +832,14 @@ class DefectThermodynamics(MSONable):
         chemical potential limit, fermi_level and temperature, assuming the
         dilute limit approximation.
 
-        Note that these are the _equilibrium_ concentrations! According to the 'frozen
-        defect' approximation, we typically expect defect concentrations to reach
-        equilibrium during annealing/crystal growth (at elevated temperatures), but
-        _not_ upon quenching (i.e. at room/operating temperature) where we expect
-        kinetic inhibition of defect annhiliation and hence non-equilibrium defect
-        concentrations. Typically this is approximated by computing the equilibrium
-        Fermi level and defect concentrations at the annealing temperature, and then
-        assuming the total concentration of each defect is fixed to this value, but that
-        the relative populations of defect charge states (and the Fermi level) can
-        re-equilibrate at the lower (room) temperature. See discussion in
-        doi.org/10.1039/D3CS00432E and `doped` tutorials for more information.
+        Note that these are the _equilibrium_ defect concentrations!
+        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        instead be used to calculate the Fermi level and defect concentrations
+        for a material grown/annealed at higher temperatures and then cooled
+        (quenched) to room/operating temperature (where defect concentrations
+        are assumed to remain fixed) - this is known as the frozen defect
+        approach and is typically the most valid approximation (see its
+        docstring for more information).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
@@ -953,6 +950,28 @@ class DefectThermodynamics(MSONable):
             ]
         )
 
+    def _parse_fermi_dos(self, bulk_dos_vr: Union[str, Vasprun, FermiDos]):
+        if isinstance(bulk_dos_vr, FermiDos):
+            return bulk_dos_vr
+
+        if isinstance(bulk_dos_vr, str):
+            bulk_dos_vr = get_vasprun(bulk_dos_vr)
+
+        fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
+        if abs(fermi_dos_vbm - self.vbm) > 0.1:
+            warnings.warn(
+                f"The VBM eigenvalue of the bulk DOS calculation ({fermi_dos_vbm:.2f} eV, with band "
+                f"gap of {fermi_dos_band_gap:.2f} eV) differs from that of the bulk supercell "
+                f"calculations ({self.vbm:.2f} eV, with band gap of {self.band_gap:.2f} eV) by more "
+                f"than 0.1 eV. If this is only due to slight differences in kpoint sampling for the "
+                f"bulk DOS vs defect supercell calculations, and consistent functional settings "
+                f"(LHFCALC, AEXX etc) were used, then the eigenvalue references should be consistent "
+                f"and this warning can be ignored. If not, then this could lead to inaccuracies in "
+                f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
+                f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
+            )
+        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr))
+
     def get_equilibrium_fermi_level(
         self,
         bulk_dos_vr: Union[str, Vasprun, FermiDos],
@@ -963,23 +982,19 @@ class DefectThermodynamics(MSONable):
     ) -> Union[float, Tuple[float, float, float]]:
         """
         Calculate the self-consistent Fermi level, at a given chemical
-        potential limit and temperature, assuming _equilbrium_ defect
+        potential limit and temperature, assuming _equilibrium_ defect
         concentrations (i.e. under annealing) and the dilute limit
         approximation, by self-consistently solving for the Fermi level which
         yields charge neutrality.
 
-        Note that this assumes _equilibrium_ defect concentrations! According
-        to the 'frozen defect' approximation, we typically expect defect
-        concentrations to reach equilibrium during annealing/crystal growth
-        (at elevated temperatures), but _not_ upon quenching (i.e. at
-        room/operating temperature) where we expect kinetic inhibition of defect
-        annhiliation and hence non-equilibrium defect concentrations / Fermi level.
-        Typically this is approximated by computing the equilibrium Fermi level and
-        defect concentrations at the annealing temperature, and then assuming the
-        total concentration of each defect is fixed to this value, but that the
-        relative populations of defect charge states (and the Fermi level) can
-        re-equilibrate at the lower (room) temperature. See discussion in
-        doi.org/10.1039/D3CS00432E and `doped` tutorials for more information.
+        Note that this assumes _equilibrium_ defect concentrations!
+        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        instead be used to calculate the Fermi level and defect concentrations
+        for a material grown/annealed at higher temperatures and then cooled
+        (quenched) to room/operating temperature (where defect concentrations
+        are assumed to remain fixed) - this is known as the frozen defect
+        approach and is typically the most valid approximation (see its
+        docstring for more information).
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
@@ -1029,39 +1044,14 @@ class DefectThermodynamics(MSONable):
                 Temperature in Kelvin at which to calculate the equilibrium Fermi level.
                 Default is 300 K.
             return_concs (bool):
-                Whether to return the corresponding hole and electron concentrations
+                Whether to return the corresponding electron and hole concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
 
         Returns:
             Self consistent Fermi level (in eV from the VBM), and the corresponding
-            hole and electron concentrations (in cm^-3) if return_concs=True.
+            electron and hole concentrations (in cm^-3) if return_concs=True.
         """
-        # TODO: Update docstrings (of this and others?) if/when quenched Fermi level and concentrations
-        #  functions are written
-        # TODO: Test this against py-sc-fermi results for CdTe
-
-        if isinstance(bulk_dos_vr, FermiDos):
-            fermi_dos = bulk_dos_vr
-        else:
-            if isinstance(bulk_dos_vr, str):
-                bulk_dos_vr = get_vasprun(bulk_dos_vr)
-
-            fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
-            if abs(fermi_dos_vbm - self.vbm) > 0.1:
-                warnings.warn(
-                    f"The VBM eigenvalue of the bulk DOS calculation ({fermi_dos_vbm:.2f} eV, with band "
-                    f"gap of {fermi_dos_band_gap:.2f} eV) differs from that of the bulk supercell "
-                    f"calculations ({self.vbm:.2f} eV, with band gap of {self.band_gap:.2f} eV) by more "
-                    f"than 0.1 eV. If this is only due to slight differences in kpoint sampling for the "
-                    f"bulk DOS vs defect supercell calculations, and consistent functional settings "
-                    f"(LHFCALC, AEXX etc) were used, then the eigenvalue references should be consistent "
-                    f"and this warning can be ignored. If not, then this could lead to inaccuracies in "
-                    f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
-                    f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
-                )
-            fermi_dos = FermiDos(
-                bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr)
-            )
+        fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
 
         def _get_total_q(fermi_level):
             conc_df = self.get_equilibrium_concentrations(
@@ -1080,75 +1070,182 @@ class DefectThermodynamics(MSONable):
 
             eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
             if return_concs:
-                # code for obtaining the electron and hole concentrations here is taken from
-                # FermiDos.get_doping():
-                e_conc: float = np.sum(
-                    fermi_dos.tdos[fermi_dos.idx_cbm :]
-                    * f0(
-                        fermi_dos.energies[fermi_dos.idx_cbm :],
-                        eq_fermi_level + self.vbm,  # type: ignore
-                        temperature,
-                    )
-                    * fermi_dos.de[fermi_dos.idx_cbm :],
-                    axis=0,
-                ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-                h_conc: float = np.sum(
-                    fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
-                    * f0(
-                        -fermi_dos.energies[: fermi_dos.idx_vbm + 1],
-                        -(eq_fermi_level + self.vbm),  # type: ignore
-                        temperature,
-                    )
-                    * fermi_dos.de[: fermi_dos.idx_vbm + 1],
-                    axis=0,
-                ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-                return eq_fermi_level, h_conc, e_conc
+                e_conc, h_conc = get_e_h_concs(
+                    fermi_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
+                )
+                return eq_fermi_level, e_conc, h_conc
 
         return eq_fermi_level
 
-    # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
-    # and can;t be done with pmg-analysis-defects, but can with py-sc-fermi ofc.
-    # TODO: Worth seeing if this code works properly (agrees with py-sc-fermi), in which case could be
-    #  useful to have as an option for quick checking?
-    # def solve_for_non_equilibrium_fermi_energy(
-    #     self, temperature, quench_temperature, chemical_potentials, bulk_dos
-    # ):
-    #     """
-    #     Solve for the Fermi energy after quenching in the defect concentrations
-    #     at a higher temperature (the quench temperature), as outlined in P.
-    #     Canepa et al (2017) Chemistry of Materials (doi:
-    #     10.1021/acs.chemmater.7b02909).
-    #
-    #     Args:
-    #         temperature: Temperature to equilibrate fermi energy at after quenching in defects
-    #         quench_temperature: Temperature to equilibrate defect concentrations at (higher temperature)
-    #         chemical_potentials: dict of chemical potentials to use for calculation fermi level
-    #         bulk_dos: bulk system dos (pymatgen Dos object)
-    #
-    #     Returns:
-    #         Fermi energy dictated by charge neutrality with respect to frozen in defect concentrations
-    #     """
-    #     high_temp_fermi_level = self.solve_for_fermi_energy(
-    #         quench_temperature, chemical_potentials, bulk_dos
-    #     )
-    #     fixed_defect_charge = sum(
-    #         d["charge"] * d["conc"]
-    #         for d in self.defect_concentrations(
-    #             chemical_potentials=chemical_potentials,
-    #             temperature=quench_temperature,
-    #             fermi_level=high_temp_fermi_level,
-    #         )
-    #     )
-    #
-    #     fdos = FermiDos(bulk_dos, band_gap=self.band_gap)
-    #     _, fdos_vbm = fdos.get_cbm_vbm()
-    #
-    #     def _get_total_q(ef):
-    #         qd_tot = fixed_defect_charge
-    #         qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
-    #         return qd_tot
-    #
-    #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
+    def get_quenched_fermi_level_and_concentrations(
+        self,
+        bulk_dos_vr: Union[str, Vasprun, FermiDos],
+        chempots: Optional[dict] = None,
+        facet: Optional[str] = None,
+        annealing_temperature: float = 1000,
+        quenched_temperature: float = 300,
+    ) -> Tuple[float, float, float, pd.DataFrame]:
+        """
+        Calculate the self-consistent Fermi level and corresponding
+        carrier/defect calculations, for a given chemical potential limit,
+        annealing temperature and quenched/operating temperature, using the
+        frozen defect and dilute limit approximations under the constraint of
+        charge neutrality.
+
+        According to the 'frozen defect' approximation, we typically expect defect
+        concentrations to reach equilibrium during annealing/crystal growth
+        (at elevated temperatures), but _not_ upon quenching (i.e. at
+        room/operating temperature) where we expect kinetic inhibition of defect
+        annhiliation and hence non-equilibrium defect concentrations / Fermi level.
+        Typically this is approximated by computing the equilibrium Fermi level and
+        defect concentrations at the annealing temperature, and then assuming the
+        total concentration of each defect is fixed to this value, but that the
+        relative populations of defect charge states (and the Fermi level) can
+        re-equilibrate at the lower (room) temperature. See discussion in
+        doi.org/10.1039/D3CS00432E (brief), doi.org/10.1016/j.cpc.2019.06.017 (detailed)
+        and `doped`/`py-sc-fermi` tutorials for more information.
+        In certain cases (such as Li-ion battery materials or extremely slow charge
+        capture/emission), these approximations may have to be adjusted such that some
+        defects/charge states are considered fixed and some are allowed to
+        re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
+        these specific cases is demonstrated in:
+        py-sc-fermi.readthedocs.io/en/latest/tutorial.html#3.-Applying-concentration-constraints
+
+        This function works by calculating the self-consistent Fermi level and total
+        concentration of each defect at the annealing temperature, then fixing the
+        total concentrations to these values and re-calculating the self-consistent
+        (constrained equilibrium) Fermi level and relative charge state concentrations
+        under this constraint at the quenched/operating temperature.
+
+        Note that the bulk DOS calculation should be well-converged with respect to
+        k-points for accurate Fermi level predictions!
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the defect
+        concentration equation and thus Fermi level calculation (see discussion in
+        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
+        final concentration by up to 2 orders of magnitude. This factor is taken from
+        the defect_entry.defect.multiplicity attributes.
+
+        If you use this code in your work, please also cite:
+        Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
+        https://doi.org/10.21105/joss.04962
+
+        Args:
+            bulk_dos_vr (str or Vasprun or FermiDos):
+                Path to the vasprun.xml(.gz) output of a bulk electronic density of states
+                (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
+                this is a static calculation with the _primitive_ cell of the bulk, with
+                relatively dense k-point sampling (especially for materials with disperse
+                band edges) to ensure an accurately-converged DOS and thus Fermi level.
+                ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
+                convergence. Consistent functional settings should be used for the bulk
+                DOS and defect supercell calculations.
+                Alternatively, a pymatgen FermiDos object can be supplied directly (e.g.
+                in case you are using a DFT code other than VASP).
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level). This
+                can have the doped form: {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                If None (default), sets all chemical potentials to 0 (inaccurate
+                formation energies and concentrations!)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating the formation energies and thus concentrations and Fermi
+                level. Can be:
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                - None (default), if `chempots` corresponds to a single chemical
+                  potential limit - otherwise will use the first chemical potential
+                  limit in the doped chempots dict.
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach. Default is 1000 K.
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level, given the fixed total
+                concentrations, which should correspond to operating temperature
+                of the material (typically room temperature). Default is 300 K.
+
+        Returns:
+            Predicted quenched Fermi level (in eV from the VBM), the corresponding
+            electron and hole concentrations (in cm^-3) and a dataframe of the
+            quenched defect concentrations (in cm^-3).
+            (fermi_level, e_conc, h_conc, conc_df)
+        """
+        # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
+        #  advanced analysis
+        fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
+        annealing_fermi_level = self.get_equilibrium_fermi_level(
+            fermi_dos,
+            chempots=chempots,
+            facet=facet,
+            temperature=annealing_temperature,
+            return_concs=False,
+        )
+        annealing_defect_concentrations = self.get_equilibrium_concentrations(
+            chempots=chempots,
+            facet=facet,
+            fermi_level=annealing_fermi_level,  # type: ignore
+            temperature=annealing_temperature,
+            per_charge=False,  # give total concentrations for each defect
+            skip_formatting=True,
+        )
+        annealing_defect_concentrations = annealing_defect_concentrations.rename(
+            columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
+        )
+
+        def _get_constrained_total_q(fermi_level, return_conc_df=False):
+            conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                facet=facet,
+                temperature=quenched_temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+            )
+
+            conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
+            conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
+                conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
+                / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
+            ) * conc_df["Total Concentration (cm^-3)"]
+
+            if return_conc_df:
+                return conc_df
+            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+            qd_tot += fermi_dos.get_doping(
+                fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
+            )
+            return qd_tot
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+
+            eq_fermi_level: float = brentq(
+                _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
+            )
+
+        e_conc, h_conc = get_e_h_concs(
+            fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
+        )
+        return (
+            eq_fermi_level,
+            e_conc,
+            h_conc,
+            _get_constrained_total_q(eq_fermi_level, return_conc_df=True),
+        )
+        # TODO: Test all these functions against py-sc-fermi obvs (rough tests indicate all working as
+        #  expected), CdTe easy test case
 
     def get_formation_energy(
         self,
@@ -2018,3 +2115,38 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n{attrs}\n\nAvailable "
             f"methods:\n{methods}"
         )
+
+
+def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> Tuple[float, float]:
+    """
+    Get the corresponding electron and hole concentrations (in cm^-3) for a
+    given Fermi level (in eV) and temperature (in K), for a FermiDos object.
+
+    Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
+    level should be the corresponding eigenvalue within the calculation (or in
+    other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
+    """
+    # code for obtaining the electron and hole concentrations here is taken from
+    # FermiDos.get_doping():
+    e_conc: float = np.sum(
+        fermi_dos.tdos[fermi_dos.idx_cbm :]
+        * f0(
+            fermi_dos.energies[fermi_dos.idx_cbm :],
+            fermi_level,  # type: ignore
+            temperature,
+        )
+        * fermi_dos.de[fermi_dos.idx_cbm :],
+        axis=0,
+    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+    h_conc: float = np.sum(
+        fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
+        * f0(
+            -fermi_dos.energies[: fermi_dos.idx_vbm + 1],
+            -fermi_level,  # type: ignore
+            temperature,
+        )
+        * fermi_dos.de[: fermi_dos.idx_vbm + 1],
+        axis=0,
+    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+
+    return e_conc, h_conc
