@@ -1305,6 +1305,10 @@ class DefectParser:
 
         calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
         calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
+        if bulk_site_index is None:  # interstitial
+            calculation_metadata["bulk_site"] = defect_site_in_bulk
+        else:
+            calculation_metadata["bulk_site"] = bulk_supercell[bulk_site_index]
 
         defect_entry = DefectEntry(
             # pmg attributes:
