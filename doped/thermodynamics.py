@@ -36,6 +36,7 @@ from doped.utils.parsing import (
     get_vasprun,
 )
 from doped.utils.plotting import _TLD_plot
+from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
 
 
 def bold_print(string: str) -> None:
@@ -111,6 +112,148 @@ def _parse_chempots(chempots: Optional[Dict] = None, el_refs: Optional[Dict] = N
     return chempots, el_refs
 
 
+def group_defects_by_distance(
+    entry_list: List[DefectEntry], dist_tol: float = 1.5
+) -> Dict[str, Dict[Tuple, List[DefectEntry]]]:
+    """
+    Given an input list of DefectEntry objects, returns a dictionary of {simple
+    defect name: {(equivalent defect sites): [DefectEntry]}, where 'simple
+    defect name' is the nominal defect type (e.g. `Te_i` for
+    `Te_i_Td_Cd2.83_+2`), `(equivalent defect sites)` is a tuple of the
+    equivalent defect sites (in the bulk supercell), and `[DefectEntry]` is a
+    list of DefectEntry objects with the same simple defect name and a minimum
+    distance between equivalent defect sites less than `dist_tol` (1.5 Å by
+    default).
+
+    If a DefectEntry's site has a minimum distance less than `dist_tol` to
+    multiple sets of equivalent sites, then it is matched to the one with
+    the lowest minimum distance.
+
+    Args:
+        entry_list ([DefectEntry]):
+            A list of DefectEntry objects to group together.
+        dist_tol (float):
+            Minimum distance (in Å) between equivalent defect sites (in the
+            supercell) to group together. If the minimum distance between
+            equivalent defect sites is less than `dist_tol`, then they will
+            be grouped together, otherwise treated as separate defects.
+            (Default: 1.5)
+
+    Returns:
+        dict: {simple defect name: {(equivalent defect sites): [DefectEntry]}
+    """
+    # initial group by Defect.name (same nominal defect), then distance to equiv sites
+    # first make dictionary of nominal defect name: list of entries with that name
+    defect_name_dict = {}
+    for entry in entry_list:
+        if entry.defect.name not in defect_name_dict:
+            defect_name_dict[entry.defect.name] = [entry]
+        else:
+            defect_name_dict[entry.defect.name].append(entry)
+
+    defect_site_dict: Dict[
+        str, Dict[Tuple, List[DefectEntry]]
+    ] = {}  # {defect name: {(equiv defect sites): entry list}}
+    bulk_supercell_sga = _get_sga(entry_list[0].bulk_supercell)
+    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+
+    for name, entry_list in defect_name_dict.items():
+        defect_site_dict[name] = {}
+        sorted_entry_list = sorted(
+            entry_list, key=lambda x: abs(x.charge_state)
+        )  # sort by charge, starting with closest to zero, for deterministic behaviour
+        for entry in sorted_entry_list:
+            min_dist_list = [
+                min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
+                    entry.calculation_metadata["bulk_site"].distance_and_image(site)[0]
+                    for site in equiv_site_tuple
+                )
+                for equiv_site_tuple in defect_site_dict[name]
+            ]
+            idxmin = np.argmin(min_dist_list)
+            if min_dist_list[idxmin] < dist_tol:  # if less than dist_tol, add to corresponding entry list
+                if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
+                    # pop old tuple, add new tuple with new equiv sites, and add entry to new tuple
+                    orig_tuple = list(defect_site_dict[name].keys())[idxmin]
+                    defect_entry_list = defect_site_dict[name].pop(orig_tuple)
+                    equiv_site_tuple = (
+                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                            _get_all_equiv_sites(
+                                entry.calculation_metadata["bulk_site"].frac_coords,
+                                symm_bulk_struct,
+                                bulk_symm_ops,
+                            )
+                        )
+                        + orig_tuple
+                    )
+                    defect_entry_list.extend([entry])
+                    defect_site_dict[name][equiv_site_tuple] = defect_entry_list
+
+            else:  # no match found, add new entry
+                if name.endswith("_i"):
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        _get_all_equiv_sites(
+                            entry.calculation_metadata["bulk_site"].frac_coords,
+                            symm_bulk_struct,
+                            bulk_symm_ops,
+                        )
+                    )
+                else:
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        symm_bulk_struct.find_equivalent_sites(entry.calculation_metadata["bulk_site"])
+                    )
+                defect_site_dict[name][equiv_site_tuple] = [entry]
+
+    return defect_site_dict
+    # TODO: Check timings... Need to make more efficient?
+
+
+def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[DefectEntry]]:
+    """
+    Given an input list of DefectEntry objects, returns a dictionary of {defect
+    name without charge: [DefectEntry]}, where the values are lists of
+    DefectEntry objects with the same defect name (excluding charge state).
+
+    The DefectEntry.name attributes are used to get the defect names.
+    These should be in the format:
+    "{defect_name}_{optional_site_info}_{charge_state}".
+    If the DefectEntry.name attribute is not defined or does not end with the
+    charge state, then the entry will be renamed with the doped default name.
+
+    For example, `v_Cd_C3v_+1`, `v_Cd_Td_+1` and `v_Cd_C3v_+2` will be grouped
+    as {`v_Cd_C3v`: [`v_Cd_C3v_+1`, `v_Cd_C3v_+2`], `v_Cd_Td`: [`v_Cd_Td_+1`]}.
+
+    Args:
+        entry_list ([DefectEntry]):
+            A list of DefectEntry objects to group together by defect name
+            (without charge).
+
+    Returns:
+        dict: Dictionary of {defect name without charge: [DefectEntry]}.
+    """
+    from doped.analysis import check_and_set_defect_entry_name
+
+    grouped_entries: Dict[str, List[DefectEntry]] = {}  # dict for groups of entries with the same prefix
+
+    for _i, entry in enumerate(entry_list):
+        # check defect entry name and (re)define if necessary
+        check_and_set_defect_entry_name(entry, entry.name)
+        entry_name_wout_charge = entry.name.rsplit("_", 1)[0]
+
+        # If the prefix is not yet in the dictionary, initialize it with empty lists
+        if entry_name_wout_charge not in grouped_entries:
+            grouped_entries[entry_name_wout_charge] = []
+
+        # Append the current entry to the appropriate group
+        grouped_entries[entry_name_wout_charge].append(entry)
+
+    return grouped_entries
+
+
+# TODO: Need easy method to adjust dist_tol and reparse? Add setter method?
+
+
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -133,6 +276,7 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
+        dist_tol: float = 1.5,
         check_compatibility: bool = True,
     ):
         """
@@ -145,7 +289,6 @@ class DefectThermodynamics(MSONable):
 
         Note that the DefectEntry.name attributes are used to label the defects in
         plots.
-
 
         Args:
             defect_entries ([DefectEntry] or {str: DefectEntry}):
@@ -190,6 +333,13 @@ class DefectThermodynamics(MSONable):
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in `defect_entries`.
+            dist_tol (float):
+                Minimum distance (in Å) between equivalent defect sites (in the
+                supercell) to group together (for plotting and transition level
+                analysis). If the minimum distance between equivalent defect
+                sites is less than `dist_tol`, then they will be grouped together,
+                otherwise treated as separate defects.
+                (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
                 entry (i.e. that all reference bulk energies are the same).
@@ -205,6 +355,7 @@ class DefectThermodynamics(MSONable):
 
         self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
+        self.dist_tol = dist_tol
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -275,6 +426,7 @@ class DefectThermodynamics(MSONable):
             "el_refs": self.el_refs,
             "vbm": self.vbm,
             "band_gap": self.band_gap,
+            "dist_tol": self.dist_tol,
         }
 
     @classmethod
@@ -300,6 +452,7 @@ class DefectThermodynamics(MSONable):
             el_refs=d.get("el_refs"),
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
+            dist_tol=d.get("dist_tol"),
         )
 
     def to_json(self, filename: Optional[str] = None):
@@ -348,21 +501,20 @@ class DefectThermodynamics(MSONable):
 
         return self.chempots, self.el_refs
 
-    def _parse_transition_levels(self):
+    def _parse_transition_levels(self, dist_tol: float = 1.5):
         """
         Parses the charge transition levels for defect entries in the
         DefectThermodynamics object, and stores information about the stable
-        charge states, transition levels etc. Defect entries are grouped
-        together based on their DefectEntry.name attributes. These should be in
-        the format "{defect_name}_{optional_site_info}_{charge_state}". If the
-        DefectEntry.name attribute is not defined or does not end with the
-        charge state, then the entry will be renamed with the doped default
-        name.
+        charge states, transition levels etc.
 
-        Note that if the entries in DefectThermodynamics are edited after
-        initialisation, then DefectThermodynamics._parse_transition_levels()
-        should be called if the attributes (transition_level_map etc.) and
-        outputs (plotting and tabulation) are to be updated properly.
+        Defect entries of the same type (e.g. Te_i, v_Cd) are grouped together
+        (for plotting and transition level analysis) based on the minimum
+        distance between (equivalent) defect sites, to distinguish between
+        different inequivalent sites. `DefectEntry`s of the same type and with
+        a minimum distance between equivalent defect sites less than `dist_tol`
+        (1.5 Å by default) are grouped together. If a DefectEntry's site has a
+        minimum distance less than `dist_tol` to multiple sets of equivalent
+        sites, then it is matched to the one with the lowest minimum distance.
 
         Code for parsing the transition levels was originally templated from
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later
@@ -382,118 +534,41 @@ class DefectThermodynamics(MSONable):
         This code was modeled after the Halfspace Intersection code for
         the Pourbaix Diagram.
         """
-        # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
-        #  merge interstitials according to this algorithm:
-        # 1. For each interstitial defect type, count the number of parsed calculations per charge
-        # state, and take the charge state with the most calculations present as our starting point (
-        # if multiple charge states have the same number of calculations, take the closest to neutral).
-        # 2. For each interstitial in a different charge state, determine which of the starting
-        # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
-        # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
-        # structure will be easiest), and merge with this.
-        # Also add option to just amalgamate and show only the lowest energy states.
-        #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
-        #  default range of (VBM - 1eV, CBM + 1eV))...
-        # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
-
-        # Related TODO: Previous `pymatgen` issues, fixed?
-        # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
-        #   is used to group defect charge states for the transition level plot / transition level map
-        #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
-        #   differs significantly between charge states, this will give separate lines for each charge
-        #   state. This is kind of ok, because they _are_ actually different defect sites, but should
-        #   have intelligent defaults for dealing with this (at least similar colours for similar defect
-        #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
-        #   NaP is an example for this - should have a test built for however we want to handle cases like
-        #   this. See Ke's example case too with different interstitial sites.
-
-        # Old pymatgen defect-matching code: # TODO: Reconsider this approach. For now, we group based
-        #  on defect entry names (which themselves should contain the information on inequivalent (
-        #  initial) defect sites). Could match based on the entry.defect objects as was done before,
-        #  if we had a reliable way of parsing these (but in a far more efficient way than before,
-        #  just checking that the structure and site are the same rather than the old,
-        #  slow PointDefectComparator; Bonan did this via hashing to avoid the old approach (see
-        #  archived branch, but I think with updated comparisons this is unnecessary).
-        # TODO: Should have an adjustable site-displacement tolerance for matching and grouping entries?
-        # (i.e. distance between (equivalent) defect sites?)
-        #  Along with option to just group all grouped_defect_entries of the same type and only show the
-        #  lowest energy state (equivalent to setting this displacement tolerance to infinity).
-        # def similar_defects(entry_list):
-        #     """
-        #     Used for grouping similar grouped_defect_entries of different charges
-        #     Can distinguish identical grouped_defect_entries even if they are not
-        #     in same position.
-        #     """
-        #     pdc = PointDefectComparator(
-        #         check_charge=False, check_primitive_cell=True, check_lattice_scale=False
-        #     )
-        #     grp_def_sets = []
-        #     grp_def_indices = []
-        #     for ent_ind, ent in enumerate(entry_list):
-        #         # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
-        #         # this is currently most time intensive part of DefectThermodynamics
-        #         matched_ind = None
-        #         for grp_ind, defgrp in enumerate(grp_def_sets):
-        #             if pdc.are_equal(ent.defect, defgrp[0].defect):
-        #                 matched_ind = grp_ind
-        #                 break
-        #         if matched_ind is not None:
-        #             grp_def_sets[matched_ind].append(copy.deepcopy(ent))
-        #             grp_def_indices[matched_ind].append(ent_ind)
-        #         else:
-        #             grp_def_sets.append([copy.deepcopy(ent)])
-        #             grp_def_indices.append([ent_ind])
-        #
-        #     return zip(grp_def_sets, grp_def_indices)
-
-        def similar_defects(entry_list):
-            """
-            Group grouped_defect_entries based on their DefectEntry.name attributes. Defect
-            entries are grouped together based on their DefectEntry.name attributes.
-            These should be in the format:
-            "{defect_name}_{optional_site_info}_{charge_state}". If the
-            DefectEntry.name attribute is not defined or does not end with the
-            charge state, then the entry will be renamed with the doped default name.
-
-            For example, 'defect_A_1' and 'defect_A_2' will be grouped together.
-            """
-            from doped.analysis import check_and_set_defect_entry_name
-
-            grouped_entries = {}  # Dictionary to hold groups of entries with the same prefix
-
-            for i, entry in enumerate(entry_list):
-                # check defect entry name and (re)define if necessary
-                check_and_set_defect_entry_name(entry, entry.name)
-                entry_name_wout_charge = entry.name.rsplit("_", 1)[0]
-
-                # If the prefix is not yet in the dictionary, initialize it with empty lists
-                if entry_name_wout_charge not in grouped_entries:
-                    grouped_entries[entry_name_wout_charge] = {"entries": [], "indices": []}
-
-                # Append the current entry and its index to the appropriate group
-                grouped_entries[entry_name_wout_charge]["entries"].append(entry)
-                grouped_entries[entry_name_wout_charge]["indices"].append(i)
-
-            # Convert the dictionary to the desired output format
-            return [(group["entries"], group["indices"]) for group in grouped_entries.values()]
-
         # determine defect charge transition levels:
         midgap_formation_energies = [  # without chemical potentials
-            self.get_formation_energy(entry, fermi_level=0.5 * self.band_gap)
+            self.get_formation_energy(entry, fermi_level=0.5 * self.band_gap)  # type: ignore
             for entry in self.defect_entries
         ]
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
         max_y_lim = max(midgap_formation_energies) + 30
-        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
+        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
 
-        stable_entries = {}
-        defect_charge_map = {}
-        transition_level_map = {}
+        stable_entries: dict = {}
+        defect_charge_map: dict = {}
+        transition_level_map: dict = {}
 
-        # Grouping by defect types
-        for grouped_defect_entries, _index_list in similar_defects(self.defect_entries):
+        try:
+            defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=dist_tol)
+            grouped_entries_list = [
+                entry_list for sub_dict in defect_site_dict.values() for entry_list in sub_dict.values()
+            ]
+        except Exception as e:
+            grouped_entries = group_defects_by_name(self.defect_entries)
+            grouped_entries_list = list(grouped_entries.values())
+            warnings.warn(
+                f"Grouping (inequivalent) defects by distance failed with error: {e}\nGrouping by defect "
+                f"names instead."
+            )  # possibly different bulks (though this should be caught/warned about earlier), or not
+            # parsed with recent doped versions etc
+
+        for grouped_defect_entries in grouped_entries_list:
+            sorted_defect_entries = sorted(
+                grouped_defect_entries, key=lambda x: abs(x.charge_state)
+            )  # sort by charge, starting with closest to zero, for deterministic behaviour
+            # thus uses name of neutral (or closest to neutral) species to get name (without charge)
+
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are
             # the variables in the hyperplanes
@@ -502,9 +577,9 @@ class DefectThermodynamics(MSONable):
                     [
                         -1.0 * entry.charge_state,
                         1,
-                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),
+                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),  # type: ignore
                     ]
-                    for entry in grouped_defect_entries
+                    for entry in sorted_defect_entries
                 ]
             )
 
@@ -515,21 +590,23 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
-            interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]
+            interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
-            ints_and_facets = zip(hs_ints.intersections, hs_ints.dual_facets)
+            ints_and_facets_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
             # Only include the facets corresponding to entries, not the boundaries
-            total_entries = len(grouped_defect_entries)
-            ints_and_facets = filter(
+            total_entries = len(sorted_defect_entries)
+            ints_and_facets_filter = filter(
                 lambda int_and_facet: all(np.array(int_and_facet[1]) < total_entries),
-                ints_and_facets,
+                ints_and_facets_zip,
             )
             # sort based on transition level
-            ints_and_facets = sorted(ints_and_facets, key=lambda int_and_facet: int_and_facet[0][0])
+            ints_and_facets_list = sorted(
+                ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
+            )
 
-            defect_name_wout_charge = grouped_defect_entries[0].name.rsplit("_", 1)[
+            defect_name_wout_charge = sorted_defect_entries[0].name.rsplit("_", 1)[
                 0
             ]  # name without charge
             if any(
@@ -554,56 +631,54 @@ class DefectThermodynamics(MSONable):
                     i += 1
                     defect_name_wout_charge = f"{defect_name_wout_charge}_{chr(96 + i)}"  # d, e, f etc
 
-            if len(ints_and_facets) > 0:  # unpack into lists
-                _, facets = zip(*ints_and_facets)
+            if len(ints_and_facets_list) > 0:  # unpack into lists
+                _, facets = zip(*ints_and_facets_list)
                 transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
-                    intersection[0]: [grouped_defect_entries[i].charge_state for i in facet]
-                    for intersection, facet in ints_and_facets
+                    intersection[0]: [sorted_defect_entries[i].charge_state for i in facet]
+                    for intersection, facet in ints_and_facets_list
                 }
                 stable_entries[defect_name_wout_charge] = [
-                    grouped_defect_entries[i] for dual in facets for i in dual
+                    sorted_defect_entries[i] for dual in facets for i in dual
                 ]
                 defect_charge_map[defect_name_wout_charge] = [
-                    entry.charge_state for entry in grouped_defect_entries
+                    entry.charge_state for entry in sorted_defect_entries
                 ]
 
-            else:
-                # if ints_and_facets is empty, then there is likely only one defect...
-                if len(grouped_defect_entries) != 1:
-                    # confirm formation energies dominant for one defect over other identical defects
-                    name_set = [entry.name for entry in grouped_defect_entries]
-                    vb_list = [
-                        self.get_formation_energy(entry, fermi_level=limits[0][0])
-                        for entry in grouped_defect_entries
-                    ]
-                    cb_list = [
-                        self.get_formation_energy(entry, fermi_level=limits[0][1])
-                        for entry in grouped_defect_entries
-                    ]
+            elif len(sorted_defect_entries) == 1:
+                transition_level_map[defect_name_wout_charge] = {}
+                stable_entries[defect_name_wout_charge] = [sorted_defect_entries[0]]
+                defect_charge_map[defect_name_wout_charge] = [sorted_defect_entries[0].charge_state]
 
-                    vbm_def_index = vb_list.index(min(vb_list))
-                    name_stable_below_vbm = name_set[vbm_def_index]
-                    cbm_def_index = cb_list.index(min(cb_list))
-                    name_stable_above_cbm = name_set[cbm_def_index]
+            else:  # if ints_and_facets is empty, then there is likely only one defect...
+                # confirm formation energies dominant for one defect over other identical defects
+                name_set = [entry.name for entry in sorted_defect_entries]
+                vb_list = [
+                    self.get_formation_energy(entry, fermi_level=limits[0][0])
+                    for entry in sorted_defect_entries
+                ]
+                cb_list = [
+                    self.get_formation_energy(entry, fermi_level=limits[0][1])
+                    for entry in sorted_defect_entries
+                ]
 
-                    if name_stable_below_vbm != name_stable_above_cbm:
-                        raise ValueError(
-                            f"HalfSpace identified only one stable charge out of list: {name_set}\n"
-                            f"But {name_stable_below_vbm} is stable below vbm and "
-                            f"{name_stable_above_cbm} is stable above cbm.\nList of VBM formation "
-                            f"energies: {vb_list}\nList of CBM formation energies: {cb_list}"
-                        )
+                vbm_def_index = vb_list.index(min(vb_list))
+                name_stable_below_vbm = name_set[vbm_def_index]
+                cbm_def_index = cb_list.index(min(cb_list))
+                name_stable_above_cbm = name_set[cbm_def_index]
 
-                    transition_level_map[defect_name_wout_charge] = {}
-                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[vbm_def_index]]
-                    defect_charge_map[defect_name_wout_charge] = [
-                        entry.charge_state for entry in grouped_defect_entries
-                    ]
-                else:
-                    transition_level_map[defect_name_wout_charge] = {}
-                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[0]]
-                    defect_charge_map[defect_name_wout_charge] = [grouped_defect_entries[0].charge_state]
+                if name_stable_below_vbm != name_stable_above_cbm:
+                    raise ValueError(
+                        f"HalfSpace identified only one stable charge out of list: {name_set}\n"
+                        f"But {name_stable_below_vbm} is stable below vbm and "
+                        f"{name_stable_above_cbm} is stable above cbm.\nList of VBM formation "
+                        f"energies: {vb_list}\nList of CBM formation energies: {cb_list}"
+                    )
 
+                transition_level_map[defect_name_wout_charge] = {}
+                stable_entries[defect_name_wout_charge] = [sorted_defect_entries[vbm_def_index]]
+                defect_charge_map[defect_name_wout_charge] = [
+                    entry.charge_state for entry in sorted_defect_entries
+                ]
         self.transition_level_map = transition_level_map
         self.transition_levels = {
             defect_name: list(defect_tls.keys())
@@ -615,8 +690,6 @@ class DefectThermodynamics(MSONable):
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
         }
-
-    def _check_bulk_compatibility(self):
         """
         Helper function to quickly check if all bulk entries have the same
         energy (by proxy checks that same bulk/defect calculation settings were
@@ -1603,6 +1676,16 @@ class DefectThermodynamics(MSONable):
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
+    # TODO: Likewise, add example showing how to plot a metastable state (above the ground state)
+    # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
+    #  lowest energy charge states for each _defect type_) - equivalent to setting the dist_tol to
+    #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example
+    #  for this - should have a test built for however we want to handle cases like this. See Ke's example
+    #  case too with different interstitial sites.
+    #  TODO: optionally retain/remove unstable (in the gap) charge states (rather than current
+    #  default range of (VBM - 1eV, CBM + 1eV))... depends on if shallow defect tagging with pydefect is
+    #  implemented or not really, what would be best to do by default
+
     def plot(
         self,
         chempots: Optional[Dict] = None,
