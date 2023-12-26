@@ -18,6 +18,7 @@ from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core.composition import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
@@ -127,8 +128,6 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         # was used
 
 
-# TODO: Automatically pull the magnetisation from the VASP calc to determine the spin multiplicity
-#  (for later integration with `py-sc-fermi`).
 # TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
 # Note that new pymatgen Freysoldt correction requires input dielectric to be an array (list not allowed)
 # Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
@@ -326,9 +325,25 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     return get_defect_name_from_defect(defect)
 
 
-def _determine_defect_charge_from_vasprun(
-    bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]
-):
+def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0):
+    """
+    Get the defect spin degeneracy from the vasprun output, assuming either
+    singlet (S=0) or doublet (S=1/2) behaviour.
+
+    Even-electron defects are assumed to have a singlet ground state, and odd-
+    electron defects are assumed to have a doublet ground state.
+    """
+    total_Z = int(
+        sum(Element(elt).Z * num for elt, num in defect_vr.final_structure.composition.as_dict().items())
+    )
+    return (total_Z + charge_state) % 2 + 1
+
+
+def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]):
+    """
+    Determine the defect charge state from the defect and bulk vaspruns, and
+    compare to the manually-set charge state if provided.
+    """
     auto_charge = None
 
     try:
@@ -361,11 +376,11 @@ def _determine_defect_charge_from_vasprun(
                             "pymatgen."
                         ) from e
 
-                if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
-                    raise RuntimeError(
-                        f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
-                        f"Please specify defect charge manually using the `charge` argument."
-                    )
+            if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
+                raise RuntimeError(
+                    f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
+                    f"Please specify defect charge manually using the `charge` argument."
+                )
 
         if (
             charge_state is not None
@@ -1188,9 +1203,7 @@ class DefectParser:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
         try:
-            parsed_charge_state: int = _determine_defect_charge_from_vasprun(
-                bulk_vr, defect_vr, charge_state
-            )
+            parsed_charge_state: int = _defect_charge_from_vasprun(bulk_vr, defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
             # try determine from folder name - must have "-" or "+" at end of name for this
             try:
@@ -1208,6 +1221,12 @@ class DefectParser:
                     )
             except Exception as next_exc:
                 raise orig_exc from next_exc
+
+        degeneracy_factors = {
+            "spin degeneracy": _defect_spin_degeneracy_from_vasprun(
+                defect_vr, charge_state=parsed_charge_state
+            )
+        }
 
         if dielectric is None and not skip_corrections and parsed_charge_state != 0:
             warnings.warn(
@@ -1322,6 +1341,7 @@ class DefectParser:
             defect_supercell=defect_vr.final_structure,
             bulk_supercell=bulk_vr.final_structure,
             calculation_metadata=calculation_metadata,
+            degeneracy_factors=degeneracy_factors,
         )
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
