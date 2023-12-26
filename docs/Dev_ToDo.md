@@ -38,7 +38,7 @@
       with the original structure and get the difference (-> configurational degeneracy) from this. Not
       sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
       getting the difference in symm-ops according to `spglib`?
-  - Also add consideration of odd/even number of electrons to account for spin degeneracy (can pull from `vr.parameters["NELECT"]` / magnetisation from OUTCAR/vasprun or atomic numbers (even/odd) plus charge)(can also use this to double check odd is odd and even even as expected, warn user if not)
+
 - **`pydefect`** Interface:
   - Having an interface module for `pydefect` to convert parsed outputs to the `pydefect`/`vise` output, would allow the easy:
     - Automation of shallow defect analysis (and allow for easy further analysis of eigenvalues etc) – Adair's done before
@@ -126,6 +126,7 @@
     - And particularly when you've calculated your initial set of defect results! E.g. with Sb2Se3, all antisites and interstitials amphoteric, so suggests you should re-check amphotericity for all vacancies
   - Note about rare cases where `vasp_gam` pre-relaxation can fail (e.g. Wenzhen's case); extremely disperse bands with small bandgaps, where low k-point sampling can induce a phase transition in the bulk structure. In these cases, using a special k-point is advised for the pre-relaxations. You can get the corresponding k-point for your supercell (given the primitive cell special k-point) using the `get_K_from_k` function from `easyunfold`, with the `doped` `supercell_matrix`.
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
+  - Note (in tutorial when showing thermodynamic analysis?) that the spin degeneracy is automatically guessed based on the number of electrons (singlet if even or doublet if odd), but can be more complicated if you have higher multiplets (e.g. with quantum/magnetic defects, d-orbital defects etc), in which case you can manually adjust (show example). Also note that the VASP output magnetisation should match this, and e.g. a magnetisation of 0 for an odd-electron system is unphysical! – Can mention this at the false charge states discussion part as it's a consequence of this. (Unfortunately can't auto check this in `doped` as is as it's only in `pymatgen` `Outcar` objects not `Vasprun`)
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!

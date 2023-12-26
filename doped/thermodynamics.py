@@ -945,8 +945,8 @@ class DefectThermodynamics(MSONable):
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
         doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
-        of magnitude. This factor is taken from the defect_entry.defect.multiplicity
-        attributes.
+        of magnitude. This factor is taken from the product of the
+        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
 
         Args:
             chempots (dict):
@@ -1109,7 +1109,8 @@ class DefectThermodynamics(MSONable):
         concentration equation and thus Fermi level calculation (see discussion in
         doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
         final concentration by up to 2 orders of magnitude. This factor is taken from
-        the defect_entry.defect.multiplicity attributes.
+        the product of the defect_entry.defect.multiplicity and
+        defect_entry.degeneracy_factors attributes.
 
         Args:
             bulk_dos_vr (str or Vasprun or FermiDos):
@@ -1235,7 +1236,8 @@ class DefectThermodynamics(MSONable):
         concentration equation and thus Fermi level calculation (see discussion in
         doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
         final concentration by up to 2 orders of magnitude. This factor is taken from
-        the defect_entry.defect.multiplicity attributes.
+        the product of the defect_entry.defect.multiplicity and
+        defect_entry.degeneracy_factors attributes.
 
         If you use this code in your work, please also cite:
         Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
