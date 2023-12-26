@@ -492,6 +492,9 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Formation energy value (float)
         """
+        if chempots is None:
+            _no_chempots_warning("Formation energies (and concentrations)")
+
         dft_chempots = _get_dft_chempots(chempots, facet)
         chempot_correction = self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
@@ -581,13 +584,7 @@ class DefectEntry(thermo.DefectEntry):
         """
         # TODO: Update degeneracy handling and docstring here when ready
         # TODO: Add quenched concentration function and link in docstring here when ready
-        if chempots is None:
-            warnings.warn(
-                "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
-                "energies (and thus concentrations) will likely be highly inaccurate!"
-            )
-
-        formation_energy = self.formation_energy(
+        formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, facet=facet, vbm=vbm, fermi_level=fermi_level
         )
         from scipy.constants import value as constants_value
@@ -627,6 +624,13 @@ class DefectEntry(thermo.DefectEntry):
         self.name and self.sc_entry.
         """
         return self.name == other.name and self.sc_entry == other.sc_entry
+
+
+def _no_chempots_warning(property="Formation energies (and concentrations)"):
+    warnings.warn(
+        f"No chemical potentials supplied, so using 0 for all chemical potentials. {property} will likely "
+        f"be highly inaccurate!"
+    )
 
 
 def _get_dft_chempots(chempots, facet):

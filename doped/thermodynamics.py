@@ -2,16 +2,11 @@
 Code for analysing the thermodynamics of defect formation in solids, including
 calculation of formation energies as functions of Fermi level and chemical
 potentials, charge transition levels, defect/carrier concentrations etc.
-
-This code for calculating defect formation energies was originally templated
-from the pyCDT (pymatgen<=2022.7.25) DefectThermodynamics code (deleted in
-later versions), before heavy modification to work with doped DefectEntry
-objects and add additional functionality.
 """
 import os
 import warnings
 from itertools import chain, product
-from typing import Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +21,7 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
-from doped.core import DefectEntry
+from doped.core import DefectEntry, _no_chempots_warning
 from doped.generation import _sort_defect_entries
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -37,6 +32,9 @@ from doped.utils.parsing import (
 )
 from doped.utils.plotting import _TLD_plot
 from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
+
+if TYPE_CHECKING:
+    from pymatgen.core.structure import PeriodicSite
 
 
 def bold_print(string: str) -> None:
@@ -99,7 +97,6 @@ def _parse_chempots(chempots: Optional[Dict] = None, el_refs: Optional[Dict] = N
         chempots = {"facets": {"User Chemical Potentials": chempots}}
 
     # otherwise user-specified format, convert to doped format
-    # TODO: Add catch later, that if no chempot is set for an element, warn user and set to 0
     if el_refs is not None:
         chempots["elemental_refs"] = el_refs
         chempots["facets_wrt_el_refs"] = {
@@ -164,15 +161,20 @@ def group_defects_by_distance(
             entry_list, key=lambda x: abs(x.charge_state)
         )  # sort by charge, starting with closest to zero, for deterministic behaviour
         for entry in sorted_entry_list:
+            if "bulk_site" not in entry.calculation_metadata:
+                bulk_site: PeriodicSite = (
+                    entry.defect_supercell_site
+                )  # need to use relaxed defect site instead
+            else:
+                bulk_site = entry.calculation_metadata["bulk_site"]
             min_dist_list = [
                 min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
-                    entry.calculation_metadata["bulk_site"].distance_and_image(site)[0]
-                    for site in equiv_site_tuple
+                    bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
                 )
                 for equiv_site_tuple in defect_site_dict[name]
             ]
-            idxmin = np.argmin(min_dist_list)
-            if min_dist_list[idxmin] < dist_tol:  # if less than dist_tol, add to corresponding entry list
+            if min_dist_list and min(min_dist_list) < dist_tol:  # less than dist_tol, add to corresponding
+                idxmin = np.argmin(min_dist_list)  # entry list
                 if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
                     # pop old tuple, add new tuple with new equiv sites, and add entry to new tuple
                     orig_tuple = list(defect_site_dict[name].keys())[idxmin]
@@ -180,7 +182,7 @@ def group_defects_by_distance(
                     equiv_site_tuple = (
                         tuple(  # tuple because lists aren't hashable (can't be dict keys)
                             _get_all_equiv_sites(
-                                entry.calculation_metadata["bulk_site"].frac_coords,
+                                bulk_site.frac_coords,
                                 symm_bulk_struct,
                                 bulk_symm_ops,
                             )
@@ -190,23 +192,26 @@ def group_defects_by_distance(
                     defect_entry_list.extend([entry])
                     defect_site_dict[name][equiv_site_tuple] = defect_entry_list
 
+                else:  # less than dist_tol, add to corresponding entry list
+                    defect_site_dict[name][list(defect_site_dict[name].keys())[idxmin]].append(entry)
+
             else:  # no match found, add new entry
-                if name.endswith("_i"):
+                try:
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        symm_bulk_struct.find_equivalent_sites(bulk_site)
+                    )
+                except ValueError:  # likely interstitials, need to add equiv sites to tuple
                     equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
                         _get_all_equiv_sites(
-                            entry.calculation_metadata["bulk_site"].frac_coords,
+                            bulk_site.frac_coords,
                             symm_bulk_struct,
                             bulk_symm_ops,
                         )
                     )
-                else:
-                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        symm_bulk_struct.find_equivalent_sites(entry.calculation_metadata["bulk_site"])
-                    )
+
                 defect_site_dict[name][equiv_site_tuple] = [entry]
 
     return defect_site_dict
-    # TODO: Check timings... Need to make more efficient?
 
 
 def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[DefectEntry]]:
@@ -406,7 +411,9 @@ class DefectThermodynamics(MSONable):
         defect_entries_dict = {entry.name: entry for entry in self.defect_entries}
         sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
         self._defect_entries = list(sorted_defect_entries_dict.values())
-        self._parse_transition_levels()
+        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
+            warnings.filterwarnings("ignore", message="No chemical potentials")
+            self._parse_transition_levels()
         if check_compatibility:
             self._check_bulk_compatibility()
 
@@ -603,9 +610,12 @@ class DefectThermodynamics(MSONable):
                 ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
-            defect_name_wout_charge = sorted_defect_entries[0].name.rsplit("_", 1)[
-                0
-            ]  # name without charge
+            # take simplest (shortest) possible defect name as the name for that group
+            possible_defect_names = [
+                defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries
+            ]  # names without charge
+            defect_name_wout_charge = min(possible_defect_names, key=len)
+
             if any(
                 defect_name_wout_charge in i for i in transition_level_map
             ):  # defects with same name, rename to prevent overwriting:
@@ -687,18 +697,20 @@ class DefectThermodynamics(MSONable):
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
         }
-        """
-        Helper function to quickly check if all bulk entries have the same
-        energy (by proxy checks that same bulk/defect calculation settings were
-        used in all cases, from each bulk/defect combination being checked when
-        parsing).
 
-        This is to catch any cases where defects may have been parsed
+    def _check_bulk_compatibility(self):
+        """
+        Helper function to quickly check if all entries have compatible bulk
+        calculation settings, by checking that the energy of
+        defect_entry.bulk_entry is the same for all defect entries.
+
+        By proxy checks that same bulk/defect calculation settings were used in
+        all cases, from each bulk/defect combination already being checked when
+        parsing. This is to catch any cases where defects may have been parsed
         separately and combined (rather than altogether with DefectsParser,
         which ensures the same bulk in each case), and where a different bulk
         reference calculation was (mistakenly) used.
         """
-        # check that the energy of defect_entry.bulk_entry is the same for all defect entries:
         bulk_energies = [entry.bulk_entry.energy for entry in self.defect_entries]
         if max(bulk_energies) - min(bulk_energies) > 0.02:  # 0.02 eV tolerance
             warnings.warn(
@@ -792,9 +804,6 @@ class DefectThermodynamics(MSONable):
         self._defect_entries += defect_entries
         self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
 
-    # TODO: Show example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries /
-    #  combining multiple DefectThermodynamics objects
-
     @property
     def defect_entries(self):
         """
@@ -821,15 +830,16 @@ class DefectThermodynamics(MSONable):
         """
         return self._chempots
 
-    # TODO: Show on chemical potentials docs how chempots can be later set as attribute for
-    #  DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations
-    #  first, and then finished chemical potential calculations after).
     @chempots.setter
     def chempots(self, input_chempots):
         """
         Set the chemical potentials dictionary (`chempots`), and reparse to
         have the required `doped` format.
         """
+        if input_chempots is None:
+            self._chempots = None
+            self._el_refs = None
+            return
         self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
 
     @property
@@ -879,7 +889,7 @@ class DefectThermodynamics(MSONable):
         """
         return self._dist_tol
 
-    @dist_tol.setter  # TODO: Show example in docs/advanced tutorial of changing `dist_tol` after parsing
+    @dist_tol.setter
     def dist_tol(self, input_dist_tol: float):
         """
         Set the distance tolerance (in Å) used for grouping (equivalent)
@@ -888,7 +898,9 @@ class DefectThermodynamics(MSONable):
         tolerance.
         """
         self._dist_tol = input_dist_tol
-        self._parse_transition_levels()
+        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
+            warnings.filterwarnings("ignore", message="No chemical potentials")
+            self._parse_transition_levels()
 
     def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
         """
@@ -1087,6 +1099,11 @@ class DefectThermodynamics(MSONable):
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
+        Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
+        can be the most time-consuming part of this function, so if you are running
+        this function multiple times, it is faster to initialise the FermiDos object
+        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        to this object instead.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
@@ -1208,6 +1225,11 @@ class DefectThermodynamics(MSONable):
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
+        Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
+        can be the most time-consuming part of this function, so if you are running
+        this function multiple times, it is faster to initialise the FermiDos object
+        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        to this object instead.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
@@ -1538,7 +1560,6 @@ class DefectThermodynamics(MSONable):
             acceptor_intercepts_df[idx]["intercept"].idxmax()
         ]
 
-        # TODO: Test this function, and warnings etc
         if limiting_donor_intercept_row["intercept"] > limiting_acceptor_intercept_row["intercept"]:
             warnings.warn(
                 "Donor and acceptor doping limits intersect at negative defect formation energies "
@@ -1955,10 +1976,6 @@ class DefectThermodynamics(MSONable):
                         }
                     )
 
-        # TODO: Show example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta
-        #  charge state, and TLs with two meta charge states, using df output from this function (i.e. to
-        #  get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
-
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect, then by TL position:
         tl_df = tl_df.sort_values(by=["Defect", "eV from VBM"])
@@ -2079,12 +2096,11 @@ class DefectThermodynamics(MSONable):
         )  # returns self.chempots/self.el_refs if chempots is None
 
         if chempots is None:
+            _no_chempots_warning()
             chempots = {
                 "facets": {"No User Chemical Potentials": {}},
                 "facets_wrt_el_refs": {"No User Chemical Potentials": {}},
             }
-
-            # TODO: Warn user if no chempots? (Inaccurate energies, like with plot function?)
 
         facet = _parse_facet(chempots, facet)
         facets = [facet] if facet is not None else list(chempots["facets"].keys())
@@ -2168,7 +2184,6 @@ class DefectThermodynamics(MSONable):
             else:
                 row += [defect_entry.charge_state * self.vbm]  # type: ignore[operator]
             row += [defect_entry.charge_state * fermi_level]
-            # TODO: Test this behaviour:
             row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
             row += [defect_entry._get_chempot_term(chempots)]
             row += [sum(defect_entry.corrections.values())]
