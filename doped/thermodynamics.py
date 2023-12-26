@@ -251,9 +251,6 @@ def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[Defec
     return grouped_entries
 
 
-# TODO: Need easy method to adjust dist_tol and reparse? Add setter method?
-
-
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -355,7 +352,7 @@ class DefectThermodynamics(MSONable):
 
         self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
-        self.dist_tol = dist_tol
+        self._dist_tol = dist_tol
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -501,7 +498,7 @@ class DefectThermodynamics(MSONable):
 
         return self.chempots, self.el_refs
 
-    def _parse_transition_levels(self, dist_tol: float = 1.5):
+    def _parse_transition_levels(self):
         """
         Parses the charge transition levels for defect entries in the
         DefectThermodynamics object, and stores information about the stable
@@ -550,7 +547,7 @@ class DefectThermodynamics(MSONable):
         transition_level_map: dict = {}
 
         try:
-            defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=dist_tol)
+            defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=self.dist_tol)
             grouped_entries_list = [
                 entry_list for sub_dict in defect_site_dict.values() for entry_list in sub_dict.values()
             ]
@@ -873,6 +870,25 @@ class DefectThermodynamics(MSONable):
         """
         all_stable_entries = self.all_stable_entries
         return [e for e in self.defect_entries if e not in all_stable_entries]
+
+    @property
+    def dist_tol(self):
+        """
+        Get the distance tolerance (in Å) used for grouping (equivalent)
+        defects together (for plotting and transition level analysis).
+        """
+        return self._dist_tol
+
+    @dist_tol.setter  # TODO: Show example in docs/advanced tutorial of changing `dist_tol` after parsing
+    def dist_tol(self, input_dist_tol: float):
+        """
+        Set the distance tolerance (in Å) used for grouping (equivalent)
+        defects together (for plotting and transition level analysis), and
+        reparse the thermodynamic information (transition levels etc) with this
+        tolerance.
+        """
+        self._dist_tol = input_dist_tol
+        self._parse_transition_levels()
 
     def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
         """
