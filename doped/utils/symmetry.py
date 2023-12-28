@@ -902,7 +902,7 @@ def point_symmetry_from_defect_entry(
 
     And if the point symmetries match in each case, then using this function on your
     parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
-    defect symmetry (and closest site info) - otherwise periodicity-breaking prevents this.
+    defect symmetry - otherwise periodicity-breaking prevents this.
 
     Args:
         defect_entry (DefectEntry): DefectEntry object.
@@ -964,9 +964,6 @@ def point_symmetry_from_defect_entry(
                 "correct here!"
             )
 
-    # TODO: Implement this as a function (to get symmetry and corresponding degeneracy) and show example
-    # in tutorials, but not automated because requires a bit of user sanity
-
     _failed = False
     if defect_entry.defect_supercell_site is not None:
         try:
@@ -1026,7 +1023,7 @@ def point_symmetry_from_defect_entry(
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
     symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
+    symprec: float = 0.01,
     verbose: bool = False,
 ):
     if defect_entry.defect_supercell_site is None:
