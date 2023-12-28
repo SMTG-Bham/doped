@@ -5,7 +5,7 @@ import contextlib
 import itertools
 import os
 import warnings
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
@@ -16,7 +16,13 @@ from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.utils.symmetry import _get_all_equiv_sites
+from doped.utils.symmetry import (
+    _get_all_equiv_sites,
+    _get_sga,
+    group_order_from_schoenflies,
+    point_symmetry_from_defect_entry,
+    schoenflies_from_hermann,
+)
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -757,3 +763,86 @@ def get_interstitial_site_and_orientational_degeneracy(
     )
 
     return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
+
+
+def get_vacancy_substitution_orientational_degeneracy(
+    defect_entry: DefectEntry,
+    symm_ops: Optional[list] = None,
+    symprec: float = 0.2,
+) -> int:
+    r"""
+    Get the orientational degeneracy factor for a given _relaxed_
+    vacancy/substitution DefectEntry.
+
+    This is computed by determining the _relaxed_ (and original/unrelaxed)
+    point symmetry of the defect site, and then getting the ratio of their
+    point group orders (equivalent to the ratio of partition functions or
+    number of symmetry operations (i.e. degeneracy)).
+
+    Note: This tries to use the defect_entry.defect_supercell to determine
+    the _relaxed_ site symmetry. However, it should be noted that this is not
+    guaranteed to work in all cases; namely for non-diagonal supercell
+    expansions, or sometimes for non-scalar supercell expansion matrices
+    (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
+    which can mess up the periodicity of the cell. doped tries to automatically
+    check if this is the case, and will warn you if so.
+
+    This can also be checked by using this function on your doped _generated_ defects:
+
+    from doped.generation import get_defect_name_from_entry
+    for defect_name, defect_entry in defect_gen.items():
+        print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+              get_defect_name_from_entry(defect_entry), "\n")
+
+    And if the point symmetries match in each case, then using this function on your
+    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
+    defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
+    prevents this.
+
+    Args:
+        defect_entry (DefectEntry): DefectEntry object.
+        symm_ops (list):
+            List of symmetry operations of the defect_entry.bulk_supercell
+            structure, to avoid re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for spglib. Default is 0.2 for obtaining the relaxed
+            point symmetry, which is larger than that used for unrelaxed structures
+            in doped (0.01) to account for residual structural noise in relaxed
+            supercells. The symprec value used for the unrelaxed (bulk) site symmetry
+            is set to a tenth of this value (i.e. 0.02 by default).
+            You may want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc).
+
+    Returns:
+        int: orientational degeneracy factor for the vacancy/substitution defect.
+    """
+    if defect_entry.bulk_entry is None:
+        raise ValueError(
+            "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
+            "(i.e. must be a parsed DefectEntry)"
+        )
+
+    relaxed_point_symmetry = point_symmetry_from_defect_entry(
+        defect_entry,  # this will throw warning if auto-detected that supercell breaks trans symmetry
+        symm_ops=symm_ops,
+        symprec=symprec,
+        relaxed=True,
+    )
+
+    bulk_site = defect_entry.calculation_metadata["bulk_site"]
+    bulk_index = defect_entry.bulk_entry.structure.index(bulk_site)
+
+    symm_dataset = _get_sga(
+        defect_entry.bulk_entry.structure, symprec=0.1 * symprec
+    ).get_symmetry_dataset()
+    bulk_site_symm_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][bulk_index])
+
+    return group_order_from_schoenflies(bulk_site_symm_symbol) // group_order_from_schoenflies(
+        relaxed_point_symmetry
+    )
+
+
+# TODO: Use this in a try-except loop with parsing? Yeah should be same place as spin degeneracy parsing
+# TODO: Show examples of point symmetry / orientational degeneracy functions in tutorials, but not
+#  automated because requires a bit of user sanity? Or try-excepted with warning?
+# TODO: Add degeneracy table function to DefectThermodynamics, to give output like in SK Thesis
