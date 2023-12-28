@@ -700,7 +700,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
 
 
 def get_interstitial_site_and_orientational_degeneracy(
-    interstitial_defect_entry: DefectEntry, dist_tol: float = 0.1
+    interstitial_defect_entry: DefectEntry, dist_tol: float = 0.15
 ) -> int:
     """
     Get the combined site and orientational degeneracy of an interstitial
@@ -739,18 +739,21 @@ def get_interstitial_site_and_orientational_degeneracy(
         interstitial_defect_entry.sc_defect_frac_coords,
         interstitial_defect_entry.bulk_entry.structure,
     )
-    defect_supercell_sites_of_same_species = [
-        site
-        for site in interstitial_defect_entry.sc_entry.structure
-        if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
-    ]
-
-    min_dists = np.array(
+    equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
+    defect_supercell_sites_of_same_species_array = np.array(
         [
-            min(site.distance(equiv_site) for site in defect_supercell_sites_of_same_species)
-            for equiv_site in equiv_sites
+            site.frac_coords
+            for site in interstitial_defect_entry.sc_entry.structure
+            if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
         ]
     )
-    min_dists_under_tol = min_dists[min_dists < dist_tol]
 
-    return int(len(equiv_sites) / len(min_dists_under_tol))
+    distance_matrix = np.linalg.norm(
+        np.dot(
+            pbc_diff(defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array),
+            interstitial_defect_entry.bulk_entry.structure.lattice.matrix,
+        ),
+        axis=-1,
+    )
+
+    return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
