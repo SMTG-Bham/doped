@@ -13,8 +13,6 @@
 - Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
-- Should auto-check the magnetisation output; if it comes to around
-  zero for an odd-electron defect, suggests getting spurious shallow defect behaviour!
 - Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
   relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
   - Should be doable with current point symmetry tools, especially when both the defect and bulk
