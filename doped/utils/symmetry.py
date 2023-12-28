@@ -920,14 +920,6 @@ def point_symmetry_from_defect_entry(
             determine the site symmetry (i.e. try determine the point symmetry
             of a relaxed defect in the defect supercell). Default is True.
 
-    Args:
-        defect (Defect): Defect object.
-        symm_ops (list):
-            List of symmetry operations of defect.structure, to avoid
-            re-calculating. Default is None (recalculates).
-        symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01.
-
     Returns:
         str: Defect point symmetry.
     """
@@ -982,7 +974,7 @@ def point_symmetry_from_defect_entry(
             warnings.warn(
                 "Symmetry determination failed with the standard approach (likely due to this being a "
                 "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
-                "group symmetry cannot be reliably determined."
+                "group symmetry cannot be reliably automatically determined."
             )
 
         return point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
@@ -1006,8 +998,8 @@ def point_symmetry_from_defect_entry(
     # symm_ops approach failed, just use diagonal defect supercell approach:
     if relaxed:
         raise RuntimeError(
-            "Site symmetry could not be determined using the defect supercell, and so the relaxed "
-            "site symmetry cannot be determined (set relaxed=False to obtain the unrelaxed site "
+            "Site symmetry could not be determined using the defect supercell, and so the relaxed site "
+            "symmetry cannot be automatically determined (set relaxed=False to obtain the unrelaxed site "
             "symmetry)."
         )
 
@@ -1055,7 +1047,7 @@ def _check_relaxed_defect_symmetry_determination(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
                     "detected that the supercell is a non-scalar matrix expansion which is breaking the "
                     "cell periodicity, likely preventing the correct point group symmetry from being "
-                    "determined. You should probably set relaxed=False to instead get the "
+                    "automatically determined. You should probably set relaxed=False to instead get the "
                     "unrelaxed/initial point group symmetry (and manually or otherwise determine the "
                     "relaxed point symmetry if desired."
                 )

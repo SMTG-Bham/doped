@@ -41,6 +41,7 @@ from doped.utils.parsing import (
     get_locpot,
     get_neutral_nelect_from_vasprun,
     get_outcar,
+    get_vacancy_substitution_orientational_degeneracy,
     get_vasprun,
     reorder_s1_like_s2,
 )
@@ -70,11 +71,22 @@ _aniso_dielectric_but_outcar_problem_warning = (
     "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
     "_anisotropic_ Kumagai eFNV charge correction) "
 )
+# Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 _aniso_dielectric_but_using_locpot_warning = (
     "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) charge "
     "correction developed for _isotropic_ materials will be applied here, which corresponds to using the "
     "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
     "errors for very anisotropic systems and/or relatively small supercells!"
+)
+_orientational_degeneracy_warning = (
+    "The defect supercell has been detected to have a non-scalar matrix expansion which "
+    "is breaking the cell periodicity, likely preventing the correct _relaxed_ point "
+    "group symmetry (and thus orientational degeneracy) of vacancies & substitutions "
+    "from being automatically determined.\n This will not affect defect formation "
+    "energies / transition levels, but is important for concentrations/doping/Fermi level"
+    "behaviour (see e.g. doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).\n"
+    "Orientational degeneracy factors can be manually specified by setting the "
+    "DefectEntry.degeneracy_factors['orientational degeneracy'] value(s)."
 )
 
 
@@ -127,11 +139,6 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         )  # otherwise use default doped name  # TODO: Test!
         # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
         # was used
-
-
-# TODO: Can we add functions to auto-determine the orientational degeneracy? Any decent tools for this atm?
-# Note that new pymatgen Freysoldt correction requires input dielectric to be an array (list not allowed)
-# Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
 
 
 def defect_from_structures(
@@ -325,7 +332,7 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     return get_defect_name_from_defect(defect)
 
 
-def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0):
+def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0) -> int:
     """
     Get the defect spin degeneracy from the vasprun output, assuming either
     singlet (S=0) or doublet (S=1/2) behaviour.
@@ -336,7 +343,7 @@ def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int =
     total_Z = int(
         sum(Element(elt).Z * num for elt, num in defect_vr.final_structure.composition.as_dict().items())
     )
-    return (total_Z + charge_state) % 2 + 1
+    return int((total_Z + charge_state) % 2 + 1)
 
 
 def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]):
@@ -702,6 +709,7 @@ class DefectsParser:
 
             parsing_warnings = []
             pbar = tqdm(total=len(self.defect_folders))
+            orientational_degeneracy_warning_called = False
             try:
                 if charged_defect_folder is not None:
                     # will throw warnings if dielectric is None / charge corrections not possible,
@@ -712,12 +720,14 @@ class DefectsParser:
                     parsed_defect_entry, warnings_string = self._multiprocess_parse_defect(
                         charged_defect_folder
                     )
-                    parsing_warnings.append(
-                        self._update_pbar_and_return_warnings_from_parsing(
-                            (parsed_defect_entry, warnings_string),
-                            pbar,
-                        )
+                    (
+                        parsing_warning,
+                        orientational_degeneracy_warning_called,
+                    ) = self._update_pbar_and_return_warnings_from_parsing(
+                        (parsed_defect_entry, warnings_string),
+                        pbar,
                     )
+                    parsing_warnings.append(parsing_warning)
                     if parsed_defect_entry is not None:
                         parsed_defect_entries.append(parsed_defect_entry)
 
@@ -742,9 +752,18 @@ class DefectsParser:
                     with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
                         results = pool.imap_unordered(self._multiprocess_parse_defect, folders_to_process)
                         for result in results:
-                            parsing_warnings.append(
-                                self._update_pbar_and_return_warnings_from_parsing(result, pbar)
+                            (
+                                parsing_warning,
+                                orientational_degeneracy_warning_called_now,
+                            ) = self._update_pbar_and_return_warnings_from_parsing(
+                                (parsed_defect_entry, warnings_string),
+                                pbar,
                             )
+                            orientational_degeneracy_warning_called = (
+                                orientational_degeneracy_warning_called
+                                or orientational_degeneracy_warning_called_now
+                            )
+                            parsing_warnings.append(parsing_warning)
                             if result[0] is not None:
                                 parsed_defect_entries.append(result[0])
 
@@ -752,6 +771,12 @@ class DefectsParser:
                     warning for warning in parsing_warnings if warning  # remove empty strings
                 ]:
                     warnings.warn("\n".join(parsing_warnings))
+
+                if orientational_degeneracy_warning_called:
+                    # warn and remove orientational degeneracy factors from all entries as not reliable
+                    warnings.warn(_orientational_degeneracy_warning)
+                    for defect_entry in parsed_defect_entries:
+                        defect_entry.degeneracy_factors.pop("orientational degeneracy", None)
 
             except Exception as exc:
                 pbar.close()
@@ -865,12 +890,18 @@ class DefectsParser:
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
+                # if orientational degeneracy warning, omit to prevent spamming:
+                warning_string = result[1].replace(f"\n{_orientational_degeneracy_warning}", "")
+                warning_string = warning_string.replace(f"{_orientational_degeneracy_warning}", "")
+                # both replace() calls to remove '\n' if multiple warnings, or just orientational warning
+                # TODO: Test this!
+
                 return (
                     f"Warning(s) encountered when parsing {result[0].name} at "
-                    f"{result[0].calculation_metadata['defect_path']}:\n{result[1]}"
-                )
+                    f"{result[0].calculation_metadata['defect_path']}:\n{warning_string}"
+                ), _orientational_degeneracy_warning in result[1]
 
-        return result[1] if result[1] else ""  # failed parsing warning if result[0] is None
+        return result[1] or "", False  # failed parsing warning if result[0] is None
 
     def _multiprocess_parse_defect(self, defect_folder):
         """
@@ -919,7 +950,7 @@ class DefectsParser:
         except Exception as exc:
             warnings.warn(
                 f"Parsing failed for "
-                f"{defect_folder if self.subfolder == '.' else defect_folder + '/' + self.subfolder}, "
+                f"{defect_folder if self.subfolder == '.' else f'{defect_folder}/{self.subfolder}'}, "
                 f"got error: {exc}"
             )
             return None
@@ -1349,6 +1380,23 @@ class DefectParser:
             defect_entry.defect.multiplicity = get_interstitial_site_and_orientational_degeneracy(
                 defect_entry
             )
+        else:  # get vacancy/substitution orientational degeneracy (multiplicity auto-calculated)
+            try:
+                with warnings.catch_warnings(record=True) as captured_warnings:
+                    defect_entry.degeneracy_factors[
+                        "orientational degeneracy"
+                    ] = get_vacancy_substitution_orientational_degeneracy(defect_entry)
+                if any(
+                    "preventing the correct point group symmetry" in str(warning.message)
+                    for warning in captured_warnings
+                ):
+                    raise RuntimeError(
+                        "Site symmetry could not be determined using the defect supercell, and so the "
+                        "relaxed site symmetry (and thus orientational degeneracy) cannot be automatically"
+                        "determined."
+                    )  # raise error to be caught below
+            except RuntimeError:
+                warnings.warn(_orientational_degeneracy_warning)  # TODO: Test this!
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
