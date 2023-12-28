@@ -12,9 +12,11 @@ import unittest
 import warnings
 
 import matplotlib as mpl
+import numpy as np
 import pytest
 from monty.serialization import loadfn
 
+from doped import core
 from doped import analysis
 from doped.utils import plotting
 
@@ -417,3 +419,77 @@ class DefectPlottingTestCase(unittest.TestCase):
         }  # charge auto-determined (as neutral)
         thermo = analysis.thermo_from_defect_dict(defect_dict)
         return plotting.formation_energy_plot(thermo, chempots, facets=["VO2-V2O5"])
+
+    def test_calc_site_displacements(self):
+        """Test _calc_site_displacements() function."""
+        # Vacancy:
+        defect_entry = core.DefectEntry.from_json(
+            f"{data_dir}/v_Cd_defect_entry.json"
+        )
+        disp_dict = plotting._calc_site_displacements(defect_entry)
+        for i, disp in [
+            (0, [ 0.0572041,   0.00036486, -0.01794981]),
+            (15, [ 0.11715445, -0.03659073,  0.01312027])
+        ]:
+            np.allclose(
+                disp_dict["Abs. displacement"][i],
+                np.array(disp)
+            )
+        # Substitution:
+        defect_entry = core.DefectEntry.from_json(
+            f"{data_dir}/Te_Cd_+1_defect_entry.json"
+        )
+        disp_dict = plotting._calc_site_displacements(defect_entry)
+        for i, disp in [
+            (0, [ 0.00820645,  0.00821417, -0.00815738]),
+            (15, [-0.00639524,  0.00639969, -0.01407927])
+        ]:
+            np.allclose(
+                disp_dict["Abs. displacement"][i],
+                np.array(disp)
+            )
+        # Interstitial:
+        defect_entry = core.DefectEntry.from_json(
+            f"{data_dir}/Int_Te_3_1_defect_entry.json"
+        )
+        disp_dict = plotting._calc_site_displacements(defect_entry)
+        for i, disp in [
+            (0, [-0.03931121,  0.01800569,   0.04547194]),
+            (15, [-0.04850126, -0.01378455,  0.05439607])
+        ]:
+            np.allclose(
+                disp_dict["Abs. displacement"][i],
+                np.array(disp)
+            )
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="v_Cd_0_disp_proj_plot.png",
+        style=f"{module_path}/../doped/utils/displacement.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_site_displacements_proj(self):
+        # Vacancy, displacement separated by direction:
+        defect_entry = core.DefectEntry.from_json(
+            f"{data_dir}/v_Cd_defect_entry.json"
+        )
+        fig = defect_entry.plot_site_displacements(
+            separated_by_direction=True, use_plotly=False
+        )
+        return fig
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="v_Cd_0_disp_plot.png",
+        style=f"{module_path}/../doped/utils/displacement.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_site_displacements(self):
+        # Vacancy, total displacement
+        defect_entry = core.DefectEntry.from_json(
+            f"{data_dir}/v_Cd_defect_entry.json"
+        )
+        fig = defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False
+        )
+        return fig
