@@ -37,6 +37,7 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_interstitial_site_and_orientational_degeneracy,
     get_locpot,
     get_neutral_nelect_from_vasprun,
     get_outcar,
@@ -1341,6 +1342,13 @@ class DefectParser:
             calculation_metadata=calculation_metadata,
             degeneracy_factors=degeneracy_factors,
         )
+
+        if defect.defect_type == core.DefectType.Interstitial:  # multiplicity & orientational degeneracy
+            # site multiplicity is automatically computed for vacancies and substitutions (much easier),
+            # but not interstitials
+            defect_entry.defect.multiplicity = get_interstitial_site_and_orientational_degeneracy(
+                defect_entry
+            )
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
