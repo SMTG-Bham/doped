@@ -840,9 +840,3 @@ def get_vacancy_substitution_orientational_degeneracy(
     return group_order_from_schoenflies(bulk_site_symm_symbol) // group_order_from_schoenflies(
         relaxed_point_symmetry
     )
-
-
-# TODO: Use this in a try-except loop with parsing? Yeah should be same place as spin degeneracy parsing
-# TODO: Show examples of point symmetry / orientational degeneracy functions in tutorials, but not
-#  automated because requires a bit of user sanity? Or try-excepted with warning?
-# TODO: Add degeneracy table function to DefectThermodynamics, to give output like in SK Thesis
