@@ -122,7 +122,7 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         defect_entry.name = defect_name_w_charge_state
     else:
         defect_entry.name = (
-            f"{get_defect_name_from_entry(defect_entry, unrelaxed=True)}_"
+            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
             f"{'+' if charge_state > 0 else ''}{charge_state}"
         )  # otherwise use default doped name  # TODO: Test!
         # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
