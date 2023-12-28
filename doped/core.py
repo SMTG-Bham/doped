@@ -7,6 +7,7 @@ import collections
 import contextlib
 import warnings
 from dataclasses import asdict, dataclass, field
+from functools import reduce
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -589,6 +590,34 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
         """
+        if "spin degeneracy" not in self.degeneracy_factors:
+            warnings.warn(
+                "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
+                "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
+                "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
+                "(see discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E). This will "
+                "affect the computed defect concentration / Fermi level!\n"
+                "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
+                "'spin degeneracy' in the degeneracy_factors attribute(s) - usually 2 for odd-electron "
+                "defect species and 1 for even-electron)."
+            )
+
+        if (
+            "orientational degeneracy" not in self.degeneracy_factors
+            and self.defect.defect_type != core.DefectType.Interstitial
+        ):
+            warnings.warn(
+                "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
+                "attribute (for this vacancy/substitution defect). This factor contributes to the "
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) - see "
+                "discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E) and is "
+                "automatically computed when parsing with doped if possible (if the defect supercell "
+                "doesn't break the host periodicity). This will affect the computed defect concentrations "
+                "/ Fermi level!\n"
+                "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
+                "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
+            )
+
         formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, facet=facet, vbm=vbm, fermi_level=fermi_level
         )
@@ -597,7 +626,9 @@ class DefectEntry(thermo.DefectEntry):
         exp_factor = np.exp(
             -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
         )
-        degeneracy_factor = np.product(self.degeneracy_factors.values()) if self.degeneracy_factors else 1
+        degeneracy_factor = (
+            reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
+        )
         if per_site:
             return exp_factor * degeneracy_factor
 
@@ -727,9 +758,11 @@ class Defect(core.Defect):
         Args:
             structure:
                 The structure in which to create the defect. Typically
-                the primitive structure of the host crystal.
+                the primitive structure of the host crystal for defect
+                generation, and/or the calculation supercell for defect
+                parsing.
             site: The defect site in the structure.
-            multiplicity: The multiplicity of the defect.
+            multiplicity: The multiplicity of the defect in the structure.
             oxi_state: The oxidation state of the defect, if not specified,
                 this will be determined automatically.
             equivalent_sites:

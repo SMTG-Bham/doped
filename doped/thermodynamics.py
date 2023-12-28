@@ -991,7 +991,6 @@ class DefectThermodynamics(MSONable):
             pandas DataFrame of defect concentrations (and formation energies) for each
             defect entry in the DefectThermodynamics object.
         """
-        # TODO: Add warning if degeneracy_factors keys differ between defects
         # TODO: Add degeneracy table function to DefectThermodynamics, to give output like in SK Thesis,
         #  and show example in tutorials (also noting the default behaviour of `doped` in guessing this,
         #  and trying to warn if it doesn't work)
