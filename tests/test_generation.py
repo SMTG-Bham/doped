@@ -1760,15 +1760,15 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             for defect_name, defect_entry in CdTe_defect_gen.items():
                 print(
                     defect_name,
-                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry, relaxed=False),
                     get_defect_name_from_entry(defect_entry),
                     "\n",
                 )
                 assert get_defect_name_from_entry(
-                    defect_entry, unrelaxed=True
+                    defect_entry, relaxed=False
                 ) == get_defect_name_from_entry(defect_entry)
 
-        non_ignored_warnings = [  # warning about calculation_metadata with unrelaxed=False,
+        non_ignored_warnings = [  # warning about calculation_metadata with relaxed=True,
             # but no other warnings
             warning
             for warning in w
@@ -2025,13 +2025,13 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             for defect_name, defect_entry in ytos_defect_gen.items():
                 print(
                     defect_name,
-                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry, relaxed=False),
                     get_defect_name_from_entry(defect_entry),
                     "\n",
                 )
             assert len(w) == 1
             assert (
-                "`unrelaxed` was set to False (i.e. get _relaxed_ defect symmetry), "
+                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), "
                 "but the `calculation_metadata` attribute is not set for `DefectEntry`"
                 in str(w[-1].message)
             )
@@ -2833,15 +2833,15 @@ Se_i_Cs_Se2.38        [-2,-1,0,+1,+2,+3,+4]        [0.293,0.750,0.263]  4c
             for defect_name, defect_entry in sb2se3_defect_gen.items():
                 print(
                     defect_name,
-                    get_defect_name_from_entry(defect_entry, unrelaxed=True),
+                    get_defect_name_from_entry(defect_entry, relaxed=False),
                     get_defect_name_from_entry(defect_entry),
                     "\n",
                 )
                 assert get_defect_name_from_entry(
-                    defect_entry, unrelaxed=True
+                    defect_entry, relaxed=False
                 ) == get_defect_name_from_entry(defect_entry)
 
-        non_ignored_warnings = [  # warning about calculation_metadata with unrelaxed=False,
+        non_ignored_warnings = [  # warning about calculation_metadata with relaxed=True,
             # but no other warnings
             warning
             for warning in w
