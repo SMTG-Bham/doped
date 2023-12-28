@@ -826,7 +826,7 @@ class Defect(core.Defect):
             structure=defect.structure,
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
-            oxi_state=defect.oxi_state if not bulk_oxi_states else None,
+            oxi_state=None if bulk_oxi_states else defect.oxi_state,
             equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
             if defect.equivalent_sites is not None
             else None,

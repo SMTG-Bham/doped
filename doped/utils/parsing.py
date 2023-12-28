@@ -5,6 +5,7 @@ import contextlib
 import itertools
 import os
 import warnings
+from typing import Union
 
 import numpy as np
 from monty.serialization import loadfn
@@ -14,6 +15,8 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
+from doped.core import DefectEntry
+from doped.utils.symmetry import _get_all_equiv_sites
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -302,7 +305,7 @@ def get_coords_and_idx_of_species(structure, species_name):
     coords = []
     idx = []
     for i, site in enumerate(structure):
-        if site.specie.name == species_name:
+        if site.specie.symbol == species_name:
             coords.append(site.frac_coords)
             idx.append(i)
 
@@ -409,7 +412,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     _ignore_pmg_warnings()
 
-    far_from_defect_disps = {site.specie.name: [] for site in bulk}
+    far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
 
     wigner_seitz_radius = calc_max_sphere_radius(bulk.lattice.matrix)
 
@@ -430,15 +433,15 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     for site in defect:
         if site.distance_and_image_from_frac_coords(defect_coords)[0] > wigner_seitz_radius:
             bulk_site_arg_idx = find_nearest_coords(  # get closest site in bulk to defect site
-                bulk_species_coord_dict[site.specie.name],
+                bulk_species_coord_dict[site.specie.symbol],
                 site.frac_coords,
                 bulk.lattice.matrix,
                 defect_type="substitution",
                 searched_structure="bulk",
             )
-            far_from_defect_disps[site.specie.name].append(
+            far_from_defect_disps[site.specie.symbol].append(
                 site.distance_and_image_from_frac_coords(
-                    bulk_species_coord_dict[site.specie.name][bulk_site_arg_idx]
+                    bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
                 )[0]
             )
 
@@ -471,14 +474,10 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
 
     for species in structure_a.composition.elements:
         input_fcoords = [
-            list(site.frac_coords.round(3))
-            for site in structure_a
-            if site.species.elements[0].symbol == species.symbol
+            list(site.frac_coords.round(3)) for site in structure_a if site.specie.symbol == species.symbol
         ]
         template_fcoords = [
-            list(site.frac_coords.round(3))
-            for site in structure_b
-            if site.species.elements[0].symbol == species.symbol
+            list(site.frac_coords.round(3)) for site in structure_b if site.specie.symbol == species.symbol
         ]
 
         dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
@@ -648,7 +647,7 @@ def _compare_incar_tags(
     return True
 
 
-def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
+def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
     Determine the number of electrons (NELECT) from a Vasprun object,
     corresponding to a neutral charge state for the structure.
@@ -698,3 +697,60 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             charge_state=0,
             user_potcar_settings=potcar_settings,
         ).nelect
+
+
+def get_interstitial_site_and_orientational_degeneracy(
+    interstitial_defect_entry: DefectEntry, dist_tol: float = 0.1
+) -> int:
+    """
+    Get the combined site and orientational degeneracy of an interstitial
+    defect entry.
+
+    This is done by determining the number of equivalent sites in the bulk
+    supercell for the given interstitial site (from defect_supercell_site),
+    which gives the combined site and orientational degeneracy _if_ there
+    was no relaxation of the bulk lattice atoms. This matches the true
+    combined degeneracy in most cases, except for split-interstitial type
+    defects etc, where this would give an artificially high degeneracy
+    (as, for example, the interstitial site is automatically assigned to
+    one of the split-interstitial atoms and not the midpoint, giving a
+    doubled degeneracy as it considers the two split-interstitial sites as
+    two separate (degenerate) interstitial sites, instead of one).
+    This is counteracted by dividing by the number of sites which are present
+    in the defect supercell (within a distance tolerance of dist_tol in Å)
+    with the same species, ensuring none of the predicted _different_
+    equivalent sites are actually _included_ in the defect structure.
+
+    Args:
+        interstitial_defect_entry: DefectEntry object for the interstitial
+            defect.
+        dist_tol: distance tolerance in Å for determining equivalent sites.
+
+    Returns:
+        combined site and orientational degeneracy of the interstitial defect
+        entry (int).
+    """
+    if interstitial_defect_entry.bulk_entry is None:
+        raise ValueError(
+            "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
+            "degeneracies! (i.e. must be a parsed DefectEntry)"
+        )
+    equiv_sites = _get_all_equiv_sites(
+        interstitial_defect_entry.sc_defect_frac_coords,
+        interstitial_defect_entry.bulk_entry.structure,
+    )
+    defect_supercell_sites_of_same_species = [
+        site
+        for site in interstitial_defect_entry.sc_entry.structure
+        if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
+    ]
+
+    min_dists = np.array(
+        [
+            min(site.distance(equiv_site) for site in defect_supercell_sites_of_same_species)
+            for equiv_site in equiv_sites
+        ]
+    )
+    min_dists_under_tol = min_dists[min_dists < dist_tol]
+
+    return int(len(equiv_sites) / len(min_dists_under_tol))

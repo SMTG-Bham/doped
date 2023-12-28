@@ -264,7 +264,6 @@ def defect_from_structures(
                 coords_are_cartesian=False,
                 validate_proximity=True,
             )
-            guessed_initial_defect_structure[defect_site_idx]
 
         else:
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
@@ -1317,8 +1316,7 @@ class DefectParser:
             if defect.defect_type != core.DefectType.Vacancy:
                 final_defect_site = defect_structure[defect_site_index]
                 if (
-                    defect_site_in_initial_struct.species.elements[0].symbol
-                    == final_defect_site.species.elements[0].symbol
+                    defect_site_in_initial_struct.specie.symbol == final_defect_site.specie.symbol
                 ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
                     defect_site = final_defect_site
 

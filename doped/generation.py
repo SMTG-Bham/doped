@@ -91,9 +91,7 @@ def get_defect_entry_from_defect(
 
     # Dummy species (used to keep track of the defect coords in the supercell)
     # Find its fractional coordinates & remove it from the supercell
-    dummy_site = [
-        site for site in defect_entry_structure if site.species.elements[0].symbol == dummy_species.symbol
-    ][0]
+    dummy_site = [site for site in defect_entry_structure if site.specie.symbol == dummy_species.symbol][0]
     sc_defect_frac_coords = dummy_site.frac_coords
     defect_entry_structure.remove(dummy_site)
 
