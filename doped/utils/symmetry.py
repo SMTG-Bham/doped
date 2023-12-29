@@ -101,7 +101,7 @@ def _get_sga(struct, symprec=0.01):
     raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
@@ -118,21 +118,29 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
         transformed_struct = struct_with_x.copy()
         transformed_struct.apply_operation(symm_op, fractional=True)
         x_site = transformed_struct[-1].to_unit_cell()
-        # if pbc_diff norm is >0.01 for all other sites in x_sites, add x_site to x_sites:
+        # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
         if (
-            all(
-                np.linalg.norm(pbc_diff(x_site.frac_coords, other_x_site.frac_coords)) > 0.01
-                for other_x_site in x_sites
+            not x_sites
+            or min(
+                np.linalg.norm(
+                    np.dot(
+                        pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
+                        struct.lattice.matrix,
+                    ),
+                    axis=-1,
+                )
             )
-            or not x_sites
+            > dist_tol
         ):
             x_sites.append(x_site)
 
     return x_sites
 
 
-def _get_symm_dataset_of_struc_with_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01):
-    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops)
+def _get_symm_dataset_of_struc_with_all_equiv_sites(
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01
+):
+    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol)
     sga_with_all_X = _get_sga_with_all_X(struct, unique_sites, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
 
@@ -148,7 +156,7 @@ def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
 
 
 def _get_equiv_frac_coords_in_primitive(
-    frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True
+    frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True, dist_tol=0.01
 ):
     """
     Get an equivalent fractional coordinates of frac_coords in supercell, in
@@ -157,7 +165,7 @@ def _get_equiv_frac_coords_in_primitive(
     Also returns a list of equivalent fractional coords in the primitive cell
     if equiv_coords is True.
     """
-    unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops)
+    unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops, dist_tol=dist_tol)
     sga_with_all_X = _get_sga_with_all_X(supercell, unique_sites)
 
     prim_with_all_X = get_primitive_structure(sga_with_all_X, ignored_species=["X"])
@@ -288,7 +296,7 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     multiplicity = int(conv_cell_factor * len(unique_sites))
     wyckoff_label = f"{multiplicity}{symm_dataset['wyckoffs'][-1]}"
 
-    return wyckoff_label, unique_sites if equiv_sites else wyckoff_label
+    return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
 
 def _struc_sorting_func(struct):
@@ -846,6 +854,9 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     """
     Get the defect site point symmetry from a Defect object.
 
+    Note that this is intended only to be used for unrelaxed,
+    as-generated Defect objects (rather than parsed defects).
+
     Args:
         defect (Defect): Defect object.
         symm_ops (list):
@@ -904,11 +915,23 @@ def point_symmetry_from_defect_entry(
     parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
     defect symmetry - otherwise periodicity-breaking prevents this.
 
+    If periodicity-breaking prevents auto-symmetry determination, you can manually
+    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
+    from visualising the structures (e.g. using VESTA)(can use
+    `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+    factor for given initial/relaxed point symmetries) and setting the corresponding
+    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
+    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    The degeneracy factor is used in the calculation of defect/carrier concentrations
+    and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
+    doi.org/10.1039/D3CS00432E).
+
     Args:
         defect_entry (DefectEntry): DefectEntry object.
         symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure, to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the defect_entry.bulk_supercell
+            structure (if relaxed=False) or defect_entry.defect_supercell (if
+            relaxed=True), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
             0.2 for relaxed (to account for residual structural noise). You may
@@ -940,20 +963,17 @@ def point_symmetry_from_defect_entry(
     # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
     # determination.
     if relaxed:
-        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata.get(
-            "unrelaxed_defect_structure"
-        ):
+        if not hasattr(defect_entry, "calculation_metadata") or not defect_entry.calculation_metadata:
+            warnings.warn(
+                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), but the "
+                "`calculation_metadata` attribute is not set for `DefectEntry`, suggesting that this "
+                "DefectEntry was not parsed from calculations using doped. This means doped cannot "
+                "automatically check if the supercell shape is breaking the cell periodicity here or not "
+                "(see docstring) - the point symmetry groups may not be correct here!"
+            )
+        elif defect_entry.calculation_metadata.get("unrelaxed_defect_structure"):
             _matching = _check_relaxed_defect_symmetry_determination(
                 defect_entry, symm_ops=symm_ops, symprec=symprec, verbose=True
-            )
-        else:
-            warnings.warn(
-                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), "
-                "but the `calculation_metadata` attribute is not set for `DefectEntry`, suggesting that "
-                "this DefectEntry was not parsed from calculations using doped. This means doped cannot "
-                "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see `get_defect_name_from_entry` docstring) - the point symmetry groups may not be "
-                "correct here!"
             )
 
     _failed = False
@@ -962,9 +982,25 @@ def point_symmetry_from_defect_entry(
             symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
                 defect_entry.defect_supercell_site.frac_coords,
                 supercell,
-                symm_ops=symm_ops,
+                symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
                 symprec=symprec,
+                dist_tol=symprec,
             )
+
+            # Note:
+            # This code works to get the site symmetry of a defect site in a periodicity-breaking
+            # supercell, but only when the defect has not yet been relaxed. Still has the issue that once
+            # we have relaxation around the defect site in a periodicity-breaking supercell, then the
+            # (local) point symmetry cannot be easily determined as the whole supercell symmetry is broken.
+            # Future work could try a local structure analysis to determine the local point symmetry to
+            # counteract this.
+            # unique_sites = _get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
+            #     defect_entry.defect_supercell_site.frac_coords, defect_entry.bulk_supercell, symm_ops
+            # )
+            # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
+            #     defect_entry.bulk_supercell, unique_sites, symprec=symprec
+            # )
+            # symm_dataset = sga_with_all_X.get_symmetry_dataset()
         except AttributeError:
             _failed = True
 
@@ -1015,7 +1051,7 @@ def point_symmetry_from_defect_entry(
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
     symm_ops: Optional[list] = None,
-    symprec: float = 0.01,
+    symprec: float = 0.2,
     verbose: bool = False,
 ):
     if defect_entry.defect_supercell_site is None:
@@ -1030,26 +1066,35 @@ def _check_relaxed_defect_symmetry_determination(
             unrelaxed_defect_structure,
             symm_ops=symm_ops,
             symprec=symprec,
+            dist_tol=symprec,
         )
-        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
+            symm_dataset["site_symmetry_symbols"][-1]
+        )
 
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_entry.defect_supercell_site.frac_coords,
             defect_entry.bulk_supercell,
             symm_ops=symm_ops,
             symprec=symprec,
+            dist_tol=symprec,
         )
-        bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        bulk_spglib_point_group_symbol = schoenflies_from_hermann(
+            symm_dataset["site_symmetry_symbols"][-1]
+        )
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
-                    "detected that the supercell is a non-scalar matrix expansion which is breaking the "
-                    "cell periodicity, likely preventing the correct point group symmetry from being "
-                    "automatically determined. You should probably set relaxed=False to instead get the "
-                    "unrelaxed/initial point group symmetry (and manually or otherwise determine the "
-                    "relaxed point symmetry if desired."
+                    "detected that the defect supercell is _possibly_ a non-scalar matrix expansion which "
+                    "could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
+                    "point group symmetry from being automatically determined. You can set relaxed=False "
+                    "to instead get the unrelaxed/initial point group symmetry, and/or manually "
+                    "check/set/edit the point symmetries and corresponding orientational degeneracy "
+                    "factors by inspecting/editing the "
+                    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+                    "degeneracy_factors['orientational degeneracy'] attributes."
                 )
             return False
 

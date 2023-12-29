@@ -18,10 +18,8 @@ from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.utils.symmetry import (
     _get_all_equiv_sites,
-    _get_sga,
     group_order_from_schoenflies,
     point_symmetry_from_defect_entry,
-    schoenflies_from_hermann,
 )
 
 
@@ -705,6 +703,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
         ).nelect
 
 
+# TODO: Update/deprecate this:
 def get_interstitial_site_and_orientational_degeneracy(
     interstitial_defect_entry: DefectEntry, dist_tol: float = 0.15
 ) -> int:
@@ -765,19 +764,24 @@ def get_interstitial_site_and_orientational_degeneracy(
     return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
 
 
-def get_vacancy_substitution_orientational_degeneracy(
-    defect_entry: DefectEntry,
-    symm_ops: Optional[list] = None,
+def get_orientational_degeneracy(
+    defect_entry: Optional[DefectEntry] = None,
+    relaxed_point_group: Optional[str] = None,
+    unrelaxed_point_group: Optional[str] = None,
+    bulk_symm_ops: Optional[list] = None,
+    defect_symm_ops: Optional[list] = None,
     symprec: float = 0.2,
-) -> int:
+) -> float:
     r"""
-    Get the orientational degeneracy factor for a given _relaxed_
-    vacancy/substitution DefectEntry.
+    Get the orientational degeneracy factor for a given _relaxed_ DefectEntry,
+    by supplying either the DefectEntry object or the relaxed and unrelaxed
+    point group symbols (e.g. "Td", "C3v" etc).
 
-    This is computed by determining the _relaxed_ (and original/unrelaxed)
-    point symmetry of the defect site, and then getting the ratio of their
-    point group orders (equivalent to the ratio of partition functions or
-    number of symmetry operations (i.e. degeneracy)).
+    If a DefectEntry is supplied (and the point group symbols are not),
+    This is computed by determining the _relaxed_ point symmetry and the
+    original/unrelaxed defect site symmetry, and then getting the ratio of
+    their point group orders (equivalent to the ratio of partition
+    functions or number of symmetry operations (i.e. degeneracy)).
 
     Note: This tries to use the defect_entry.defect_supercell to determine
     the _relaxed_ site symmetry. However, it should be noted that this is not
@@ -799,44 +803,83 @@ def get_vacancy_substitution_orientational_degeneracy(
     defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
     prevents this.
 
+    If periodicity-breaking prevents auto-symmetry determination, you can manually
+    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
+    from visualising the structures (e.g. using VESTA)(can use
+    `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+    factor for given initial/relaxed point symmetries) and setting the corresponding
+    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
+    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    The degeneracy factor is used in the calculation of defect/carrier concentrations
+    and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
+    doi.org/10.1039/D3CS00432E).
+
     Args:
-        defect_entry (DefectEntry): DefectEntry object.
-        symm_ops (list):
+        defect_entry (DefectEntry): DefectEntry object. (Default = None)
+        relaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
+            of the _relaxed_ defect structure, if already calculated / manually
+            determined. Default is None (automatically calculated by doped).
+        unrelaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
+            of the non-relaxed (initial) defect site, if already calculated /
+            manually determined. This should match the site symmetry label from
+            `doped` when generating the defect. Default is None (automatically
+            calculated by doped).
+        bulk_symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
-            structure, to avoid re-calculating. Default is None (recalculates).
+            structure (used in determining the _relaxed_ point symmetry), to
+            avoid re-calculating. Default is None (recalculates).
+        defect_symm_ops (list):
+            List of symmetry operations of the defect_entry.defect_supercell
+            structure (used in determining the _unrelaxed_ point symmetry), to
+            avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.2 for obtaining the relaxed
-            point symmetry, which is larger than that used for unrelaxed structures
-            in doped (0.01) to account for residual structural noise in relaxed
-            supercells. The symprec value used for the unrelaxed (bulk) site symmetry
-            is set to a tenth of this value (i.e. 0.02 by default).
-            You may want to adjust for your system (e.g. if there are very slight
-            octahedral distortions etc).
+            Symmetry tolerance for spglib. Default is 0.2, which is larger than
+            that used for only unrelaxed structures in doped (0.01), to account for
+            residual structural noise in relaxed supercells. You may want to adjust
+            for your system (e.g. if there are very slight octahedral distortions etc).
 
     Returns:
-        int: orientational degeneracy factor for the vacancy/substitution defect.
+        float: orientational degeneracy factor for the defect.
     """
-    if defect_entry.bulk_entry is None:
+    if defect_entry is None:
+        if relaxed_point_group is None or unrelaxed_point_group is None:
+            raise ValueError(
+                "Either the DefectEntry or both relaxed and unrelaxed point group symbols must be "
+                "provided for doped to determine the orientational degeneracy! "
+            )
+
+    elif defect_entry.bulk_entry is None:
         raise ValueError(
             "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
             "(i.e. must be a parsed DefectEntry)"
         )
 
-    relaxed_point_symmetry = point_symmetry_from_defect_entry(
-        defect_entry,  # this will throw warning if auto-detected that supercell breaks trans symmetry
-        symm_ops=symm_ops,
-        symprec=symprec,
-        relaxed=True,
-    )
+    if relaxed_point_group is None:
+        # this will throw warning if auto-detected that supercell breaks trans symmetry
+        relaxed_point_group = point_symmetry_from_defect_entry(
+            defect_entry,  # type: ignore
+            symm_ops=defect_symm_ops,  # defect not bulk symm_ops
+            symprec=symprec,
+            relaxed=True,  # relaxed
+        )
 
-    bulk_site = defect_entry.calculation_metadata["bulk_site"]
-    bulk_index = defect_entry.bulk_entry.structure.index(bulk_site)
+    if unrelaxed_point_group is None:
+        unrelaxed_point_group = point_symmetry_from_defect_entry(
+            defect_entry,  # type: ignore
+            symm_ops=bulk_symm_ops,  # bulk not defect symm_ops
+            symprec=symprec,  # same symprec as relaxed_point_group for consistency
+            relaxed=False,  # unrelaxed
+        )
 
-    symm_dataset = _get_sga(
-        defect_entry.bulk_entry.structure, symprec=0.1 * symprec
-    ).get_symmetry_dataset()
-    bulk_site_symm_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][bulk_index])
+    # TODO: Implement this in point symmetry function:
+    # bulk_site = defect_entry.calculation_metadata["bulk_site"]
+    # bulk_index = defect_entry.bulk_entry.structure.index(bulk_site)
+    #
+    # symm_dataset = _get_sga(
+    #     defect_entry.bulk_entry.structure, symprec=0.1 * symprec
+    # ).get_symmetry_dataset()
+    # bulk_site_symm_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][bulk_index])
 
-    return group_order_from_schoenflies(bulk_site_symm_symbol) // group_order_from_schoenflies(
-        relaxed_point_symmetry
+    return group_order_from_schoenflies(unrelaxed_point_group) / group_order_from_schoenflies(
+        relaxed_point_group
     )
