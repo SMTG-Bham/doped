@@ -5,6 +5,7 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 """
 import os
 import warnings
+from functools import reduce
 from itertools import chain, product
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
@@ -28,7 +29,9 @@ from doped.utils.parsing import (
     _compare_kpoints,
     _compare_potcar_symbols,
     get_neutral_nelect_from_vasprun,
+    get_orientational_degeneracy,
     get_vasprun,
+    point_symmetry_from_defect_entry,
 )
 from doped.utils.plotting import _TLD_plot
 from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
@@ -991,10 +994,6 @@ class DefectThermodynamics(MSONable):
             pandas DataFrame of defect concentrations (and formation energies) for each
             defect entry in the DefectThermodynamics object.
         """
-        # TODO: Add degeneracy table function to DefectThermodynamics, to give output like in SK Thesis,
-        #  and show example in tutorials (also noting the default behaviour of `doped` in guessing this,
-        #  and trying to warn if it doesn't work)
-
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         energy_concentration_list = []
 
@@ -2139,7 +2138,7 @@ class DefectThermodynamics(MSONable):
         limit (i.e. phase diagram facet) as a pandas DataFrame.
 
         Table Key: (all energies in eV)
-        'Defect' -> Defect name
+        'Defect' -> Defect name (without charge)
         'q' -> Defect charge state.
         'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
         'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
@@ -2181,7 +2180,7 @@ class DefectThermodynamics(MSONable):
         )
         for defect_entry in defect_entries:
             row = [
-                defect_entry.name,
+                defect_entry.name.rsplit("_", 1)[0],  # name without charge,
                 defect_entry.charge_state,
             ]
             row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
@@ -2220,6 +2219,153 @@ class DefectThermodynamics(MSONable):
 
         # round all floats to 3dp:
         return formation_energy_df.round(3)
+
+    def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
+        r"""
+        Generates a table of the unrelaxed & relaxed point group symmetries,
+        and spin/orientational/total degeneracies for each defect in the
+        DefectThermodynamics object.
+
+        Table Key:
+        'Defect' -> Defect name (without charge)
+        'q' -> Defect charge state.
+        'Symm_Unrelax' -> Point group symmetry of the relaxed defect.
+        'Symm_Relax' -> Point group symmetry of the relaxed defect.
+        'g_Orient' -> Orientational degeneracy of the defect.
+        'g_Spin' -> Spin degeneracy of the defect.
+        'g_Total' -> Total degeneracy of the defect.
+
+        For interstitials, the 'unrelaxed' point group symmetry
+        correspond to the point symmetry of the interstitial site
+        with _no relaxation of the host structure_. For vacancies
+        and substitutions, this is equivalent to the initial point
+        symmetry.
+
+        Point group symmetries are taken from the calculation_metadata
+        ("relaxed point symmetry" and "unrelaxed point symmetry") if
+        present (should be, if parsed with doped and defect supercell
+        doesn't break host periodicity), otherwise are attempted to be
+        recalculated.
+
+        Note: doped tries to use the defect_entry.defect_supercell to determine
+        the _relaxed_ site symmetry. However, it should be noted that this is not
+        guaranteed to work in all cases; namely for non-diagonal supercell
+        expansions, or sometimes for non-scalar supercell expansion matrices
+        (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
+        which can mess up the periodicity of the cell. doped tries to automatically
+        check if this is the case, and will warn you if so.
+
+        This can also be checked by using this function on your doped _generated_ defects:
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
+
+        And if the point symmetries match in each case, then doped should be able to
+        correctly determine the final relaxed defect symmetry (and orientational degeneracy)
+        - otherwise periodicity-breaking prevents this.
+
+        If periodicity-breaking prevents auto-symmetry determination, you can manually
+        determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
+        from visualising the structures (e.g. using VESTA)(can use
+        `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+        factor for given initial/relaxed point symmetries) and setting the corresponding
+        values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
+        symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+        The degeneracy factor is used in the calculation of defect/carrier concentrations
+        and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
+        doi.org/10.1039/D3CS00432E).
+
+        Args:
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ints and floats instead).
+                (default: False)
+
+        Returns:
+            pandas DataFrame
+        """
+        table_list = []
+
+        for defect_entry in self.defect_entries:
+            total_degeneracy = (
+                reduce(lambda x, y: x * y, defect_entry.degeneracy_factors.values())
+                if defect_entry.degeneracy_factors
+                else "N/A"
+            )
+            if "relaxed point symmetry" not in defect_entry.calculation_metadata:
+                try:
+                    defect_entry.calculation_metadata[
+                        "relaxed point symmetry"
+                    ] = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=True
+                    )  # relaxed so defect symm_ops
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+            if "unrelaxed point symmetry" not in defect_entry.calculation_metadata:
+                try:
+                    defect_entry.calculation_metadata[
+                        "unrelaxed point symmetry"
+                    ] = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=False, symprec=0.01
+                    )  # relaxed so defect symm_ops
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+
+            if (
+                all(
+                    x in defect_entry.calculation_metadata
+                    for x in ["relaxed point symmetry", "unrelaxed point symmetry"]
+                )
+                and "orientational degeneracy" not in defect_entry.degeneracy_factors
+            ):
+                try:
+                    defect_entry.degeneracy_factors[
+                        "orientational degeneracy"
+                    ] = get_orientational_degeneracy(
+                        relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
+                        unrelaxed_point_group=defect_entry.calculation_metadata[
+                            "unrelaxed point symmetry"
+                        ],
+                    )
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+
+            table_list.append(
+                {
+                    "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    "q": defect_entry.charge_state,
+                    "Symm_Unrelax": defect_entry.calculation_metadata.get(
+                        "unrelaxed point symmetry", "N/A"
+                    ),
+                    "Symm_Relax": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
+                    "g_Orient": defect_entry.degeneracy_factors.get("orientational degeneracy", "N/A"),
+                    "g_Spin": defect_entry.degeneracy_factors.get("spin degeneracy", "N/A"),
+                    "g_Total": total_degeneracy,
+                }
+            )
+
+        symmetry_df = pd.DataFrame(table_list)
+        # sort by defect and then charge state descending:
+        symmetry_df = symmetry_df.sort_values(by=["Defect", "q"], ascending=[True, False])
+
+        if not skip_formatting:
+            symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
+
+        return symmetry_df.reset_index(drop=True)
+
+    # TODO: Show example of this in tutorials (also noting the default behaviour of `doped` in guessing
+    #  this, and trying to warn if it doesn't work)
 
     def __repr__(self):
         """
