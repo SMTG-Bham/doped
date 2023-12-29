@@ -283,8 +283,9 @@ def get_defect_name_from_entry(
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure, to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the defect_entry.bulk_supercell
+            structure (if relaxed=False) or defect_entry.defect_supercell (if
+            relaxed=True), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
             0.2 for relaxed (to account for residual structural noise). You may

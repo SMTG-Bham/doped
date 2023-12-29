@@ -37,16 +37,16 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
-    get_interstitial_site_and_orientational_degeneracy,
     get_locpot,
     get_neutral_nelect_from_vasprun,
+    get_orientational_degeneracy,
     get_outcar,
-    get_vacancy_substitution_orientational_degeneracy,
     get_vasprun,
+    point_symmetry_from_defect_entry,
     reorder_s1_like_s2,
 )
 from doped.utils.plotting import _format_defect_name
-from doped.utils.symmetry import _frac_coords_sort_func
+from doped.utils.symmetry import _frac_coords_sort_func, _get_all_equiv_sites, _get_sga
 
 
 def _custom_formatwarning(
@@ -79,14 +79,16 @@ _aniso_dielectric_but_using_locpot_warning = (
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
 _orientational_degeneracy_warning = (
-    "The defect supercell has been detected to have a non-scalar matrix expansion which "
-    "is breaking the cell periodicity, likely preventing the correct _relaxed_ point "
-    "group symmetry (and thus orientational degeneracy) of vacancies & substitutions "
-    "from being automatically determined.\n This will not affect defect formation "
-    "energies / transition levels, but is important for concentrations/doping/Fermi level"
-    "behaviour (see e.g. doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).\n"
-    "Orientational degeneracy factors can be manually specified by setting the "
-    "DefectEntry.degeneracy_factors['orientational degeneracy'] value(s)."
+    "The defect supercell has been detected to _possibly_ have a non-scalar matrix expansion, which could "
+    "be breaking the cell periodicity and possibly preventing the correct _relaxed_ point group "
+    "symmetries (and thus orientational degeneracies) from being automatically determined.\n"
+    "This will not affect defect formation energies / transition levels, but is important for "
+    "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
+    "doi.org/10.1039/D3CS00432E).\n"
+    "You can manually check (and edit) the computed relaxed/unrelaxed point symmetries and corresponding "
+    "orientational degeneracy factors by inspecting/editing the "
+    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+    "degeneracy_factors['orientational degeneracy'] attributes."
 )
 
 
@@ -755,10 +757,7 @@ class DefectsParser:
                             (
                                 parsing_warning,
                                 orientational_degeneracy_warning_called_now,
-                            ) = self._update_pbar_and_return_warnings_from_parsing(
-                                (parsed_defect_entry, warnings_string),
-                                pbar,
-                            )
+                            ) = self._update_pbar_and_return_warnings_from_parsing(result, pbar)
                             orientational_degeneracy_warning_called = (
                                 orientational_degeneracy_warning_called
                                 or orientational_degeneracy_warning_called_now
@@ -766,17 +765,6 @@ class DefectsParser:
                             parsing_warnings.append(parsing_warning)
                             if result[0] is not None:
                                 parsed_defect_entries.append(result[0])
-
-                if parsing_warnings := [
-                    warning for warning in parsing_warnings if warning  # remove empty strings
-                ]:
-                    warnings.warn("\n".join(parsing_warnings))
-
-                if orientational_degeneracy_warning_called:
-                    # warn and remove orientational degeneracy factors from all entries as not reliable
-                    warnings.warn(_orientational_degeneracy_warning)
-                    for defect_entry in parsed_defect_entries:
-                        defect_entry.degeneracy_factors.pop("orientational degeneracy", None)
 
             except Exception as exc:
                 pbar.close()
@@ -787,6 +775,17 @@ class DefectsParser:
 
         if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
             os.remove("voronoi_nodes.json.lock")
+
+        if parsing_warnings := [
+            warning for warning in parsing_warnings if warning  # remove empty strings
+        ]:
+            warnings.warn("\n".join(parsing_warnings))
+
+        if orientational_degeneracy_warning_called:
+            # warn and remove orientational degeneracy factors from all entries as not reliable
+            warnings.warn(_orientational_degeneracy_warning)
+            for defect_entry in parsed_defect_entries:
+                defect_entry.degeneracy_factors.pop("orientational degeneracy", None)
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
@@ -892,14 +891,15 @@ class DefectsParser:
             if result[1]:
                 # if orientational degeneracy warning, omit to prevent spamming:
                 warning_string = result[1].replace(f"\n{_orientational_degeneracy_warning}", "")
-                warning_string = warning_string.replace(f"{_orientational_degeneracy_warning}", "")
-                # both replace() calls to remove '\n' if multiple warnings, or just orientational warning
-                # TODO: Test this!
+                if warning_string := warning_string.replace(
+                    f"{_orientational_degeneracy_warning}", ""
+                ):  # TODO: Test this! (Roughly tested so far)
+                    return (
+                        f"Warning(s) encountered when parsing {defect_folder} at "
+                        f"{result[0].calculation_metadata['defect_path']}:\n{warning_string}"
+                    ), _orientational_degeneracy_warning in result[1]
 
-                return (
-                    f"Warning(s) encountered when parsing {result[0].name} at "
-                    f"{result[0].calculation_metadata['defect_path']}:\n{warning_string}"
-                ), _orientational_degeneracy_warning in result[1]
+                return "", _orientational_degeneracy_warning in result[1]
 
         return result[1] or "", False  # failed parsing warning if result[0] is None
 
@@ -1374,29 +1374,51 @@ class DefectParser:
             degeneracy_factors=degeneracy_factors,
         )
 
-        if defect.defect_type == core.DefectType.Interstitial:  # multiplicity & orientational degeneracy
+        bulk_supercell_symm_ops = _get_sga(
+            defect_entry.defect.structure, symprec=0.01
+        ).get_symmetry_operations()
+        if defect.defect_type == core.DefectType.Interstitial:
             # site multiplicity is automatically computed for vacancies and substitutions (much easier),
             # but not interstitials
-            defect_entry.defect.multiplicity = get_interstitial_site_and_orientational_degeneracy(
-                defect_entry
+            defect_entry.defect.multiplicity = len(
+                _get_all_equiv_sites(
+                    defect_entry.sc_defect_frac_coords,
+                    defect_entry.defect.structure,
+                    symm_ops=bulk_supercell_symm_ops,
+                    symprec=0.01,
+                    dist_tol=0.01,
+                )
             )
-        else:  # get vacancy/substitution orientational degeneracy (multiplicity auto-calculated)
-            try:
-                with warnings.catch_warnings(record=True) as captured_warnings:
-                    defect_entry.degeneracy_factors[
-                        "orientational degeneracy"
-                    ] = get_vacancy_substitution_orientational_degeneracy(defect_entry)
-                if any(
-                    "preventing the correct point group symmetry" in str(warning.message)
-                    for warning in captured_warnings
-                ):
-                    raise RuntimeError(
-                        "Site symmetry could not be determined using the defect supercell, and so the "
-                        "relaxed site symmetry (and thus orientational degeneracy) cannot be automatically"
-                        "determined."
-                    )  # raise error to be caught below
-            except RuntimeError:
-                warnings.warn(_orientational_degeneracy_warning)  # TODO: Test this!
+
+        # get orientational degeneracy
+        try:
+            with warnings.catch_warnings(record=True) as captured_warnings:
+                relaxed_point_group = point_symmetry_from_defect_entry(
+                    defect_entry, relaxed=True
+                )  # relaxed so defect symm_ops
+                unrelaxed_point_group = point_symmetry_from_defect_entry(
+                    defect_entry,
+                    symm_ops=bulk_supercell_symm_ops,  # unrelaxed so bulk symm_ops
+                    relaxed=False,
+                    symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
+                )
+                orientational_degeneracy = get_orientational_degeneracy(
+                    relaxed_point_group=relaxed_point_group, unrelaxed_point_group=unrelaxed_point_group
+                )
+                # TODO: Show these properties in tutorials:
+                defect_entry.degeneracy_factors["orientational degeneracy"] = orientational_degeneracy
+                defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
+                defect_entry.calculation_metadata["unrelaxed point symmetry"] = unrelaxed_point_group
+
+            if any("relaxed" in str(warning.message) for warning in captured_warnings):
+                raise RuntimeError(
+                    "Site symmetry could not be determined using the defect supercell, and so the "
+                    "relaxed site symmetry (and thus orientational degeneracy) cannot be automatically"
+                    "determined."
+                )  # raise error to be caught below
+
+        except RuntimeError:
+            warnings.warn(_orientational_degeneracy_warning)  # TODO: Test this! (Roughly tested so far)
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
