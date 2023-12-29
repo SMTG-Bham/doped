@@ -13,30 +13,6 @@
 - Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
-- Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
-  relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
-  - Should be doable with current point symmetry tools, especially when both the defect and bulk
-    structures are available. The configurational degeneracy should be just the final site degeneracy
-    (i.e. Wyckoff number) divided by the initial, or equivalently the initial number of symmetry
-    operations divided by the final, so we can just use this to determine the final site degeneracies.
-    For interstitials, should be based off just the Wyckoff number of the final relaxed site.
-    Should make this a parsed defect property, defined relative to the conventional cell (so they
-    actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
-    and have this automatically plug-and-play with `py-sc-fermi` (can do by setting `spin_degeneracy` and `config_degeneracy` properties, and use this in `py-sc-fermi` `interface` code). Already have the site analysis /
-    Wyckoff matching code for this.
-  - See `pydefect` and pmg `finder.py` for tools for this.
-  - For complex defects, this is future work, and should be done manually (note in docs and give
-    warning when parsing).
-    - For split-interstitials and split-vacancies however, should be relatively straightforward?
-      Firstly check that the standard approach described above doesn't happen to work (can test with
-      CdTe `Te_i` structures (split-interstitial dimer, oriented along <110> and twisted in different
-      charge states; https://doi.org/10.1039/D2FD00043A)). Could determine the centre-of-mass (CoM),
-      remove the two split-interstitial atoms, add a dummy species at CoM, get the symm-ops / point
-      symmetry of this supercell structure (i.e. with the defect periodic images), then do the same
-      with the original structure and get the difference (-> configurational degeneracy) from this. Not
-      sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
-      getting the difference in symm-ops according to `spglib`?
-
 - **`pydefect`** Interface:
   - Having an interface module for `pydefect` to convert parsed outputs to the `pydefect`/`vise` output, would allow the easy:
     - Automation of shallow defect analysis (and allow for easy further analysis of eigenvalues etc) – Adair's done before
@@ -62,6 +38,7 @@
 - Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
+  - Barebones tutorial workflow, as suggested by Alex G. 
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
