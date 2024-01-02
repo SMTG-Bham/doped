@@ -20,7 +20,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
-from doped.utils import plotting
+from doped.utils.displacements import _plot_site_displacements
 
 
 @dataclass
@@ -674,7 +674,7 @@ class DefectEntry(thermo.DefectEntry):
         site.
         """
         # Get supercells with same number of sites
-        fig = plotting._plot_site_displacements(
+        fig = _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
             use_plotly=use_plotly,
