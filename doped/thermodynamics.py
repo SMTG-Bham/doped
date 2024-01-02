@@ -2,34 +2,42 @@
 Code for analysing the thermodynamics of defect formation in solids, including
 calculation of formation energies as functions of Fermi level and chemical
 potentials, charge transition levels, defect/carrier concentrations etc.
-
-This code for calculating defect formation energies was originally templated
-from the pyCDT (pymatgen<=2022.7.25) DefectThermodynamics code (deleted in
-later versions), before heavy modification to work with doped DefectEntry
-objects and add additional functionality.
 """
 import os
 import warnings
-from itertools import chain
-from typing import Dict, List, Optional, Tuple, Union
+from functools import reduce
+from itertools import chain, product
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import colors
+from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
+from pymatgen.electronic_structure.dos import FermiDos, f0
+from pymatgen.io.vasp.outputs import Vasprun
+from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
-from doped.core import DefectEntry
+from doped.core import DefectEntry, _no_chempots_warning
 from doped.generation import _sort_defect_entries
-from doped.utils.parsing import _compare_incar_tags, _compare_kpoints, _compare_potcar_symbols
+from doped.utils.parsing import (
+    _compare_incar_tags,
+    _compare_kpoints,
+    _compare_potcar_symbols,
+    get_neutral_nelect_from_vasprun,
+    get_orientational_degeneracy,
+    get_vasprun,
+    point_symmetry_from_defect_entry,
+)
 from doped.utils.plotting import _TLD_plot
+from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
 
-# TODO: Add all_transition_levels functions, which iteratively print all potential charge transition
-#  levels for the DefectThermodynamics object, including metastable states. Template using the
-#  print_transition_levels; see https://github.com/SMTG-Bham/doped/issues/3 for code
+if TYPE_CHECKING:
+    from pymatgen.core.structure import PeriodicSite
 
 
 def bold_print(string: str) -> None:
@@ -92,7 +100,6 @@ def _parse_chempots(chempots: Optional[Dict] = None, el_refs: Optional[Dict] = N
         chempots = {"facets": {"User Chemical Potentials": chempots}}
 
     # otherwise user-specified format, convert to doped format
-    # TODO: Add catch later, that if no chempot is set for an element, warn user and set to 0
     if el_refs is not None:
         chempots["elemental_refs"] = el_refs
         chempots["facets_wrt_el_refs"] = {
@@ -103,6 +110,153 @@ def _parse_chempots(chempots: Optional[Dict] = None, el_refs: Optional[Dict] = N
         }
 
     return chempots, el_refs
+
+
+def group_defects_by_distance(
+    entry_list: List[DefectEntry], dist_tol: float = 1.5
+) -> Dict[str, Dict[Tuple, List[DefectEntry]]]:
+    """
+    Given an input list of DefectEntry objects, returns a dictionary of {simple
+    defect name: {(equivalent defect sites): [DefectEntry]}, where 'simple
+    defect name' is the nominal defect type (e.g. `Te_i` for
+    `Te_i_Td_Cd2.83_+2`), `(equivalent defect sites)` is a tuple of the
+    equivalent defect sites (in the bulk supercell), and `[DefectEntry]` is a
+    list of DefectEntry objects with the same simple defect name and a minimum
+    distance between equivalent defect sites less than `dist_tol` (1.5 Å by
+    default).
+
+    If a DefectEntry's site has a minimum distance less than `dist_tol` to
+    multiple sets of equivalent sites, then it is matched to the one with
+    the lowest minimum distance.
+
+    Args:
+        entry_list ([DefectEntry]):
+            A list of DefectEntry objects to group together.
+        dist_tol (float):
+            Minimum distance (in Å) between equivalent defect sites (in the
+            supercell) to group together. If the minimum distance between
+            equivalent defect sites is less than `dist_tol`, then they will
+            be grouped together, otherwise treated as separate defects.
+            (Default: 1.5)
+
+    Returns:
+        dict: {simple defect name: {(equivalent defect sites): [DefectEntry]}
+    """
+    # initial group by Defect.name (same nominal defect), then distance to equiv sites
+    # first make dictionary of nominal defect name: list of entries with that name
+    defect_name_dict = {}
+    for entry in entry_list:
+        if entry.defect.name not in defect_name_dict:
+            defect_name_dict[entry.defect.name] = [entry]
+        else:
+            defect_name_dict[entry.defect.name].append(entry)
+
+    defect_site_dict: Dict[
+        str, Dict[Tuple, List[DefectEntry]]
+    ] = {}  # {defect name: {(equiv defect sites): entry list}}
+    bulk_supercell_sga = _get_sga(entry_list[0].bulk_supercell)
+    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+
+    for name, entry_list in defect_name_dict.items():
+        defect_site_dict[name] = {}
+        sorted_entry_list = sorted(
+            entry_list, key=lambda x: abs(x.charge_state)
+        )  # sort by charge, starting with closest to zero, for deterministic behaviour
+        for entry in sorted_entry_list:
+            if "bulk_site" not in entry.calculation_metadata:
+                bulk_site: PeriodicSite = (
+                    entry.defect_supercell_site
+                )  # need to use relaxed defect site instead
+            else:
+                bulk_site = entry.calculation_metadata["bulk_site"]
+            min_dist_list = [
+                min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
+                    bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
+                )
+                for equiv_site_tuple in defect_site_dict[name]
+            ]
+            if min_dist_list and min(min_dist_list) < dist_tol:  # less than dist_tol, add to corresponding
+                idxmin = np.argmin(min_dist_list)  # entry list
+                if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
+                    # pop old tuple, add new tuple with new equiv sites, and add entry to new tuple
+                    orig_tuple = list(defect_site_dict[name].keys())[idxmin]
+                    defect_entry_list = defect_site_dict[name].pop(orig_tuple)
+                    equiv_site_tuple = (
+                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                            _get_all_equiv_sites(
+                                bulk_site.frac_coords,
+                                symm_bulk_struct,
+                                bulk_symm_ops,
+                            )
+                        )
+                        + orig_tuple
+                    )
+                    defect_entry_list.extend([entry])
+                    defect_site_dict[name][equiv_site_tuple] = defect_entry_list
+
+                else:  # less than dist_tol, add to corresponding entry list
+                    defect_site_dict[name][list(defect_site_dict[name].keys())[idxmin]].append(entry)
+
+            else:  # no match found, add new entry
+                try:
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        symm_bulk_struct.find_equivalent_sites(bulk_site)
+                    )
+                except ValueError:  # likely interstitials, need to add equiv sites to tuple
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        _get_all_equiv_sites(
+                            bulk_site.frac_coords,
+                            symm_bulk_struct,
+                            bulk_symm_ops,
+                        )
+                    )
+
+                defect_site_dict[name][equiv_site_tuple] = [entry]
+
+    return defect_site_dict
+
+
+def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[DefectEntry]]:
+    """
+    Given an input list of DefectEntry objects, returns a dictionary of {defect
+    name without charge: [DefectEntry]}, where the values are lists of
+    DefectEntry objects with the same defect name (excluding charge state).
+
+    The DefectEntry.name attributes are used to get the defect names.
+    These should be in the format:
+    "{defect_name}_{optional_site_info}_{charge_state}".
+    If the DefectEntry.name attribute is not defined or does not end with the
+    charge state, then the entry will be renamed with the doped default name.
+
+    For example, `v_Cd_C3v_+1`, `v_Cd_Td_+1` and `v_Cd_C3v_+2` will be grouped
+    as {`v_Cd_C3v`: [`v_Cd_C3v_+1`, `v_Cd_C3v_+2`], `v_Cd_Td`: [`v_Cd_Td_+1`]}.
+
+    Args:
+        entry_list ([DefectEntry]):
+            A list of DefectEntry objects to group together by defect name
+            (without charge).
+
+    Returns:
+        dict: Dictionary of {defect name without charge: [DefectEntry]}.
+    """
+    from doped.analysis import check_and_set_defect_entry_name
+
+    grouped_entries: Dict[str, List[DefectEntry]] = {}  # dict for groups of entries with the same prefix
+
+    for _i, entry in enumerate(entry_list):
+        # check defect entry name and (re)define if necessary
+        check_and_set_defect_entry_name(entry, entry.name)
+        entry_name_wout_charge = entry.name.rsplit("_", 1)[0]
+
+        # If the prefix is not yet in the dictionary, initialize it with empty lists
+        if entry_name_wout_charge not in grouped_entries:
+            grouped_entries[entry_name_wout_charge] = []
+
+        # Append the current entry to the appropriate group
+        grouped_entries[entry_name_wout_charge].append(entry)
+
+    return grouped_entries
 
 
 class DefectThermodynamics(MSONable):
@@ -127,6 +281,7 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
+        dist_tol: float = 1.5,
         check_compatibility: bool = True,
     ):
         """
@@ -139,7 +294,6 @@ class DefectThermodynamics(MSONable):
 
         Note that the DefectEntry.name attributes are used to label the defects in
         plots.
-
 
         Args:
             defect_entries ([DefectEntry] or {str: DefectEntry}):
@@ -184,6 +338,13 @@ class DefectThermodynamics(MSONable):
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in `defect_entries`.
+            dist_tol (float):
+                Minimum distance (in Å) between equivalent defect sites (in the
+                supercell) to group together (for plotting and transition level
+                analysis). If the minimum distance between equivalent defect
+                sites is less than `dist_tol`, then they will be grouped together,
+                otherwise treated as separate defects.
+                (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
                 entry (i.e. that all reference bulk energies are the same).
@@ -199,9 +360,10 @@ class DefectThermodynamics(MSONable):
 
         self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
+        self._dist_tol = dist_tol
 
         # get and check VBM/bandgap values:
-        def _raise_VBM_bandgap_value_error(vals, type="VBM"):
+        def _raise_VBM_band_gap_value_error(vals, type="VBM"):
             raise ValueError(
                 f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
                 f"and so are incompatible for thermodynamic analysis with DefectThermodynamics. The "
@@ -214,23 +376,23 @@ class DefectThermodynamics(MSONable):
         self.band_gap = band_gap
         if self.vbm is None or self.band_gap is None:
             vbm_vals = []
-            bandgap_vals = []
+            band_gap_vals = []
             for defect_entry in self.defect_entries:
                 if "vbm" in defect_entry.calculation_metadata:
                     vbm_vals.append(defect_entry.calculation_metadata["vbm"])
                 if "gap" in defect_entry.calculation_metadata:
-                    bandgap_vals.append(defect_entry.calculation_metadata["gap"])
+                    band_gap_vals.append(defect_entry.calculation_metadata["gap"])
 
-            # get the max difference in VBM & bandgap vals:
+            # get the max difference in VBM & band_gap vals:
             if max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
-                _raise_VBM_bandgap_value_error(vbm_vals, type="VBM")
+                _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
             elif self.vbm is None:
                 self.vbm = vbm_vals[0]
 
-            if max(bandgap_vals) - min(bandgap_vals) > 0.05 and self.band_gap is None:
-                _raise_VBM_bandgap_value_error(bandgap_vals, type="bandgap")
+            if max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
+                _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
             elif self.band_gap is None:
-                self.band_gap = bandgap_vals[0]
+                self.band_gap = band_gap_vals[0]
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
             if i is None:
@@ -252,7 +414,9 @@ class DefectThermodynamics(MSONable):
         defect_entries_dict = {entry.name: entry for entry in self.defect_entries}
         sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
         self._defect_entries = list(sorted_defect_entries_dict.values())
-        self._parse_transition_levels()
+        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
+            warnings.filterwarnings("ignore", message="No chemical potentials")
+            self._parse_transition_levels()
         if check_compatibility:
             self._check_bulk_compatibility()
 
@@ -269,6 +433,7 @@ class DefectThermodynamics(MSONable):
             "el_refs": self.el_refs,
             "vbm": self.vbm,
             "band_gap": self.band_gap,
+            "dist_tol": self.dist_tol,
         }
 
     @classmethod
@@ -294,6 +459,7 @@ class DefectThermodynamics(MSONable):
             el_refs=d.get("el_refs"),
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
+            dist_tol=d.get("dist_tol"),
         )
 
     def to_json(self, filename: Optional[str] = None):
@@ -346,17 +512,16 @@ class DefectThermodynamics(MSONable):
         """
         Parses the charge transition levels for defect entries in the
         DefectThermodynamics object, and stores information about the stable
-        charge states, transition levels etc. Defect entries are grouped
-        together based on their DefectEntry.name attributes. These should be in
-        the format "{defect_name}_{optional_site_info}_{charge_state}". If the
-        DefectEntry.name attribute is not defined or does not end with the
-        charge state, then the entry will be renamed with the doped default
-        name.
+        charge states, transition levels etc.
 
-        Note that if the entries in DefectThermodynamics are edited after
-        initialisation, then DefectThermodynamics._parse_transition_levels()
-        should be called if the attributes (transition_level_map etc.) and
-        outputs (plotting and tabulation) are to be updated properly.
+        Defect entries of the same type (e.g. Te_i, v_Cd) are grouped together
+        (for plotting and transition level analysis) based on the minimum
+        distance between (equivalent) defect sites, to distinguish between
+        different inequivalent sites. `DefectEntry`s of the same type and with
+        a minimum distance between equivalent defect sites less than `dist_tol`
+        (1.5 Å by default) are grouped together. If a DefectEntry's site has a
+        minimum distance less than `dist_tol` to multiple sets of equivalent
+        sites, then it is matched to the one with the lowest minimum distance.
 
         Code for parsing the transition levels was originally templated from
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later
@@ -376,118 +541,41 @@ class DefectThermodynamics(MSONable):
         This code was modeled after the Halfspace Intersection code for
         the Pourbaix Diagram.
         """
-        # TODO: (1) refactor the site-matching to just use the already-parsed site positions, and then
-        #  merge interstitials according to this algorithm:
-        # 1. For each interstitial defect type, count the number of parsed calculations per charge
-        # state, and take the charge state with the most calculations present as our starting point (
-        # if multiple charge states have the same number of calculations, take the closest to neutral).
-        # 2. For each interstitial in a different charge state, determine which of the starting
-        # points has their (already-parsed) Voronoi site closest to its (already-parsed) Voronoi
-        # site, making sure to account for symmetry equivalency (using just Voronoi sites + bulk
-        # structure will be easiest), and merge with this.
-        # Also add option to just amalgamate and show only the lowest energy states.
-        #  (2) optionally retain/remove unstable (in the gap) charge states (rather than current
-        #  default range of (VBM - 1eV, CBM + 1eV))...
-        # When doing this, add DOS object attribute, to then use with Alex's doped - py-sc-fermi code.
-
-        # Related TODO: Previous `pymatgen` issues, fixed?
-        # - Currently the `PointDefectComparator` object from `pymatgen.analysis.defects.thermodynamics`
-        #   is used to group defect charge states for the transition level plot / transition level map
-        #   outputs. For interstitials, if the closest Voronoi site from the relaxed structure thus
-        #   differs significantly between charge states, this will give separate lines for each charge
-        #   state. This is kind of ok, because they _are_ actually different defect sites, but should
-        #   have intelligent defaults for dealing with this (at least similar colours for similar defect
-        #   types, an option to just show amalgamated lowest energy charge states for each _defect type_).
-        #   NaP is an example for this - should have a test built for however we want to handle cases like
-        #   this. See Ke's example case too with different interstitial sites.
-
-        # Old pymatgen defect-matching code: # TODO: Reconsider this approach. For now, we group based
-        #  on defect entry names (which themselves should contain the information on inequivalent (
-        #  initial) defect sites). Could match based on the entry.defect objects as was done before,
-        #  if we had a reliable way of parsing these (but in a far more efficient way than before,
-        #  just checking that the structure and site are the same rather than the old,
-        #  slow PointDefectComparator; Bonan did this via hashing to avoid the old approach (see
-        #  archived branch, but I think with updated comparisons this is unnecessary).
-        # TODO: Should have an adjustable site-displacement tolerance for matching and grouping entries?
-        # (i.e. distance between (equivalent) defect sites?)
-        #  Along with option to just group all grouped_defect_entries of the same type and only show the
-        #  lowest energy state (equivalent to setting this displacement tolerance to infinity).
-        # def similar_defects(entry_list):
-        #     """
-        #     Used for grouping similar grouped_defect_entries of different charges
-        #     Can distinguish identical grouped_defect_entries even if they are not
-        #     in same position.
-        #     """
-        #     pdc = PointDefectComparator(
-        #         check_charge=False, check_primitive_cell=True, check_lattice_scale=False
-        #     )
-        #     grp_def_sets = []
-        #     grp_def_indices = []
-        #     for ent_ind, ent in enumerate(entry_list):
-        #         # TODO: more pythonic way of grouping entry sets with PointDefectComparator.
-        #         # this is currently most time intensive part of DefectThermodynamics
-        #         matched_ind = None
-        #         for grp_ind, defgrp in enumerate(grp_def_sets):
-        #             if pdc.are_equal(ent.defect, defgrp[0].defect):
-        #                 matched_ind = grp_ind
-        #                 break
-        #         if matched_ind is not None:
-        #             grp_def_sets[matched_ind].append(copy.deepcopy(ent))
-        #             grp_def_indices[matched_ind].append(ent_ind)
-        #         else:
-        #             grp_def_sets.append([copy.deepcopy(ent)])
-        #             grp_def_indices.append([ent_ind])
-        #
-        #     return zip(grp_def_sets, grp_def_indices)
-
-        def similar_defects(entry_list):
-            """
-            Group grouped_defect_entries based on their DefectEntry.name attributes. Defect
-            entries are grouped together based on their DefectEntry.name attributes.
-            These should be in the format:
-            "{defect_name}_{optional_site_info}_{charge_state}". If the
-            DefectEntry.name attribute is not defined or does not end with the
-            charge state, then the entry will be renamed with the doped default name.
-
-            For example, 'defect_A_1' and 'defect_A_2' will be grouped together.
-            """
-            from doped.analysis import check_and_set_defect_entry_name
-
-            grouped_entries = {}  # Dictionary to hold groups of entries with the same prefix
-
-            for i, entry in enumerate(entry_list):
-                # check defect entry name and (re)define if necessary
-                check_and_set_defect_entry_name(entry, entry.name)
-                entry_name_wout_charge = entry.name.rsplit("_", 1)[0]
-
-                # If the prefix is not yet in the dictionary, initialize it with empty lists
-                if entry_name_wout_charge not in grouped_entries:
-                    grouped_entries[entry_name_wout_charge] = {"entries": [], "indices": []}
-
-                # Append the current entry and its index to the appropriate group
-                grouped_entries[entry_name_wout_charge]["entries"].append(entry)
-                grouped_entries[entry_name_wout_charge]["indices"].append(i)
-
-            # Convert the dictionary to the desired output format
-            return [(group["entries"], group["indices"]) for group in grouped_entries.values()]
-
         # determine defect charge transition levels:
         midgap_formation_energies = [  # without chemical potentials
-            self.get_formation_energy(entry, fermi_level=0.5 * self.band_gap)
+            self.get_formation_energy(entry, fermi_level=0.5 * self.band_gap)  # type: ignore
             for entry in self.defect_entries
         ]
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
         max_y_lim = max(midgap_formation_energies) + 30
-        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
+        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
 
-        stable_entries = {}
-        defect_charge_map = {}
-        transition_level_map = {}
+        stable_entries: dict = {}
+        defect_charge_map: dict = {}
+        transition_level_map: dict = {}
 
-        # Grouping by defect types
-        for grouped_defect_entries, _index_list in similar_defects(self.defect_entries):
+        try:
+            defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=self.dist_tol)
+            grouped_entries_list = [
+                entry_list for sub_dict in defect_site_dict.values() for entry_list in sub_dict.values()
+            ]
+        except Exception as e:
+            grouped_entries = group_defects_by_name(self.defect_entries)
+            grouped_entries_list = list(grouped_entries.values())
+            warnings.warn(
+                f"Grouping (inequivalent) defects by distance failed with error: {e}\nGrouping by defect "
+                f"names instead."
+            )  # possibly different bulks (though this should be caught/warned about earlier), or not
+            # parsed with recent doped versions etc
+
+        for grouped_defect_entries in grouped_entries_list:
+            sorted_defect_entries = sorted(
+                grouped_defect_entries, key=lambda x: abs(x.charge_state)
+            )  # sort by charge, starting with closest to zero, for deterministic behaviour
+            # thus uses name of neutral (or closest to neutral) species to get name (without charge)
+
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are
             # the variables in the hyperplanes
@@ -496,9 +584,9 @@ class DefectThermodynamics(MSONable):
                     [
                         -1.0 * entry.charge_state,
                         1,
-                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),
+                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),  # type: ignore
                     ]
-                    for entry in grouped_defect_entries
+                    for entry in sorted_defect_entries
                 ]
             )
 
@@ -509,23 +597,28 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
-            interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]
+            interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
-            ints_and_facets = zip(hs_ints.intersections, hs_ints.dual_facets)
+            ints_and_facets_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
             # Only include the facets corresponding to entries, not the boundaries
-            total_entries = len(grouped_defect_entries)
-            ints_and_facets = filter(
+            total_entries = len(sorted_defect_entries)
+            ints_and_facets_filter = filter(
                 lambda int_and_facet: all(np.array(int_and_facet[1]) < total_entries),
-                ints_and_facets,
+                ints_and_facets_zip,
             )
             # sort based on transition level
-            ints_and_facets = sorted(ints_and_facets, key=lambda int_and_facet: int_and_facet[0][0])
+            ints_and_facets_list = sorted(
+                ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
+            )
 
-            defect_name_wout_charge = grouped_defect_entries[0].name.rsplit("_", 1)[
-                0
-            ]  # name without charge
+            # take simplest (shortest) possible defect name as the name for that group
+            possible_defect_names = [
+                defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries
+            ]  # names without charge
+            defect_name_wout_charge = min(possible_defect_names, key=len)
+
             if any(
                 defect_name_wout_charge in i for i in transition_level_map
             ):  # defects with same name, rename to prevent overwriting:
@@ -548,56 +641,54 @@ class DefectThermodynamics(MSONable):
                     i += 1
                     defect_name_wout_charge = f"{defect_name_wout_charge}_{chr(96 + i)}"  # d, e, f etc
 
-            if len(ints_and_facets) > 0:  # unpack into lists
-                _, facets = zip(*ints_and_facets)
+            if len(ints_and_facets_list) > 0:  # unpack into lists
+                _, facets = zip(*ints_and_facets_list)
                 transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
-                    intersection[0]: [grouped_defect_entries[i].charge_state for i in facet]
-                    for intersection, facet in ints_and_facets
+                    intersection[0]: [sorted_defect_entries[i].charge_state for i in facet]
+                    for intersection, facet in ints_and_facets_list
                 }
                 stable_entries[defect_name_wout_charge] = [
-                    grouped_defect_entries[i] for dual in facets for i in dual
+                    sorted_defect_entries[i] for dual in facets for i in dual
                 ]
                 defect_charge_map[defect_name_wout_charge] = [
-                    entry.charge_state for entry in grouped_defect_entries
+                    entry.charge_state for entry in sorted_defect_entries
                 ]
 
-            else:
-                # if ints_and_facets is empty, then there is likely only one defect...
-                if len(grouped_defect_entries) != 1:
-                    # confirm formation energies dominant for one defect over other identical defects
-                    name_set = [entry.name for entry in grouped_defect_entries]
-                    vb_list = [
-                        self.get_formation_energy(entry, fermi_level=limits[0][0])
-                        for entry in grouped_defect_entries
-                    ]
-                    cb_list = [
-                        self.get_formation_energy(entry, fermi_level=limits[0][1])
-                        for entry in grouped_defect_entries
-                    ]
+            elif len(sorted_defect_entries) == 1:
+                transition_level_map[defect_name_wout_charge] = {}
+                stable_entries[defect_name_wout_charge] = [sorted_defect_entries[0]]
+                defect_charge_map[defect_name_wout_charge] = [sorted_defect_entries[0].charge_state]
 
-                    vbm_def_index = vb_list.index(min(vb_list))
-                    name_stable_below_vbm = name_set[vbm_def_index]
-                    cbm_def_index = cb_list.index(min(cb_list))
-                    name_stable_above_cbm = name_set[cbm_def_index]
+            else:  # if ints_and_facets is empty, then there is likely only one defect...
+                # confirm formation energies dominant for one defect over other identical defects
+                name_set = [entry.name for entry in sorted_defect_entries]
+                vb_list = [
+                    self.get_formation_energy(entry, fermi_level=limits[0][0])
+                    for entry in sorted_defect_entries
+                ]
+                cb_list = [
+                    self.get_formation_energy(entry, fermi_level=limits[0][1])
+                    for entry in sorted_defect_entries
+                ]
 
-                    if name_stable_below_vbm != name_stable_above_cbm:
-                        raise ValueError(
-                            f"HalfSpace identified only one stable charge out of list: {name_set}\n"
-                            f"But {name_stable_below_vbm} is stable below vbm and "
-                            f"{name_stable_above_cbm} is stable above cbm.\nList of VBM formation "
-                            f"energies: {vb_list}\nList of CBM formation energies: {cb_list}"
-                        )
+                vbm_def_index = vb_list.index(min(vb_list))
+                name_stable_below_vbm = name_set[vbm_def_index]
+                cbm_def_index = cb_list.index(min(cb_list))
+                name_stable_above_cbm = name_set[cbm_def_index]
 
-                    transition_level_map[defect_name_wout_charge] = {}
-                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[vbm_def_index]]
-                    defect_charge_map[defect_name_wout_charge] = [
-                        entry.charge_state for entry in grouped_defect_entries
-                    ]
-                else:
-                    transition_level_map[defect_name_wout_charge] = {}
-                    stable_entries[defect_name_wout_charge] = [grouped_defect_entries[0]]
-                    defect_charge_map[defect_name_wout_charge] = [grouped_defect_entries[0].charge_state]
+                if name_stable_below_vbm != name_stable_above_cbm:
+                    raise ValueError(
+                        f"HalfSpace identified only one stable charge out of list: {name_set}\n"
+                        f"But {name_stable_below_vbm} is stable below vbm and "
+                        f"{name_stable_above_cbm} is stable above cbm.\nList of VBM formation "
+                        f"energies: {vb_list}\nList of CBM formation energies: {cb_list}"
+                    )
 
+                transition_level_map[defect_name_wout_charge] = {}
+                stable_entries[defect_name_wout_charge] = [sorted_defect_entries[vbm_def_index]]
+                defect_charge_map[defect_name_wout_charge] = [
+                    entry.charge_state for entry in sorted_defect_entries
+                ]
         self.transition_level_map = transition_level_map
         self.transition_levels = {
             defect_name: list(defect_tls.keys())
@@ -612,17 +703,17 @@ class DefectThermodynamics(MSONable):
 
     def _check_bulk_compatibility(self):
         """
-        Helper function to quickly check if all bulk entries have the same
-        energy (by proxy checks that same bulk/defect calculation settings were
-        used in all cases, from each bulk/defect combination being checked when
-        parsing).
+        Helper function to quickly check if all entries have compatible bulk
+        calculation settings, by checking that the energy of
+        defect_entry.bulk_entry is the same for all defect entries.
 
-        This is to catch any cases where defects may have been parsed
+        By proxy checks that same bulk/defect calculation settings were used in
+        all cases, from each bulk/defect combination already being checked when
+        parsing. This is to catch any cases where defects may have been parsed
         separately and combined (rather than altogether with DefectsParser,
         which ensures the same bulk in each case), and where a different bulk
         reference calculation was (mistakenly) used.
         """
-        # check that the energy of defect_entry.bulk_entry is the same for all defect entries:
         bulk_energies = [entry.bulk_entry.energy for entry in self.defect_entries]
         if max(bulk_energies) - min(bulk_energies) > 0.02:  # 0.02 eV tolerance
             warnings.warn(
@@ -716,9 +807,6 @@ class DefectThermodynamics(MSONable):
         self._defect_entries += defect_entries
         self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
 
-    # TODO: Show example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries /
-    #  combining multiple DefectThermodynamics objects
-
     @property
     def defect_entries(self):
         """
@@ -745,15 +833,16 @@ class DefectThermodynamics(MSONable):
         """
         return self._chempots
 
-    # TODO: Show on chemical potentials docs how chempots can be later set as attribute for
-    #  DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations
-    #  first, and then finished chemical potential calculations after).
     @chempots.setter
     def chempots(self, input_chempots):
         """
         Set the chemical potentials dictionary (`chempots`), and reparse to
         have the required `doped` format.
         """
+        if input_chempots is None:
+            self._chempots = None
+            self._el_refs = None
+            return
         self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
 
     @property
@@ -795,120 +884,492 @@ class DefectThermodynamics(MSONable):
         all_stable_entries = self.all_stable_entries
         return [e for e in self.defect_entries if e not in all_stable_entries]
 
-    # TODO: Deal with these commented out methods:
-    # TODO: Add similar function to get formation energies and concentrations for all defect entries
+    @property
+    def dist_tol(self):
+        """
+        Get the distance tolerance (in Å) used for grouping (equivalent)
+        defects together (for plotting and transition level analysis).
+        """
+        return self._dist_tol
 
-    # def get_concentrations():
-    #     pass  # formation energies and concentrations
+    @dist_tol.setter
+    def dist_tol(self, input_dist_tol: float):
+        """
+        Set the distance tolerance (in Å) used for grouping (equivalent)
+        defects together (for plotting and transition level analysis), and
+        reparse the thermodynamic information (transition levels etc) with this
+        tolerance.
+        """
+        self._dist_tol = input_dist_tol
+        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
+            warnings.filterwarnings("ignore", message="No chemical potentials")
+            self._parse_transition_levels()
 
-    # Doesn't work as .defect_concentration() no longer a DefectEntry method, but can be done with
-    # pmg-analysis-defects FormationEnergyDiagram (or py-sc-fermi ofc)
-    # def defect_concentrations(self, chemical_potentials, temperature=300, fermi_level=0.0):
-    #     """
-    #     Give list of all concentrations at specified efermi in the DefectThermodynamics
-    #     args:
-    #         chemical_potentials = {Element: number} is dict of chemical potentials to provide formation
-    #             energies for temperature = temperature to produce concentrations from
-    #         fermi_level: (float) is fermi level relative to valence band maximum
-    #             Default efermi = 0 = VBM energy
-    #     returns:
-    #         list of dictionaries of defect concentrations.
-    #     """
-    #     return [
-    #         {
-    #             "conc": dfct.defect_concentration(
-    #                 chemical_potentials=chemical_potentials,
-    #                 temperature=temperature,
-    #                 fermi_level=fermi_level,
-    #             ),
-    #             "name": dfct.name,
-    #             "charge": dfct.charge_state,
-    #         }
-    #         for dfct in self.all_stable_entries
-    #     ]
+    def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
+        """
+        Handle the input Fermi level choice.
 
-    # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
-    # but can be done with pmg-analysis-defects MultiFormationEnergyDiagram (or py-sc-fermi ofc)
-    # def solve_for_fermi_energy(self, temperature, chemical_potentials, bulk_dos):
-    #     """
-    #     Solve for the Fermi energy self-consistently as a function of T
-    #     Observations are Defect concentrations, electron and hole conc
-    #     Args:
-    #         temperature: Temperature to equilibrate fermi energies for
-    #         chemical_potentials: dict of chemical potentials to use for calculation fermi level
-    #         bulk_dos: bulk system dos (pymatgen Dos object).
-    #
-    #     Returns:
-    #         Fermi energy dictated by charge neutrality.
-    #     """
-    #     fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
-    #     _, fdos_vbm = fdos.get_cbm_vbm()
-    #
-    #     def _get_total_q(ef):
-    #         qd_tot = sum(
-    #             d["charge"] * d["conc"]
-    #             for d in self.defect_concentrations(
-    #                 chemical_potentials=chemical_potentials,
-    #                 temperature=temperature,
-    #                 fermi_level=ef,
-    #             )
-    #         )
-    #         qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
-    #         return qd_tot
-    #
-    #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
+        If Fermi level not set, defaults to mid-gap Fermi level (E_g/2) and
+        prints an info message to the user.
+        """
+        if fermi_level is None:
+            fermi_level = 0.5 * self.band_gap  # type: ignore
+            print(
+                f"Fermi level was not set, so using mid-gap Fermi level (E_g/2 = {fermi_level:.2f} eV "
+                f"relative to the VBM)."
+            )
+        return fermi_level
 
-    # Doesn't work as .defect_concentration() no longer a DefectEntry method (required in this code),
-    # and can;t be done with pmg-analysis-defects, but can with py-sc-fermi ofc.
-    # TODO: Worth seeing if this code works properly (agrees with py-sc-fermi), in which case could be
-    #  useful to have as an option for quick checking?
-    # def solve_for_non_equilibrium_fermi_energy(
-    #     self, temperature, quench_temperature, chemical_potentials, bulk_dos
-    # ):
-    #     """
-    #     Solve for the Fermi energy after quenching in the defect concentrations
-    #     at a higher temperature (the quench temperature), as outlined in P.
-    #     Canepa et al (2017) Chemistry of Materials (doi:
-    #     10.1021/acs.chemmater.7b02909).
-    #
-    #     Args:
-    #         temperature: Temperature to equilibrate fermi energy at after quenching in defects
-    #         quench_temperature: Temperature to equilibrate defect concentrations at (higher temperature)
-    #         chemical_potentials: dict of chemical potentials to use for calculation fermi level
-    #         bulk_dos: bulk system dos (pymatgen Dos object)
-    #
-    #     Returns:
-    #         Fermi energy dictated by charge neutrality with respect to frozen in defect concentrations
-    #     """
-    #     high_temp_fermi_level = self.solve_for_fermi_energy(
-    #         quench_temperature, chemical_potentials, bulk_dos
-    #     )
-    #     fixed_defect_charge = sum(
-    #         d["charge"] * d["conc"]
-    #         for d in self.defect_concentrations(
-    #             chemical_potentials=chemical_potentials,
-    #             temperature=quench_temperature,
-    #             fermi_level=high_temp_fermi_level,
-    #         )
-    #     )
-    #
-    #     fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
-    #     _, fdos_vbm = fdos.get_cbm_vbm()
-    #
-    #     def _get_total_q(ef):
-    #         qd_tot = fixed_defect_charge
-    #         qd_tot += fdos.get_doping(fermi_level=ef + fdos_vbm, temperature=temperature)
-    #         return qd_tot
-    #
-    #     return bisect(_get_total_q, -1.0, self.band_gap + 1.0)
+    def get_equilibrium_concentrations(
+        self,
+        chempots: Optional[dict] = None,
+        facet: Optional[str] = None,
+        fermi_level: Optional[float] = None,
+        temperature: float = 300,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Compute the _equilibrium_ concentrations (in cm^-3) for all
+        `DefectEntry`s in the `DefectThermodynamics` object, at a given
+        chemical potential limit, fermi_level and temperature, assuming the
+        dilute limit approximation.
+
+        Note that these are the _equilibrium_ defect concentrations!
+        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        instead be used to calculate the Fermi level and defect concentrations
+        for a material grown/annealed at higher temperatures and then cooled
+        (quenched) to room/operating temperature (where defect concentrations
+        are assumed to remain fixed) - this is known as the frozen defect
+        approach and is typically the most valid approximation (see its
+        docstring for more information).
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the defect
+        concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
+        doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
+        of magnitude. This factor is taken from the product of the
+        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
+
+        Args:
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations). Can have the doped form:
+                {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                If None (default), sets all chemical potentials to 0 (inaccurate
+                formation energies and concentrations!)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating the formation energies and thus concentrations. Can be:
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                - None (default), if `chempots` corresponds to a single chemical
+                  potential limit - otherwise will use the first chemical potential
+                  limit in the doped chempots dict.
+            fermi_level (float):
+                Value corresponding to the electron chemical potential, referenced
+                to the VBM. If None (default), set to the mid-gap Fermi level (E_g/2).
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium concentrations.
+                Default is 300 K.
+            per_charge (bool):
+                Whether to break down the defect concentrations into individual defect charge
+                states (e.g. v_Cd_0, v_Cd_-1, v_Cd_-2 instead of v_Cd). (default: True)
+            per_site (bool):
+                Whether to return the concentrations as fractional concentrations per site,
+                rather than the default of per cm^3. (default: False)
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states and concentrations as
+                strings (and keep as ints and floats instead). (default: False)
+
+        Returns:
+            pandas DataFrame of defect concentrations (and formation energies) for each
+            defect entry in the DefectThermodynamics object.
+        """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
+        energy_concentration_list = []
+
+        for defect_entry in self.defect_entries:
+            formation_energy = defect_entry.formation_energy(
+                chempots=chempots, facet=facet, fermi_level=fermi_level, vbm=self.vbm
+            )
+            concentration = defect_entry.equilibrium_concentration(
+                chempots=chempots,
+                facet=facet,
+                fermi_level=fermi_level,
+                temperature=temperature,
+                per_site=per_site,
+            )
+            energy_concentration_list.append(
+                {
+                    "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    "Raw Charge": defect_entry.charge_state,  # for sorting
+                    "Charge": defect_entry.charge_state
+                    if skip_formatting
+                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}",
+                    "Formation Energy (eV)": round(formation_energy, 3),
+                    "Raw Concentration": concentration,
+                    "Concentration (per site)"
+                    if per_site
+                    else "Concentration (cm^-3)": concentration
+                    if skip_formatting
+                    else f"{concentration:.3e}",
+                }
+            )
+
+        conc_df = pd.DataFrame(energy_concentration_list)
+        # sort by defect and then charge state descending:
+        conc_df = conc_df.sort_values(by=["Defect", "Raw Charge"], ascending=[True, False])
+
+        if per_charge:
+            conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
+                "Raw Concentration"
+            ].transform("sum")
+            conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
+                lambda x: f"{x:.1%}"
+            )
+            conc_df = conc_df.drop(columns=["Raw Charge", "Raw Concentration"])
+            return conc_df.reset_index(drop=True)
+
+        # group by defect and sum concentrations:
+        summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
+        summed_df[[k for k in conc_df.columns if k.startswith("Concentration")][0]] = (
+            summed_df["Raw Concentration"]
+            if skip_formatting
+            else summed_df["Raw Concentration"].apply(lambda x: f"{x:.3e}")
+        )
+        return summed_df.drop(
+            columns=[
+                i
+                for i in ["Charge", "Formation Energy (eV)", "Raw Charge", "Raw Concentration"]
+                if i in summed_df.columns
+            ]
+        )
+
+    def _parse_fermi_dos(self, bulk_dos_vr: Union[str, Vasprun, FermiDos]):
+        if isinstance(bulk_dos_vr, FermiDos):
+            return bulk_dos_vr
+
+        if isinstance(bulk_dos_vr, str):
+            bulk_dos_vr = get_vasprun(bulk_dos_vr)
+
+        fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
+        if abs(fermi_dos_vbm - self.vbm) > 0.1:
+            warnings.warn(
+                f"The VBM eigenvalue of the bulk DOS calculation ({fermi_dos_vbm:.2f} eV, with band "
+                f"gap of {fermi_dos_band_gap:.2f} eV) differs from that of the bulk supercell "
+                f"calculations ({self.vbm:.2f} eV, with band gap of {self.band_gap:.2f} eV) by more "
+                f"than 0.1 eV. If this is only due to slight differences in kpoint sampling for the "
+                f"bulk DOS vs defect supercell calculations, and consistent functional settings "
+                f"(LHFCALC, AEXX etc) were used, then the eigenvalue references should be consistent "
+                f"and this warning can be ignored. If not, then this could lead to inaccuracies in "
+                f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
+                f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
+            )
+        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr))
+
+    def get_equilibrium_fermi_level(
+        self,
+        bulk_dos_vr: Union[str, Vasprun, FermiDos],
+        chempots: Optional[dict] = None,
+        facet: Optional[str] = None,
+        temperature: float = 300,
+        return_concs: bool = False,
+    ) -> Union[float, Tuple[float, float, float]]:
+        """
+        Calculate the self-consistent Fermi level, at a given chemical
+        potential limit and temperature, assuming _equilibrium_ defect
+        concentrations (i.e. under annealing) and the dilute limit
+        approximation, by self-consistently solving for the Fermi level which
+        yields charge neutrality.
+
+        Note that this assumes _equilibrium_ defect concentrations!
+        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        instead be used to calculate the Fermi level and defect concentrations
+        for a material grown/annealed at higher temperatures and then cooled
+        (quenched) to room/operating temperature (where defect concentrations
+        are assumed to remain fixed) - this is known as the frozen defect
+        approach and is typically the most valid approximation (see its
+        docstring for more information).
+
+        Note that the bulk DOS calculation should be well-converged with respect to
+        k-points for accurate Fermi level predictions!
+        Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
+        can be the most time-consuming part of this function, so if you are running
+        this function multiple times, it is faster to initialise the FermiDos object
+        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        to this object instead.
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the defect
+        concentration equation and thus Fermi level calculation (see discussion in
+        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
+        final concentration by up to 2 orders of magnitude. This factor is taken from
+        the product of the defect_entry.defect.multiplicity and
+        defect_entry.degeneracy_factors attributes.
+
+        Args:
+            bulk_dos_vr (str or Vasprun or FermiDos):
+                Path to the vasprun.xml(.gz) output of a bulk electronic density of states
+                (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
+                this is a static calculation with the _primitive_ cell of the bulk, with
+                relatively dense k-point sampling (especially for materials with disperse
+                band edges) to ensure an accurately-converged DOS and thus Fermi level.
+                ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
+                convergence. Consistent functional settings should be used for the bulk
+                DOS and defect supercell calculations.
+                Alternatively, a pymatgen FermiDos object can be supplied directly (e.g.
+                in case you are using a DFT code other than VASP).
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level). This
+                can have the doped form: {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                If None (default), sets all chemical potentials to 0 (inaccurate
+                formation energies and concentrations!)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating the formation energies and thus concentrations and Fermi
+                level. Can be:
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                - None (default), if `chempots` corresponds to a single chemical
+                  potential limit - otherwise will use the first chemical potential
+                  limit in the doped chempots dict.
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium Fermi level.
+                Default is 300 K.
+            return_concs (bool):
+                Whether to return the corresponding electron and hole concentrations
+                (in cm^-3) as well as the Fermi level. (default: False)
+
+        Returns:
+            Self consistent Fermi level (in eV from the VBM), and the corresponding
+            electron and hole concentrations (in cm^-3) if return_concs=True.
+        """
+        fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
+
+        def _get_total_q(fermi_level):
+            conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                facet=facet,
+                temperature=temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+            )
+            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+            qd_tot += fermi_dos.get_doping(fermi_level=fermi_level + self.vbm, temperature=temperature)
+            return qd_tot
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+
+            eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
+            if return_concs:
+                e_conc, h_conc = get_e_h_concs(
+                    fermi_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
+                )
+                return eq_fermi_level, e_conc, h_conc
+
+        return eq_fermi_level
+
+    def get_quenched_fermi_level_and_concentrations(
+        self,
+        bulk_dos_vr: Union[str, Vasprun, FermiDos],
+        chempots: Optional[dict] = None,
+        facet: Optional[str] = None,
+        annealing_temperature: float = 1000,
+        quenched_temperature: float = 300,
+    ) -> Tuple[float, float, float, pd.DataFrame]:
+        """
+        Calculate the self-consistent Fermi level and corresponding
+        carrier/defect calculations, for a given chemical potential limit,
+        annealing temperature and quenched/operating temperature, using the
+        frozen defect and dilute limit approximations under the constraint of
+        charge neutrality.
+
+        According to the 'frozen defect' approximation, we typically expect defect
+        concentrations to reach equilibrium during annealing/crystal growth
+        (at elevated temperatures), but _not_ upon quenching (i.e. at
+        room/operating temperature) where we expect kinetic inhibition of defect
+        annhiliation and hence non-equilibrium defect concentrations / Fermi level.
+        Typically this is approximated by computing the equilibrium Fermi level and
+        defect concentrations at the annealing temperature, and then assuming the
+        total concentration of each defect is fixed to this value, but that the
+        relative populations of defect charge states (and the Fermi level) can
+        re-equilibrate at the lower (room) temperature. See discussion in
+        doi.org/10.1039/D3CS00432E (brief), doi.org/10.1016/j.cpc.2019.06.017 (detailed)
+        and `doped`/`py-sc-fermi` tutorials for more information.
+        In certain cases (such as Li-ion battery materials or extremely slow charge
+        capture/emission), these approximations may have to be adjusted such that some
+        defects/charge states are considered fixed and some are allowed to
+        re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
+        these specific cases is demonstrated in:
+        py-sc-fermi.readthedocs.io/en/latest/tutorial.html#3.-Applying-concentration-constraints
+
+        This function works by calculating the self-consistent Fermi level and total
+        concentration of each defect at the annealing temperature, then fixing the
+        total concentrations to these values and re-calculating the self-consistent
+        (constrained equilibrium) Fermi level and relative charge state concentrations
+        under this constraint at the quenched/operating temperature.
+
+        Note that the bulk DOS calculation should be well-converged with respect to
+        k-points for accurate Fermi level predictions!
+        Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
+        can be the most time-consuming part of this function, so if you are running
+        this function multiple times, it is faster to initialise the FermiDos object
+        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        to this object instead.
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the defect
+        concentration equation and thus Fermi level calculation (see discussion in
+        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
+        final concentration by up to 2 orders of magnitude. This factor is taken from
+        the product of the defect_entry.defect.multiplicity and
+        defect_entry.degeneracy_factors attributes.
+
+        If you use this code in your work, please also cite:
+        Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
+        https://doi.org/10.21105/joss.04962
+
+        Args:
+            bulk_dos_vr (str or Vasprun or FermiDos):
+                Path to the vasprun.xml(.gz) output of a bulk electronic density of states
+                (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
+                this is a static calculation with the _primitive_ cell of the bulk, with
+                relatively dense k-point sampling (especially for materials with disperse
+                band edges) to ensure an accurately-converged DOS and thus Fermi level.
+                ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
+                convergence. Consistent functional settings should be used for the bulk
+                DOS and defect supercell calculations.
+                Alternatively, a pymatgen FermiDos object can be supplied directly (e.g.
+                in case you are using a DFT code other than VASP).
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level). This
+                can have the doped form: {"facets": [{'facet': [chempot_dict]}]}
+                (the format generated by doped's chemical potential parsing functions
+                (see tutorials)) and specific facets (chemical potential limits) can
+                then be chosen using `facet`.
+                Alternatively, can be a dictionary of **DFT**/absolute chemical
+                potentials (not formal chemical potentials!), in the format:
+                {element symbol: chemical potential}.
+                If None (default), sets all chemical potentials to 0 (inaccurate
+                formation energies and concentrations!)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to use for
+                calculating the formation energies and thus concentrations and Fermi
+                level. Can be:
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the (self.)chempots["facets"] dictionary, if the chempots
+                  dict is in the doped format (see chemical potentials tutorial).
+                - None (default), if `chempots` corresponds to a single chemical
+                  potential limit - otherwise will use the first chemical potential
+                  limit in the doped chempots dict.
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach. Default is 1000 K.
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level, given the fixed total
+                concentrations, which should correspond to operating temperature
+                of the material (typically room temperature). Default is 300 K.
+
+        Returns:
+            Predicted quenched Fermi level (in eV from the VBM), the corresponding
+            electron and hole concentrations (in cm^-3) and a dataframe of the
+            quenched defect concentrations (in cm^-3).
+            (fermi_level, e_conc, h_conc, conc_df)
+        """
+        # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
+        #  advanced analysis
+        fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
+        annealing_fermi_level = self.get_equilibrium_fermi_level(
+            fermi_dos,
+            chempots=chempots,
+            facet=facet,
+            temperature=annealing_temperature,
+            return_concs=False,
+        )
+        annealing_defect_concentrations = self.get_equilibrium_concentrations(
+            chempots=chempots,
+            facet=facet,
+            fermi_level=annealing_fermi_level,  # type: ignore
+            temperature=annealing_temperature,
+            per_charge=False,  # give total concentrations for each defect
+            skip_formatting=True,
+        )
+        annealing_defect_concentrations = annealing_defect_concentrations.rename(
+            columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
+        )
+
+        def _get_constrained_total_q(fermi_level, return_conc_df=False):
+            conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                facet=facet,
+                temperature=quenched_temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+            )
+
+            conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
+            conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
+                conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
+                / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
+            ) * conc_df["Total Concentration (cm^-3)"]
+
+            if return_conc_df:
+                return conc_df
+            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+            qd_tot += fermi_dos.get_doping(
+                fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
+            )
+            return qd_tot
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+
+            eq_fermi_level: float = brentq(
+                _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
+            )
+
+        e_conc, h_conc = get_e_h_concs(
+            fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
+        )
+        return (
+            eq_fermi_level,
+            e_conc,
+            h_conc,
+            _get_constrained_total_q(eq_fermi_level, return_conc_df=True),
+        )
+        # TODO: Test all these functions against py-sc-fermi obvs (rough tests indicate all working as
+        #  expected), CdTe easy test case
 
     def get_formation_energy(
         self,
         defect_entry: Union[str, DefectEntry],
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
-        fermi_level: float = 0,
-    ):
+        fermi_level: Optional[float] = None,
+    ) -> float:
         """
         Compute the formation energy for a DefectEntry at a given chemical
         potential limit and fermi_level. defect_entry can be a string of the
@@ -947,10 +1408,13 @@ class DefectThermodynamics(MSONable):
                 referenced to the VBM. The VBM value is taken from
                 DefectEntry.calculation_metadata if present, otherwise
                 from self.vbm.
+                If None (default), set to the mid-gap Fermi level (E_g/2).
 
         Returns:
             Formation energy value (float)
         """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
+
         if isinstance(defect_entry, DefectEntry):
             return defect_entry.formation_energy(
                 chempots=chempots, facet=facet, vbm=self.vbm, fermi_level=fermi_level
@@ -981,7 +1445,9 @@ class DefectThermodynamics(MSONable):
             f"names:\n{[entry.name for entry in self.defect_entries]}"
         )
 
-    def get_dopability_limits(self, chempots: Optional[Dict] = None, facet: Optional[str] = None):
+    def get_dopability_limits(
+        self, chempots: Optional[Dict] = None, facet: Optional[str] = None
+    ) -> pd.DataFrame:
         """
         Find the dopability limits of the defect system, searching over all
         facets (chemical potential limits) in `chempots` and returning the most
@@ -1099,7 +1565,6 @@ class DefectThermodynamics(MSONable):
             acceptor_intercepts_df[idx]["intercept"].idxmax()
         ]
 
-        # TODO: Test this function, and warnings etc
         if limiting_donor_intercept_row["intercept"] > limiting_acceptor_intercept_row["intercept"]:
             warnings.warn(
                 "Donor and acceptor doping limits intersect at negative defect formation energies "
@@ -1123,7 +1588,9 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
-    def get_doping_windows(self, chempots: Optional[Dict] = None, facet: Optional[str] = None):
+    def get_doping_windows(
+        self, chempots: Optional[Dict] = None, facet: Optional[str] = None
+    ) -> pd.DataFrame:
         """
         Find the doping windows of the defect system, searching over all facets
         (chemical potential limits) in `chempots` and returning the most
@@ -1251,6 +1718,16 @@ class DefectThermodynamics(MSONable):
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
+    # TODO: Likewise, add example showing how to plot a metastable state (above the ground state)
+    # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
+    #  lowest energy charge states for each _defect type_) - equivalent to setting the dist_tol to
+    #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example
+    #  for this - should have a test built for however we want to handle cases like this. See Ke's example
+    #  case too with different interstitial sites.
+    #  TODO: optionally retain/remove unstable (in the gap) charge states (rather than current
+    #  default range of (VBM - 1eV, CBM + 1eV))... depends on if shallow defect tagging with pydefect is
+    #  implemented or not really, what would be best to do by default
+
     def plot(
         self,
         chempots: Optional[Dict] = None,
@@ -1265,7 +1742,7 @@ class DefectThermodynamics(MSONable):
         colormap: Union[str, colors.Colormap] = "Dark2",
         auto_labels: bool = False,
         filename: Optional[str] = None,
-    ):
+    ) -> Union[Figure, List[Figure]]:
         """
         Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
         formation energy / transition level diagram). Returns the Matplotlib
@@ -1407,60 +1884,159 @@ class DefectThermodynamics(MSONable):
 
             return figs[0] if len(figs) == 1 else figs
 
-    def get_transition_levels(self):
+    def get_transition_levels(
+        self,
+        all: bool = False,
+        format_charges: bool = True,
+    ) -> pd.DataFrame:
         """
         Return a DataFrame of the charge transition levels for the defects in
         the DefectThermodynamics object (stored in the transition_level_map
         attribute).
+
+        By default, only returns the thermodynamic ground-state transition
+        levels (i.e. those visible on the defect formation energy diagram),
+        not including metastable defect states (which can be important for
+        recombination, migration, degeneracy/concentrations etc, see e.g.
+        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        e.g. negative-U defects will show the 2-electron transition level
+        (N+1/N-1) rather than (N+1/N) and (N/N-1).
+        If instead all single-electron transition levels are desired, set
+        `all = True`.
+
+        Returns a DataFrame with columns:
+        - "Defect": Defect name
+        - "Charges": Defect charge states which make up the transition level
+            (as a string if `format_charges=True`, otherwise as a list of integers)
+        - "eV from VBM": Transition level position in eV from the VBM
+        - "In Band Gap?": Whether the transition level is within the host band gap
+        - "N(Metastable)": Number of metastable states involved in the transition level
+            (0, 1 or 2). Only included if all = True.
+
+        Args:
+              all (bool):
+                    Whether to print all single-electron transition levels (i.e.
+                    including metastable defect states), or just the thermodynamic
+                    ground-state transition levels (default).
+              format_charges (bool):
+                    Whether to format the transition level charge states as strings
+                    (e.g. "ε(+1/+2)") or keep in list format (e.g. [1,2]).
+                    (Default: True)
         """
         # create a dataframe from the transition level map, with defect name, transition level charges and
         # TL position in eV from the VBM:
         transition_level_map_list = []
+
+        def _TL_naming_func(TL_charges, i_meta=False, j_meta=False):
+            if not format_charges:
+                return TL_charges
+            i, j = TL_charges
+            return (
+                f"ε({'+' if i > 0 else ''}{i}{'*' if i_meta else ''}/"
+                f"{'+' if j > 0 else ''}{j}{'*' if j_meta else ''})"
+            )
+
         for defect_name, transition_level_dict in self.transition_level_map.items():
             if not transition_level_dict:
                 transition_level_map_list.append(  # add defects with no TL to dataframe as "None"
                     {
                         "Defect": defect_name,
-                        "Transition Level (TL)": "None",
-                        "TL Position (eV from VBM)": np.inf,
+                        "Charges": "None",
+                        "eV from VBM": np.inf,
+                        "In Band Gap?": False,
                     }
                 )
-            transition_level_map_list.extend(
-                {
-                    "Defect": defect_name,
-                    "Transition Level (TL)": transition_level_charges,
-                    "TL Position (eV from VBM)": round(TL, 3),
-                }
-                for TL, transition_level_charges in transition_level_dict.items()
-            )
+                if all:
+                    transition_level_map_list[-1]["N(Metastable)"] = 0
+
+            if not all:
+                transition_level_map_list.extend(
+                    {
+                        "Defect": defect_name,
+                        "Charges": _TL_naming_func(transition_level_charges),
+                        "eV from VBM": round(TL, 3),
+                        "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                    }
+                    for TL, transition_level_charges in transition_level_dict.items()
+                )
+
+        if all:
+            for i, j in product(self.defect_entries, repeat=2):
+                defect_name_wout_charge = i.name.rsplit("_", 1)[0]
+                if (defect_name_wout_charge == j.name.rsplit("_", 1)[0]) and (
+                    i.charge_state - j.charge_state == 1
+                ):
+                    TL = j.get_ediff() - i.get_ediff() - self.vbm
+                    i_meta = not any(i == y for y in self.all_stable_entries)
+                    j_meta = not any(j == y for y in self.all_stable_entries)
+                    transition_level_map_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charges": _TL_naming_func(
+                                [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
+                            ),
+                            "eV from VBM": round(TL, 3),
+                            "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                            "N(Metastable)": [i_meta, j_meta].count(True),
+                        }
+                    )
 
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect, then by TL position:
-        return tl_df.sort_values(by=["Defect", "TL Position (eV from VBM)"])
+        tl_df = tl_df.sort_values(by=["Defect", "eV from VBM"])
+        return tl_df.reset_index(drop=True)
 
-    def print_transition_levels(self):
+    def print_transition_levels(self, all: bool = False):
         """
         Iteratively prints the charge transition levels for the defects in the
         DefectThermodynamics object (stored in the transition_level_map
         attribute).
+
+        By default, only returns the thermodynamic ground-state transition
+        levels (i.e. those visible on the defect formation energy diagram),
+        not including metastable defect states (which can be important for
+        recombination, migration, degeneracy/concentrations etc, see e.g.
+        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        e.g. negative-U defects will show the 2-electron transition level
+        (N+1/N-1) rather than (N+1/N) and (N/N-1).
+        If instead all single-electron transition levels are desired, set
+        `all = True`.
+
+        Args:
+              all (bool):
+                    Whether to print all single-electron transition levels (i.e.
+                    including metastable defect states), or just the thermodynamic
+                    ground-state transition levels (default).
         """
-        for defect_name, tl_info in self.transition_level_map.items():
-            bold_print(f"Defect: {defect_name}")
-            for tl_efermi, chargeset in tl_info.items():
-                print(
-                    f"Transition Level ({max(chargeset):{'+' if max(chargeset) else ''}}/"
-                    f"{min(chargeset):{'+' if min(chargeset) else ''}}) at {tl_efermi:.3f}"
-                    f" eV above the VBM"
-                )
-            print("")  # add space
+        if not all:
+            for defect_name, tl_info in self.transition_level_map.items():
+                bold_print(f"Defect: {defect_name}")
+                for tl_efermi, chargeset in tl_info.items():
+                    print(
+                        f"Transition level ε({max(chargeset):{'+' if max(chargeset) else ''}}/"
+                        f"{min(chargeset):{'+' if min(chargeset) else ''}}) at {tl_efermi:.3f} eV above "
+                        f"the VBM"
+                    )
+                print("")  # add space
+
+        else:
+            all_TLs_df = self.get_transition_levels(all=True)
+            for defect_name, tl_df in all_TLs_df.groupby("Defect"):
+                bold_print(f"Defect: {defect_name}")
+                for _, row in tl_df.iterrows():
+                    if row["Charges"] != "None":
+                        print(
+                            f"Transition level {row['Charges']} at {row['eV from VBM']} eV above the VBM"
+                        )
+                print("")  # add space
 
     def get_formation_energies(
         self,
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,
         facet: Optional[str] = None,
-        fermi_level: float = 0,
-    ):
+        fermi_level: Optional[float] = None,
+    ) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Generates defect formation energy tables (DataFrames) for either a
         single chemical potential limit (i.e. phase diagram `facet`) or each
@@ -1514,22 +2090,22 @@ class DefectThermodynamics(MSONable):
                 referenced to the VBM. The VBM value is taken from the
                 calculation_metadata dict attributes of `DefectEntry`s in
                 self.defect_entries if present, otherwise self.vbm.
-                Default = 0 (i.e. at the VBM)
+                If None (default), set to the mid-gap Fermi level (E_g/2).
 
         Returns:
             pandas DataFrame or list of DataFrames
         """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
 
         if chempots is None:
+            _no_chempots_warning()
             chempots = {
                 "facets": {"No User Chemical Potentials": {}},
                 "facets_wrt_el_refs": {"No User Chemical Potentials": {}},
             }
-
-            # TODO: Warn user if no chempots? (Inaccurate energies, like with plot function?)
 
         facet = _parse_facet(chempots, facet)
         facets = [facet] if facet is not None else list(chempots["facets"].keys())
@@ -1556,14 +2132,13 @@ class DefectThermodynamics(MSONable):
         chempots: dict,
         el_refs: dict,
         fermi_level: float = 0,
-    ):
+    ) -> pd.DataFrame:
         """
-        Prints a defect formation energy table for a single chemical potential
-        limit (i.e. phase diagram facet), and returns the results as a pandas
-        DataFrame.
+        Returns a defect formation energy table for a single chemical potential
+        limit (i.e. phase diagram facet) as a pandas DataFrame.
 
         Table Key: (all energies in eV)
-        'Defect' -> Defect name
+        'Defect' -> Defect name (without charge)
         'q' -> Defect charge state.
         'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
         'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
@@ -1605,7 +2180,7 @@ class DefectThermodynamics(MSONable):
         )
         for defect_entry in defect_entries:
             row = [
-                defect_entry.name,
+                defect_entry.name.rsplit("_", 1)[0],  # name without charge,
                 defect_entry.charge_state,
             ]
             row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
@@ -1614,13 +2189,12 @@ class DefectThermodynamics(MSONable):
             else:
                 row += [defect_entry.charge_state * self.vbm]  # type: ignore[operator]
             row += [defect_entry.charge_state * fermi_level]
-            # TODO: Test this behaviour:
-            row += [self._get_chempot_term(defect_entry, el_refs) if any(el_refs.values()) else "N/A"]
-            row += [self._get_chempot_term(defect_entry, chempots)]
+            row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
+            row += [defect_entry._get_chempot_term(chempots)]
             row += [sum(defect_entry.corrections.values())]
             dft_chempots = {el: energy + el_refs[el] for el, energy in chempots.items()}
-            formation_energy = self.get_formation_energy(
-                defect_entry, chempots=dft_chempots, fermi_level=fermi_level
+            formation_energy = defect_entry.formation_energy(
+                chempots=dft_chempots, fermi_level=fermi_level
             )
             row += [formation_energy]
             row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
@@ -1646,6 +2220,153 @@ class DefectThermodynamics(MSONable):
         # round all floats to 3dp:
         return formation_energy_df.round(3)
 
+    def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
+        r"""
+        Generates a table of the unrelaxed & relaxed point group symmetries,
+        and spin/orientational/total degeneracies for each defect in the
+        DefectThermodynamics object.
+
+        Table Key:
+        'Defect' -> Defect name (without charge)
+        'q' -> Defect charge state.
+        'Symm_Unrelax' -> Point group symmetry of the relaxed defect.
+        'Symm_Relax' -> Point group symmetry of the relaxed defect.
+        'g_Orient' -> Orientational degeneracy of the defect.
+        'g_Spin' -> Spin degeneracy of the defect.
+        'g_Total' -> Total degeneracy of the defect.
+
+        For interstitials, the 'unrelaxed' point group symmetry
+        correspond to the point symmetry of the interstitial site
+        with _no relaxation of the host structure_. For vacancies
+        and substitutions, this is equivalent to the initial point
+        symmetry.
+
+        Point group symmetries are taken from the calculation_metadata
+        ("relaxed point symmetry" and "unrelaxed point symmetry") if
+        present (should be, if parsed with doped and defect supercell
+        doesn't break host periodicity), otherwise are attempted to be
+        recalculated.
+
+        Note: doped tries to use the defect_entry.defect_supercell to determine
+        the _relaxed_ site symmetry. However, it should be noted that this is not
+        guaranteed to work in all cases; namely for non-diagonal supercell
+        expansions, or sometimes for non-scalar supercell expansion matrices
+        (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
+        which can mess up the periodicity of the cell. doped tries to automatically
+        check if this is the case, and will warn you if so.
+
+        This can also be checked by using this function on your doped _generated_ defects:
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
+
+        And if the point symmetries match in each case, then doped should be able to
+        correctly determine the final relaxed defect symmetry (and orientational degeneracy)
+        - otherwise periodicity-breaking prevents this.
+
+        If periodicity-breaking prevents auto-symmetry determination, you can manually
+        determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
+        from visualising the structures (e.g. using VESTA)(can use
+        `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+        factor for given initial/relaxed point symmetries) and setting the corresponding
+        values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
+        symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+        The degeneracy factor is used in the calculation of defect/carrier concentrations
+        and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
+        doi.org/10.1039/D3CS00432E).
+
+        Args:
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ints and floats instead).
+                (default: False)
+
+        Returns:
+            pandas DataFrame
+        """
+        table_list = []
+
+        for defect_entry in self.defect_entries:
+            total_degeneracy = (
+                reduce(lambda x, y: x * y, defect_entry.degeneracy_factors.values())
+                if defect_entry.degeneracy_factors
+                else "N/A"
+            )
+            if "relaxed point symmetry" not in defect_entry.calculation_metadata:
+                try:
+                    defect_entry.calculation_metadata[
+                        "relaxed point symmetry"
+                    ] = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=True
+                    )  # relaxed so defect symm_ops
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+            if "unrelaxed point symmetry" not in defect_entry.calculation_metadata:
+                try:
+                    defect_entry.calculation_metadata[
+                        "unrelaxed point symmetry"
+                    ] = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=False, symprec=0.01
+                    )  # relaxed so defect symm_ops
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+
+            if (
+                all(
+                    x in defect_entry.calculation_metadata
+                    for x in ["relaxed point symmetry", "unrelaxed point symmetry"]
+                )
+                and "orientational degeneracy" not in defect_entry.degeneracy_factors
+            ):
+                try:
+                    defect_entry.degeneracy_factors[
+                        "orientational degeneracy"
+                    ] = get_orientational_degeneracy(
+                        relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
+                        unrelaxed_point_group=defect_entry.calculation_metadata[
+                            "unrelaxed point symmetry"
+                        ],
+                    )
+                except Exception as e:
+                    warnings.warn(
+                        f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
+                        f"error:\n{e}"
+                    )
+
+            table_list.append(
+                {
+                    "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    "q": defect_entry.charge_state,
+                    "Symm_Unrelax": defect_entry.calculation_metadata.get(
+                        "unrelaxed point symmetry", "N/A"
+                    ),
+                    "Symm_Relax": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
+                    "g_Orient": defect_entry.degeneracy_factors.get("orientational degeneracy", "N/A"),
+                    "g_Spin": defect_entry.degeneracy_factors.get("spin degeneracy", "N/A"),
+                    "g_Total": total_degeneracy,
+                }
+            )
+
+        symmetry_df = pd.DataFrame(table_list)
+        # sort by defect and then charge state descending:
+        symmetry_df = symmetry_df.sort_values(by=["Defect", "q"], ascending=[True, False])
+
+        if not skip_formatting:
+            symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
+
+        return symmetry_df.reset_index(drop=True)
+
+    # TODO: Show example of this in tutorials (also noting the default behaviour of `doped` in guessing
+    #  this, and trying to warn if it doesn't work)
+
     def __repr__(self):
         """
         Returns a string representation of the DefectThermodynamics object.
@@ -1660,3 +2381,38 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n{attrs}\n\nAvailable "
             f"methods:\n{methods}"
         )
+
+
+def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> Tuple[float, float]:
+    """
+    Get the corresponding electron and hole concentrations (in cm^-3) for a
+    given Fermi level (in eV) and temperature (in K), for a FermiDos object.
+
+    Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
+    level should be the corresponding eigenvalue within the calculation (or in
+    other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
+    """
+    # code for obtaining the electron and hole concentrations here is taken from
+    # FermiDos.get_doping():
+    e_conc: float = np.sum(
+        fermi_dos.tdos[fermi_dos.idx_cbm :]
+        * f0(
+            fermi_dos.energies[fermi_dos.idx_cbm :],
+            fermi_level,  # type: ignore
+            temperature,
+        )
+        * fermi_dos.de[fermi_dos.idx_cbm :],
+        axis=0,
+    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+    h_conc: float = np.sum(
+        fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
+        * f0(
+            -fermi_dos.energies[: fermi_dos.idx_vbm + 1],
+            -fermi_level,  # type: ignore
+            temperature,
+        )
+        * fermi_dos.de[: fermi_dos.idx_vbm + 1],
+        axis=0,
+    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+
+    return e_conc, h_conc

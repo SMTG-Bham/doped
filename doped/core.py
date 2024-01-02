@@ -7,6 +7,7 @@ import collections
 import contextlib
 import warnings
 from dataclasses import asdict, dataclass, field
+from functools import reduce
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -52,6 +53,17 @@ class DefectEntry(thermo.DefectEntry):
         calculation_metadata:
             A dictionary of calculation parameters and data, used to perform
             charge corrections and compute formation energies.
+        degeneracy_factors:
+            A dictionary of degeneracy factors contributing to the total degeneracy
+            of the defect species (such as spin and configurational degeneracy etc).
+            This is an important factor in the defect concentration equation (see
+            discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E),
+            and so affects the output of the defect concentration / Fermi level
+            functions. This can be edited by the user if the doped defaults are not
+            appropriate (e.g. doped assumes singlet (S=0) state for even-electron
+            defects and doublet (S=1/2) state for odd-electron defects, which is
+            typically the case but can have triplets (S=1) or other multiplets for
+            e.g. bipolarons, quantum / d-orbital / magnetic defects etc).
 
     Generation Attributes:
         name:
@@ -99,6 +111,7 @@ class DefectEntry(thermo.DefectEntry):
     # doped attributes:
     name: str = ""
     calculation_metadata: Dict = field(default_factory=dict)
+    degeneracy_factors: Dict = field(default_factory=dict)
     conventional_structure: Optional[Structure] = None
     conv_cell_frac_coords: Optional[np.ndarray] = None
     equiv_conv_cell_frac_coords: List[np.ndarray] = field(default_factory=list)
@@ -106,9 +119,7 @@ class DefectEntry(thermo.DefectEntry):
     wyckoff: Optional[str] = None
     charge_state_guessing_log: Dict = field(default_factory=dict)
     defect_supercell: Optional[Structure] = None
-    defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Should be able to refactor SnB to use
-    # this, in the from_structures approach, and just show general doped workflow on the docs and
-    # from_structures, and mention can also do other input options. Also add `from_structures` method to
+    defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Add `from_structures` method to
     # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
     # codes etc)
     equivalent_supercell_sites: List[PeriodicSite] = field(default_factory=list)
@@ -494,6 +505,9 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Formation energy value (float)
         """
+        if chempots is None:
+            _no_chempots_warning("Formation energies (and concentrations)")
+
         dft_chempots = _get_dft_chempots(chempots, facet)
         chempot_correction = self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
@@ -524,28 +538,25 @@ class DefectEntry(thermo.DefectEntry):
         at a given chemical potential limit, fermi_level and temperature,
         assuming the dilute limit approximation.
 
-        Note that this is the _equilibrium_ concentration! According to the 'frozen
-        defect' approximation, we typically expect defect concentrations to reach
-        equilibrium during annealing/crystal growth (at elevated temperatures), but
-        _not_ upon quenching (i.e. at room/operating temperature) where we expect
-        kinetic inhibition of defect annhiliation and hence non-equilibrium defect
-        concentrations. Typically this is approximated by computing the equilibrium
-        defect concentrations at the annealing temperature, and then assuming the
-        total concentration of each defect is fixed to this value, but that the
-        relative populations of defect charge states can re-equilibrate at the
-        lower (room) temperature. See discussion in doi.org/10.1039/D3CS00432E and
-        `doped` tutorials for more information.
+        Note that these are the _equilibrium_ defect concentrations!
+        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        instead be used to calculate the Fermi level and defect concentrations
+        for a material grown/annealed at higher temperatures and then cooled
+        (quenched) to room/operating temperature (where defect concentrations
+        are assumed to remain fixed) - this is known as the frozen defect
+        approach and is typically the most valid approximation (see its
+        docstring for more information, and discussion in 10.1039/D3CS00432E).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
         doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
-        of magnitude. This factor is taken from the defect_entry.defect.multiplicity
-        attribute.
+        of magnitude. This factor is taken from the product of the
+        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
 
         Args:
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
-                formation energy. This can have the doped form of:
+                formation energy (and thus concentration). This can have the doped form of:
                 {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
@@ -581,9 +592,35 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
         """
-        # TODO: Update degeneracy handling and docstring here when ready
-        # TODO: Add quenched concentration function and link in docstring here when ready
-        formation_energy = self.formation_energy(
+        if "spin degeneracy" not in self.degeneracy_factors:
+            warnings.warn(
+                "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
+                "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
+                "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
+                "(see discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E). This will "
+                "affect the computed defect concentration / Fermi level!\n"
+                "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
+                "'spin degeneracy' in the degeneracy_factors attribute(s) - usually 2 for odd-electron "
+                "defect species and 1 for even-electron)."
+            )
+
+        if (
+            "orientational degeneracy" not in self.degeneracy_factors
+            and self.defect.defect_type != core.DefectType.Interstitial
+        ):
+            warnings.warn(
+                "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
+                "attribute (for this vacancy/substitution defect). This factor contributes to the "
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) - see "
+                "discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E) and is "
+                "automatically computed when parsing with doped if possible (if the defect supercell "
+                "doesn't break the host periodicity). This will affect the computed defect concentrations "
+                "/ Fermi level!\n"
+                "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
+                "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
+            )
+
+        formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, facet=facet, vbm=vbm, fermi_level=fermi_level
         )
         from scipy.constants import value as constants_value
@@ -591,12 +628,15 @@ class DefectEntry(thermo.DefectEntry):
         exp_factor = np.exp(
             -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
         )
-        if per_site:  # TODO: Will need to add non-multiplicity degeneracy factors here when ready
-            return exp_factor
+        degeneracy_factor = (
+            reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
+        )
+        if per_site:
+            return exp_factor * degeneracy_factor
 
         volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
 
-        return self.defect.multiplicity * exp_factor / volume_in_cm3
+        return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
 
     def __repr__(self):
         """
@@ -640,6 +680,13 @@ class DefectEntry(thermo.DefectEntry):
             use_plotly=use_plotly,
         )
         return fig
+
+
+def _no_chempots_warning(property="Formation energies (and concentrations)"):
+    warnings.warn(
+        f"No chemical potentials supplied, so using 0 for all chemical potentials. {property} will likely "
+        f"be highly inaccurate!"
+    )
 
 
 def _get_dft_chempots(chempots, facet):
@@ -730,9 +777,11 @@ class Defect(core.Defect):
         Args:
             structure:
                 The structure in which to create the defect. Typically
-                the primitive structure of the host crystal.
+                the primitive structure of the host crystal for defect
+                generation, and/or the calculation supercell for defect
+                parsing.
             site: The defect site in the structure.
-            multiplicity: The multiplicity of the defect.
+            multiplicity: The multiplicity of the defect in the structure.
             oxi_state: The oxidation state of the defect, if not specified,
                 this will be determined automatically.
             equivalent_sites:
@@ -829,7 +878,7 @@ class Defect(core.Defect):
             structure=defect.structure,
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
-            oxi_state=defect.oxi_state if not bulk_oxi_states else None,
+            oxi_state=None if bulk_oxi_states else defect.oxi_state,
             equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
             if defect.equivalent_sites is not None
             else None,
