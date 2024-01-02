@@ -146,13 +146,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
         )  # for test_plotting
         with warnings.catch_warnings(record=True) as w:
-            CdTe_thermo.formation_energy_plot()
+            CdTe_thermo.plot()
         print([warn.message for warn in w])  # for debugging
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
-        assert any(
-            "All formation energies for Int_Te_3_2 are below zero" in str(warn.message) for warn in w
-        )
-        assert any("All formation energies for Int_Te_3_Unperturbed_1" in str(warn.message) for warn in w)
+        assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
+        assert any("All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w)
 
         # test attributes:
         assert CdTe_dp.output_path == self.CdTe_EXAMPLE_DIR
@@ -160,7 +158,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert CdTe_dp.error_tolerance == 0.05
         assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
         assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
-        assert CdTe_dp.bulk_bandgap_path is None
+        assert CdTe_dp.bulk_band_gap_path is None
 
         self._check_DefectsParser(CdTe_dp)
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
@@ -214,7 +212,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=[9.13, 9.13, 9.13],
                 error_tolerance=0.01,
                 skip_corrections=False,
-                bulk_bandgap_path=self.CdTe_BULK_DATA_DIR,
+                bulk_band_gap_path=self.CdTe_BULK_DATA_DIR,
                 processes=4,
                 json_filename="test_pop.json",
             )
@@ -233,7 +231,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
         assert dp.dielectric == [9.13, 9.13, 9.13]
         assert dp.error_tolerance == 0.01
-        assert dp.bulk_bandgap_path == self.CdTe_BULK_DATA_DIR
+        assert dp.bulk_band_gap_path == self.CdTe_BULK_DATA_DIR
         assert dp.processes == 4
         self._check_DefectsParser(dp)
 
@@ -293,7 +291,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # integration test using parsed CdTe thermo and chempots for plotting:
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
-        return CdTe_thermo.formation_energy_plot(chempots=CdTe_chempots, facets=["CdTe-Te"])
+        return CdTe_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -313,7 +311,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         dumpfn(
             thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
-        return thermo.formation_energy_plot()  # no chempots for YTOS formation energy plot test
+        return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -365,7 +363,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
 
-        return Sb2Se3_O_thermo.formation_energy_plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+        return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -1763,7 +1761,9 @@ class AnalysisFunctionsTestCase(unittest.TestCase):
     def tearDown(self):
         if_present_rm("test.csv")
 
-    def test_get_formation_energies(self):
+    def test_get_formation_energies(
+        self,
+    ):  # TODO: Get Ke to reparse with new defects thermo code and add here
         def _check_formation_energy_table(
             formation_energy_table_df, fermi_level=0, thermo=self.sb2o5_thermo
         ):
