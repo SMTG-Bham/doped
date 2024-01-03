@@ -103,6 +103,7 @@ package was rewritten to operate using the new ``pymatgen-analysis-defects`` pac
 Studies using ``doped``
 ========================
 
+- K\. Li et al. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
 - X\. Wang et al. `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
 - Y\. Kumagai et al. `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos `Journal of Physical Chemistry C`_ 2023
@@ -118,8 +119,7 @@ Studies using ``doped``
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh `ACS Energy Letters <https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380>`__ 2021
 - C\. J. Krajewska et al. `Chemical Science`_ 2021
 
-.. CSTX JPCC (for setting up phase diagram calcs)
-.. Kumagai PRX Energy (for defect generation)
+.. Irea, Xinwei, Wenzhen early 2024 papers
 .. Se
 .. Oba book
 .. BiOI
