@@ -100,7 +100,7 @@ The `docs`_ website setup was templated from the ``ShakeNBreak`` docs set up by 
 morphed over time as more and more functionality was added. After breaking changes in ``pymatgen``, the
 package was rewritten to operate using the new ``pymatgen-analysis-defects`` package.
 
-Studies using ``doped``
+Studies using ``doped``, so far
 ========================
 
 - K\. Li et al. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
