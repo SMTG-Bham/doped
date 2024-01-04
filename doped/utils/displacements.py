@@ -1,6 +1,8 @@
 """
 Code to analyse site displacements around defect.
 """
+import warnings
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -135,6 +137,7 @@ def _plot_site_displacements(
         warnings.warn("Plotly not installed, using matplotlib instead")
         use_plotly = False
     if use_plotly:
+        hovertemplate = "Distance to defect: %{x:.2f}<br>Absolute displacement: %{y:.2f}<br>Species: %{z}"
         if not separated_by_direction:  # total displacement
             fig = px.scatter(
                 x=disp_dict["Distance to defect"],
@@ -149,29 +152,22 @@ def _plot_site_displacements(
             )
             # Round x and y in hover data
             fig.update_traces(
-                hovertemplate="Distance to defect: %{customdata[0]:.2f}<br>"
-                + "Absolute displacement: %{customdata[1]:.2f}<br>"
-                + "Species: %{customdata[2]}"
+                hovertemplate=hovertemplate.replace("{x", "{customdata[0]")
+                .replace("{y", "{customdata[1]")
+                .replace("{z", "{customdata[2]")
             )
-            # Add axis labels
-            fig.update_layout(
-                xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
-            )
-            return fig
         else:
             fig = make_subplots(
                 rows=1, cols=3, subplot_titles=("x", "y", "z"), shared_xaxes=True, shared_yaxes=True
             )
-            unique_species = set(disp_dict["Species"])
+            unique_species = list(set(disp_dict["Species"]))
             color_dict = dict(zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)]))
             for dir_index, _direction in enumerate(["x", "y", "z"]):
                 fig.add_trace(
                     Scatter(
                         x=disp_dict["Distance to defect"],
                         y=[abs(i[dir_index]) for i in disp_dict["Abs. displacement"]],
-                        hovertemplate="Distance to defect: %{x:.2f}<br>"
-                        + "Absolute displacement: %{y:.2f}<br>"
-                        + "Species: %{text}",
+                        hovertemplate=hovertemplate.replace("{z", "{text"),
                         text=disp_dict["Species_with_index"],
                         marker={"color": [color_dict[i] for i in disp_dict["Species"]]},
                         # Only scatter plot, no line
@@ -196,16 +192,16 @@ def _plot_site_displacements(
                     row=1,
                     col=1,
                 )
-            fig.update_layout(
-                xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
-            )
-            return fig
+        # Add axis labels
+        fig.update_layout(
+            xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
+        )
     else:
         # Color by species
         unique_species = list(set(disp_dict["Species"]))
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-        if not colors:
-            colors = list(dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys())
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
+            dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
+        )
         color_dict = {i: colors[index] for index, i in enumerate(unique_species)}
         styled_fig_size = plt.rcParams["figure.figsize"]
         # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
@@ -223,7 +219,6 @@ def _plot_site_displacements(
             # Add legend with species manually
             patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
             ax.legend(handles=patches)
-            return fig
         else:
             fig, ax = plt.subplots(
                 1,
@@ -248,4 +243,5 @@ def _plot_site_displacements(
             ax[0].legend(handles=patches)
             # Set separation between subplots
             fig.subplots_adjust(wspace=0.07)
-            return fig
+
+    return fig
