@@ -511,6 +511,27 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         assert "Zr4O" not in [e.name for e in self.cp.entries]
 
+    def test_init_ZnSe(self):
+        """
+        As noted by Savya Aggarwal, the legacy MP API code didn't return ZnSe2
+        as a competing phase despite being on the hull and bordering ZnSe,
+        because the legacy MP API database wrongly had the data['e_above_hull']
+        value as 0.147 eV/atom (when it should be 0 eV/atom).
+        https://legacy.materialsproject.org/materials/mp-1102515/ https://next-
+        gen.materialsproject.org/materials/mp-1102515?formula=ZnSe2.
+
+        Updated code which re-calculates the energy above hull avoids this
+        issue.
+        """
+        cp = chemical_potentials.CompetingPhases("ZnSe", api_key=self.api_key)
+        assert any(e.name == "ZnSe2" for e in cp.entries)
+        assert len(cp.entries) == 14  # ZnSe2 now present
+        znse2_entry = [e for e in cp.entries if e.name == "ZnSe2"][0]
+        assert znse2_entry.data["e_above_hull"] == 0
+        assert not znse2_entry.data["molecule"]
+        assert np.isclose(znse2_entry.data["energy_per_atom"], -3.080017)
+        assert np.isclose(znse2_entry.data["energy"], -3.080017 * 12)
+
     def test_init_full_phase_diagram(self):
         cp = chemical_potentials.CompetingPhases(
             "ZrO2", e_above_hull=0.03, api_key=self.api_key, full_phase_diagram=True
