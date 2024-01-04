@@ -46,7 +46,6 @@
   - Show example in docs/advanced tutorial of changing `dist_tol` after parsing
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple DefectThermodynamics objects
   - Example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta charge state, and TLs with two meta charge states, using df output from `get_transition_levels` (i.e. to get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
-  - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check (with Kumagai), and note this in the tutorial
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
@@ -55,7 +54,7 @@
     and/or if it's known from other work for your chosen functional etc.)
   - Add notes about polaron finding (use SnB and/or MAGMOMs. Any other advice to add? See Abdullah/Dan chat and YouTube tutorial, should have note about setting `MAGMOM`s for defects somewhere). `doped` can't do automatically because far too much defect/material-specific dependence.
   - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
-  - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
+  - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples. Should also note that the dielectric should be in the same xyz Cartesian basis as the supercell calculations (likely but not necessarily the same as the raw output of a VASP dielectric calculation if an oddly-defined primitive cell is used)
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
     possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
   - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).

@@ -445,9 +445,10 @@ def defect_entry_from_paths(
         bulk_path (str):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to the dielectric constant. If not provided,
-            charge corrections cannot be computed and so `skip_corrections` will be
-            set to true.
+            Ionic + static contributions to the dielectric constant, in the same xyz
+            Cartesian basis as the supercell calculations. If not provided, charge
+            corrections cannot be computed and so `skip_corrections` will be set to
+            true.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
             from the defect calculation outputs.
@@ -553,9 +554,10 @@ class DefectsParser:
                 folders (likely the same `output_path` used with `DefectsSet` for
                 file generation in `doped.vasp`). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant. If not provided,
-                charge corrections cannot be computed and so `skip_corrections` will be
-                set to true.
+                Ionic + static contributions to the dielectric constant, in the same xyz
+                Cartesian basis as the supercell calculations. If not provided, charge
+                corrections cannot be computed and so `skip_corrections` will be set to
+                true.
             subfolder (str):
                 Name of subfolder(s) within each defect calculation folder (in the
                 `output_path` directory) containing the VASP calculation files to
@@ -773,19 +775,19 @@ class DefectsParser:
             finally:
                 pbar.close()
 
-        if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
-            os.remove("voronoi_nodes.json.lock")
+            if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
+                os.remove("voronoi_nodes.json.lock")
 
-        if parsing_warnings := [
-            warning for warning in parsing_warnings if warning  # remove empty strings
-        ]:
-            warnings.warn("\n".join(parsing_warnings))
+            if parsing_warnings := [
+                warning for warning in parsing_warnings if warning  # remove empty strings
+            ]:
+                warnings.warn("\n".join(parsing_warnings))
 
-        if orientational_degeneracy_warning_called:
-            # warn and remove orientational degeneracy factors from all entries as not reliable
-            warnings.warn(_orientational_degeneracy_warning)
-            for defect_entry in parsed_defect_entries:
-                defect_entry.degeneracy_factors.pop("orientational degeneracy", None)
+            if orientational_degeneracy_warning_called:
+                # warn and remove orientational degeneracy factors from all entries as not reliable
+                warnings.warn(_orientational_degeneracy_warning)
+                for defect_entry in parsed_defect_entries:
+                    defect_entry.degeneracy_factors.pop("orientational degeneracy", None)
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
@@ -1229,7 +1231,9 @@ class DefectParser:
             )
         defect_vr = get_vasprun(defect_vr_path)
 
-        possible_defect_name = os.path.basename(defect_path)  # set equal to folder name
+        possible_defect_name = os.path.basename(
+            defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
+        )  # set equal to folder name
         if "vasp" in possible_defect_name:  # get parent directory name:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
@@ -1241,7 +1245,8 @@ class DefectParser:
                 charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
                 if charge_state_suffix[0] not in ["-", "+"]:
                     raise ValueError(
-                        f"Could not guess charge state from folder name: {possible_defect_name}"
+                        f"Could not guess charge state from folder name ({possible_defect_name}), must "
+                        f"end in '_+X' or '_-X' where +/-X is the charge state."
                     )
 
                 parsed_charge_state = int(charge_state_suffix)

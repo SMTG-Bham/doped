@@ -260,7 +260,8 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions). If None,
+                ionic and (high-frequency) electronic contributions), in the
+                same xyz Cartesian basis as the supercell calculations. If None,
                 then the dielectric constant is taken from the `defect_entry`
                 `calculation_metadata` if available.
             defect_locpot:
@@ -374,7 +375,8 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions). If None,
+                ionic and (high-frequency) electronic contributions), in the
+                same xyz Cartesian basis as the supercell calculations. If None,
                 then the dielectric constant is taken from the `defect_entry`
                 `calculation_metadata` if available.
             defect_outcar:
@@ -674,12 +676,11 @@ class DefectEntry(thermo.DefectEntry):
         site.
         """
         # Get supercells with same number of sites
-        fig = _plot_site_displacements(
+        return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
             use_plotly=use_plotly,
         )
-        return fig
 
 
 def _no_chempots_warning(property="Formation energies (and concentrations)"):
