@@ -1,0 +1,59 @@
+# Figure
+figure.figsize : 4.7, 4.6
+figure.dpi: 600
+
+# Colors
+axes.prop_cycle: cycler('color', ['5FABA2', 'D4447E', 'E9A66C', '507BAA', 'F8D54D', '426600', 'ff0010', '9dcc00', 'c20088', '003380', 'ffa405', 'ffff00', 'ff5005', '5ef1f2', '740aff', '990000', '00998f', '005c31', '2bce48', 'ffcc99', '94ffb5', '8f7c00', '6fa8bb', '808080'])
+
+# Font
+font.family : sans-serif
+font.sans-serif : Montserrat, Helvetica, Catamaran, Liberation Sans, Arial
+font.size            : 15
+text.usetex          : False
+pdf.fonttype         : 42
+ps.fonttype          : 42
+mathtext.fontset     : stixsans
+mathtext.default     : regular
+
+# Axes
+axes.titlesize       : 20
+axes.titlepad        : 15
+axes.linewidth       : 0.5
+axes.unicode_minus   : False
+axes.labelpad        : 10
+
+# Grid
+grid.linewidth       : 0.4
+grid.color           : black
+
+# Lines
+lines.linewidth      : 1.0
+
+# Ticks
+xtick.major.size     : 12
+xtick.minor.size     : 5
+xtick.major.width    : 0.2
+xtick.minor.width    : 0.2
+xtick.major.pad      : 6
+xtick.direction      : in
+xtick.top            : False
+xtick.bottom         : True
+xtick.labelsize      : 11.5
+
+ytick.major.size     : 12
+ytick.minor.size     : 5
+ytick.major.width    : 0.2
+ytick.minor.width    : 0.2
+ytick.major.pad      : 6
+ytick.direction      : in
+ytick.right          : False
+ytick.left           : True
+ytick.labelsize      : 11.5
+
+# Legend
+legend.handlelength  : 1.2
+legend.fontsize      : 12 #13
+legend.frameon       : True
+
+# Marker
+lines.markersize     : 8
