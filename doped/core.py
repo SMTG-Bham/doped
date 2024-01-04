@@ -20,6 +20,8 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
+from doped.utils.displacements import _plot_site_displacements
+
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -661,6 +663,23 @@ class DefectEntry(thermo.DefectEntry):
         self.name and self.sc_entry.
         """
         return self.name == other.name and self.sc_entry == other.sc_entry
+
+    def plot_site_displacements(
+        self,
+        separated_by_direction: bool = True,
+        use_plotly: bool = False,
+    ):
+        """
+        Plot the site displacements as a function of distance from the defect
+        site.
+        """
+        # Get supercells with same number of sites
+        fig = _plot_site_displacements(
+            defect_entry=self,
+            separated_by_direction=separated_by_direction,
+            use_plotly=use_plotly,
+        )
+        return fig
 
 
 def _no_chempots_warning(property="Formation energies (and concentrations)"):

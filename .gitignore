@@ -31,3 +31,6 @@ local_doped_testing/
 # Sphinx documentation
 docs/_build/
 docs/jupyter_execute/
+
+# VSCode
+.vscode/settings.json
