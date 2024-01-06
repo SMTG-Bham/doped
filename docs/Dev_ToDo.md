@@ -40,6 +40,7 @@
 - Docs:
   - Barebones tutorial workflow, as suggested by Alex G. 
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
+  - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Show on chemical potentials docs how chempots can be later set as attribute for DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
