@@ -299,6 +299,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
 def get_kumagai_correction(
     defect_entry,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+    defect_region_radius: Optional[float] = None,
     defect_outcar: Optional[Union[str, Outcar]] = None,
     bulk_outcar: Optional[Union[str, Outcar]] = None,
     plot: bool = False,
@@ -317,8 +318,16 @@ def get_kumagai_correction(
     If this correction is used, please cite the Kumagai & Oba paper:
     10.1103/PhysRevB.89.195205
 
+    Typically for reasonably well-converged supercell sizes, the default
+    `defect_region_radius` works perfectly well. However, for layered materials
+    at small/intermediate supercell sizes, you may want to adjust this to ensure
+    that only sites outside the defect layer (or in the layer furthest from the
+    defect) are sampled - usually `doped` will throw a warning about the
+    correction error being above the default tolerance (50 meV) if this is an
+    issue.
+
     Args:
-        defect_entry:
+        defect_entry (DefectEntry):
             DefectEntry object with the following for which to compute the
             Kumagai finite-size charge correction.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -326,12 +335,17 @@ def get_kumagai_correction(
             ionic and (high-frequency) electronic contributions). If None,
             then the dielectric constant is taken from the `defect_entry`
             `calculation_metadata` if available.
-        defect_outcar:
+        defect_region_radius (float):
+            Radius of the defect region (in Å). Sites outside the defect
+            region are used for sampling the electrostatic potential far
+            from the defect (to obtain the potential alignment).
+            If None (default), uses the Wigner-Seitz radius of the supercell.
+        defect_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
             If None, will try to use the `defect_site_potentials`
             from the `defect_entry` `calculation_metadata` if available.
-        bulk_outcar:
+        bulk_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the bulk supercell
             calculation, or the corresponding pymatgen Outcar object.
             If None, will try to use the `bulk_site_potentials`
@@ -363,14 +377,69 @@ def get_kumagai_correction(
 
     user_settings.logger.setLevel(logging.CRITICAL)
     from pydefect.analyzer.calc_results import CalcResults
-    from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius, make_sites
+    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection
+    from pydefect.corrections.ewald import Ewald
     from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+    from pydefect.defaults import defaults
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")
     warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     _ignore_pmg_warnings()
+
+    def doped_make_efnv_correction(
+        charge: float,
+        calc_results: CalcResults,
+        perfect_calc_results: CalcResults,
+        dielectric_tensor: np.array,
+        defect_region_radius: Optional[float] = None,
+        defect_coords: Optional[Union[np.array, list]] = None,
+        accuracy: float = defaults.ewald_accuracy,
+        unit_conversion: float = 180.95128169876497,
+    ):
+        """
+        This is a modified version of pydefect's make_efnv_correction function
+        (in pydefect.cli.vasp.make_efnv_correction) to allow the defect region
+        radius to be adjusted (e.g. in cases of layered materials, where often
+        the defect charge is localised to one layer, so we likely want to
+        adjust the defect region radius to ensure that only _other_ layers are
+        used for the sampling (plateau) region).
+
+        If defect_region_radius is not specified, then the `pydefect` default
+        (which is the Wigner-Seitz region of the supercell) is used.
+
+        Notes:
+        (1) The formula written in YK2014 need to be divided by 4pi in the SI unit.
+        (2) When assuming an element charge locate at the defect_coords and
+            angstrom for length, relative dielectric tensor, Multiply
+            elementary_charge * 1e10 / epsilon_0 = 180.95128169876497
+            to make potential in V.
+        """
+        sites, rel_coords, defect_coords = make_sites(calc_results, perfect_calc_results, defect_coords)
+
+        lattice = calc_results.structure.lattice
+        ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
+        point_charge_correction = 0.0 if not charge else -ewald.lattice_energy * charge**2
+
+        if defect_region_radius is None:
+            defect_region_radius = calc_max_sphere_radius(lattice.matrix)
+
+        for site, rel_coord in zip(sites, rel_coords):
+            if site.distance > defect_region_radius:
+                if charge == 0:
+                    site.pc_potential = 0
+                else:
+                    site.pc_potential = ewald.atomic_site_potential(rel_coord) * charge * unit_conversion
+
+        return ExtendedFnvCorrection(
+            charge=charge,
+            point_charge_correction=point_charge_correction * unit_conversion,
+            defect_region_radius=defect_region_radius,
+            sites=sites,
+            defect_coords=tuple(defect_coords),
+        )
 
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     if hasattr(defect_entry, "calculation_metadata"):
@@ -430,12 +499,13 @@ def get_kumagai_correction(
         potentials=bulk_site_potentials,
     )
 
-    efnv_correction = make_efnv_correction(
+    efnv_correction = doped_make_efnv_correction(
         charge=defect_entry.charge_state,
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
         defect_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect coords (except for vacancies)
+        defect_region_radius=defect_region_radius,
         **kwargs,
     )
     kumagai_correction_result = CorrectionResult(

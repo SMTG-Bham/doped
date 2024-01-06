@@ -290,7 +290,8 @@ class DefectThermodynamics(MSONable):
         transition levels, concentrations etc).
 
         Usually initialised using DefectsParser.get_defect_thermodynamics(), but
-        can also be initialised with a list or dict of DefectEntry objects.
+        can also be initialised with a list or dict of DefectEntry objects (e.g.
+        from DefectsParser.defect_dict).
 
         Note that the DefectEntry.name attributes are used to label the defects in
         plots.
