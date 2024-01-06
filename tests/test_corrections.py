@@ -20,7 +20,6 @@ from pymatgen.util.testing import PymatgenTest
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
-from doped.thermodynamics import DefectThermodynamics
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -148,10 +147,10 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     example_dir: str
     CdTe_example_dir: str
     ytos_example_dir: str
+    ytos_dielectric: list
     CdTe_bulk_data_dir: str
     CdTe_dielectric: np.ndarray
     v_Cd_dict: Dict[Any, Any]
-    v_Cd_thermo: DefectThermodynamics
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 
@@ -178,12 +177,11 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
                     charge_state=int(i.split("_")[-1]),  # test manually specifying charge states here
                 )
 
-        cls.v_Cd_thermo = DefectThermodynamics.from_defect_dict(cls.v_Cd_dict)
-
+        cls.ytos_dielectric = [40.7, 40.7, 25.2]  # from legacy Materials Project
         cls.F_O_1_entry = analysis.defect_entry_from_paths(
             defect_path=f"{cls.ytos_example_dir}/F_O_1",
             bulk_path=f"{cls.ytos_example_dir}/Bulk",
-            dielectric=[40.7, 40.7, 25.2],
+            dielectric=cls.ytos_dielectric,
         )
 
         cls.Te_i_2_ent = analysis.defect_entry_from_paths(
@@ -241,7 +239,26 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         Test eFNV correction plotting.
         """
         mpl.pyplot.clf()
-        return get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)[1]
+        corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=self.ytos_dielectric, plot=True)
+        assert np.isclose(corr.correction_energy, 0.12691248591191384)
+        return fig
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="F_O_+1_eFNV_wacky_region_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_kumagai_adjusted_sampling_region(self):
+        """
+        Test eFNV correction plotting, with an adjusted sampling region.
+        """
+        mpl.pyplot.clf()
+        corr, fig = get_kumagai_correction(
+            self.F_O_1_entry, dielectric=self.ytos_dielectric, defect_region_radius=7.5, plot=True
+        )
+        assert np.isclose(corr.correction_energy, 0.11104892482814409)
+        return fig
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -254,7 +271,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         Test eFNV correction plotting, with figure customisation.
         """
         mpl.pyplot.clf()
-        _corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=[40.7, 40.7, 25.2], plot=True)
+        _corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=self.ytos_dielectric, plot=True)
         # add shading to plot:
         ax = fig.gca()
         ax.axvspan(5, 100, alpha=0.2, color="yellow")
