@@ -886,6 +886,7 @@ def get_ideal_supercell_matrix(
     max_atoms: int = 240,
     min_image_distance: float = 10.0,
     force_diagonal: bool = False,
+    pbar: Optional[tqdm] = None,
 ) -> Union[np.ndarray, None]:
     """
     Determine the ideal supercell matrix for a given structure, based on the
@@ -935,6 +936,8 @@ def get_ideal_supercell_matrix(
             If True, return a transformation with a diagonal
             transformation matrix.
             (Default = False)
+        pbar (tqdm):
+            tqdm progress bar object to update. Default is None.
 
     Returns:
         Ideal supercell matrix (np.ndarray) or None if no suitable
@@ -958,14 +961,22 @@ def get_ideal_supercell_matrix(
         )
         print("Attempting doped supercell generation algorithm...")
         best_min_dist = symmetry.get_min_image_distance(structure)
-        target_size = 2
+        target_size = 1
         while best_min_dist < min_image_distance:
+            target_size += 1
+            if pbar is not None:
+                pbar.set_description(
+                    f"Best min dist: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
+                )
             optimal_P, best_min_dist = symmetry.find_ideal_supercell(
                 structure.lattice.matrix,
                 target_size=target_size,
                 return_min_dist=True,
             )
-            target_size += 1
+        if pbar is not None:
+            pbar.set_description(
+                f"Best min dist: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+            )
 
         return optimal_P
 
@@ -1178,6 +1189,7 @@ class DefectsGenerator(MSONable):
                     force_diagonal=self.supercell_gen_kwargs.get(
                         "force_diagonal", False
                     ),  # same as current pymatgen default
+                    pbar=pbar,
                 )
 
             # check if input structure is already >10 Å in each direction:
