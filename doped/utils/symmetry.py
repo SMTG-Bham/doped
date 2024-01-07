@@ -1583,7 +1583,9 @@ def find_ideal_supercell(
         print(f"Normalization factor (Q): {norm}")
 
     if target_size == 1:  # just identity innit
-        return np.eye(3, dtype=int), norm_cell, _get_min_image_distance_from_matrix(norm_cell)
+        return np.eye(3, dtype=int), _get_min_image_distance_from_matrix(
+            cell
+        ) if return_min_dist else np.eye(3, dtype=int)
 
     ideal_P = np.dot(target_metric, np.linalg.inv(norm_cell))  # Approximate initial P matrix
 

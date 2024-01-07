@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects import core, supercells, thermo
+from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -917,8 +917,9 @@ class Defect(core.Defect):
         self,
         sc_mat: Optional[np.ndarray] = None,
         min_atoms: int = 50,  # different to current pymatgen default (80)
-        max_atoms: int = 500,  # different to current pymatgen default (240)
-        min_length: float = 10.0,  # same as current pymatgen default
+        max_atoms: int = 240,  # same as current pymatgen default (240)
+        min_image_distance: float = 10.0,  # same as current pymatgen default
+        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
         force_diagonal: bool = False,  # same as current pymatgen default
         dummy_species: Optional[str] = None,
         target_frac_coords: Optional[np.ndarray] = None,
@@ -934,23 +935,28 @@ class Defect(core.Defect):
         Also returns information about equivalent defect sites in the supercell.
 
         Args:
-            sc_mat:
+            sc_mat (3x3 matrix):
                 Transformation matrix of self.structure to create the supercell.
-                If None, then automatically determined by `CubicSupercellAnalyzer`.
-            target_frac_coords:
+                If None, then automatically computed using `get_ideal_supercell_matrix`
+                from `doped.generation`.
+            target_frac_coords (3x1 matrix):
                 If set, the defect will be placed at the closest equivalent site to
                 these fractional coordinates (using self.equivalent_sites).
-            return_sites:
+            return_sites (bool):
                 If True, returns a tuple of the defect supercell, defect supercell
                 site and list of equivalent supercell sites.
-            dummy_species:
+            dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            max_atoms:
+            max_atoms (int):
                 Maximum number of atoms allowed in the generated supercell (if sc_mat is None).
-            min_atoms:
+            min_atoms (int):
                 Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
-            min_length:
-                Minimum length of the generated supercell lattice vectors (if sc_mat is None).
+            min_image_distance (float):
+                Minimum image distance in Å of the supercell (i.e. minimum distance between
+                periodic images of atoms/sites in the lattice).
+                (Default = 10.0)
+            min_length (float):
+                Same as min_image_distance (kept for compatibility).
             force_diagonal:
                 If True, generate a supercell with a diagonal transformation matrix
                 (if sc_mat is None).
@@ -960,11 +966,16 @@ class Defect(core.Defect):
             the defect supercell site and list of equivalent supercell sites.
         """
         if sc_mat is None:
-            sc_mat = supercells.get_sc_fromstruct(
+            if min_length is not None:
+                min_image_distance = min_length
+
+            from doped.generation import get_ideal_supercell_matrix
+
+            sc_mat = get_ideal_supercell_matrix(
                 self.structure,
                 min_atoms=min_atoms,
                 max_atoms=max_atoms,
-                min_length=min_length,
+                min_image_distance=min_image_distance,
                 force_diagonal=force_diagonal,
             )
 
