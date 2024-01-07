@@ -1285,12 +1285,14 @@ def _get_min_image_distance_from_matrix(matrix: np.ndarray) -> float:
     # sort zipped list by dist:
     zipped_fcoords_dist_idx_image.sort(key=lambda x: x[1])
     min_dist = zipped_fcoords_dist_idx_image[1][1]  # second in list is min image (first is itself, zero)
+    if min_dist <= 0:
+        raise ValueError(
+            "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
+            "non-orthogonal lattice. Please check your inputs!"
+        )
     return round(  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
         min_dist, 4
     )
-
-
-# TODO: Implement check that dist is within expected limits, and check efficiency with this
 
 
 def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 10):
