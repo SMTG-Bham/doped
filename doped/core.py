@@ -355,6 +355,7 @@ class DefectEntry(thermo.DefectEntry):
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         defect_region_radius: Optional[float] = None,
+        excluded_indices: Optional[List[int]] = None,
         defect_outcar: Optional[Union[str, Outcar]] = None,
         bulk_outcar: Optional[Union[str, Outcar]] = None,
         plot: bool = False,
@@ -374,12 +375,15 @@ class DefectEntry(thermo.DefectEntry):
         10.1103/PhysRevB.89.195205
 
         Typically for reasonably well-converged supercell sizes, the default
-        `defect_region_radius` works perfectly well. However, for layered materials
-        at small/intermediate supercell sizes, you may want to adjust this to ensure
-        that only sites outside the defect layer (or in the layer furthest from the
-        defect) are sampled - usually `doped` will throw a warning about the
-        correction error being above the default tolerance (50 meV) if this is an
-        issue.
+        `defect_region_radius` works perfectly well. However, for certain materials
+        at small/intermediate supercell sizes, you may want to adjust this (and/or
+        `excluded_indices`) to ensure the best sampling of the plateau region away
+        from the defect position - `doped` should throw a warning in these cases
+        (about the correction error being above the default tolerance (50 meV)).
+        For example, with layered materials, the defect charge is often localised
+        to one layer, so we may want to adjust `defect_region_radius` and/or
+        `excluded_indices` to ensure that only sites in other layers are used for
+        the sampling region (plateau).
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -393,6 +397,10 @@ class DefectEntry(thermo.DefectEntry):
                 region are used for sampling the electrostatic potential far
                 from the defect (to obtain the potential alignment).
                 If None (default), uses the Wigner-Seitz radius of the supercell.
+            excluded_indices (list):
+                List of site indices (in the defect supercell) to exclude from
+                the site potential sampling in the correction calculation/plot.
+                If None (default), no sites are excluded.
             defect_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
                 calculation, or the corresponding pymatgen Outcar object.
@@ -441,6 +449,7 @@ class DefectEntry(thermo.DefectEntry):
             defect_entry=self,
             dielectric=dielectric,
             defect_region_radius=defect_region_radius,
+            excluded_indices=excluded_indices,
             defect_outcar=defect_outcar,
             bulk_outcar=bulk_outcar,
             plot=plot,

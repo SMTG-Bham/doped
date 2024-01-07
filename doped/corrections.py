@@ -33,7 +33,7 @@ eFNV) were developed, they should be used here.
 
 import os
 import warnings
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -300,6 +300,7 @@ def get_kumagai_correction(
     defect_entry,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
     defect_region_radius: Optional[float] = None,
+    excluded_indices: Optional[List[int]] = None,
     defect_outcar: Optional[Union[str, Outcar]] = None,
     bulk_outcar: Optional[Union[str, Outcar]] = None,
     plot: bool = False,
@@ -319,12 +320,15 @@ def get_kumagai_correction(
     10.1103/PhysRevB.89.195205
 
     Typically for reasonably well-converged supercell sizes, the default
-    `defect_region_radius` works perfectly well. However, for layered materials
-    at small/intermediate supercell sizes, you may want to adjust this to ensure
-    that only sites outside the defect layer (or in the layer furthest from the
-    defect) are sampled - usually `doped` will throw a warning about the
-    correction error being above the default tolerance (50 meV) if this is an
-    issue.
+    `defect_region_radius` works perfectly well. However, for certain materials
+    at small/intermediate supercell sizes, you may want to adjust this (and/or
+    `excluded_indices`) to ensure the best sampling of the plateau region away
+    from the defect position - `doped` should throw a warning in these cases
+    (about the correction error being above the default tolerance (50 meV)).
+    For example, with layered materials, the defect charge is often localised
+    to one layer, so we may want to adjust `defect_region_radius` and/or
+    `excluded_indices` to ensure that only sites in other layers are used for
+    the sampling region (plateau).
 
     Args:
         defect_entry (DefectEntry):
@@ -340,6 +344,10 @@ def get_kumagai_correction(
             region are used for sampling the electrostatic potential far
             from the defect (to obtain the potential alignment).
             If None (default), uses the Wigner-Seitz radius of the supercell.
+        excluded_indices (list):
+            List of site indices (in the defect supercell) to exclude from
+            the site potential sampling in the correction calculation/plot.
+            If None (default), no sites are excluded.
         defect_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
@@ -377,11 +385,13 @@ def get_kumagai_correction(
 
     user_settings.logger.setLevel(logging.CRITICAL)
     from pydefect.analyzer.calc_results import CalcResults
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius, make_sites
-    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection
+    from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
+    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
     from pydefect.corrections.ewald import Ewald
     from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
     from pydefect.defaults import defaults
+    from pydefect.util.error_classes import SupercellError
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")
@@ -398,6 +408,7 @@ def get_kumagai_correction(
         defect_coords: Optional[Union[np.array, list]] = None,
         accuracy: float = defaults.ewald_accuracy,
         unit_conversion: float = 180.95128169876497,
+        excluded_indices: Optional[list] = None,
     ):
         """
         This is a modified version of pydefect's make_efnv_correction function
@@ -417,11 +428,31 @@ def get_kumagai_correction(
             elementary_charge * 1e10 / epsilon_0 = 180.95128169876497
             to make potential in V.
         """
-        sites, rel_coords, defect_coords = make_sites(calc_results, perfect_calc_results, defect_coords)
+        if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
+            raise SupercellError("The lattice constants for defect and perfect models are different")
+        structure_analyzer = DefectStructureComparator(
+            calc_results.structure, perfect_calc_results.structure
+        )
+        if defect_coords is None:
+            defect_coords = structure_analyzer.defect_center_coord
+        lattice = calc_results.structure.lattice
+        sites, rel_coords = [], []
+
+        excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
+
+        for d, p in structure_analyzer.atom_mapping.items():
+            if d not in excluded_indices:
+                specie = str(calc_results.structure[d].specie)
+                frac_coords = calc_results.structure[d].frac_coords
+                distance, _ = lattice.get_distance_and_image(defect_coords, frac_coords)
+                pot = calc_results.potentials[d] - perfect_calc_results.potentials[p]
+                sites.append(PotentialSite(specie, distance, pot, None))
+                coord = calc_results.structure[d].frac_coords
+                rel_coords.append([x - y for x, y in zip(coord, defect_coords)])
 
         lattice = calc_results.structure.lattice
         ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
-        point_charge_correction = 0.0 if not charge else -ewald.lattice_energy * charge**2
+        point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
             defect_region_radius = calc_max_sphere_radius(lattice.matrix)
@@ -506,6 +537,7 @@ def get_kumagai_correction(
         dielectric_tensor=dielectric,
         defect_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect coords (except for vacancies)
         defect_region_radius=defect_region_radius,
+        excluded_indices=excluded_indices,
         **kwargs,
     )
     kumagai_correction_result = CorrectionResult(
