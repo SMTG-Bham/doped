@@ -1625,7 +1625,10 @@ def find_ideal_supercell(
 
     min_image_dists = np.array(
         [_get_min_image_distance_from_matrix(cell_matrix) for cell_matrix in unique_cell_matrices]
-    )
+    )  # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
+    # so if the efficiency of this function was the bottleneck we could rank first with the fixed
+    # cubic-cell metric, then subselect and apply this function, but at present this is not the limiting
+    # factor in this function so not worth it.
     if len(min_image_dists) == 0:
         raise ValueError("No valid P matrices found with given settings")
 
