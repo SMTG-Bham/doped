@@ -16,6 +16,7 @@ import pytest
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.testing import PymatgenTest
+from test_analysis import if_present_rm
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
@@ -154,6 +155,9 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 
+    def tearDown(self):
+        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
+
     @classmethod
     def setUpClass(cls) -> None:
         # prepare parsed defect data (from doped parsing example)
@@ -276,6 +280,38 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         ax = fig.gca()
         ax.axvspan(5, 100, alpha=0.2, color="yellow")
 
+        return fig
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="F_O_+1_eFNV_plot_excluded.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_plot_kumagai_excluded(self):
+        """
+        Test eFNV correction plotting and correction, with excluded_indices
+        parameter.
+        """
+        mpl.pyplot.clf()
+        corr, fig = get_kumagai_correction(
+            self.F_O_1_entry,
+            dielectric=self.ytos_dielectric,
+            defect_region_radius=7.5,
+            plot=True,
+            excluded_indices=np.arange(0, 109),
+        )
+        # gives only Oxygens in the correction/plot
+        assert np.isclose(corr.correction_energy, 0.12218608369699298)  # different by ~4 meV to above
+
+        # F substitution is site number 109, so whether or not it's excluded gives same figure and result
+        corr, fig = self.F_O_1_entry.get_kumagai_correction(  # test as DefectEntry method this time
+            dielectric=self.ytos_dielectric,
+            defect_region_radius=7.5,
+            plot=True,
+            excluded_indices=np.arange(0, 110),
+        )
+        assert np.isclose(corr.correction_energy, 0.12218608369699298)  # different by ~4 meV to above
         return fig
 
     @pytest.mark.mpl_image_compare(
