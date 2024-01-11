@@ -2,6 +2,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from multiprocessing import Pool
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -177,11 +178,15 @@ class FermiSolver:
               `file_name`
             cpus (int): set to >1 to parallelise over multiple annealing temperatures
               at once
-
+            suppress_warnings (bool): if set to True, will suppress warnings from
+                py-sc-fermi
         Returns:
             pd.DataFrame: DataFrame containing concentrations at different
             annealing temperatures in long format.
         """
+
+        if suppress_warnings:
+            warnings.filterwarnings("ignore")
 
         # generate a base defect system, and then make one at each temperature in temp_range
         defect_system = self.defect_system_from_chemical_potentials(chemical_potentials)
@@ -227,6 +232,9 @@ class FermiSolver:
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
 
+        if suppress_warnings:
+            warnings.filterwarnings("default")
+
         return all_data
 
     def scan_temperature(
@@ -261,11 +269,16 @@ class FermiSolver:
             file name (str): if set, will save a csv file containing results to
               `file_name`
             cpus (int): set to >1 to calculate defect concentrations in parallel
+            suppress_warnings (bool): if set to True, will suppress warnings from
+                py-sc-fermi
 
         Returns:
             pd.DataFrame: DataFrame containing concentrations at different
             temperatures in long format.
         """
+
+        if suppress_warnings:
+            warnings.filterwarnings("ignore")
 
         # generate a base defect system, and then make one at each temperature in temp_range
         defect_system = self.defect_system_from_chemical_potentials(chemical_potentials)
@@ -309,6 +322,9 @@ class FermiSolver:
 
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
+
+        if suppress_warnings:
+            warnings.filterwarnings("default")
 
         return all_data
 
@@ -384,11 +400,17 @@ class FermiSolver:
             file name (str): if set, will save a csv file containing results to
               `file_name`
             cpus (int): set to >1 to calculate defect concentrations in parallel
+            suppress_warnings (bool): if set to True, will suppress warnings from
+                py-sc-fermi
 
         Returns:
             pd.DataFrame: DataFrame containing concentrations at different
             chemical potentials in long format.
         """
+
+        if suppress_warnings:
+            warnings.filterwarnings("ignore")
+
         all_concentration_data = []
         all_fermi_level_data = []
         interpolated_chem_pots, interpolation = self._get_interpolated_chempots(
@@ -435,6 +457,9 @@ class FermiSolver:
 
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
+
+        if suppress_warnings:
+            warnings.filterwarnings("default")
 
         return all_data
 
@@ -502,7 +527,12 @@ class FermiSolver:
             file name (str): if set, will save a csv file containing results to
                 `file_name`
             cpus (int): set to >1 to calculate defect concentrations in parallel
+            suppress_warnings (bool): if set to True, will suppress warnings from
+                py-sc-fermi
         """
+
+        if suppress_warnings:
+            warnings.filterwarnings("ignore")
 
         if annealing == True and cool_to == None:
             raise ValueError(
@@ -557,6 +587,9 @@ class FermiSolver:
 
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
+
+        if suppress_warnings:
+            warnings.filterwarnings("default")
 
         return all_data
 
@@ -670,11 +703,16 @@ class FermiSolver:
             file name (str): if set, will save a csv file containing results to
               `file_name`
             cpus (int): set to >1 to calculate defect concentrations in parallel
+            suppress_warnings (bool): if set to True, will suppress warnings from
+                py-sc-fermi
 
         Returns:
             pd.DataFrame: DataFrame containing all the defect concentrations at
               each chemical potential set in the DataFrame
         """
+
+        if suppress_warnings:
+            warnings.filterwarnings("ignore")
 
         chemical_potentials = chempot_grid.copy()
         chemical_potentials.drop(["is_vertex", "facet"], axis=1, inplace=True)
@@ -720,6 +758,9 @@ class FermiSolver:
 
         if file_name is not None:
             all_data.to_csv(file_name, index=False)
+
+        if suppress_warnings:
+            warnings.filterwarnings("default")
 
         return all_data
 
