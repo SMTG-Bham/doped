@@ -1,6 +1,9 @@
 """
 Code to analyse site displacements around defect.
 """
+import os
+import warnings
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,38 +35,46 @@ def _calc_site_displacements(
         """
         Returns structures for bulk and defect supercells with the same number
         of sites and species, to be used for site matching. If Vacancy, adds
-        site to defect structure. If Interstitial, adds site to bulk structure.
-        If Substitution, replaces defect site in bulk structure.
+        (unrelaxed) site to defect structure. If Interstitial, adds unrelaxed
+        site to bulk structure. If Substitution, replaces defect site in bulk
+        structure.
 
         Returns tuple of (bulk_sc_with_defect, defect_sc_with_defect).
         """
         defect_type = defect_entry.defect.defect_type.name
-
+        bulk_sc_with_defect = defect_entry.bulk_supercell.copy()
+        # Check position of relaxed defect has been parsed (it's an optional arg)
+        if defect_entry.sc_defect_frac_coords is None:
+            raise ValueError(
+                "The relaxed defect position (DefectEntry.sc_defect_frac_coords) "
+                "has not been parsed. "
+                "Please use DefectParser to parse relaxed defect positions "
+                "before calculating site displacements."
+            )
         if defect_type == "Vacancy":
-            # Add Vacancy to defect structure
+            # Add Vacancy atom to defect structure
             defect_sc_with_defect = defect_entry.sc_entry.structure.copy()
             defect_sc_with_defect.append(
                 defect_entry.defect.site.specie,
-                defect_entry.defect.site.frac_coords,
+                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
                 coords_are_cartesian=False,
             )
-            bulk_sc_with_defect = defect_entry.defect.structure.copy()
         elif defect_type == "Interstitial":
-            # If Interstitial, add site to bulk structure
-            bulk_sc_with_defect = defect_entry.defect.structure.copy()
+            # If Interstitial, add interstitial site to bulk structure
             bulk_sc_with_defect.append(
                 defect_entry.defect.site.specie,
-                defect_entry.defect.site.frac_coords,
+                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
                 coords_are_cartesian=False,
             )
             defect_sc_with_defect = defect_entry.sc_entry.structure.copy()
-            # Ensure last site of defect structure is defect site
+            # Ensure last site of defect structure is defect site. Needed
+            # to then calculate site distances to defect
             if not np.allclose(
                 defect_sc_with_defect[-1].frac_coords,
-                defect_entry.defect.site.frac_coords,
+                defect_entry.sc_defect_frac_coords,  # _relaxed_ defect site
             ):
                 # Get index of defect site in defect structure
-                defect_site_index = defect_sc_with_defect.index(defect_entry.defect.site)
+                defect_site_index = defect_sc_with_defect.index(defect_entry.defect_supercell_site)
                 # Swap defect site with last site
                 defect_site = defect_sc_with_defect.pop(defect_site_index)
                 defect_sc_with_defect.append(
@@ -73,16 +84,17 @@ def _calc_site_displacements(
                 )
         elif defect_type == "Substitution":
             # If Substitution, replace site in bulk supercell
-            bulk_sc_with_defect = defect_entry.defect.structure.copy()
             bulk_sc_with_defect.replace(
                 defect_entry.defect.defect_site_index,
                 defect_entry.defect.site.specie,
-                defect_entry.defect.site.frac_coords,
+                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
                 coords_are_cartesian=False,
             )
             defect_sc_with_defect = defect_entry.defect_supercell.copy()
             # Move defect site to last position of defect supercell
-            site_index_defect_sc = defect_sc_with_defect.index(defect_entry.defect_supercell_site)
+            site_index_defect_sc = defect_sc_with_defect.index(
+                defect_entry.defect_supercell_site  # _relaxed_ defect site
+            )
             defect_site = defect_sc_with_defect.pop(site_index_defect_sc)
             defect_sc_with_defect.append(
                 defect_site.specie,
@@ -127,6 +139,7 @@ def _plot_site_displacements(
     defect_entry,
     separated_by_direction: bool = False,
     use_plotly: bool = True,
+    style_file: str = "",
 ):
     disp_dict = _calc_site_displacements(
         defect_entry=defect_entry,
@@ -150,57 +163,60 @@ def _plot_site_displacements(
             # Round x and y in hover data
             fig.update_traces(
                 hovertemplate="Distance to defect: %{customdata[0]:.2f}<br>"
-                + "Absolute displacement: %{customdata[1]:.2f}<br>"
-                + "Species: %{customdata[2]}"
+                "Absolute displacement: %{customdata[1]:.2f}<br>"
+                "Species: %{customdata[2]}"
             )
             # Add axis labels
             fig.update_layout(
                 xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
             )
             return fig
-        else:
-            fig = make_subplots(
-                rows=1, cols=3, subplot_titles=("x", "y", "z"), shared_xaxes=True, shared_yaxes=True
+        # Else, separated by direction
+        fig = make_subplots(
+            rows=1, cols=3, subplot_titles=("x", "y", "z"), shared_xaxes=True, shared_yaxes=True
+        )
+        unique_species = set(disp_dict["Species"])
+        color_dict = dict(zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)]))
+        for dir_index, _direction in enumerate(["x", "y", "z"]):
+            fig.add_trace(
+                Scatter(
+                    x=disp_dict["Distance to defect"],
+                    y=[abs(i[dir_index]) for i in disp_dict["Abs. displacement"]],
+                    hovertemplate="Distance to defect: %{x:.2f}<br>"
+                    "Absolute displacement: %{y:.2f}<br>"
+                    "Species: %{text}",
+                    text=disp_dict["Species_with_index"],
+                    marker={"color": [color_dict[i] for i in disp_dict["Species"]]},
+                    # Only scatter plot, no line
+                    mode="markers",
+                    showlegend=False,
+                ),
+                row=1,
+                col=dir_index + 1,
             )
-            unique_species = set(disp_dict["Species"])
-            color_dict = dict(zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)]))
-            for dir_index, _direction in enumerate(["x", "y", "z"]):
-                fig.add_trace(
-                    Scatter(
-                        x=disp_dict["Distance to defect"],
-                        y=[abs(i[dir_index]) for i in disp_dict["Abs. displacement"]],
-                        hovertemplate="Distance to defect: %{x:.2f}<br>"
-                        + "Absolute displacement: %{y:.2f}<br>"
-                        + "Species: %{text}",
-                        text=disp_dict["Species_with_index"],
-                        marker={"color": [color_dict[i] for i in disp_dict["Species"]]},
-                        # Only scatter plot, no line
-                        mode="markers",
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=dir_index + 1,
-                )
-            # Add legend for color used for each species
-            for specie, color in color_dict.items():
-                fig.add_trace(
-                    Scatter(
-                        x=[None],
-                        y=[None],
-                        mode="markers",
-                        marker={"color": color},
-                        showlegend=True,
-                        legendgroup="1",
-                        name=specie,
-                    ),
-                    row=1,
-                    col=1,
-                )
-            fig.update_layout(
-                xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
+        # Add legend for color used for each species
+        for specie, color in color_dict.items():
+            fig.add_trace(
+                Scatter(
+                    x=[None],
+                    y=[None],
+                    mode="markers",
+                    marker={"color": color},
+                    showlegend=True,
+                    legendgroup="1",
+                    name=specie,
+                ),
+                row=1,
+                col=1,
             )
-            return fig
-    else:
+        fig.update_layout(
+            xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
+        )
+        return fig
+    # Else use matplotlib
+    style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
+    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+    with plt.style.context(style_file):
         # Color by species
         unique_species = list(set(disp_dict["Species"]))
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -208,7 +224,8 @@ def _plot_site_displacements(
             colors = list(dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys())
         color_dict = {i: colors[index] for index, i in enumerate(unique_species)}
         styled_fig_size = plt.rcParams["figure.figsize"]
-        # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
+        # Gives a final figure width matching styled_fig_size,
+        # with dimensions matching the doped default
         styled_font_size = plt.rcParams["font.size"]
         if not separated_by_direction:
             fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
@@ -224,28 +241,28 @@ def _plot_site_displacements(
             patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
             ax.legend(handles=patches)
             return fig
-        else:
-            fig, ax = plt.subplots(
-                1,
-                3,
-                figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
-                sharey=True,
-                sharex=True,
+        # Else, separated by direction
+        fig, ax = plt.subplots(
+            1,
+            3,
+            figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
+            sharey=True,
+            sharex=True,
+        )
+        for index, i in enumerate(["x", "y", "z"]):
+            ax[index].scatter(
+                disp_dict["Distance to defect"],
+                [abs(j[index]) for j in disp_dict["Abs. displacement"]],
+                c=[color_dict[i] for i in disp_dict["Species"]],
+                alpha=0.6,
             )
-            for index, i in enumerate(["x", "y", "z"]):
-                ax[index].scatter(
-                    disp_dict["Distance to defect"],
-                    [abs(j[index]) for j in disp_dict["Abs. displacement"]],
-                    c=[color_dict[i] for i in disp_dict["Species"]],
-                    alpha=0.6,
-                )
-                # Title with direction
-                ax[index].set_title(f"{i}")
-            ax[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
-            ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
-            # Add legend with species manually
-            patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
-            ax[0].legend(handles=patches)
-            # Set separation between subplots
-            fig.subplots_adjust(wspace=0.07)
-            return fig
+            # Title with direction
+            ax[index].set_title(f"{i}")
+        ax[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
+        ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
+        # Add legend with species manually
+        patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
+        ax[0].legend(handles=patches)
+        # Set separation between subplots
+        fig.subplots_adjust(wspace=0.07)
+        return fig
