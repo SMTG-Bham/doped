@@ -392,12 +392,10 @@ class CompetingPhases:
                 property_data=self.data,
             )
 
-        self.MP_full_pd_entries = [
-            e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= e_above_hull
-        ]
         self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+        self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
-        pd_entries = []
+        formatted_pd_entries = []
         # check that none of the elemental ones are molecules in a box
         for entry in self.MP_full_pd_entries.copy():
             if (
@@ -409,16 +407,23 @@ class CompetingPhases:
                 if not any(
                     ent.data["molecule"]
                     and ent.data["pretty_formula"] == molecular_entry.data["pretty_formula"]
-                    for ent in pd_entries
+                    for ent in formatted_pd_entries
                 ):  # first entry only
-                    pd_entries.append(molecular_entry)
+                    formatted_pd_entries.append(molecular_entry)
                     self.MP_full_pd_entries.append(molecular_entry)
 
             elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
                 entry.data["molecule"] = False
-                pd_entries.append(entry)
+                formatted_pd_entries.append(entry)
 
-        pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
+        formatted_pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
+        temp_phase_diagram = PhaseDiagram(formatted_pd_entries)
+        for entry in formatted_pd_entries:
+            # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
+            entry.data["e_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
+        pd_entries = [
+            entry for entry in temp_phase_diagram.all_entries if entry.data["e_above_hull"] <= e_above_hull
+        ]
         phase_diagram = PhaseDiagram(pd_entries)
         # TODO: This breaks if bulk composition not on MP, need to fix!
         bulk_entries = [

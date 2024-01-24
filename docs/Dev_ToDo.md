@@ -13,30 +13,6 @@
 - Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
-- Try re-determine defect symmetry and site multiplicity (particularly important for interstitials, as
-  relaxation may move them to lower/higher symmetry sites which significantly different multiplicity).
-  - Should be doable with current point symmetry tools, especially when both the defect and bulk
-    structures are available. The configurational degeneracy should be just the final site degeneracy
-    (i.e. Wyckoff number) divided by the initial, or equivalently the initial number of symmetry
-    operations divided by the final, so we can just use this to determine the final site degeneracies.
-    For interstitials, should be based off just the Wyckoff number of the final relaxed site.
-    Should make this a parsed defect property, defined relative to the conventional cell (so they
-    actually correspond to Wyckoff numbers, will need some idiotproof checks/notes for users about this),
-    and have this automatically plug-and-play with `py-sc-fermi` (can do by setting `spin_degeneracy` and `config_degeneracy` properties, and use this in `py-sc-fermi` `interface` code). Already have the site analysis /
-    Wyckoff matching code for this.
-  - See `pydefect` and pmg `finder.py` for tools for this.
-  - For complex defects, this is future work, and should be done manually (note in docs and give
-    warning when parsing).
-    - For split-interstitials and split-vacancies however, should be relatively straightforward?
-      Firstly check that the standard approach described above doesn't happen to work (can test with
-      CdTe `Te_i` structures (split-interstitial dimer, oriented along <110> and twisted in different
-      charge states; https://doi.org/10.1039/D2FD00043A)). Could determine the centre-of-mass (CoM),
-      remove the two split-interstitial atoms, add a dummy species at CoM, get the symm-ops / point
-      symmetry of this supercell structure (i.e. with the defect periodic images), then do the same
-      with the original structure and get the difference (-> configurational degeneracy) from this. Not
-      sure if we can do this in general? Taking the unrelaxed and relaxed defect structures, and
-      getting the difference in symm-ops according to `spglib`?
-
 - **`pydefect`** Interface:
   - Having an interface module for `pydefect` to convert parsed outputs to the `pydefect`/`vise` output, would allow the easy:
     - Automation of shallow defect analysis (and allow for easy further analysis of eigenvalues etc) – Adair's done before
@@ -62,14 +38,15 @@
 - Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
+  - Barebones tutorial workflow, as suggested by Alex G. 
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
+  - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Show on chemical potentials docs how chempots can be later set as attribute for DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
   - Show example in docs/advanced tutorial of changing `dist_tol` after parsing
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple DefectThermodynamics objects
   - Example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta charge state, and TLs with two meta charge states, using df output from `get_transition_levels` (i.e. to get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
-  - Dielectric should be aligned with the x,y,z (or a,b,c) of the supercell right? Should check (with Kumagai), and note this in the tutorial
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
@@ -78,7 +55,7 @@
     and/or if it's known from other work for your chosen functional etc.)
   - Add notes about polaron finding (use SnB and/or MAGMOMs. Any other advice to add? See Abdullah/Dan chat and YouTube tutorial, should have note about setting `MAGMOM`s for defects somewhere). `doped` can't do automatically because far too much defect/material-specific dependence.
   - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
-  - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples.
+  - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples. Should also note that the dielectric should be in the same xyz Cartesian basis as the supercell calculations (likely but not necessarily the same as the raw output of a VASP dielectric calculation if an oddly-defined primitive cell is used)
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
     possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
   - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
