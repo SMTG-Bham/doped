@@ -34,3 +34,8 @@ docs/jupyter_execute/
 
 # VSCode
 .vscode/settings.json
+
+# Misc tests
+Test_disp.ipynb
+examples/MgO/
+dope_gga_workflow.ipynb

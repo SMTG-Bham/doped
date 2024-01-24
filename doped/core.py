@@ -666,20 +666,30 @@ class DefectEntry(thermo.DefectEntry):
 
     def plot_site_displacements(
         self,
-        separated_by_direction: bool = True,
-        use_plotly: bool = False,
+        separated_by_direction: Optional[bool] = True,
+        use_plotly: Optional[bool] = False,
+        mpl_style_file: Optional[str] = "",
     ):
         """
         Plot the site displacements as a function of distance from the defect
         site.
+
+        Args:
+            separated_by_direction (bool):
+                Whether to plot the site displacements separated by the
+                x, y and z directions (True) or all together (False).
+            use_plotly (bool):
+                Whether to use plotly (True) or matplotlib (False).
+            mpl_style_file (str):
+                Path to a matplotlib style file to use for the plot. If None,
+                uses the default doped style file.
         """
-        # Get supercells with same number of sites
-        fig = _plot_site_displacements(
+        return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
             use_plotly=use_plotly,
+            style_file=mpl_style_file,
         )
-        return fig
 
 
 def _no_chempots_warning(property="Formation energies (and concentrations)"):
