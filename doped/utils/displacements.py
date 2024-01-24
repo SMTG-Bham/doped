@@ -3,6 +3,7 @@ Code to analyse site displacements around defect.
 """
 import os
 import warnings
+from typing import Optional
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -137,9 +138,9 @@ def _calc_site_displacements(
 
 def _plot_site_displacements(
     defect_entry,
-    separated_by_direction: bool = False,
-    use_plotly: bool = True,
-    style_file: str = "",
+    separated_by_direction: Optional[bool] = False,
+    use_plotly: Optional[bool] = True,
+    style_file: Optional[str] = "",
 ):
     disp_dict = _calc_site_displacements(
         defect_entry=defect_entry,
@@ -207,56 +208,58 @@ def _plot_site_displacements(
         fig.update_layout(
             xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
         )
-    # Else use matplotlib
-    style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    with plt.style.context(style_file):
-        # Color by species
-        unique_species = list(set(disp_dict["Species"]))
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
-            dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
-        )
-        color_dict = {i: colors[index] for index, i in enumerate(unique_species)}
-        styled_fig_size = plt.rcParams["figure.figsize"]
-        # Gives a final figure width matching styled_fig_size,
-        # with dimensions matching the doped default
-        styled_font_size = plt.rcParams["font.size"]
-        if not separated_by_direction:
-            fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
-            ax.scatter(
-                disp_dict["Distance to defect"],
-                [np.linalg.norm(i) for i in disp_dict["Abs. displacement"]],
-                c=[color_dict[i] for i in disp_dict["Species"]],
-                alpha=0.6,
+    else:
+        style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        with plt.style.context(style_file):
+            # Color by species
+            unique_species = list(set(disp_dict["Species"]))
+            colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
+                dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
             )
-            ax.set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
-            ax.set_ylabel("Absolute displacement ($\\AA$)", fontsize=styled_font_size)
+            color_dict = {i: colors[index] for index, i in enumerate(unique_species)}
+            styled_fig_size = plt.rcParams["figure.figsize"]
+            # Gives a final figure width matching styled_fig_size,
+            # with dimensions matching the doped default
+            styled_font_size = plt.rcParams["font.size"]
+            if not separated_by_direction:
+                fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
+                ax.scatter(
+                    disp_dict["Distance to defect"],
+                    [np.linalg.norm(i) for i in disp_dict["Abs. displacement"]],
+                    c=[color_dict[i] for i in disp_dict["Species"]],
+                    alpha=0.4,
+                    edgecolor="none",
+                )
+                ax.set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
+                ax.set_ylabel("Absolute displacement ($\\AA$)", fontsize=styled_font_size)
+                # Add legend with species manually
+                patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
+                ax.legend(handles=patches)
+                return fig
+            # Else, separated by direction
+            fig, ax = plt.subplots(
+                1,
+                3,
+                figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
+                sharey=True,
+                sharex=True,
+            )
+            for index, i in enumerate(["x", "y", "z"]):
+                ax[index].scatter(
+                    disp_dict["Distance to defect"],
+                    [abs(j[index]) for j in disp_dict["Abs. displacement"]],
+                    c=[color_dict[i] for i in disp_dict["Species"]],
+                    alpha=0.4,
+                    edgecolor="none",
+                )
+                # Title with direction
+                ax[index].set_title(f"{i}")
+            ax[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
+            ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
             # Add legend with species manually
             patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
-            ax.legend(handles=patches)
-            return fig
-        # Else, separated by direction
-        fig, ax = plt.subplots(
-            1,
-            3,
-            figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
-            sharey=True,
-            sharex=True,
-        )
-        for index, i in enumerate(["x", "y", "z"]):
-            ax[index].scatter(
-                disp_dict["Distance to defect"],
-                [abs(j[index]) for j in disp_dict["Abs. displacement"]],
-                c=[color_dict[i] for i in disp_dict["Species"]],
-                alpha=0.6,
-            )
-            # Title with direction
-            ax[index].set_title(f"{i}")
-        ax[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
-        ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
-        # Add legend with species manually
-        patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
-        ax[0].legend(handles=patches)
-        # Set separation between subplots
-        fig.subplots_adjust(wspace=0.07)
-        return fig
+            ax[0].legend(handles=patches)
+            # Set separation between subplots
+            fig.subplots_adjust(wspace=0.07)
+    return fig
