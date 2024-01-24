@@ -33,6 +33,9 @@ Depends where we want supercell generation to happen. Can input to both `Defects
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 
 ## Post-Processing
+- For complex defects, auto symmetry determination is future work, and should be done manually (note in docs and give
+  warning when parsing).
+  - Previously had ideas (in `Dev_ToDo.md`) about split-interstitials/vacancies, but think these are now handled fine with current tools.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on
   formation energy diagrams. Main things for this are:
   - Input file generation

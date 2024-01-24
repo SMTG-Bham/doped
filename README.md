@@ -63,8 +63,9 @@ and morphed over time as more and more functionality was added. After breaking c
 entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
 
-## Studies using `doped` (so far)
-
+## Studies using `doped`, so far
+<!-- Wenzhen, Irea, Xinwei papers -->
+- K. Li et al. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23) 2023
 - X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
 - Y. Kumagai et al [_PRX Energy_](http://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.3c05204) 2023

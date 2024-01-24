@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects import core, supercells, thermo
+from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -260,7 +260,8 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions). If None,
+                ionic and (high-frequency) electronic contributions), in the
+                same xyz Cartesian basis as the supercell calculations. If None,
                 then the dielectric constant is taken from the `defect_entry`
                 `calculation_metadata` if available.
             defect_locpot:
@@ -353,6 +354,8 @@ class DefectEntry(thermo.DefectEntry):
     def get_kumagai_correction(
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+        defect_region_radius: Optional[float] = None,
+        excluded_indices: Optional[List[int]] = None,
         defect_outcar: Optional[Union[str, Outcar]] = None,
         bulk_outcar: Optional[Union[str, Outcar]] = None,
         plot: bool = False,
@@ -371,18 +374,39 @@ class DefectEntry(thermo.DefectEntry):
         If this correction is used, please cite the Kumagai & Oba paper:
         10.1103/PhysRevB.89.195205
 
+        Typically for reasonably well-converged supercell sizes, the default
+        `defect_region_radius` works perfectly well. However, for certain materials
+        at small/intermediate supercell sizes, you may want to adjust this (and/or
+        `excluded_indices`) to ensure the best sampling of the plateau region away
+        from the defect position - `doped` should throw a warning in these cases
+        (about the correction error being above the default tolerance (50 meV)).
+        For example, with layered materials, the defect charge is often localised
+        to one layer, so we may want to adjust `defect_region_radius` and/or
+        `excluded_indices` to ensure that only sites in other layers are used for
+        the sampling region (plateau).
+
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions). If None,
+                ionic and (high-frequency) electronic contributions), in the
+                same xyz Cartesian basis as the supercell calculations. If None,
                 then the dielectric constant is taken from the `defect_entry`
                 `calculation_metadata` if available.
-            defect_outcar:
+            defect_region_radius (float):
+                Radius of the defect region (in Å). Sites outside the defect
+                region are used for sampling the electrostatic potential far
+                from the defect (to obtain the potential alignment).
+                If None (default), uses the Wigner-Seitz radius of the supercell.
+            excluded_indices (list):
+                List of site indices (in the defect supercell) to exclude from
+                the site potential sampling in the correction calculation/plot.
+                If None (default), no sites are excluded.
+            defect_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
                 calculation, or the corresponding pymatgen Outcar object.
                 If None, will try to use the `defect_supercell_site_potentials`
                 from the `defect_entry` `calculation_metadata` if available.
-            bulk_outcar:
+            bulk_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the bulk supercell
                 calculation, or the corresponding pymatgen Outcar object.
                 If None, will try to use the `bulk_supercell_site_potentials`
@@ -424,6 +448,8 @@ class DefectEntry(thermo.DefectEntry):
         efnv_correction_output = get_kumagai_correction(
             defect_entry=self,
             dielectric=dielectric,
+            defect_region_radius=defect_region_radius,
+            excluded_indices=excluded_indices,
             defect_outcar=defect_outcar,
             bulk_outcar=bulk_outcar,
             plot=plot,
@@ -902,8 +928,9 @@ class Defect(core.Defect):
         self,
         sc_mat: Optional[np.ndarray] = None,
         min_atoms: int = 50,  # different to current pymatgen default (80)
-        max_atoms: int = 500,  # different to current pymatgen default (240)
-        min_length: float = 10.0,  # same as current pymatgen default
+        max_atoms: int = 240,  # same as current pymatgen default (240)
+        min_image_distance: float = 10.0,  # same as current pymatgen default
+        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
         force_diagonal: bool = False,  # same as current pymatgen default
         dummy_species: Optional[str] = None,
         target_frac_coords: Optional[np.ndarray] = None,
@@ -919,23 +946,28 @@ class Defect(core.Defect):
         Also returns information about equivalent defect sites in the supercell.
 
         Args:
-            sc_mat:
+            sc_mat (3x3 matrix):
                 Transformation matrix of self.structure to create the supercell.
-                If None, then automatically determined by `CubicSupercellAnalyzer`.
-            target_frac_coords:
+                If None, then automatically computed using `get_ideal_supercell_matrix`
+                from `doped.generation`.
+            target_frac_coords (3x1 matrix):
                 If set, the defect will be placed at the closest equivalent site to
                 these fractional coordinates (using self.equivalent_sites).
-            return_sites:
+            return_sites (bool):
                 If True, returns a tuple of the defect supercell, defect supercell
                 site and list of equivalent supercell sites.
-            dummy_species:
+            dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            max_atoms:
+            max_atoms (int):
                 Maximum number of atoms allowed in the generated supercell (if sc_mat is None).
-            min_atoms:
+            min_atoms (int):
                 Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
-            min_length:
-                Minimum length of the generated supercell lattice vectors (if sc_mat is None).
+            min_image_distance (float):
+                Minimum image distance in Å of the supercell (i.e. minimum distance between
+                periodic images of atoms/sites in the lattice).
+                (Default = 10.0)
+            min_length (float):
+                Same as min_image_distance (kept for compatibility).
             force_diagonal:
                 If True, generate a supercell with a diagonal transformation matrix
                 (if sc_mat is None).
@@ -945,11 +977,16 @@ class Defect(core.Defect):
             the defect supercell site and list of equivalent supercell sites.
         """
         if sc_mat is None:
-            sc_mat = supercells.get_sc_fromstruct(
+            if min_length is not None:
+                min_image_distance = min_length
+
+            from doped.generation import get_ideal_supercell_matrix
+
+            sc_mat = get_ideal_supercell_matrix(
                 self.structure,
                 min_atoms=min_atoms,
                 max_atoms=max_atoms,
-                min_length=min_length,
+                min_image_distance=min_image_distance,
                 force_diagonal=force_diagonal,
             )
 
