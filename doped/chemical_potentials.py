@@ -275,7 +275,7 @@ class CompetingPhases:
     # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
     #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    # on the MP – warn user (i.e. check your sh*t) and generate the competing phases according to
+    # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
     # and generate from there)
     # E.g. from pycdt chemical_potentials:
@@ -283,7 +283,7 @@ class CompetingPhases:
     # #                 "in the MP database!\nPlease consider submitting the "
     # #                 "POSCAR to the MP xtaltoolkit, so future users will "
     # #                 "know about this structure:"
-    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" – see
+    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
     # analyze_GGA_chempots code for example.
     # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
@@ -310,7 +310,7 @@ class CompetingPhases:
                 Default is 0.1 eV/atom.
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
-                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) – see the ``doped``
+                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
                 Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
             full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
                 with energy above hull < e_above_hull) for the chemical system of the input
@@ -779,7 +779,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 Default = False.
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
-                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) – see the ``doped``
+                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
                 Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
                 This should correspond to the legacy MP API; from
                 https://legacy.materialsproject.org/open.
@@ -830,7 +830,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
                 #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
                 #  entries, including facets with multiple extrinsic entries but still not the
-                #  full phase diagram? – To be updated!
+                #  full phase diagram? - To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
                 #  this code block and just use:
                 #  super()__init__(composition = (
@@ -1108,7 +1108,7 @@ class CompetingPhasesAnalyzer:
         Args:
             system (str): The  'reduced formula' of the bulk composition
             extrinsic_species (str):
-                Extrinsic species – can only deal with one at a time (see
+                Extrinsic species - can only deal with one at a time (see
                 tutorial on the docs for more complex cases).
 
         Attributes:
@@ -1160,8 +1160,8 @@ class CompetingPhasesAnalyzer:
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
-        #  subfolders are found) – see how this is done in DefectsParser in analysis.py
-        # TODO: Add check for matching INCAR and POTCARs from these calcs – can use code/functions from
+        #  subfolders are found) - see how this is done in DefectsParser in analysis.py
+        # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
         #  analysis.py for this
         self.vasprun_paths = []
         # fetch data
@@ -1171,7 +1171,7 @@ class CompetingPhasesAnalyzer:
                 if "vasprun.xml" in Path(p).name:
                     self.vasprun_paths.append(str(Path(p)))
 
-                # try to find the file – will always pick the first match for vasprun.xml*
+                # try to find the file - will always pick the first match for vasprun.xml*
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
                     vsp = list(Path(p).glob("vasprun.xml*"))[0]
                     self.vasprun_paths.append(str(vsp))
@@ -1518,7 +1518,7 @@ class CompetingPhasesAnalyzer:
             #    phases using the elemental energies
             # 2. for each of the chempots already calculated work out what
             #    the chemical potential of the dopant would be from
-            #       mu_dopant = Hf(dopant competing phase) – sum(mu_elements)
+            #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
             # 3. find the most negative mu_dopant which then becomes the new
             #    canonical chemical potential for that dopant species and the
             #    competing phase is the 'limiting phase' right?
@@ -1663,7 +1663,7 @@ class CompetingPhasesAnalyzer:
         present in the parsed data) and formation energy.
 
         Needs the mhchem package to work and does `not` use the booktabs package
-        – change hline to toprule, midrule and bottomrule if you want to use
+        - change hline to toprule, midrule and bottomrule if you want to use
         booktabs style.
 
         Args:
@@ -1706,7 +1706,7 @@ class CompetingPhasesAnalyzer:
         if splits == 1:
             string += "\\begin{tabular}{ccc}\n"
             string += "\\hline\n"
-            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
+            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\ \\hline \n"
             for i in formation_energy_data:
                 kpoints = i["kpoints"].split("x")
                 fe = i["formation_energy"]
@@ -1830,13 +1830,13 @@ def combine_extrinsic(first, second, extrinsic_species):
     keys = ["elemental_refs", "facets", "facets_wrt_el_refs"]
     if not all(key in first for key in keys):
         raise KeyError(
-            "the first dictionary doesn't contain the correct keys – it should include "
+            "the first dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, facets and facets_wrt_el_refs"
         )
 
     if not all(key in second for key in keys):
         raise KeyError(
-            "the second dictionary doesn't contain the correct keys – it should include "
+            "the second dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, facets and facets_wrt_el_refs"
         )
 

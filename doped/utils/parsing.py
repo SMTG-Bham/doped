@@ -808,7 +808,7 @@ def get_orientational_degeneracy(
 
     And if the point symmetries match in each case, then using this function on your
     parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
-    defect symmetry (and orientational degeneracy) – otherwise periodicity-breaking
+    defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually

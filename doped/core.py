@@ -378,12 +378,12 @@ class DefectEntry(thermo.DefectEntry):
         ``defect_region_radius`` works perfectly well. However, for certain materials
         at small/intermediate supercell sizes, you may want to adjust this (and/or
         ``excluded_indices``) to ensure the best sampling of the plateau region away
-        from the defect position – ``doped`` should throw a warning in these cases
+        from the defect position - ``doped`` should throw a warning in these cases
         (about the correction error being above the default tolerance (50 meV)).
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust ``defect_region_radius`` and/or
         ``excluded_indices`` to ensure that only sites in other layers are used for
-        the sampling region (plateau) – see example on doped docs.
+        the sampling region (plateau) - see example on doped docs.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -519,7 +519,7 @@ class DefectEntry(thermo.DefectEntry):
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
                 - None (default), if ``chempots`` corresponds to a single chemical
-                  potential limit – otherwise will use the first chemical potential
+                  potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
             vbm (float):
                 VBM eigenvalue in the bulk supercell, to use as Fermi level reference
@@ -570,7 +570,7 @@ class DefectEntry(thermo.DefectEntry):
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
         (quenched) to room/operating temperature (where defect concentrations
-        are assumed to remain fixed) – this is known as the frozen defect
+        are assumed to remain fixed) - this is known as the frozen defect
         approach and is typically the most valid approximation (see its
         docstring for more information, and discussion in 10.1039/D3CS00432E).
 
@@ -602,7 +602,7 @@ class DefectEntry(thermo.DefectEntry):
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
                 - None (default), if ``chempots`` corresponds to a single chemical
-                  potential limit – otherwise will use the first chemical potential
+                  potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium concentration.
@@ -628,7 +628,7 @@ class DefectEntry(thermo.DefectEntry):
                 "(see discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E). This will "
                 "affect the computed defect concentration / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
-                "'spin degeneracy' in the degeneracy_factors attribute(s) – usually 2 for odd-electron "
+                "'spin degeneracy' in the degeneracy_factors attribute(s) - usually 2 for odd-electron "
                 "defect species and 1 for even-electron)."
             )
 
@@ -639,7 +639,7 @@ class DefectEntry(thermo.DefectEntry):
             warnings.warn(
                 "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
                 "attribute (for this vacancy/substitution defect). This factor contributes to the "
-                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) – see "
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) - see "
                 "discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E) and is "
                 "automatically computed when parsing with doped if possible (if the defect supercell "
                 "doesn't break the host periodicity). This will affect the computed defect concentrations "
@@ -930,7 +930,6 @@ class Defect(core.Defect):
         self,
         sc_mat: Optional[np.ndarray] = None,
         min_atoms: int = 50,  # different to current pymatgen default (80)
-        max_atoms: int = 240,  # same as current pymatgen default (240)
         min_image_distance: float = 10.0,  # same as current pymatgen default
         min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
         force_diagonal: bool = False,  # same as current pymatgen default
@@ -960,8 +959,6 @@ class Defect(core.Defect):
                 site and list of equivalent supercell sites.
             dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            max_atoms (int):
-                Maximum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_atoms (int):
                 Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_image_distance (float):
@@ -987,7 +984,6 @@ class Defect(core.Defect):
             sc_mat = get_ideal_supercell_matrix(
                 self.structure,
                 min_atoms=min_atoms,
-                max_atoms=max_atoms,
                 min_image_distance=min_image_distance,
                 force_diagonal=force_diagonal,
             )

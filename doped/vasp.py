@@ -466,7 +466,7 @@ class DefectRelaxSet(MSONable):
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
-        """
+        r"""
         An object for generating input files for VASP defect relaxation
         calculations from pymatgen ``DefectEntry`` (recommended) or ``Structure``
         objects.
@@ -520,7 +520,7 @@ class DefectRelaxSet(MSONable):
         Args:
             defect_entry (DefectEntry, Structure):
                 doped/pymatgen DefectEntry or Structure (defect supercell) for
-                which to generate ``DefectDictSet``\ s for.
+                which to generate ``DefectDictSet``\s for.
             charge_state (int):
                 Charge state of the defect. Overrides ``DefectEntry.charge_state`` if
                 ``DefectEntry`` is input.
@@ -969,7 +969,7 @@ class DefectRelaxSet(MSONable):
             ),
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
-            poscar_comment=f"{bulk_supercell.formula} – Bulk",
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
             **self.dict_set_kwargs,
         )
 
@@ -1025,7 +1025,7 @@ class DefectRelaxSet(MSONable):
                 user_kpoints_settings=self.user_kpoints_settings,
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{bulk_supercell.formula} – Bulk",
+                poscar_comment=f"{bulk_supercell.formula} - Bulk",
                 **self.dict_set_kwargs,
             )
         )
@@ -1098,7 +1098,7 @@ class DefectRelaxSet(MSONable):
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
-            poscar_comment=f"{bulk_supercell.formula} – Bulk",
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
             **self.dict_set_kwargs,
         )
 
@@ -1155,7 +1155,7 @@ class DefectRelaxSet(MSONable):
                 user_kpoints_settings=self.user_kpoints_settings,
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{bulk_supercell.formula} – Bulk",
+                poscar_comment=f"{bulk_supercell.formula} - Bulk",
                 **self.dict_set_kwargs,
             )
 
@@ -1190,7 +1190,7 @@ class DefectRelaxSet(MSONable):
         bulk: bool = False,
         **kwargs,
     ):
-        """
+        r"""
         Write the input files for VASP Γ-point-only (``vasp_gam``) defect
         supercell relaxation. Typically not recommended for use, as the
         recommended workflow is to perform ``vasp_gam`` calculations using
@@ -1232,7 +1232,7 @@ class DefectRelaxSet(MSONable):
                 recommended workflow is to initially perform ``vasp_gam``
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\ s.
+                ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
                 (default: True)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1274,15 +1274,15 @@ class DefectRelaxSet(MSONable):
         bulk: bool = False,
         **kwargs,
     ):
-        """
+        r"""
         Write the input files for a VASP defect supercell calculation using
         ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh). By default, does not
         generate ``POSCAR`` (input structure) files, as these should be taken
-        from the ``CONTCAR``\ s of ``vasp_std`` relaxations using ``NKRED(X,Y,Z)``
+        from the ``CONTCAR``\s of ``vasp_std`` relaxations using ``NKRED(X,Y,Z)``
         (originally from ``ShakeNBreak`` relaxations) if using hybrid DFT, or
         from ``ShakeNBreak`` calculations (via ``snb-groundstate``) if using GGA,
         or, if not following the recommended structure-searching workflow, from
-        the ``CONTCAR``\ s of ``vasp_gam`` calculations. If unperturbed ``POSCAR``
+        the ``CONTCAR``\s of ``vasp_gam`` calculations. If unperturbed ``POSCAR``
         files are desired, set ``unperturbed_poscar=True``. If bulk is True, the
         input files for a singlepoint calculation of the bulk supercell are
         also written to "{formula}_bulk/{subfolder}".
@@ -1323,7 +1323,7 @@ class DefectRelaxSet(MSONable):
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\ s (first with NKRED if using hybrid DFT, with the
+                ``CONTCAR``\s (first with NKRED if using hybrid DFT, with the
                 ``write_nkred_std()`` method, then without NKRED).
                 (default: False)
             bulk (bool):
@@ -1369,7 +1369,7 @@ class DefectRelaxSet(MSONable):
         bulk: bool = False,
         **kwargs,
     ):
-        """
+        r"""
         Write the input files for defect calculations using ``vasp_std`` (i.e.
         with a non-Γ-only kpoint mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to
         downsample kpoints for the HF exchange part of hybrid DFT calculations,
@@ -1378,9 +1378,9 @@ class DefectRelaxSet(MSONable):
         the k-point grid is divisible by this factor.
 
         By default, does not generate ``POSCAR`` (input structure) files, as
-        these should be taken from the ``CONTCAR``\ s of ``ShakeNBreak`` calculations
+        these should be taken from the ``CONTCAR``\s of ``ShakeNBreak`` calculations
         (via ``snb-groundstate``) or, if not following the recommended
-        structure-searching workflow, from the ``CONTCAR``\ s of ``vasp_gam``
+        structure-searching workflow, from the ``CONTCAR``\s of ``vasp_gam``
         calculations. If unperturbed ``POSCAR`` files are desired, set
         ``unperturbed_poscar=True``.
         If bulk is True, the input files for a singlepoint calculation of the
@@ -1423,7 +1423,7 @@ class DefectRelaxSet(MSONable):
                 folder as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate`` ``CONTCAR``\ s.
+                continue the ``vasp_std`` relaxations from the 'Groundstate`` ``CONTCAR``\s.
                 (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1468,11 +1468,11 @@ class DefectRelaxSet(MSONable):
         bulk: bool = False,
         **kwargs,
     ):
-        """
+        r"""
         Write the input files for VASP defect supercell singlepoint
         calculations with spin-orbit coupling (SOC) included (LSORBIT = True),
         using ``vasp_ncl``. By default, does not generate ``POSCAR`` (input
-        structure) files, as these should be taken from the ``CONTCAR``\ s of
+        structure) files, as these should be taken from the ``CONTCAR``\s of
         ``vasp_std`` relaxations (originally from ``ShakeNBreak`` structure-
         searching relaxations), or directly from ``ShakeNBreak`` calculations
         (via ``snb-groundstate``) if only Γ-point reciprocal space sampling is
@@ -1519,8 +1519,8 @@ class DefectRelaxSet(MSONable):
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\ s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\ s as the input structures for
+                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
+                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
                 the final ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             bulk (bool):
@@ -1567,7 +1567,7 @@ class DefectRelaxSet(MSONable):
         bulk: Union[bool, str] = False,
         **kwargs,
     ):
-        """
+        r"""
         Write all VASP input files to subfolders in the ``defect_dir`` folder.
 
         The following subfolders are generated:
@@ -1603,9 +1603,9 @@ class DefectRelaxSet(MSONable):
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
         be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
         or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\ s of ``vasp_gam`` calculations. If including SOC
-        effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\ s
-        should be used as the ``vasp_ncl`` ``POSCAR``\ s. If unperturbed
+        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
+        should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
         folders, set ``unperturbed_poscar=True``.
 
@@ -1649,8 +1649,8 @@ class DefectRelaxSet(MSONable):
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\ s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\ s as the input structures for
+                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
+                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
                 the final ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             vasp_gam (bool):
@@ -1658,9 +1658,9 @@ class DefectRelaxSet(MSONable):
                 POSCAR. Not recommended, as the recommended workflow is to initially
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
-                relaxations from the 'Groundstate' ``CONTCAR``\ s (first with NKRED if
+                relaxations from the 'Groundstate' ``CONTCAR``\s (first with NKRED if
                 using hybrid DFT, then without), then if including SOC effects, use
-                the ``vasp_std`` ``CONTCAR``\ s as the input structures for the final
+                the ``vasp_std`` ``CONTCAR``\s as the input structures for the final
                 ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             bulk (bool, str):
@@ -1757,7 +1757,7 @@ class DefectsSet(MSONable):
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
-        """
+        r"""
         An object for generating input files for VASP defect calculations from
         doped/pymatgen ``DefectEntry`` objects.
         Creates a dictionary of: {defect_species: DefectRelaxSet}.
@@ -1796,9 +1796,9 @@ class DefectsSet(MSONable):
         potential) calculations.
 
         Args:
-            defect_entries (``DefectsGenerator`` or dict/list of ``DefectEntry``\ s, or single ``DefectEntry``):
+            defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
                 Either a ``DefectsGenerator`` object, or a dictionary/list of
-                ``DefectEntry``\ s, or a single ``DefectEntry`` object, for which
+                ``DefectEntry``\s, or a single ``DefectEntry`` object, for which
                 to generate VASP input files.
                 If a ``DefectsGenerator`` object or a dictionary (->
                 {defect_species: DefectEntry}), the defect folder names will be
@@ -1902,7 +1902,7 @@ class DefectsSet(MSONable):
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
     ) -> Tuple[Dict[str, DefectEntry], str, Union[Dict[str, DefectEntry], DefectsGenerator]]:
-        """
+        r"""
         Helper function to format input ``defect_entries`` into a named
         dictionary of ``DefectEntry`` objects. Also returns the name of the JSON
         file and object to serialise when writing the VASP input to files. This
@@ -1911,9 +1911,9 @@ class DefectsSet(MSONable):
         objects.
 
         Args:
-            defect_entries (``DefectsGenerator`` or dict/list of ``DefectEntry``\ s, or single ``DefectEntry``):
+            defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
                 Either a ``DefectsGenerator`` object, or a dictionary/list of
-                ``DefectEntry``\ s, or a single ``DefectEntry`` object, for which
+                ``DefectEntry``\s, or a single ``DefectEntry`` object, for which
                 to generate VASP input files.
                 If a ``DefectsGenerator`` object or a dictionary (->
                 {defect_species: DefectEntry}), the defect folder names will be
@@ -2009,7 +2009,7 @@ class DefectsSet(MSONable):
         processes: Optional[int] = None,
         **kwargs,
     ):
-        """
+        r"""
         Write VASP input files to folders for all defects in
         ``self.defect_entries``. Folder names are set to the key of the
         DefectRelaxSet in ``self.defect_sets`` (same as self.defect_entries keys,
@@ -2048,9 +2048,9 @@ class DefectsSet(MSONable):
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
         be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
         or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\ s of ``vasp_gam`` calculations. If including SOC
-        effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\ s
-        should be used as the ``vasp_ncl`` ``POSCAR``\ s. If unperturbed
+        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
+        should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
         folders, set ``unperturbed_poscar=True``.
 
@@ -2095,8 +2095,8 @@ class DefectsSet(MSONable):
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
                 continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\ s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\ s as the input structures for
+                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
+                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
                 the final ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             vasp_gam (bool):
@@ -2104,9 +2104,9 @@ class DefectsSet(MSONable):
                 POSCARs. Not recommended, as the recommended workflow is to initially
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
-                relaxations from the 'Groundstate' ``CONTCAR``\ s (first with NKRED if
+                relaxations from the 'Groundstate' ``CONTCAR``\s (first with NKRED if
                 using hybrid DFT, then without), then if including SOC effects, use
-                the ``vasp_std`` ``CONTCAR``\ s as the input structures for the final
+                the ``vasp_std`` ``CONTCAR``\s as the input structures for the final
                 ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             bulk (bool, str):

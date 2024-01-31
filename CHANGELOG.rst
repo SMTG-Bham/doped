@@ -114,7 +114,7 @@ v1.0.6
 - Add GH Actions workflows (for tests, GH releases and pypi packaging)
 - Adopt recommended versioning convention based on dates
 - General tidy up, docstring padding, formatting and ``TODO`` addition/removal
-- Ensure all inputs/outputs are ``JSON``able, now recommending this for better forward/backward compatibility
+- Ensure all inputs/outputs are ``JSON``\able, now recommending this for better forward/backward compatibility
 - Refactor ``dope_stuff`` to ``plotting`` and ``analysis`` to be more clear and PROfessional, yo
 - Refactor from hard-coded defaults / slightly-less-human-readable ``json`` files to ``yaml`` files with default settings.
 - Refactor ``defectsmaker`` output, more efficient, cleaner and informative
