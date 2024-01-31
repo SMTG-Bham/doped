@@ -78,7 +78,7 @@ _aniso_dielectric_but_using_locpot_warning = (
     "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
-_orientational_degeneracy_warning = (
+_orientational_degeneracy_warning = (  # TODO: move this to only show in the concentration etc functions
     "The defect supercell has been detected to _possibly_ have a non-scalar matrix expansion, which could "
     "be breaking the cell periodicity and possibly preventing the correct _relaxed_ point group "
     "symmetries (and thus orientational degeneracies) from being automatically determined.\n"

@@ -1763,12 +1763,16 @@ class DefectThermodynamics(MSONable):
                 (Default: None)
             facet (str):
                 The phase diagram facet (chemical potential limit) to for which to
-                plot formation energies. Can be:
+                plot formation energies. Can be either:
+
                 - None, in which case plots are generated for all facets in chempots.
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
+
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
+
                 (Default: None)
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
