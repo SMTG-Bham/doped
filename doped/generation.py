@@ -40,7 +40,7 @@ from doped.core import (
     _guess_and_set_struct_oxi_states,
     doped_defect_from_pmg_defect,
 )
-from doped.utils import symmetry
+from doped.utils import supercells, symmetry
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -697,7 +697,7 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
     return {
         k: prob
         for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
-        if prob > 0.01  # at least 1% occurrence
+        if prob > 0.001  # at least 0.1% occurrence
     }
 
 
@@ -876,15 +876,11 @@ def guess_defect_charge_states(
     return guessed_charge_states
 
 
-# TODO: Need to update this based on the chosen best strategy. For now, just using doped min distance
-#  generation if `CubicSupercellTransformation` fails
-
-
-def get_ideal_supercell_matrix(
-    structure: Structure,
-    min_atoms: int = 50,  # TODO: Recheck all our defaults
-    max_atoms: int = 240,
+def get_ideal_supercell_matrix(  # TODO: Update docstring
+    structure: Structure,  # TODO: Test new pbar messages, supercell behaviour, settings etc
     min_image_distance: float = 10.0,
+    min_atoms: Optional[int] = None,
+    force_cubic: bool = False,
     force_diagonal: bool = False,
     pbar: Optional[tqdm] = None,
 ) -> Union[np.ndarray, None]:
@@ -943,42 +939,42 @@ def get_ideal_supercell_matrix(
         Ideal supercell matrix (np.ndarray) or None if no suitable
         supercell could be found.
     """
-    cst = CubicSupercellTransformation(
-        min_atoms=min_atoms,
-        max_atoms=max_atoms,
-        min_length=min_image_distance,
-        force_diagonal=force_diagonal,
-    )
-
-    try:
-        cst.apply_transformation(structure)
-        return cst.transformation_matrix
-
-    except BaseException:  # cubic supercell generation failed, used doped algorithm
-        print("Could not find a suitable cubic supercell within the limits: ")
-        print(
-            f"min_atoms = {min_atoms}, max_atoms = {max_atoms}, min_image_distance = {min_image_distance}"
+    if force_cubic or force_diagonal:
+        cst = CubicSupercellTransformation(
+            min_atoms=min_atoms,
+            min_length=min_image_distance,
         )
-        print("Attempting doped supercell generation algorithm...")
-        best_min_dist = symmetry.get_min_image_distance(structure)
-        target_size = 1
-        while best_min_dist < min_image_distance:
-            target_size += 1
-            if pbar is not None:
-                pbar.set_description(
-                    f"Best min dist: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
-                )
-            optimal_P, best_min_dist = symmetry.find_ideal_supercell(
-                structure.lattice.matrix,
-                target_size=target_size,
-                return_min_dist=True,
-            )
+
+        try:
+            cst.apply_transformation(structure)
+            return cst.transformation_matrix
+
+        except Exception:  # cubic supercell generation failed, used doped algorithm
+            print("Could not find a suitable cubic supercell within the limits: ")
+            print(f"min_atoms = {min_atoms}, min_image_distance = {min_image_distance}")
+            print("Attempting doped supercell generation algorithm...")
+
+    best_min_dist = supercells.get_min_image_distance(structure)
+    target_size = 1
+    if min_atoms is None:
+        min_atoms = 1
+    while best_min_dist < min_image_distance or target_size*len(structure) < min_atoms:
+        target_size += 1
         if pbar is not None:
             pbar.set_description(
-                f"Best min dist: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+                f"Best min distance: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
             )
+        optimal_P, best_min_dist = supercells.find_ideal_supercell(
+            structure.lattice.matrix,
+            target_size=target_size,
+            return_min_dist=True,
+        )
+    if pbar is not None:
+        pbar.set_description(
+            f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+        )
 
-        return optimal_P
+    return optimal_P
 
 
 class DefectsGenerator(MSONable):
@@ -1014,11 +1010,14 @@ class DefectsGenerator(MSONable):
         By default, supercells are generated for each defect using the doped
         `get_ideal_supercell_matrix()` function (see docstring), with default settings
         of `min_image_distance = 10` (minimum distance between periodic images of 10 Å)
-        and `min_atoms = 50` (minimum 50 atoms in supercell). If a different supercell
-        is desired, this can be controlled by specifying keyword arguments with
+        and `min_atoms = None` (no minimum atom count constraint). This uses a custom
+        algorithm in `doped` to efficiently search over possible supercell transformations
+        and identify that with the minimum number of atoms (hence computational cost)
+        that satisfies the minimum image distance & number of atoms constraints. These
+        settings can be controlled by specifying keyword arguments with
         `supercell_gen_kwargs`, which are passed to `get_ideal_supercell_matrix()`
-        (e.g. for a minimum image distance of 15 Å, use:
-        `supercell_gen_kwargs = {'min_image_distance': 15}`).
+        (e.g. for a minimum image distance of 15 Å with at least 100 atoms, use:
+        `supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}`).
         Alternatively if `generate_supercell = False`, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
@@ -1070,9 +1069,13 @@ class DefectsGenerator(MSONable):
                 equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
-                (using pymatgen's `CubicSupercellTransformation` and ASE's
-                `find_optimal_cell_shape()` functions) or not. If False, then the
-                input structure is used as the defect & bulk supercell.
+                (using the custom algorithm in `doped` which efficiently searches over
+                possible supercell transformations and identifies that with the minimum
+                number of atoms (hence computational cost) that satisfies the minimum
+                image distance & number of atoms constraints – which can be controlled
+                with `supercell_gen_kwargs`).
+                If False, then the input structure is used as the defect & bulk supercell.
+                (Note this may give a slightly different (but fully equivalent) set of coordinates).
             charge_state_gen_kwargs (Dict):
                 Keyword arguments to be passed to the `_charge_state_probability`
                 function (such as `probability_threshold` (default = 0.0075, used for
@@ -1080,8 +1083,9 @@ class DefectsGenerator(MSONable):
                 vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
                 Keyword arguments to be passed to the `get_ideal_supercell_matrix`
-                function (such as `min_atoms` (default = 50), `max_atoms` (default = 240),
-                `min_image_distance` (default = 10), and `force_diagonal` (default = False)).
+                function (such as `min_image_distance` (default = 10), `min_atoms`
+                (default = 50), `force_cubic` – which enforces a (near-)cubic supercell
+                output (default = False), or `force_diagonal` (default = False)).
             interstitial_gen_kwargs (Dict, bool):
                 Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
                 class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
@@ -1171,29 +1175,25 @@ class DefectsGenerator(MSONable):
 
             pbar.update(5)  # 5% of progress bar
 
-            # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
-            # same supercell is used for each defect and bulk calculation
-            pbar.set_description("Generating simulation supercell")
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
-                supercell_matrix = get_ideal_supercell_matrix(
-                    primitive_structure,
-                    min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different to current
-                    # pymatgen default (80)
-                    max_atoms=self.supercell_gen_kwargs.get(
-                        "max_atoms", 240
-                    ),  # same as current pymatgen default
-                    min_image_distance=self.supercell_gen_kwargs.get(
-                        "min_image_distance", 10
-                    ),  # same as current pymatgen default
-                    force_diagonal=self.supercell_gen_kwargs.get(
-                        "force_diagonal", False
-                    ),  # same as current pymatgen default
-                    pbar=pbar,
-                )
-
             # check if input structure is already >10 Å in each direction:
-            input_min_image_distance = symmetry.get_min_image_distance(self.structure)
+            input_min_image_distance = supercells.get_min_image_distance(self.structure)
+
+            if self.generate_supercell:
+                # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
+                # same supercell is used for each defect and bulk calculation
+                pbar.set_description("Generating simulation supercell")
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
+                    supercell_matrix = get_ideal_supercell_matrix(
+                        primitive_structure,
+                        min_atoms=self.supercell_gen_kwargs.get("min_atoms", None),
+                        min_image_distance=self.supercell_gen_kwargs.get(
+                            "min_image_distance", 10
+                        ),  # same as current pymatgen-analysis-defects default `min_length`
+                        force_cubic=self.supercell_gen_kwargs.get("force_cubic", False),
+                        force_diagonal=self.supercell_gen_kwargs.get("force_diagonal", False),
+                        pbar=pbar,
+                    )
 
             if input_min_image_distance >= self.supercell_gen_kwargs.get("min_image_distance", 10) and (
                 not self.generate_supercell
@@ -1229,7 +1229,7 @@ class DefectsGenerator(MSONable):
                 self.supercell_matrix = supercell_matrix
 
             self.bulk_supercell = (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
-            self.min_image_distance = symmetry.get_min_image_distance(
+            self.min_image_distance = supercells.get_min_image_distance(
                 self.bulk_supercell
             )  # TODO: Test attr
 
