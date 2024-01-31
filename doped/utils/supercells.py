@@ -430,9 +430,9 @@ def find_ideal_supercell(
     return_min_dist: bool = False,
     verbose: bool = False,
 ) -> Union[np.ndarray, tuple]:
-    """
+    r"""
     Given an input cell matrix (e.g. Structure.lattice.matrix or Atoms.cell)
-    and chosen target_size (size of supercell in number of ``cell``\ s), finds an
+    and chosen target_size (size of supercell in number of ``cell``\s), finds an
     ideal supercell matrix (P) that yields the largest minimum image distance
     (i.e. minimum distance between periodic images of sites in a lattice),
     while also being as close to cubic as possible.
@@ -444,7 +444,7 @@ def find_ideal_supercell(
     elements (rounded to the nearest integer).
     For relatively small target_sizes (<100) and/or cells with mostly similar
     lattice vector lengths, the default ``limit`` of +/-2 performs very well. For
-    larger ``target_size``\ s, ``cell``\ s with very different lattice vector lengths,
+    larger ``target_size``\s, ``cell``\s with very different lattice vector lengths,
     and/or cases where small differences in minimum image distance are very
     important, a larger ``limit`` may be required (though typically only improves
     the minimum image distance by 1-6%).
@@ -456,7 +456,7 @@ def find_ideal_supercell(
 
     Args:
         cell (np.ndarray): Unit cell matrix for which to find a supercell.
-        target_size (int): Target supercell size (in number of ``cell``\ s).
+        target_size (int): Target supercell size (in number of ``cell``\s).
         limit (int):
             Supercell matrices are searched for by first identifying the
             ideal (fractional) transformation matrix (P) that would yield
@@ -570,7 +570,10 @@ def find_ideal_supercell(
 
 def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) -> dict:
     """
-    Get a dictionary of:
+    Get a dictionary of (near-)cubic supercell matrices for the given structure
+    and range of numbers of unit cells (in the supercell).
+
+    Returns a dictionary of format:
 
     .. code-block:: python
 
@@ -625,7 +628,7 @@ def find_optimal_cell_shape(
     return_score: bool = False,
     verbose: bool = False,
 ) -> Union[np.ndarray, tuple]:
-    """
+    r"""
     Find the transformation matrix that produces a supercell corresponding to
     *target_size* unit cells that most closely approximates the shape defined
     by *target_shape*.
@@ -638,7 +641,7 @@ def find_optimal_cell_shape(
 
     Finds the optimal supercell transformation matrix by calculating the deviation
     of the possible supercell matrices from an ideal simple cubic (if target = "SC")
-    or face-centred cubic (if target = "FCC") matrix – and then taking that with the
+    or face-centred cubic (if target = "FCC") matrix - and then taking that with the
     best (lowest) score, by evaluating the root mean square (RMS) difference of the
     vector lengths from that of the idealised values (i.e. the corresponding SC/FCC
     lattice vector lengths for the given cell volume).
@@ -661,7 +664,7 @@ def find_optimal_cell_shape(
     Args:
         cell (np.ndarray):
             Unit cell matrix for which to find a supercell transformation.
-        target_size (int): Target supercell size (in number of ``cell``\ s).
+        target_size (int): Target supercell size (in number of ``cell``\s).
         target_shape (str):
             Target cell shape, for which to calculate the normalised
             deviation score from. Either "SC" for simple cubic or

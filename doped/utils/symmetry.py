@@ -918,7 +918,7 @@ def point_symmetry_from_defect_entry(
 
     And if the point symmetries match in each case, then using this function on your
     parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
-    defect symmetry – otherwise periodicity-breaking prevents this.
+    defect symmetry - otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
     determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
@@ -974,7 +974,7 @@ def point_symmetry_from_defect_entry(
                 "`calculation_metadata` attribute is not set for `DefectEntry`, suggesting that this "
                 "DefectEntry was not parsed from calculations using doped. This means doped cannot "
                 "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see docstring) – the point symmetry groups may not be correct here!"
+                "(see docstring) - the point symmetry groups may not be correct here!"
             )
         elif defect_entry.calculation_metadata.get("unrelaxed_defect_structure"):
             _matching = _check_relaxed_defect_symmetry_determination(

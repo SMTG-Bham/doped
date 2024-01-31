@@ -274,7 +274,7 @@ def get_defect_name_from_entry(
 
     And if the point symmetries match in each case, then using this function on your
     parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
-    defect symmetry (and closest site info) – otherwise periodicity-breaking prevents this.
+    defect symmetry (and closest site info) - otherwise periodicity-breaking prevents this.
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
@@ -894,7 +894,7 @@ def get_ideal_supercell_matrix(  # TODO: Update docstring
     The ideal supercell is the smallest possible supercell which has
     a minimum image distance (i.e. minimum distance between periodic
     images of atoms/sites in a lattice) greater than
-    ``min_image_distance`` (default = 10 Å – which is a typical threshold
+    ``min_image_distance`` (default = 10 Å - which is a typical threshold
     value used in DFT defect supercell calculations).
 
     Similar to the algorithm in ``pymatgen-analysis-defects``, this is
@@ -930,6 +930,10 @@ def get_ideal_supercell_matrix(  # TODO: Update docstring
             (i.e. minimum distance between periodic images
             of atoms/sites in the lattice).
             (Default = 10.0)
+        force_cubic (bool):
+            Enforce usage of ``CubicSupercellTransformation`` from
+            ``pymatgen`` for supercell generation.
+            (Default = False)
         force_diagonal (bool):
             If True, return a transformation with a diagonal
             transformation matrix.
@@ -945,6 +949,7 @@ def get_ideal_supercell_matrix(  # TODO: Update docstring
         cst = CubicSupercellTransformation(
             min_atoms=min_atoms,
             min_length=min_image_distance,
+            force_diagonal=force_diagonal,
         )
 
         try:
@@ -960,7 +965,7 @@ def get_ideal_supercell_matrix(  # TODO: Update docstring
     target_size = 1
     if min_atoms is None:
         min_atoms = 1
-    while best_min_dist < min_image_distance or target_size*len(structure) < min_atoms:
+    while best_min_dist < min_image_distance or target_size * len(structure) < min_atoms:
         target_size += 1
         if pbar is not None:
             pbar.set_description(
@@ -1074,7 +1079,7 @@ class DefectsGenerator(MSONable):
                 (using the custom algorithm in ``doped`` which efficiently searches over
                 possible supercell transformations and identifies that with the minimum
                 number of atoms (hence computational cost) that satisfies the minimum
-                image distance & number of atoms constraints – which can be controlled
+                image distance & number of atoms constraints - which can be controlled
                 with ``supercell_gen_kwargs``).
                 If False, then the input structure is used as the defect & bulk supercell.
                 (Note this may give a slightly different (but fully equivalent) set of coordinates).
@@ -1086,7 +1091,7 @@ class DefectsGenerator(MSONable):
             supercell_gen_kwargs (Dict):
                 Keyword arguments to be passed to the ``get_ideal_supercell_matrix``
                 function (such as ``min_image_distance`` (default = 10), ``min_atoms``
-                (default = 50), ``force_cubic`` – which enforces a (near-)cubic supercell
+                (default = 50), ``force_cubic`` - which enforces a (near-)cubic supercell
                 output (default = False), or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (Dict, bool):
                 Keyword arguments to be passed to the ``VoronoiInterstitialGenerator``
@@ -1769,8 +1774,8 @@ class DefectsGenerator(MSONable):
         return info_string
 
     def add_charge_states(self, defect_entry_name: str, charge_states: list):
-        """
-        Add additional ``DefectEntry``\ s with the specified charge states to
+        r"""
+        Add additional ``DefectEntry``\s with the specified charge states to
         ``self.defect_entries``.
 
         Args:
@@ -1795,8 +1800,8 @@ class DefectsGenerator(MSONable):
         self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def remove_charge_states(self, defect_entry_name: str, charge_states: list):
-        """
-        Remove ``DefectEntry``\ s with the specified charge states from
+        r"""
+        Remove ``DefectEntry``\s with the specified charge states from
         ``self.defect_entries``.
 
         Args:

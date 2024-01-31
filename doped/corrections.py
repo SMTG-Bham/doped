@@ -327,12 +327,12 @@ def get_kumagai_correction(
     ``defect_region_radius`` works perfectly well. However, for certain materials
     at small/intermediate supercell sizes, you may want to adjust this (and/or
     ``excluded_indices``) to ensure the best sampling of the plateau region away
-    from the defect position – ``doped`` should throw a warning in these cases
+    from the defect position - ``doped`` should throw a warning in these cases
     (about the correction error being above the default tolerance (50 meV)).
     For example, with layered materials, the defect charge is often localised
     to one layer, so we may want to adjust ``defect_region_radius`` and/or
     ``excluded_indices`` to ensure that only sites in other layers are used for
-    the sampling region (plateau) – see example on doped docs.
+    the sampling region (plateau) - see example on doped docs.
 
     Args:
         defect_entry (DefectEntry):
@@ -560,7 +560,7 @@ def get_kumagai_correction(
     _install_custom_font()
 
     spp = SitePotentialMplPlotter.from_efnv_corr(
-        title=f"{_format_defect_name(defect_entry.name, False)} – eFNV Site Potentials",
+        title=f"{_format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
