@@ -20,7 +20,7 @@ from doped.core import DefectEntry
 
 def _round_floats(obj, places=5):
     """
-    Recursively round floats in a dictionary to `places` decimal places.
+    Recursively round floats in a dictionary to ``places`` decimal places.
     """
     if isinstance(obj, float):
         return _custom_round(obj, places) + 0.0
@@ -142,7 +142,7 @@ def _get_symm_dataset_of_struc_with_all_equiv_sites(
 
 def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
     """
-    Add all sites in unique_sites to a _copy_ of struct and return
+    Add all sites in unique_sites to a ``copy`` of struct and return
     SpacegroupAnalyzer of this new structure.
     """
     struct_with_all_X = struct.copy()
@@ -227,10 +227,10 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     """
     Determines the supercell transformation matrix to convert from the
     primitive structure to the target structure. The supercell matrix is
-    defined to be T in `T*P = S` where P and S.
+    defined to be T in ``T*P = S`` where P and S.
 
     are the primitive and supercell lattice matrices respectively.
-    Equivalently, multiplying `prim_struct * T` will give the target_struct.
+    Equivalently, multiplying ``prim_struct * T`` will give the target_struct.
 
     First tries to determine a simple (integer) transformation matrix with no
     basis set rotation required. If that fails, then defaults to using
@@ -550,12 +550,10 @@ def get_wyckoff_dict_from_sgn(sgn):
     Get dictionary of {Wyckoff label: coordinates} for a given space group
     number.
 
-    The database used here for Wyckoff analysis (`wyckpos.dat`) was obtained
-    from code written by JaeHwan Shim @schinavro (ORCID: 0000-0001-7575-4788) (
-    https://gitlab.com/ase/ase/-/merge_requests/1035)
-     based on the tabulated    datasets in
-    https://github.com/xtalopt/randSpg
-     (also found at
+    The database used here for Wyckoff analysis (``wyckpos.dat``) was obtained
+    from code written by JaeHwan Shim @schinavro (ORCID: 0000-0001-7575-4788)
+    (https://gitlab.com/ase/ase/-/merge_requests/1035) based on the tabulated
+    datasets in https://github.com/xtalopt/randSpg (also found at
     https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
     By default, doped uses the Wyckoff functionality of spglib (along with
     symmetry operations in pymatgen) when possible however.
@@ -601,11 +599,11 @@ def get_wyckoff_label_and_equiv_coord_list(
     Return the Wyckoff label and list of equivalent fractional coordinates
     within the conventional cell for the input defect_entry or conv_cell_site
     (whichever is provided, defaults to defect_entry if both), given a
-    dictionary of Wyckoff labels and coordinates (`wyckoff_dict`).
+    dictionary of Wyckoff labels and coordinates (``wyckoff_dict``).
 
-    If `wyckoff_dict` is not provided, it is generated from the spacegroup
-    number (sgn) using `get_wyckoff_dict_from_sgn(sgn)`. If `sgn` is not
-    provided, it is obtained from the bulk structure of the `defect_entry` if
+    If ``wyckoff_dict`` is not provided, it is generated from the spacegroup
+    number (sgn) using ``get_wyckoff_dict_from_sgn(sgn)``. If ``sgn`` is not
+    provided, it is obtained from the bulk structure of the ``defect_entry`` if
     provided.
     """
     if wyckoff_dict is None:
@@ -622,8 +620,8 @@ def get_wyckoff_label_and_equiv_coord_list(
 
     def _compare_arrays(coord_list, coord_array):
         """
-        Compare a list of arrays of sympy expressions (`coord_list`) with an
-        array of coordinates (`coord_array`).
+        Compare a list of arrays of sympy expressions (``coord_list``) with an
+        array of coordinates (``coord_array``).
 
         Returns the matching array from the list.
         """
@@ -788,7 +786,7 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
 
 def _read_wyckoff_datafile(spacegroup, f, setting=None):
     """
-    Read the `wyckpos.dat` file of specific spacegroup and returns a dictionary
+    Read the ``wyckpos.dat`` file of specific spacegroup and returns a dictionary
     with this information.
     """
     if isinstance(spacegroup, int):
@@ -899,9 +897,9 @@ def point_symmetry_from_defect_entry(
     r"""
     Get the defect site point symmetry from a DefectEntry object.
 
-    Note: If relaxed = True (default), then this tries to use the
+    Note: If ``relaxed = True`` (default), then this tries to use the
     defect_entry.defect_supercell to determine the site symmetry. This will
-    thus give the _relaxed_ defect point symmetry if this is a DefectEntry
+    thus give the `relaxed` defect point symmetry if this is a DefectEntry
     created from parsed defect calculations. However, it should be noted
     that this is not guaranteed to work in all cases; namely for non-diagonal
     supercell expansions, or sometimes for non-scalar supercell expansion
@@ -909,21 +907,23 @@ def point_symmetry_from_defect_entry(
     which can mess up the periodicity of the cell. doped tries to automatically
     check if this is the case, and will warn you if so.
 
-    This can also be checked by using this function on your doped _generated_ defects:
+    This can also be checked by using this function on your doped `generated` defects:
 
-    from doped.generation import get_defect_name_from_entry
-    for defect_name, defect_entry in defect_gen.items():
-        print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
-              get_defect_name_from_entry(defect_entry), "\n")
+    .. code-block:: python
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on your
-    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
-    defect symmetry - otherwise periodicity-breaking prevents this.
+    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
+    defect symmetry – otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
     determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
     from visualising the structures (e.g. using VESTA)(can use
-    `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
     factor for given initial/relaxed point symmetries) and setting the corresponding
     values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
     symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
@@ -943,8 +943,8 @@ def point_symmetry_from_defect_entry(
             want to adjust for your system (e.g. if there are very slight
             octahedral distortions etc).
         relaxed (bool):
-            If False, determines the site symmetry using the defect site _in the
-            unrelaxed bulk supercell_, otherwise uses the defect supercell to
+            If False, determines the site symmetry using the defect site `in the
+            unrelaxed bulk supercell`, otherwise uses the defect supercell to
             determine the site symmetry (i.e. try determine the point symmetry
             of a relaxed defect in the defect supercell). Default is True.
 
@@ -974,7 +974,7 @@ def point_symmetry_from_defect_entry(
                 "`calculation_metadata` attribute is not set for `DefectEntry`, suggesting that this "
                 "DefectEntry was not parsed from calculations using doped. This means doped cannot "
                 "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see docstring) - the point symmetry groups may not be correct here!"
+                "(see docstring) – the point symmetry groups may not be correct here!"
             )
         elif defect_entry.calculation_metadata.get("unrelaxed_defect_structure"):
             _matching = _check_relaxed_defect_symmetry_determination(

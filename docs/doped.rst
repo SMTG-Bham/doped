@@ -17,6 +17,7 @@ Submodules
    doped.analysis
    doped.chemical_potentials
    doped.core
+   doped.corrections
    doped.generation
    doped.thermodynamics
    doped.utils

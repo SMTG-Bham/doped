@@ -1,5 +1,5 @@
 doped
-=========
+=====
 
 .. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-Bham/doped/actions
@@ -101,7 +101,7 @@ morphed over time as more and more functionality was added. After breaking chang
 package was rewritten to operate using the new ``pymatgen-analysis-defects`` package.
 
 Studies using ``doped``, so far
-========================
+===============================
 
 - I\. Mosquera-Lois et al. `arXiv <https://doi.org/10.48550/arXiv.2401.12127>`_ 2024
 - W\. Dou et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_ 2024

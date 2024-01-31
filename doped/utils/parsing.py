@@ -93,7 +93,7 @@ def get_outcar(outcar_path):
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
     """
-    Search for all files with filenames matching `output_file`, case-
+    Search for all files with filenames matching ``output_file``, case-
     insensitive.
 
     Returns (output file path, Multiple?) where Multiple is True if multiple
@@ -147,10 +147,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     bulk, defect, defect_type, composition_diff, unique_tolerance=1
 ):
     """
-    Get the defect site and unrelaxed structure, where "unrelaxed structure"
-    corresponds to the pristine defect supercell structure for
-    vacancies/substitutions, and the pristine bulk structure with the _final_
-    relaxed interstitial site for interstitials.
+    Get the defect site and unrelaxed structure, where 'unrelaxed structure'
+    corresponds to the pristine defect supercell structure for vacancies /
+    substitutions, and the pristine bulk structure with the `final` relaxed
+    interstitial site for interstitials.
 
     Initially contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
     refactored for extrinsic species and code efficiency/robustness improvements.
@@ -161,7 +161,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         defect_site_idx: index of the defect site in the defect structure
         unrelaxed_defect_structure: pristine defect supercell structure for
             vacancies/substitutions (i.e. pristine bulk with unrelaxed vacancy/
-            substitution), or the pristine bulk structure with the _final_
+            substitution), or the pristine bulk structure with the `final`
             relaxed interstitial site for interstitials.
     """
 
@@ -469,7 +469,7 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     positions.
 
     The template structure may have a different species ordering to the
-    `input_structure`.
+    ``input_structure``.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
@@ -710,16 +710,16 @@ def get_interstitial_site_and_orientational_degeneracy(
     Get the combined site and orientational degeneracy of an interstitial
     defect entry.
 
-    The standard approach of using `_get_equiv_sites()` for interstitial
-    site multiplicity and then `point_symmetry_from_defect_entry()` &
-    `get_orientational_degeneracy` for symmetry/orientational degeneracy
-    is preferred (as used in the `DefectParser` code), but alternatively
+    The standard approach of using ``_get_equiv_sites()`` for interstitial
+    site multiplicity and then ``point_symmetry_from_defect_entry()`` &
+    ``get_orientational_degeneracy`` for symmetry/orientational degeneracy
+    is preferred (as used in the ``DefectParser`` code), but alternatively
     this function can be used to compute the product of the site and
     orientational degeneracies.
 
     This is done by determining the number of equivalent sites in the bulk
     supercell for the given interstitial site (from defect_supercell_site),
-    which gives the combined site and orientational degeneracy _if_ there
+    which gives the combined site and orientational degeneracy `if` there
     was no relaxation of the bulk lattice atoms. This matches the true
     combined degeneracy in most cases, except for split-interstitial type
     defects etc, where this would give an artificially high degeneracy
@@ -729,8 +729,8 @@ def get_interstitial_site_and_orientational_degeneracy(
     two separate (degenerate) interstitial sites, instead of one).
     This is counteracted by dividing by the number of sites which are present
     in the defect supercell (within a distance tolerance of dist_tol in Å)
-    with the same species, ensuring none of the predicted _different_
-    equivalent sites are actually _included_ in the defect structure.
+    with the same species, ensuring none of the predicted `different`
+    equivalent sites are actually `included` in the defect structure.
 
     Args:
         interstitial_defect_entry: DefectEntry object for the interstitial
@@ -779,40 +779,42 @@ def get_orientational_degeneracy(
     symprec: float = 0.2,
 ) -> float:
     r"""
-    Get the orientational degeneracy factor for a given _relaxed_ DefectEntry,
+    Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
     by supplying either the DefectEntry object or the relaxed and unrelaxed
     point group symbols (e.g. "Td", "C3v" etc).
 
     If a DefectEntry is supplied (and the point group symbols are not),
-    This is computed by determining the _relaxed_ point symmetry and the
+    This is computed by determining the `relaxed` point symmetry and the
     original/unrelaxed defect site symmetry, and then getting the ratio of
     their point group orders (equivalent to the ratio of partition
     functions or number of symmetry operations (i.e. degeneracy)).
 
     Note: This tries to use the defect_entry.defect_supercell to determine
-    the _relaxed_ site symmetry. However, it should be noted that this is not
+    the `relaxed` site symmetry. However, it should be noted that this is not
     guaranteed to work in all cases; namely for non-diagonal supercell
     expansions, or sometimes for non-scalar supercell expansion matrices
     (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
     which can mess up the periodicity of the cell. doped tries to automatically
     check if this is the case, and will warn you if so.
 
-    This can also be checked by using this function on your doped _generated_ defects:
+    This can also be checked by using this function on your doped `generated` defects:
 
-    from doped.generation import get_defect_name_from_entry
-    for defect_name, defect_entry in defect_gen.items():
-        print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
-              get_defect_name_from_entry(defect_entry), "\n")
+    .. code-block:: python
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on your
-    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
-    defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
+    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
+    defect symmetry (and orientational degeneracy) – otherwise periodicity-breaking
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
     determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
     from visualising the structures (e.g. using VESTA)(can use
-    `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
     factor for given initial/relaxed point symmetries) and setting the corresponding
     values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
     symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
@@ -823,20 +825,20 @@ def get_orientational_degeneracy(
     Args:
         defect_entry (DefectEntry): DefectEntry object. (Default = None)
         relaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
-            of the _relaxed_ defect structure, if already calculated / manually
+            of the `relaxed` defect structure, if already calculated / manually
             determined. Default is None (automatically calculated by doped).
         unrelaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
             of the non-relaxed (initial) defect site, if already calculated /
             manually determined. This should match the site symmetry label from
-            `doped` when generating the defect. Default is None (automatically
+            ``doped`` when generating the defect. Default is None (automatically
             calculated by doped).
         bulk_symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the _relaxed_ point symmetry), to
+            structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         defect_symm_ops (list):
             List of symmetry operations of the defect_entry.defect_supercell
-            structure (used in determining the _unrelaxed_ point symmetry), to
+            structure (used in determining the `unrelaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.2, which is larger than

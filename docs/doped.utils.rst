@@ -5,7 +5,7 @@ Submodules
 ----------
 
 doped.utils.displacements module
---------------------------
+--------------------------------
 
 .. automodule:: doped.utils.displacements
    :members:
@@ -13,7 +13,7 @@ doped.utils.displacements module
    :show-inheritance:
 
 doped.utils.legacy_corrections module
---------------------------
+-------------------------------------
 
 .. automodule:: doped.utils.legacy_corrections
    :members:
@@ -29,7 +29,7 @@ doped.utils.parsing module
    :show-inheritance:
 
 doped.utils.plotting module
---------------------------
+---------------------------
 
 .. automodule:: doped.utils.plotting
    :members:
@@ -37,7 +37,7 @@ doped.utils.plotting module
    :show-inheritance:
 
 doped.utils.supercells module
---------------------------
+-----------------------------
 
 .. automodule:: doped.utils.supercells
    :members:
@@ -45,7 +45,7 @@ doped.utils.supercells module
    :show-inheritance:
 
 doped.utils.symmetry module
---------------------------
+---------------------------
 
 .. automodule:: doped.utils.symmetry
    :members:

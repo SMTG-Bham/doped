@@ -112,7 +112,7 @@ def _convert_dielectric_to_tensor(dielectric):
 
 def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_name: str) -> None:
     """
-    Check that `possible_defect_name` is a recognised format by doped (i.e. in
+    Check that ``possible_defect_name`` is a recognised format by doped (i.e. in
     the format "{defect_name}_{optional_site_info}_{charge_state}").
 
     If the DefectEntry.name attribute is not defined or does not end with the
@@ -148,16 +148,17 @@ def defect_from_structures(
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
-    defect structures, and returns a corresponding `Defect` object.
+    defect structures, and returns a corresponding ``Defect`` object.
 
-    If `return_all_info` is set to true, then also returns:
-    - _relaxed_ defect site in the defect supercell
+    If ``return_all_info`` is set to true, then also returns:
+
+    - `relaxed` defect site in the defect supercell
     - the defect site in the bulk supercell
     - defect site index in the defect supercell
     - bulk site index (index of defect site in bulk supercell)
     - guessed initial defect structure (before relaxation)
     - 'unrelaxed defect structure' (also before relaxation, but with interstitials at their
-      final _relaxed_ positions, and all bulk atoms at their unrelaxed positions).
+      final `relaxed` positions, and all bulk atoms at their unrelaxed positions).
 
     Args:
         bulk_supercell (Structure):
@@ -174,12 +175,14 @@ def defect_from_structures(
     Returns:
         defect (Defect):
             doped Defect object.
-        If `return_all_info` is True, then also:
+
+        If ``return_all_info`` is True, then also:
+
         defect_site (Site):
-            pymatgen Site object of the _relaxed_ defect site in the defect supercell.
+            pymatgen Site object of the `relaxed` defect site in the defect supercell.
         defect_site_in_bulk (Site):
             pymatgen Site object of the defect site in the bulk supercell
-            (i.e. unrelaxed vacancy/substitution site, or final _relaxed_ interstitial
+            (i.e. unrelaxed vacancy/substitution site, or final `relaxed` interstitial
             site for interstitials).
         defect_site_index (int):
             index of defect site in defect supercell (None for vacancies)
@@ -201,7 +204,7 @@ def defect_from_structures(
             f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
         ) from exc
 
-    # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
+    # Try automatic defect site detection – this gives us the "unrelaxed" defect structure
     try:
         (
             bulk_site_idx,
@@ -430,8 +433,8 @@ def defect_entry_from_paths(
     **kwargs,
 ):
     """
-    Parse the defect calculation outputs in `defect_path` and return the parsed
-    `DefectEntry` object. By default, the `DefectEntry.name` attribute (later
+    Parse the defect calculation outputs in ``defect_path`` and return the parsed
+    ``DefectEntry`` object. By default, the ``DefectEntry.name`` attribute (later
     used to label the defects in plots) is set to the defect_path folder name
     (if it is a recognised defect name), else it is set to the default doped
     name for that defect.
@@ -447,7 +450,7 @@ def defect_entry_from_paths(
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Ionic + static contributions to the dielectric constant, in the same xyz
             Cartesian basis as the supercell calculations. If not provided, charge
-            corrections cannot be computed and so `skip_corrections` will be set to
+            corrections cannot be computed and so ``skip_corrections`` will be set to
             true.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
@@ -472,12 +475,12 @@ def defect_entry_from_paths(
             (eigen)values.
             If None, will use DefectEntry.calculation_metadata["bulk_path"].
         **kwargs:
-            Keyword arguments to pass to `DefectParser()` methods
-            (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
-            such as `bulk_locpot_dict`, `bulk_site_potentials` etc.
+            Keyword arguments to pass to ``DefectParser()`` methods
+            (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
+            such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc.
 
     Return:
-        Parsed `DefectEntry` object.
+        Parsed ``DefectEntry`` object.
     """
     dp = DefectParser.from_paths(
         defect_path,
@@ -526,24 +529,24 @@ class DefectsParser:
         A class for rapidly parsing multiple VASP defect supercell calculations
         for a given host (bulk) material.
 
-        Loops over calculation directories in `output_path` (likely the same
-        `output_path` used with `DefectsSet` for file generation in `doped.vasp`)
+        Loops over calculation directories in ``output_path`` (likely the same
+        ``output_path`` used with ``DefectsSet`` for file generation in ``doped.vasp``)
         and parses the defect calculations into a dictionary of:
-        {defect_name: DefectEntry}, where the defect_name is set to the defect
-        calculation folder name (_if it is a recognised defect name_), else it is
-        set to the default `doped` name for that defect. By default, searches for
-        folders in `output_path` with `subfolder` containing `vasprun.xml(.gz)`
-        files, and tries to parse them as `DefectEntry`s.
+        ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to the defect
+        calculation folder name (`if it is a recognised defect name`), else it is
+        set to the default ``doped`` name for that defect. By default, searches for
+        folders in ``output_path`` with ``subfolder`` containing ``vasprun.xml(.gz)``
+        files, and tries to parse them as ``DefectEntry``\ s.
 
         By default, tries to use multiprocessing to speed up defect parsing, which
-        can be controlled with the `processes` parameter.
+        can be controlled with the ``processes`` parameter.
 
         Defect charge states are automatically determined from the defect calculation
-        outputs if `POTCAR`s are set up with `pymatgen` (see docs Installation page),
+        outputs if ``POTCAR``\ s are set up with ``pymatgen`` (see docs Installation page),
         or if that fails, using the defect folder name (must end in "_+X" or "_-X"
         where +/-X is the defect charge state).
 
-        Uses the (single) `DefectParser` class to parse the individual defect
+        Uses the (single) ``DefectParser`` class to parse the individual defect
         calculations. Note that the bulk and defect supercells should have the same
         definitions/basis sets (for site-matching and finite-size charge corrections
         to work appropriately).
@@ -551,26 +554,26 @@ class DefectsParser:
         Args:
             output_path (str):
                 Path to the output directory containing the defect calculation
-                folders (likely the same `output_path` used with `DefectsSet` for
-                file generation in `doped.vasp`). Default = current directory.
+                folders (likely the same ``output_path`` used with ``DefectsSet`` for
+                file generation in ``doped.vasp``). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Ionic + static contributions to the dielectric constant, in the same xyz
                 Cartesian basis as the supercell calculations. If not provided, charge
-                corrections cannot be computed and so `skip_corrections` will be set to
+                corrections cannot be computed and so ``skip_corrections`` will be set to
                 true.
             subfolder (str):
                 Name of subfolder(s) within each defect calculation folder (in the
-                `output_path` directory) containing the VASP calculation files to
-                parse (e.g. `vasp_ncl`, `vasp_std`, `vasp_gam` etc.). If not
-                specified, `doped` checks first for `vasp_ncl`, `vasp_std`, `vasp_gam`
-                subfolders with calculation outputs (`vasprun.xml(.gz)` files) and uses
-                the highest level VASP type (ncl > std > gam) found as `subfolder`,
+                ``output_path`` directory) containing the VASP calculation files to
+                parse (e.g. ``vasp_ncl``, ``vasp_std``, ``vasp_gam`` etc.). If not
+                specified, ``doped`` checks first for ``vasp_ncl``, ``vasp_std``, ``vasp_gam``
+                subfolders with calculation outputs (``vasprun.xml(.gz)`` files) and uses
+                the highest level VASP type (ncl > std > gam) found as ``subfolder``,
                 otherwise uses the defect calculation folder itself with no subfolder
-                (set `subfolder = "."` to enforce this).
+                (set ``subfolder = "."`` to enforce this).
             bulk_path (str):
                 Path to bulk supercell reference calculation folder. If not specified,
-                searches for folder with name "X_bulk" in the `output_path` directory
-                (matching the default `doped` name for the bulk supercell reference folder).
+                searches for folder with name "X_bulk" in the ``output_path`` directory
+                (matching the default ``doped`` name for the bulk supercell reference folder).
             skip_corrections (bool):
                 Whether to skip the calculation and application of finite-size charge
                 corrections to the defect energies (not recommended in most cases).
@@ -591,10 +594,10 @@ class DefectsParser:
                 Number of processes to use for multiprocessing for expedited parsing.
                 If not set, defaults to one less than the number of CPUs available.
             json_filename (str):
-                Filename to save the parsed defect entries dict (`DefectsParser.defect_dict`)
-                to in `output_path`, to avoid having to re-parse defects when later analysing
-                further and aiding calculation provenance. Can be reloaded using the `loadfn`
-                function from `monty.serialization` (and then input to `DefectThermodynamics`
+                Filename to save the parsed defect entries dict (``DefectsParser.defect_dict``)
+                to in ``output_path``, to avoid having to re-parse defects when later analysing
+                further and aiding calculation provenance. Can be reloaded using the ``loadfn``
+                function from ``monty.serialization`` (and then input to ``DefectThermodynamics``
                 etc). If None (default), set as "{Chemical Formula}_defect_dict.json" where
                 {Chemical Formula} is the chemical formula of the host material.
                 If False, no json file is saved.
@@ -602,9 +605,9 @@ class DefectsParser:
         Attributes:
             defect_dict (dict):
                 Dictionary of parsed defect calculations in the format:
-                {"defect_name": DefectEntry}) where the defect_name is set to the
-                defect calculation folder name (_if it is a recognised defect name_),
-                else it is set to the default `doped` name for that defect.
+                ``{"defect_name": DefectEntry}`` where the defect_name is set to the
+                defect calculation folder name (`if it is a recognised defect name`),
+                else it is set to the default ``doped`` name for that defect.
         """
         self.output_path = output_path
         self.dielectric = dielectric
@@ -675,7 +678,7 @@ class DefectsParser:
         elif all("vasprun.xml" not in file for file in os.listdir(self.bulk_path)):
             raise FileNotFoundError(
                 f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-                f"{self.bulk_path} or subfolder: {self.subfolder} - please ensure `vasprun.xml(.gz)` "
+                f"{self.bulk_path} or subfolder: {self.subfolder} – please ensure `vasprun.xml(.gz)` "
                 f"files are present and/or specify `bulk_path` manually."
             )
 
@@ -968,7 +971,7 @@ class DefectsParser:
         **kwargs,
     ) -> DefectThermodynamics:
         """
-        Generates a DefectThermodynamics object from the parsed `DefectEntry`
+        Generates a DefectThermodynamics object from the parsed ``DefectEntry``
         objects in self.defect_dict, which can then be used to analyse and plot
         the defect thermodynamics (formation energies, transition levels,
         concentrations etc).
@@ -982,13 +985,13 @@ class DefectsParser:
                 formation energies. This can have the form of
                 {"facets": [{'facet': [chempot_dict]}]} (the format generated by
                 doped's chemical potential parsing functions (see tutorials)) which
-                allows easy analysis over a range of chemical potentials - where facet(s)
+                allows easy analysis over a range of chemical potentials – where facet(s)
                 (chemical potential limit(s)) to analyse/plot can later be chosen using
-                the `facets` argument.
-                Alternatively this can be a dictionary of **DFT**/absolute chemical
+                the ``facets`` argument.
+                Alternatively this can be a dictionary of ***DFT***/absolute chemical
                 potentials (not formal chemical potentials!) for a single facet (limit),
-                in the format: {element symbol: chemical potential} - if manually
-                specifying chemical potentials this way, you can set the `el_refs` option
+                in the format: {element symbol: chemical potential} – if manually
+                specifying chemical potentials this way, you can set the ``el_refs`` option
                 with the DFT reference energies of the elemental phases in order to show
                 the formal (relative) chemical potentials above the formation energy
                 plot.
@@ -1012,8 +1015,8 @@ class DefectsParser:
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
             **kwargs:
-                Additional keyword arguments to pass to `DefectThermodynamics()`,
-                such as `check_compatibility`.
+                Additional keyword arguments to pass to ``DefectThermodynamics()``,
+                such as ``check_compatibility``.
 
         Returns:
             doped DefectThermodynamics object (DefectThermodynamics)
@@ -1117,9 +1120,9 @@ class DefectParser:
                 If the estimated error in the defect charge correction is greater
                 than this value (in eV), then a warning is raised. (default: 0.05 eV)
             **kwargs:
-                Keyword arguments to pass to `DefectParser()` methods
-                (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
-                such as `bulk_locpot_dict`, `bulk_site_potentials` etc. Mainly
+                Keyword arguments to pass to ``DefectParser()`` methods
+                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
+                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
                 used by DefectsParser to expedite parsing by avoiding reloading
                 bulk data for each defect.
         """
@@ -1144,8 +1147,8 @@ class DefectParser:
         **kwargs,
     ):
         """
-        Parse the defect calculation outputs in `defect_path` and return the
-        `DefectParser` object. By default, the `DefectParser.defect_entry.name`
+        Parse the defect calculation outputs in ``defect_path`` and return the
+        ``DefectParser`` object. By default, the ``DefectParser.defect_entry.name``
         attribute (later used to label defects in plots) is set to the
         defect_path folder name (if it is a recognised defect name), else it is
         set to the default doped name for that defect.
@@ -1160,7 +1163,7 @@ class DefectParser:
                 Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Ionic + static contributions to the dielectric constant. If not provided,
-                charge corrections cannot be computed and so `skip_corrections` will be
+                charge corrections cannot be computed and so ``skip_corrections`` will be
                 set to true.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
@@ -1187,14 +1190,14 @@ class DefectParser:
                 If None, will calculate "gap"/"vbm" using the outputs at:
                 DefectParser.defect_entry.calculation_metadata["bulk_path"]
             **kwargs:
-                Keyword arguments to pass to `DefectParser()` methods
-                (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
-                such as `bulk_locpot_dict`, `bulk_site_potentials` etc. Mainly
+                Keyword arguments to pass to ``DefectParser()`` methods
+                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
+                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
                 used by DefectsParser to expedite parsing by avoiding reloading
                 bulk data for each defect.
 
         Return:
-            `DefectParser` object.
+            ``DefectParser`` object.
         """
         _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
@@ -1240,7 +1243,7 @@ class DefectParser:
         try:
             parsed_charge_state: int = _defect_charge_from_vasprun(bulk_vr, defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
-            # try determine from folder name - must have "-" or "+" at end of name for this
+            # try determine from folder name – must have "-" or "+" at end of name for this
             try:
                 charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
                 if charge_state_suffix[0] not in ["-", "+"]:
@@ -1608,7 +1611,7 @@ class DefectParser:
         files. The bulk_locpot_dict can be supplied if already parsed,
         for expedited parsing of multiple defects.
 
-        Saves the `bulk_locpot_dict` and `defect_locpot_dict` dictionaries
+        Saves the ``bulk_locpot_dict`` and ``defect_locpot_dict`` dictionaries
         (containing the planar-averaged electrostatic potentials along each
         axis direction) to the DefectEntry.calculation_metadata dict, for
         use with DefectEntry.get_freysoldt_correction().
@@ -1666,7 +1669,7 @@ class DefectParser:
         files. The bulk_site_potentials can be supplied if already
         parsed, for expedited parsing of multiple defects.
 
-        Saves the `bulk_site_potentials` and `defect_site_potentials`
+        Saves the ``bulk_site_potentials`` and ``defect_site_potentials``
         lists (containing the atomic site electrostatic potentials, from
         -1*np.array(Outcar.electrostatic_potential)) to
         DefectEntry.calculation_metadata, for use with
@@ -1791,10 +1794,10 @@ class DefectParser:
     def load_bulk_gap_data(self, bulk_band_gap_path=None, use_MP=False, mpid=None, api_key=None):
         """
         Get bulk band gap data from bulk OUTCAR file, or OUTCAR located at
-        `actual_bulk_path`.
+        ``actual_bulk_path``.
 
         Alternatively, one can specify query the Materials Project (MP) database
-        for the bulk gap data, using `use_MP = True`, in which case the MP entry
+        for the bulk gap data, using ``use_MP = True``, in which case the MP entry
         with the lowest number ID and composition matching the bulk will be used,
         or the MP ID (mpid) of the bulk material to use can be specified. This is
         not recommended as it will correspond to a severely-underestimated GGA DFT
@@ -1945,7 +1948,7 @@ class DefectParser:
             raise ValueError(
                 "No charge correction performed! Missing required metadata in "
                 "defect_entry.calculation_metadata ('bulk/defect_site_potentials' for Kumagai ("
-                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) - these "
+                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) – these "
                 "are loaded with either the load_eFNV_data() or load_FNV_data() methods for "
                 "DefectParser."
             )
