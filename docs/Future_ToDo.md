@@ -47,7 +47,7 @@ Depends where we want supercell generation to happen. Can input to both `Defects
 - Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
   also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
   effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in
-  Xinwei's https://arxiv.org/abs/2302.04901), so it would be really nice to have this automatic parsing
+  Xinwei's https://doi.org/10.1103/PhysRevB.108.134102), so it would be really nice to have this automatic parsing
   built-in, and can either use in SnB or recommend SnB users to check with this.
   - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
     more common than thought.

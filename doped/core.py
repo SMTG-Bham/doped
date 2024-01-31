@@ -383,7 +383,7 @@ class DefectEntry(thermo.DefectEntry):
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust `defect_region_radius` and/or
         `excluded_indices` to ensure that only sites in other layers are used for
-        the sampling region (plateau).
+        the sampling region (plateau) - see example on doped docs.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -692,29 +692,18 @@ class DefectEntry(thermo.DefectEntry):
 
     def plot_site_displacements(
         self,
-        separated_by_direction: Optional[bool] = True,
-        use_plotly: Optional[bool] = False,
-        mpl_style_file: Optional[str] = "",
+        separated_by_direction: bool = True,
+        use_plotly: bool = False,
     ):
         """
         Plot the site displacements as a function of distance from the defect
         site.
-
-        Args:
-            separated_by_direction (bool):
-                Whether to plot the site displacements separated by the
-                x, y and z directions (True) or all together (False).
-            use_plotly (bool):
-                Whether to use plotly (True) or matplotlib (False).
-            mpl_style_file (str):
-                Path to a matplotlib style file to use for the plot. If None,
-                uses the default doped style file.
         """
+        # Get supercells with same number of sites
         return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
             use_plotly=use_plotly,
-            style_file=mpl_style_file,
         )
 
 
