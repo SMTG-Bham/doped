@@ -280,9 +280,12 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     - minimum ASE style cubic-like metric
       (using the fixed, efficient doped version)
     - minimum absolute sum of elements
+    - matrix symmetry (around diagonal)
+    - minimum absolute sum of off-diagonal elements
     - minimum number of negative elements
     - minimum largest (absolute) element
     - maximum number of x, y, z that are equal
+    - maximum absolute sum of diagonal elements.
     - maximum sum of diagonal elements.
 
     Args:
@@ -293,11 +296,14 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
         tuple: Tuple of sorting criteria values
     """
     cubic_metric = cell_metric(np.dot(P, cell)) if cell is not None else cell_metric(P)
+    symmetric = np.allclose(P, P.T)
+    abs_sum_off_diag = np.sum(np.abs(P) - np.abs(np.diag(np.diag(P))))
 
     abs_P = np.abs(P)
     abs_sum = np.sum(abs_P)
     num_negs = np.sum(P < 0)
     max_abs = np.max(abs_P)
+    abs_diag_sum = np.sum(np.abs(np.diag(P)))
     diag_sum = np.sum(np.diag(P))
     P_flat = P.flatten()
     num_equals = sum(
@@ -310,7 +316,17 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     # sga = _get_sga(struct)
     # symm_ops = len(sga.get_symmetry_operations())
 
-    return (cubic_metric, abs_sum, num_negs, max_abs, -num_equals, -diag_sum)
+    return (
+        cubic_metric,
+        not symmetric,
+        abs_sum_off_diag,
+        abs_sum,
+        num_negs,
+        max_abs,
+        -num_equals,
+        -abs_diag_sum,
+        -diag_sum,
+    )
 
 
 def _lean_sort_func(P):
@@ -528,7 +544,7 @@ def find_ideal_supercell(
 
         min_dist_indices = np.where(min_image_dists == best_min_dist)[0]
 
-        optimal_P = _get_optimal_P(
+        return _get_optimal_P(
             valid_P=valid_P,
             selected_indices=min_dist_indices,
             unique_hashes=unique_hashes,
@@ -539,12 +555,7 @@ def find_ideal_supercell(
             cell=cell,
         )
 
-        if verbose:
-            print(f"{label} minimum image distance (Å): {(best_min_dist / norm)}")
-
-        return (optimal_P, best_min_dist / norm)
-
-    sc_optimal_P, sc_min_dist = _find_ideal_supercell_for_target_metric(
+    sc_optimal_P = _find_ideal_supercell_for_target_metric(
         cell=cell,
         target_size=target_size,
         limit=limit,
@@ -553,7 +564,7 @@ def find_ideal_supercell(
         label="SC",
     )  # tested and found that amalgamating SC/FCC target matrices earlier leads to massive slowdown,
     # so more efficient to just generate both this way and compare
-    fcc_optimal_P, fcc_min_dist = _find_ideal_supercell_for_target_metric(
+    fcc_optimal_P = _find_ideal_supercell_for_target_metric(
         cell=cell,
         target_size=target_size,
         limit=limit,
@@ -561,8 +572,11 @@ def find_ideal_supercell(
         target_metric=fcc_target_metric,
         label="FCC",
     )
+    # recalculate min dists (reduces numerical errors inherited from transformations)
+    sc_min_dist = round(_get_min_image_distance_from_matrix(np.dot(sc_optimal_P, cell)), 3)
+    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.dot(fcc_optimal_P, cell)), 3)
 
-    if sc_min_dist > fcc_min_dist:
+    if sc_min_dist >= fcc_min_dist:
         return (sc_optimal_P, sc_min_dist) if return_min_dist else sc_optimal_P
 
     return (fcc_optimal_P, fcc_min_dist) if return_min_dist else fcc_optimal_P
