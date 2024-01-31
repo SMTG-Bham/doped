@@ -57,12 +57,16 @@ def make_molecule_in_a_box(element: str):
     bond lengths of these gaseous molecules.
 
     Args:
-        element (str): Element symbol of the molecule to generate.
+        element (str):
+            Element symbol of the molecule to generate.
 
     Returns:
-        Structure: pymatgen Structure object of the molecule in a box.
-        str: Chemical formula of the molecule in a box.
-        int: Total magnetization of the molecule in a box (0 for all X2 except
+        structure (Structure):
+            ``pymatgen`` ``Structure`` object of the molecule in a box.
+        formula (str):
+            Chemical formula of the molecule in a box.
+        total_magnetization (int):
+            Total magnetization of the molecule in a box (0 for all X2 except
             O2 which has a triplet ground state (S = 1)).
     """
     lattice = [[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]]
@@ -271,7 +275,7 @@ class CompetingPhases:
     # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
     #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
+    # on the MP – warn user (i.e. check your sh*t) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
     # and generate from there)
     # E.g. from pycdt chemical_potentials:
@@ -279,7 +283,7 @@ class CompetingPhases:
     # #                 "in the MP database!\nPlease consider submitting the "
     # #                 "POSCAR to the MP xtaltoolkit, so future users will "
     # #                 "know about this structure:"
-    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
+    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" – see
     # analyze_GGA_chempots code for example.
     # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
@@ -289,7 +293,7 @@ class CompetingPhases:
         Class to generate the input files for competing phases on the phase
         diagram for the host material (determining the chemical potential
         limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by `e_above_hull`, to determine the relevant competing
+        range specified by ``e_above_hull``, to determine the relevant competing
         phases. Diatomic gaseous molecules are generated as molecules-in-a-box
         as appropriate.
 
@@ -302,17 +306,17 @@ class CompetingPhases:
                 MP-calculated formation energies, which may not be accurate due to functional
                 choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
                 Any phases that (would) border the host material on the phase diagram, if their
-                relative energy was downshifted by `e_above_hull`, are included.
+                relative energy was downshifted by ``e_above_hull``, are included.
                 Default is 0.1 eV/atom.
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
-                environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) - see the `doped`
+                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) – see the ``doped``
                 Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
             full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
                 with energy above hull < e_above_hull) for the chemical system of the input
                 composition (not recommended). If False, only includes phases that (would) border
                 the host material on the phase diagram (and thus set the chemical potential
-                limits), if their relative energy was downshifted by `e_above_hull`.
+                limits), if their relative energy was downshifted by ``e_above_hull``.
                 (Default is False).
         """
         self.api_key = api_key
@@ -436,7 +440,7 @@ class CompetingPhases:
 
         if not full_phase_diagram:  # default
             # cull to only include any phases that would border the host material on the phase
-            # diagram, if their relative energy was downshifted by `e_above_hull`:
+            # diagram, if their relative energy was downshifted by ``e_above_hull``:
             MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
 
             MP_bordering_phases = {phase for facet in MP_gga_chempots for phase in facet.split("-")}
@@ -445,10 +449,10 @@ class CompetingPhases:
             ]
 
             # add any phases that would border the host material on the phase diagram, if their
-            # relative energy was downshifted by `e_above_hull`:
+            # relative energy was downshifted by ``e_above_hull``:
             for entry in pd_entries:
                 if entry.name not in MP_bordering_phases and not entry.is_element:
-                    # decrease entry energy per atom by `e_above_hull` eV/atom
+                    # decrease entry energy per atom by ``e_above_hull`` eV/atom
                     renormalised_entry = _renormalise_entry(entry, e_above_hull)
                     new_phase_diagram = PhaseDiagram([*phase_diagram.entries, renormalised_entry])
                     new_MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, new_phase_diagram)
@@ -486,7 +490,7 @@ class CompetingPhases:
         """
         Generates VASP input files for k-points convergence testing for
         competing phases, using PBEsol (GGA) DFT by default. Automatically sets
-        the `ISMEAR` `INCAR` tag to 2 (if metallic) or 0 if not. Recommended to
+        the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not. Recommended to
         use with https://github.com/kavanase/vaspup2.0.
 
         Args:
@@ -501,13 +505,13 @@ class CompetingPhases:
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
             user_incar_settings (dict):
                 Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False,
                 "ALGO": "All"}. Note that any non-numerical or non-True/False flags
                 need to be input as strings with quotation marks. See
-                `doped/VASP_sets/PBEsol_ConvergenceSet.yaml` for the default settings.
-            **kwargs: Additional kwargs to pass to `DictSet.write_input()`
+                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default settings.
+            **kwargs: Additional kwargs to pass to ``DictSet.write_input()``
         """
         # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
 
@@ -603,10 +607,10 @@ class CompetingPhases:
         **kwargs,
     ):
         """
-        Generates VASP input files for `vasp_std` relaxations of the competing
+        Generates VASP input files for ``vasp_std`` relaxations of the competing
         phases, using HSE06 (hybrid DFT) DFT by default. Automatically sets the
-        `ISMEAR` `INCAR` tag to 2 (if metallic) or 0 if not. Note that any
-        changes to the default `INCAR`/`POTCAR` settings should be consistent
+        ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not. Note that any
+        changes to the default ``INCAR``/``POTCAR`` settings should be consistent
         with those used for the defect supercell calculations.
 
         Args:
@@ -619,13 +623,13 @@ class CompetingPhases:
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                `doped/VASP_sets/PotcarSet.yaml` for the default `POTCAR` set.
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
             user_incar_settings (dict):
                 Override the default INCAR settings e.g. {"EDIFF": 1e-5, "LDAU": False,
                 "ALGO": "All"}. Note that any non-numerical or non-True/False flags
                 need to be input as strings with quotation marks. See
-                `doped/VASP_sets/RelaxSet.yaml` and `HSESet.yaml` for the default settings.
-            **kwargs: Additional kwargs to pass to `DictSet.write_input()`
+                ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for the default settings.
+            **kwargs: Additional kwargs to pass to ``DictSet.write_input()``
         """
         # TODO: Update this to use:
         #  sym = SpacegroupAnalyzer(e.structure)
@@ -763,7 +767,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 MP-calculated formation energies, which may not be accurate due to functional
                 choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
                 Any phases that would border the host material on the phase diagram, if their
-                relative energy was downshifted by `e_above_hull`, are included.
+                relative energy was downshifted by ``e_above_hull``, are included.
                 Default is 0.1 eV/atom.
             full_sub_approach (bool): Generate competing phases by considering the full phase
                 diagram, including chemical potential limits with multiple extrinsic phases.
@@ -771,24 +775,24 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 Default = False. Described in further detail below.
             codoping (bool): Whether to consider extrinsic competing phases containing multiple
                 extrinsic species. Only relevant to high (non-dilute) co-doping concentrations.
-                If set to True, then `full_sub_approach` is also set to True.
+                If set to True, then ``full_sub_approach`` is also set to True.
                 Default = False.
             api_key (str): Materials Project (MP) API key, needed to access the MP database for
                 competing phase generation. If not supplied, will attempt to read from
-                environment variable `PMG_MAPI_KEY` (in `~/.pmgrc.yaml`) - see the `doped`
+                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) – see the ``doped``
                 Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
                 This should correspond to the legacy MP API; from
                 https://legacy.materialsproject.org/open.
 
         This code uses the Materials Project (MP) phase diagram data along with the
-        `e_above_hull` error range to generate potential competing phases.
+        ``e_above_hull`` error range to generate potential competing phases.
 
         NOTE on 'full_sub_approach':
-            The default approach for substitutional elements (`full_sub_approach = False`) is to
+            The default approach for substitutional elements (``full_sub_approach = False``) is to
             only consider chemical potential limits with a maximum of 1 extrinsic phase
             (composition with extrinsic species present). This is a valid approximation for the
             case of dilute dopant/impurity concentrations. For high (non-dilute) concentrations
-            of extrinsic species, use `full_sub_approach = True`.
+            of extrinsic species, use ``full_sub_approach = True``.
         """
         # the competing phases & entries of the OG system
         super().__init__(composition, e_above_hull, api_key)
@@ -826,7 +830,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
                 #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
                 #  entries, including facets with multiple extrinsic entries but still not the
-                #  full phase diagram? - To be updated!
+                #  full phase diagram? – To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
                 #  this code block and just use:
                 #  super()__init__(composition = (
@@ -1073,7 +1077,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     warnings.warn(
                         "Determined chemical potentials to be over dependent on an "
                         "extrinsic species. This means we need to revert to "
-                        "`full_sub_approach = True` - running now."
+                        "`full_sub_approach = True`  running now."
                     )
                     full_sub_approach = True
                     extrinsic_entries = [
@@ -1104,7 +1108,7 @@ class CompetingPhasesAnalyzer:
         Args:
             system (str): The  'reduced formula' of the bulk composition
             extrinsic_species (str):
-                Extrinsic species - can only deal with one at a time (see
+                Extrinsic species – can only deal with one at a time (see
                 tutorial on the docs for more complex cases).
 
         Attributes:
@@ -1129,9 +1133,9 @@ class CompetingPhasesAnalyzer:
     #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
         """
-        Parses competing phase energies from `vasprun.xml(.gz)` outputs,
+        Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
-        `CompetingPhasesAnalyzer` object.
+        ``CompetingPhasesAnalyzer`` object.
 
         Args:
             path (list, str, pathlib Path):
@@ -1144,8 +1148,8 @@ class CompetingPhasesAnalyzer:
                 The subfolder in which your vasprun.xml(.gz) output files
                 are located (e.g. a file-structure like:
                 formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
-                search for `vasp_std` subfolders, or directly in the
-                `formula_EaH_X` folder.
+                search for ``vasp_std`` subfolders, or directly in the
+                ``formula_EaH_X`` folder.
             csv_path (str):
                 If set will save the parsed data to a csv at this filepath.
                 Further customisation of the output csv can be achieved with
@@ -1156,8 +1160,8 @@ class CompetingPhasesAnalyzer:
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
-        #  subfolders are found). - see how this is done in DefectsParser in analysis.py
-        # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
+        #  subfolders are found) – see how this is done in DefectsParser in analysis.py
+        # TODO: Add check for matching INCAR and POTCARs from these calcs – can use code/functions from
         #  analysis.py for this
         self.vasprun_paths = []
         # fetch data
@@ -1167,7 +1171,7 @@ class CompetingPhasesAnalyzer:
                 if "vasprun.xml" in Path(p).name:
                     self.vasprun_paths.append(str(Path(p)))
 
-                # try to find the file - will always pick the first match for vasprun.xml*
+                # try to find the file – will always pick the first match for vasprun.xml*
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
                     vsp = list(Path(p).glob("vasprun.xml*"))[0]
                     self.vasprun_paths.append(str(vsp))
@@ -1385,7 +1389,7 @@ class CompetingPhasesAnalyzer:
         """
         Calculates chemical potential limits. For dopant species, it calculates
         the limiting potential based on the intrinsic chemical potentials (i.e.
-        same as `full_sub_approach=False` in pycdt).
+        same as ``full_sub_approach=False`` in pycdt).
 
         Args:
             csv_path (str): If set, will save chemical potential limits to csv
@@ -1514,7 +1518,7 @@ class CompetingPhasesAnalyzer:
             #    phases using the elemental energies
             # 2. for each of the chempots already calculated work out what
             #    the chemical potential of the dopant would be from
-            #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
+            #       mu_dopant = Hf(dopant competing phase) – sum(mu_elements)
             # 3. find the most negative mu_dopant which then becomes the new
             #    canonical chemical potential for that dopant species and the
             #    competing phase is the 'limiting phase' right?
@@ -1658,8 +1662,8 @@ class CompetingPhasesAnalyzer:
         energies in a LaTeX table format, showing the formula, kpoints (if
         present in the parsed data) and formation energy.
 
-        Needs the mhchem package to work and does *not* use the booktabs package
-        -- change hline to toprule, midrule and bottomrule if you want to use
+        Needs the mhchem package to work and does `not` use the booktabs package
+        – change hline to toprule, midrule and bottomrule if you want to use
         booktabs style.
 
         Args:
@@ -1761,7 +1765,7 @@ def get_X_rich_facet(X: str, chempots: dict):
         X (str): Elemental species (e.g. "Te")
         chempots (dict):
             The chemical potential limits dict, as returned by
-            `CompetingPhasesAnalyzer.chempots`
+            ``CompetingPhasesAnalyzer.chempots``
     """
     X_rich_facet = None
     X_rich_facet_chempot = None
@@ -1785,7 +1789,7 @@ def get_X_poor_facet(X: str, chempots: dict):
         X (str): Elemental species (e.g. "Te")
         chempots (dict):
             The chemical potential limits dict, as returned by
-            `CompetingPhasesAnalyzer.chempots`
+            ``CompetingPhasesAnalyzer.chempots``
     """
     X_poor_facet = None
     X_poor_facet_chempot = None
@@ -1826,13 +1830,13 @@ def combine_extrinsic(first, second, extrinsic_species):
     keys = ["elemental_refs", "facets", "facets_wrt_el_refs"]
     if not all(key in first for key in keys):
         raise KeyError(
-            "the first dictionary doesn't contain the correct keys - it should include "
+            "the first dictionary doesn't contain the correct keys – it should include "
             "elemental_refs, facets and facets_wrt_el_refs"
         )
 
     if not all(key in second for key in keys):
         raise KeyError(
-            "the second dictionary doesn't contain the correct keys - it should include "
+            "the second dictionary doesn't contain the correct keys – it should include "
             "elemental_refs, facets and facets_wrt_el_refs"
         )
 

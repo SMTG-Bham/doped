@@ -64,8 +64,7 @@ entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
 
 ## Studies using `doped`, so far
-<!-- Xinwei 2024 paper -->
-- I. Mosquera-Lois et al. [_arXiv_](https://doi.org/10.48550/arXiv.2401.12127) 2024
+<!-- Irea, Xinwei papers -->
 - W. Dou et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-hm6vh) 2024
 - K. Li et al. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23) 2023
 - X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
@@ -80,6 +79,5 @@ entirely refactored and rewritten, to work with the new
 - I. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon [_npj Computational Materials_](https://www.nature.com/articles/s41524-023-00973-1) 2023
 - Y. T. Huang & S. R. Kavanagh et al. [_Nature Communications_](https://www.nature.com/articles/s41467-022-32669-3) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt [_Faraday Discussions_](https://doi.org/10.1039/D2FD00043A) 2022
-- Y-S. Choi et al. [_ACS Appl. Energy Mater._](https://doi.org/10.1021/acsaem.2c03466) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021

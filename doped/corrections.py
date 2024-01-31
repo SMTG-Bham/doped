@@ -3,19 +3,23 @@ Code to compute finite-size charge corrections for charged defects in periodic
 systems.
 
 The charge-correction methods implemented are:
-1) Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic systems.
+
+1. Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic systems.
    This is the recommended default as it works regardless of system (an)isotropy, has a more efficient
    implementation and tends to be more robust in cases of small supercells.
    Includes:
+
        a) anisotropic PC energy
        b) potential alignment by atomic site averaging outside Wigner Seitz radius
 
-2) Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV correction fails for some
+2. Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV correction fails for some
    reason. Includes:
+
        a) point-charge (PC) energy
        b) potential alignment by planar averaging
 
-If you use the corrections implemented in this module, cite:
+If you use the corrections implemented in this module, please cite:
+
     Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for the eFNV correction
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Status Solidi B. 248, 1067-1076 (2011) for FNV
@@ -121,10 +125,10 @@ def get_freysoldt_correction(
     **kwargs,
 ) -> CorrectionResult:
     """
-    Function to compute the _isotropic_ Freysoldt (FNV) correction for the
+    Function to compute the `isotropic` Freysoldt (FNV) correction for the
     input defect_entry.
 
-    This function _does not_ add the correction to `defect_entry.corrections`
+    This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_freysoldt_correction method does).
     If this correction is used, please cite Freysoldt's
     original paper; 10.1103/PhysRevLett.102.016402.
@@ -136,22 +140,22 @@ def get_freysoldt_correction(
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant of the host compound (including both
             ionic and (high-frequency) electronic contributions). If None,
-            then the dielectric constant is taken from the `defect_entry`
-            `calculation_metadata` if available.
+            then the dielectric constant is taken from the ``defect_entry``
+            ``calculation_metadata`` if available.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding pymatgen Locpot object, or
             a dictionary of the planar-averaged potential in the form:
             {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-            If None, will try to use `defect_locpot_dict` from the
-            `defect_entry` `calculation_metadata` if available.
+            If None, will try to use ``defect_locpot_dict`` from the
+            ``defect_entry`` ``calculation_metadata`` if available.
         bulk_locpot:
             Path to the output VASP LOCPOT file from the bulk supercell
             calculation, or the corresponding pymatgen Locpot object, or
             a dictionary of the planar-averaged potential in the form:
             {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-            If None, will try to use `bulk_locpot_dict` from the
-            `defect_entry` `calculation_metadata` if available.
+            If None, will try to use ``bulk_locpot_dict`` from the
+            ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
             manually checking the behaviour of the charge correction here).
@@ -161,7 +165,7 @@ def get_freysoldt_correction(
         axis (int or None):
             If int, then the FNV electrostatic potential plot along the
             specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
-            the output charge correction is still that for _all_ axes.
+            the output charge correction is still that for `all` axes.
             If None, then all three axes are plotted.
         verbose (bool):
             Whether to print the correction energy (default = True).
@@ -172,7 +176,7 @@ def get_freysoldt_correction(
 
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
-        the matplotlib figure object (or axis object if axis specified) if `plot`
+        the matplotlib figure object (or axis object if axis specified) if ``plot``
         is True.
     """
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
@@ -314,21 +318,21 @@ def get_kumagai_correction(
     the input defect_entry. Compatible with both isotropic/cubic and
     anisotropic systems.
 
-    This function _does not_ add the correction to `defect_entry.corrections`
+    This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_kumagai_correction method does).
     If this correction is used, please cite the Kumagai & Oba paper:
     10.1103/PhysRevB.89.195205
 
     Typically for reasonably well-converged supercell sizes, the default
-    `defect_region_radius` works perfectly well. However, for certain materials
+    ``defect_region_radius`` works perfectly well. However, for certain materials
     at small/intermediate supercell sizes, you may want to adjust this (and/or
-    `excluded_indices`) to ensure the best sampling of the plateau region away
-    from the defect position - `doped` should throw a warning in these cases
+    ``excluded_indices``) to ensure the best sampling of the plateau region away
+    from the defect position – ``doped`` should throw a warning in these cases
     (about the correction error being above the default tolerance (50 meV)).
     For example, with layered materials, the defect charge is often localised
-    to one layer, so we may want to adjust `defect_region_radius` and/or
-    `excluded_indices` to ensure that only sites in other layers are used for
-    the sampling region (plateau) - see example on doped docs.
+    to one layer, so we may want to adjust ``defect_region_radius`` and/or
+    ``excluded_indices`` to ensure that only sites in other layers are used for
+    the sampling region (plateau) – see example on doped docs.
 
     Args:
         defect_entry (DefectEntry):
@@ -337,8 +341,8 @@ def get_kumagai_correction(
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant of the host compound (including both
             ionic and (high-frequency) electronic contributions). If None,
-            then the dielectric constant is taken from the `defect_entry`
-            `calculation_metadata` if available.
+            then the dielectric constant is taken from the ``defect_entry``
+            ``calculation_metadata`` if available.
         defect_region_radius (float):
             Radius of the defect region (in Å). Sites outside the defect
             region are used for sampling the electrostatic potential far
@@ -351,13 +355,13 @@ def get_kumagai_correction(
         defect_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `defect_site_potentials`
-            from the `defect_entry` `calculation_metadata` if available.
+            If None, will try to use the ``defect_site_potentials``
+            from the ``defect_entry`` ``calculation_metadata`` if available.
         bulk_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the bulk supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `bulk_site_potentials`
-            from the `defect_entry` `calculation_metadata` if available.
+            If None, will try to use the ``bulk_site_potentials``
+            from the ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
             manually checking the behaviour of the charge correction here).
@@ -376,7 +380,7 @@ def get_kumagai_correction(
 
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
-        the matplotlib figure object if `plot` is True.
+        the matplotlib figure object if ``plot`` is True.
     """
     # suppress pydefect INFO messages
     import logging
@@ -415,10 +419,10 @@ def get_kumagai_correction(
         (in pydefect.cli.vasp.make_efnv_correction) to allow the defect region
         radius to be adjusted (e.g. in cases of layered materials, where often
         the defect charge is localised to one layer, so we likely want to
-        adjust the defect region radius to ensure that only _other_ layers are
+        adjust the defect region radius to ensure that only `other` layers are
         used for the sampling (plateau) region).
 
-        If defect_region_radius is not specified, then the `pydefect` default
+        If defect_region_radius is not specified, then the ``pydefect`` default
         (which is the Wigner-Seitz region of the supercell) is used.
 
         Notes:
@@ -556,7 +560,7 @@ def get_kumagai_correction(
     _install_custom_font()
 
     spp = SitePotentialMplPlotter.from_efnv_corr(
-        title=f"{_format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
+        title=f"{_format_defect_name(defect_entry.name, False)} – eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"

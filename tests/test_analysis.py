@@ -240,7 +240,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam")
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam - please ensure `vasprun.xml(.gz)` "
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam – please ensure `vasprun.xml(.gz)` "
             f"files are present and/or specify `bulk_path` manually."
         ) in str(exc.exception)
 
