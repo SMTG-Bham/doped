@@ -51,7 +51,8 @@ def _chempot_warning(dft_chempots):
 def _get_plot_setup(colormap, xy):
     cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
     colors = cmap(np.linspace(0, 1, len(xy)))
-    if colormap == "Dark2" and len(xy) >= 8:
+    if colormap == "Dark2" and len(xy) > 8:  # TODO: Auto change to tab10 or tab20, update warning and
+        # test
         warnings.warn(
             f"The chosen colormap is Dark2, which only has 8 colours, yet you have {len(xy)} "
             f"defect species (so some defects will have the same line colour). Recommended to "
