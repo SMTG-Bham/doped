@@ -10,6 +10,8 @@ from pymatgen.core.structure import Structure
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tqdm import tqdm
 
+from doped.utils.symmetry import _get_sga
+
 
 def get_min_image_distance(structure: Structure) -> float:
     """
@@ -295,7 +297,7 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     Returns:
         tuple: Tuple of sorting criteria values
     """
-    cubic_metric = cell_metric(np.dot(P, cell)) if cell is not None else cell_metric(P)
+    cubic_metric = cell_metric(np.matmul(P, cell)) if cell is not None else cell_metric(P)
     symmetric = np.allclose(P, P.T)
     abs_sum_off_diag = np.sum(np.abs(P) - np.abs(np.diag(np.diag(P))))
 
@@ -370,7 +372,7 @@ def _get_candidate_P_arrays(
     if verbose:
         print(f"{label} normalization factor (Q): {norm}")
 
-    ideal_P = np.dot(target_metric, np.linalg.inv(norm_cell))  # Approximate initial P matrix
+    ideal_P = np.matmul(target_metric, np.linalg.inv(norm_cell))  # Approximate initial P matrix
 
     if verbose:
         print(f"{label} idealized transformation matrix (ideal_P):")
@@ -434,9 +436,39 @@ def _get_optimal_P(
         print(f"{label} optimal transformation matrix (P_opt):")
         print(optimal_P)
         print(f"{label} supercell size:")
-        print(np.round(np.dot(optimal_P, cell), 4))
+        print(np.round(np.matmul(optimal_P, cell), 4))
 
     return optimal_P
+
+
+def _min_sum_off_diagonals(prim_struct: Structure, supercell_matrix: np.ndarray):
+    """
+    Get the minimum absolute sum of off-diagonal elements in the given
+    supercell matrix (for the primitive structure), or the corresponding
+    supercell matrix for the conventional structure (of ``prim_struct``).
+
+    Used to determine if we have an ideal supercell matrix (i.e. a diagonal
+    transformation matrix of either the primitive or conventional cells).
+
+    Args:
+        prim_struct (Structure): Primitive structure.
+        supercell_matrix (np.ndarray): Supercell matrix to check.
+
+    Returns:
+        int: Minimum absolute sum of off-diagonal elements, for the
+             primitive or conventional supercell matrix.
+    """
+    num_off_diagonals_prim = np.sum(np.abs(supercell_matrix - np.diag(np.diag(supercell_matrix))))
+
+    sga = _get_sga(prim_struct)
+    conv_supercell_matrix = np.matmul(
+        supercell_matrix, sga.get_conventional_to_primitive_transformation_matrix()
+    )
+    num_off_diagonals_conv = np.sum(
+        np.abs(conv_supercell_matrix - np.diag(np.diag(conv_supercell_matrix)))
+    )
+
+    return min(num_off_diagonals_prim, num_off_diagonals_conv)
 
 
 def find_ideal_supercell(
@@ -573,8 +605,8 @@ def find_ideal_supercell(
         label="FCC",
     )
     # recalculate min dists (reduces numerical errors inherited from transformations)
-    sc_min_dist = round(_get_min_image_distance_from_matrix(np.dot(sc_optimal_P, cell)), 3)
-    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.dot(fcc_optimal_P, cell)), 3)
+    sc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3)
+    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3)
 
     if sc_min_dist >= fcc_min_dist:
         return (sc_optimal_P, sc_min_dist) if return_min_dist else sc_optimal_P
