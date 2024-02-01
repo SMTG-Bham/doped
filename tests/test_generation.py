@@ -1242,6 +1242,22 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             },
             {
                 "input_parameters": {
+                    "charge_state": 6,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.111,
+                    "oxi_state": 4,
+                },
+                "probability": 0.0033352021313358825,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.3028534321386899,
+                    "charge_state_vs_max_host_charge": 0.25,
+                    "oxi_probability": 0.111,
+                    "oxi_state_vs_max_host_charge": 0.3968502629920499,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
                     "charge_state": 3,
                     "max_host_oxi_magnitude": 2,
                     "oxi_probability": 0.007,
@@ -1274,38 +1290,6 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             },
             {
                 "input_parameters": {
-                    "charge_state": 5,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.003,
-                    "oxi_state": 3,
-                },
-                "probability": 0.0001957433820584432,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.34199518933533946,
-                    "charge_state_vs_max_host_charge": 0.3028534321386899,
-                    "oxi_probability": 0.003,
-                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
-                },
-                "probability_threshold": 0.0075,
-            },
-            {
-                "input_parameters": {
-                    "charge_state": 6,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.111,
-                    "oxi_state": 4,
-                },
-                "probability": 0.0033352021313358825,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.3028534321386899,
-                    "charge_state_vs_max_host_charge": 0.25,
-                    "oxi_probability": 0.111,
-                    "oxi_state_vs_max_host_charge": 0.3968502629920499,
-                },
-                "probability_threshold": 0.0075,
-            },
-            {
-                "input_parameters": {
                     "charge_state": 8,
                     "max_host_oxi_magnitude": 2,
                     "oxi_probability": 0.024,
@@ -1317,6 +1301,22 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
                     "charge_state_vs_max_host_charge": 0.19078570709222198,
                     "oxi_probability": 0.024,
                     "oxi_state_vs_max_host_charge": 0.25,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 5,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.003,
+                    "oxi_state": 3,
+                },
+                "probability": 0.0001957433820584432,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.34199518933533946,
+                    "charge_state_vs_max_host_charge": 0.3028534321386899,
+                    "oxi_probability": 0.003,
+                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
                 },
                 "probability_threshold": 0.0075,
             },
@@ -1609,7 +1609,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert target_frac1_defect_gen.target_frac_coords == target_frac_coords1  # check attribute set
         assert target_frac2_defect_gen.target_frac_coords == target_frac_coords2  # check attribute set
 
-    def test_supercell_gen_kwargs(self):  # TODO: Test new settings etc
+    def test_supercell_gen_kwargs(self):
         # test setting supercell_gen_kwargs
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, supercell_gen_kwargs={"min_image_distance": 15}
@@ -1645,7 +1645,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
         # test ideal_threshold:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
-            self.prim_cdte, supercell_gen_kwargs={"min_atoms": 55, "ideal_threshold": 0.2}
+            self.prim_cdte, supercell_gen_kwargs={"min_atoms": 55, "ideal_threshold": 0.15}
         )  # gives typical 64-atom CdTe supercell
         assert self.CdTe_defect_gen_info in output
         self._general_defect_gen_check(CdTe_defect_gen)
@@ -1693,14 +1693,22 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert np.allclose(
             CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
         )  # same lattice
-        np.testing.assert_allclose(
-            CdTe_defect_gen.supercell_matrix, np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
+        supercell_matrix = np.array(
+            [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
+            if generate_supercell
+            else [[-2, 2, 2], [2, -2, 2], [2, 2, -2]]
         )
+        np.testing.assert_allclose(CdTe_defect_gen.supercell_matrix, supercell_matrix)
 
-        assert np.allclose(
-            (CdTe_defect_gen.primitive_structure * CdTe_defect_gen.supercell_matrix).lattice.matrix,
-            self.CdTe_bulk_supercell.lattice.matrix,
-        )
+        if not generate_supercell:
+            assert np.allclose(
+                (CdTe_defect_gen.primitive_structure * CdTe_defect_gen.supercell_matrix).lattice.matrix,
+                self.CdTe_bulk_supercell.lattice.matrix,
+            )
+            assert np.isclose(CdTe_defect_gen.min_image_distance, 13.08, atol=0.01)
+
+        else:
+            assert np.isclose(CdTe_defect_gen.min_image_distance, 13.88, atol=0.01)
         assert self.structure_matcher.fit(CdTe_defect_gen.conventional_structure, self.prim_cdte)
         assert np.allclose(
             CdTe_defect_gen.conventional_structure.lattice.matrix,
@@ -1771,10 +1779,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
             {
                 "input_parameters": {
-                    "charge_state": 4.0,
-                    "oxi_state": 2.0,
+                    "charge_state": 4,
+                    "oxi_state": 2,
                     "oxi_probability": 1.0,
-                    "max_host_oxi_magnitude": 2.0,
+                    "max_host_oxi_magnitude": 2,
                 },
                 "probability_factors": {
                     "oxi_probability": 1.0,
@@ -1789,10 +1797,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defect_entries["Te_i_C3v_-1"].charge_state_guessing_log == [
             {
                 "input_parameters": {
-                    "charge_state": -2.0,
-                    "oxi_state": -2.0,
+                    "charge_state": -2,
+                    "oxi_state": -2,
                     "oxi_probability": 0.446,
-                    "max_host_oxi_magnitude": 2.0,
+                    "max_host_oxi_magnitude": 2,
                 },
                 "probability_factors": {
                     "oxi_probability": 0.446,
@@ -1808,7 +1816,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                     "charge_state": -1,
                     "oxi_state": -1,
                     "oxi_probability": 0.082,
-                    "max_host_oxi_magnitude": 2.0,
+                    "max_host_oxi_magnitude": 2,
                 },
                 "probability_factors": {
                     "oxi_probability": 0.082,
@@ -1821,10 +1829,10 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             },
             {
                 "input_parameters": {
-                    "charge_state": 4.0,
-                    "oxi_state": 4.0,
+                    "charge_state": 4,
+                    "oxi_state": 4,
                     "oxi_probability": 0.347,
-                    "max_host_oxi_magnitude": 2.0,
+                    "max_host_oxi_magnitude": 2,
                 },
                 "probability_factors": {
                     "oxi_probability": 0.347,
@@ -1837,10 +1845,42 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             },
             {
                 "input_parameters": {
-                    "charge_state": 6.0,
-                    "oxi_state": 6.0,
+                    "charge_state": 2,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.008,
+                    "oxi_state": 2,
+                },
+                "probability": 0.005039684199579493,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.008,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 1,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.005,
+                    "oxi_state": 1,
+                },
+                "probability": 0.005,
+                "probability_factors": {
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.005,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 6,
+                    "oxi_state": 6,
                     "oxi_probability": 0.111,
-                    "max_host_oxi_magnitude": 2.0,
+                    "max_host_oxi_magnitude": 2,
                 },
                 "probability_factors": {
                     "oxi_probability": 0.111,
@@ -1860,10 +1900,18 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].conv_cell_frac_coords,
             np.array([0.625, 0.625, 0.625]),
         )
-        np.testing.assert_allclose(
-            CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
-            np.array([0.3125, 0.4375, 0.4375]),
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
+                np.array([0.541667, 0.541667, 0.541667]),
+                atol=1e-3,
+            )
+        else:
+            np.testing.assert_allclose(
+                CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].sc_defect_frac_coords,
+                np.array([0.3125, 0.4375, 0.4375]),
+                atol=1e-3,
+            )
         assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect_supercell_site.specie.symbol == "Cd"
         assert CdTe_defect_gen.defect_entries["Cd_i_C3v_0"].defect.multiplicity == 4
         np.testing.assert_allclose(
@@ -1886,10 +1934,18 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             CdTe_defect_gen.defect_entries["v_Cd_0"].conv_cell_frac_coords,
             np.array([0, 0, 0]),
         )
-        np.testing.assert_allclose(
-            CdTe_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
-            np.array([0.5, 0.5, 0.5]),
-        )
+        if generate_supercell:
+            np.testing.assert_allclose(
+                CdTe_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
+                np.array([0.333333, 0.333333, 0.333333]),
+                atol=1e-3,
+            )
+        else:
+            np.testing.assert_allclose(
+                CdTe_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
+                np.array([0.333333, 0.333333, 0.333333]),
+                atol=1e-3,
+            )
 
     def test_defects_generator_cdte(self):
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte)
@@ -1986,7 +2042,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
         self._save_defect_gen_jsons(CdTe_defect_gen)
-        self.CdTe_defect_gen_check(CdTe_defect_gen)
+        self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)
         self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
     @patch("sys.stdout", new_callable=StringIO)
@@ -1997,6 +2053,18 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             mocked_tqdm.assert_called_once()
             mocked_tqdm.assert_called_with(
                 total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
+            )
+            mocked_instance.set_description.assert_any_call(
+                "Best min distance: 12.24 Å, trialling size = 26 unit cells..."
+            )
+            mocked_instance.set_description.assert_any_call(
+                "Best min distance: 12.24 Å, trialling size = 27 unit cells..."
+            )
+            mocked_instance.set_description.assert_any_call(
+                "Best min distance: 13.88 Å, trialling size = 28 unit cells..."
+            )
+            mocked_instance.set_description.assert_any_call(
+                "Best min distance: 13.88 Å, with size = 27 unit cells"
             )
             mocked_instance.set_description.assert_any_call("Getting primitive structure")
             mocked_instance.set_description.assert_any_call("Generating vacancies")
@@ -2035,19 +2103,21 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         if generate_supercell:
             try:
                 np.testing.assert_allclose(
-                    ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [0, 1, 0]])
+                    ytos_defect_gen.supercell_matrix, np.array([[1, 1, 1], [2, 2, 4], [-2, 2, 0]])
                 )
             except AssertionError:  # symmetry equivalent matrices (a, b equivalent for primitive YTOS)
                 np.testing.assert_allclose(
-                    ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 0, 0]])
+                    ytos_defect_gen.supercell_matrix, np.array([[1, 1, 1], [2, 2, 4], [2, -2, 0]])
                 )
             assert not np.allclose(
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
-            )  # different supercell because Kat YTOS one has 198 atoms but min >10Å one is 99 atoms
+            )  # different supercell because Kat YTOS one has 198 atoms but unnecessary, >10Å is 88 atoms
+            assert np.isclose(ytos_defect_gen.min_image_distance, 10.626, atol=0.01)
         else:
             np.testing.assert_allclose(
                 ytos_defect_gen.supercell_matrix, np.array([[0, 3, 3], [3, 0, 3], [1, 1, 0]])
             )
+            assert np.isclose(ytos_defect_gen.min_image_distance, 11.2707, atol=0.01)
             assert np.allclose(
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
             )
@@ -2087,7 +2157,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.defect_type == DefectType.Interstitial
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].wyckoff == "4d"
         assert ytos_defect_gen.defect_entries["O_i_D2d_-1"].defect.multiplicity == 2
-        sc_frac_coords = np.array([0.41667, 0.41667, 0.5] if generate_supercell else [0.3333, 0.5, 0.25])
+        sc_frac_coords = np.array([0.5, 0.5, 0.375] if generate_supercell else [0.3333, 0.5, 0.25])
         np.testing.assert_allclose(
             ytos_defect_gen.defect_entries["O_i_D2d_0"].sc_defect_frac_coords,
             sc_frac_coords,
@@ -2119,7 +2189,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
         frac_coords = np.array(
-            [0.4446, 0.5554, 0.3322] if generate_supercell else [0.3333, 0.3333, 0.3339]
+            [0.33223, 0.666943, 0.5] if generate_supercell else [0.3333, 0.3333, 0.3339]
         )
         try:
             np.testing.assert_allclose(
@@ -2233,8 +2303,9 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.primitive_structure.lattice.matrix, self.lmno_primitive.lattice.matrix
         )
         supercell_matrix = np.array(
-            [[2, 0, 0], [0, 2, 0], [0, 0, 2]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+            [[1, 1, 0], [1, 0, 1], [0, 1, 1]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
         )
+        assert any(np.isclose(lmno_defect_gen.min_image_distance, i, atol=0.01) for i in [11.71, 8.28])
         np.testing.assert_allclose(lmno_defect_gen.supercell_matrix, supercell_matrix)
 
         assert self.structure_matcher.fit(lmno_defect_gen.conventional_structure, self.lmno_primitive)
@@ -2274,7 +2345,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
-            [0.494716, 0.616729, 0.500199] if generate_supercell else [0.500397, 0.510568, 0.766541]
+            [0.378186, 0.622212, 0.611249] if generate_supercell else [0.500397, 0.510568, 0.766541]
         )
         np.testing.assert_allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
@@ -2371,10 +2442,11 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
 
         supercell_matrix = np.array(
-            [[-2, 2, 2], [2, -2, 2], [2, 2, -2]]
+            [[3, 0, 0], [0, 3, 0], [0, 0, 3]]
             if generate_supercell
             else [[0, 0, -2], [0, -4, 2], [-4, 1, 2]]
         )
+        assert any(np.isclose(zns_defect_gen.min_image_distance, i, atol=0.01) for i in [11.51, 7.67])
         np.testing.assert_allclose(zns_defect_gen.supercell_matrix, supercell_matrix)
         assert self.structure_matcher.fit(zns_defect_gen.conventional_structure, self.non_diagonal_ZnS)
 
@@ -2410,7 +2482,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].wyckoff == "4b"
         assert zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].defect.multiplicity == 1
-        sc_frac_coords = np.array([0.25, 0.5, 0.5] if generate_supercell else [0.59375, 0.46875, 0.375])
+        sc_frac_coords = np.array([0.5, 0.5, 0.5] if generate_supercell else [0.59375, 0.46875, 0.375])
         np.testing.assert_allclose(
             zns_defect_gen.defect_entries["S_i_Td_S2.35_-2"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
@@ -2440,7 +2512,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
             atol=1e-3,
         )
         sc_frac_coords = np.array(
-            [0.375, 0.375, 0.625] if generate_supercell else [0.359375, 0.546875, 0.4375]
+            [0.4167, 0.4167, 0.4167] if generate_supercell else [0.359375, 0.546875, 0.4375]
         )
         np.testing.assert_allclose(
             zns_defect_gen.defect_entries["Zn_S_+2"].sc_defect_frac_coords,
@@ -2470,7 +2542,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
         # generate_supercell = False
         zns_defect_gen, output = self._generate_and_test_no_warnings(
-            self.non_diagonal_ZnS, min_image_distance=7.59, generate_supercell=False
+            self.non_diagonal_ZnS, min_image_distance=7.67, generate_supercell=False
         )
 
         assert self.zns_defect_gen_info in output
@@ -2487,8 +2559,9 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert self.structure_matcher.fit(cu_defect_gen.primitive_structure, self.prim_cu)
 
         np.testing.assert_allclose(
-            cu_defect_gen.supercell_matrix, np.array([[-3, 3, 3], [3, -3, 3], [3, 3, -3]])
+            cu_defect_gen.supercell_matrix, np.array([[4, 0, 0], [0, 4, 0], [0, 0, 4]])
         )
+        assert np.isclose(cu_defect_gen.min_image_distance, 10.12, atol=0.01)
         assert self.structure_matcher.fit(cu_defect_gen.conventional_structure, self.prim_cu)
 
         # explicitly test defects
@@ -2522,7 +2595,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].defect.multiplicity == 1
         np.testing.assert_allclose(
             cu_defect_gen.defect_entries["Cu_i_Oh_+1"].sc_defect_frac_coords,
-            np.array([0.5, 0.5, 0.5]),  # closest to [0.5, 0.5, 0.5]
+            np.array([0.375, 0.375, 0.375]),  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         assert cu_defect_gen.defect_entries["Cu_i_Oh_+1"].defect_supercell_site.specie.symbol == "Cu"
@@ -2550,7 +2623,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
         np.testing.assert_allclose(
             cu_defect_gen.defect_entries["v_Cu_0"].sc_defect_frac_coords,
-            np.array([0.3333, 0.5, 0.5]),  # closest to middle of supercell
+            np.array([0.5, 0.5, 0.5]),  # closest to middle of supercell
             atol=1e-4,
         )
         np.testing.assert_allclose(
@@ -2593,10 +2666,11 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert self.structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
 
         supercell_matrix = np.array(
-            [[2, 2, 0], [-5, 5, 0], [-3, -3, 6]]
+            [[2, 2, -2], [-4, 4, 0], [-4, 0, 4]]
             if generate_supercell
             else [[1, -1, -1], [-1, 1, -1], [-1, -1, 1]]
         )
+        assert any(np.isclose(agcu_defect_gen.min_image_distance, i, atol=0.01) for i in [10.21, 5.11])
         np.testing.assert_allclose(agcu_defect_gen.supercell_matrix, supercell_matrix)
         assert self.structure_matcher.fit(agcu_defect_gen.conventional_structure, self.agcu)
 
@@ -2635,9 +2709,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
         assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].wyckoff == "6c"
         assert agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].defect.multiplicity == 2
-        sc_frac_coords = np.array(
-            [0.53125, 0.5, 0.395833] if generate_supercell else [0.375, 0.375, 0.375]
-        )
+        sc_frac_coords = np.array([0.4375, 0.4375, 0.375] if generate_supercell else [0.375, 0.375, 0.375])
         np.testing.assert_allclose(
             agcu_defect_gen.defect_entries["Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
@@ -2698,7 +2770,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
         agcu_defect_gen, output = self._generate_and_test_no_warnings(
-            self.agcu, min_image_distance=4.42, generate_supercell=False
+            self.agcu, min_image_distance=5.11, generate_supercell=False
         )
 
         assert self.agcu_defect_gen_info in output
@@ -2716,32 +2788,35 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert not self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure, self.CdTe_bulk_supercell
         )
-        assert np.allclose(  # primitive cell of defect supercell here is same as bulk supercell
-            cd_i_defect_gen.primitive_structure.lattice.matrix, self.CdTe_bulk_supercell.lattice.matrix
+        assert np.allclose(  # primitive cell of defect supercell here is same as previous bulk supercell
+            cd_i_defect_gen.primitive_structure.lattice.matrix, (self.prim_cdte * 3).lattice.matrix
         )
 
         np.testing.assert_allclose(cd_i_defect_gen.supercell_matrix, np.eye(3), atol=1e-3)
+        assert np.isclose(cd_i_defect_gen.min_image_distance, 13.88, atol=0.01)
 
         # explicitly test defects
         assert len(cd_i_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(cd_i_defect_gen.defects["vacancies"]) == 21
         assert len(cd_i_defect_gen.defects["substitutions"]) == 21
-        assert len(cd_i_defect_gen.defects["interstitials"]) == 94
+        assert len(cd_i_defect_gen.defects["interstitials"]) == 90
 
         # explicitly test some relevant defect attributes
         assert cd_i_defect_gen.defects["vacancies"][1].name == "v_Cd"
         assert cd_i_defect_gen.defects["vacancies"][1].oxi_state == 0  # pmg fails oxi guessing with
         # defective supercell
-        assert cd_i_defect_gen.defects["vacancies"][1].multiplicity == 3
+        assert cd_i_defect_gen.defects["vacancies"][1].multiplicity == 6
         assert np.allclose(
-            cd_i_defect_gen.defects["vacancies"][1].site.frac_coords, np.array([0.0, 0.75, 0.25])
+            cd_i_defect_gen.defects["vacancies"][1].site.frac_coords,
+            np.array([0.0, 0.33333, 0.66667]),
+            atol=1e-3,
         )
         assert (
-            len(cd_i_defect_gen.defects["vacancies"][1].equiv_conv_cell_frac_coords) == 9
+            len(cd_i_defect_gen.defects["vacancies"][1].equiv_conv_cell_frac_coords) == 18
         )  # 3x conv cell
 
         # explicitly test defect entries
-        assert len(cd_i_defect_gen.defect_entries) == 650
+        assert len(cd_i_defect_gen.defect_entries) == 630
 
         # explicitly test defect entry attributes
         assert (

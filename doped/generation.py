@@ -558,18 +558,21 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
         if k.element.symbol == element_symbol and k.oxi_state != 0
     }
     if oxi_probabilities:  # not empty
-        return {k: round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()}
+        return {
+            int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
+        }
 
     element_obj = Element(element_symbol)
     if element_obj.common_oxidation_states:
         return {
-            k: 1 / len(element_obj.common_oxidation_states) for k in element_obj.common_oxidation_states
+            int(k): 1 / len(element_obj.common_oxidation_states)
+            for k in element_obj.common_oxidation_states
         }  # known common oxidation states
 
     # no known _common_ oxidation state, make guess and warn user
     if element_obj.oxidation_states:
         oxi_states = {
-            k: 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
+            int(k): 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
         }  # known oxidation states
     else:
         oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
@@ -630,10 +633,10 @@ def _charge_state_probability(
 
     charge_state_guessing_log = {
         "input_parameters": {
-            "charge_state": charge_state,
-            "oxi_state": defect_el_oxi_state,
+            "charge_state": int(charge_state),
+            "oxi_state": int(defect_el_oxi_state),
             "oxi_probability": defect_el_oxi_probability,
-            "max_host_oxi_magnitude": max_host_oxi_magnitude,
+            "max_host_oxi_magnitude": int(max_host_oxi_magnitude),
         },
         "probability_factors": {
             "oxi_probability": defect_el_oxi_probability,
@@ -697,7 +700,7 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
             keys and their probabilities as values.
     """
     return {
-        k: prob
+        int(k): prob
         for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
         if prob > 0.001  # at least 0.1% occurrence
     }
@@ -710,8 +713,7 @@ def _get_charge_states(
     return_log: bool = False,
 ) -> Dict:
     return {
-        oxi
-        - orig_oxi: _charge_state_probability(
+        int(oxi - orig_oxi): _charge_state_probability(
             oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude, return_log=return_log
         )
         for oxi, oxi_prob in possible_oxi_states.items()
@@ -756,7 +758,7 @@ def guess_defect_charge_states(
             charge_state_guessing_log = [
                 {
                     "input_parameters": {
-                        "charge_state": charge_state,
+                        "charge_state": int(charge_state),
                     },
                     "probability_factors": {"oxi_probability": 1},
                     "probability": 1,
@@ -772,7 +774,7 @@ def guess_defect_charge_states(
     possible_oxi_states = _get_possible_oxi_states(defect)
     max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
     if defect.defect_type == core.DefectType.Substitution:
-        orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
+        orig_oxi = int(defect.structure[defect.defect_site_index].specie.oxi_state)
     else:  # interstitial
         orig_oxi = 0
     possible_charge_states = _get_charge_states(
@@ -879,8 +881,8 @@ def guess_defect_charge_states(
 
 
 def get_ideal_supercell_matrix(
-    structure: Structure,  # TODO: Test new pbar messages, supercell behaviour, settings etc
-    min_image_distance: float = 12.0,
+    structure: Structure,
+    min_image_distance: float = 10.0,
     min_atoms: int = 50,
     force_cubic: bool = False,
     force_diagonal: bool = False,
@@ -896,7 +898,7 @@ def get_ideal_supercell_matrix(
     The ideal supercell is the smallest possible supercell which has
     a minimum image distance (i.e. minimum distance between periodic
     images of atoms/sites in a lattice) greater than
-    ``min_image_distance`` (default = 12 Å - which is a typical threshold
+    ``min_image_distance`` (default = 10 Å - which is a typical threshold
     value used in DFT defect supercell calculations) and a number of atoms
     greater than ``min_atoms`` (default = 50). Once these criteria have
     been reached, ``doped`` will then continue searching up to supercell
@@ -918,7 +920,7 @@ def get_ideal_supercell_matrix(
 
     If ``force_cubic`` or ``force_diagonal`` are ``True``, then the
     ``CubicSupercellTransformation`` from ``pymatgen`` is used to identify any
-    simple cubic supercell transformations which satisfy the minimum image
+    simple near-cubic supercell transformations which satisfy the minimum image
     distance and atom number criteria.
 
     Args:
@@ -927,7 +929,7 @@ def get_ideal_supercell_matrix(
         min_image_distance (float):
             Minimum image distance in Å of the supercell (i.e. minimum
             distance between periodic images of atoms/sites in the lattice).
-            (Default = 12.0)
+            (Default = 10.0)
         min_atoms (int):
             Minimum number of atoms allowed in the supercell.
             (Default = 50)
@@ -942,7 +944,7 @@ def get_ideal_supercell_matrix(
         ideal_threshold (float):
             Threshold for increasing supercell size (beyond that which satisfies
             ``min_image_distance`` and `min_atoms``) to achieve an ideal
-            supercell matrix (i.e. a diaonal expansion of the primitive or
+            supercell matrix (i.e. a diagonal expansion of the primitive or
             conventional cell). Supercells up to ``1 + perfect_cell_threshold``
             times larger (rounded up) are trialled, and will instead be
             returned if they yield an ideal transformation matrix.
@@ -1012,7 +1014,10 @@ def get_ideal_supercell_matrix(
                 target_size=alt_target_size,
                 return_min_dist=True,
             )
-            if round(supercells._min_sum_off_diagonals(structure, alt_optimal_P)) == 0:
+            if (
+                round(supercells._min_sum_off_diagonals(structure, alt_optimal_P)) == 0
+                and alt_best_min_dist > min_image_distance
+            ):
                 optimal_P = alt_optimal_P
                 best_min_dist = alt_best_min_dist
                 target_size = alt_target_size
@@ -1021,6 +1026,11 @@ def get_ideal_supercell_matrix(
         pbar.set_description(
             f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
         )
+
+    supercell = structure * optimal_P
+    if np.sum(supercell.cart_coords < 0) / np.sum(supercell.cart_coords > 0) > 1:
+        # if supercell Cartesian coordinates are mostly negative, return negative of optimal_P
+        return optimal_P * -1
 
     return optimal_P
 
@@ -1057,7 +1067,7 @@ class DefectsGenerator(MSONable):
 
         By default, supercells are generated for each defect using the doped
         ``get_ideal_supercell_matrix()`` function (see docstring), with default settings
-        of ``min_image_distance = 12`` (minimum distance between periodic images of 12 Å),
+        of ``min_image_distance = 10`` (minimum distance between periodic images of 10 Å),
         ``min_atoms = 50`` (minimum 50 atoms in the supercell) and ``ideal_threshold = 0.1``
         (allow up to 10% larger supercell if it is a diagonal expansion of the primitive
         or conventional cell). This uses a custom algorithm in ``doped`` to efficiently
@@ -1133,7 +1143,7 @@ class DefectsGenerator(MSONable):
                 vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
                 Keyword arguments to be passed to the ``get_ideal_supercell_matrix``
-                function (such as ``min_image_distance`` (default = 12), ``min_atoms``
+                function (such as ``min_image_distance`` (default = 10), ``min_atoms``
                 (default = 50), ``ideal_threshold`` (default = 0.1), ``force_cubic``
                 - which enforces a (near-)cubic supercell output (default = False),
                 or ``force_diagonal`` (default = False)).
@@ -1191,7 +1201,7 @@ class DefectsGenerator(MSONable):
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
-        specified_min_image_distance = self.supercell_gen_kwargs.get("min_image_distance", 12)
+        specified_min_image_distance = self.supercell_gen_kwargs.get("min_image_distance", 10)
 
         if len(self.structure) == 1 and not self.generate_supercell:
             # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
@@ -1240,8 +1250,9 @@ class DefectsGenerator(MSONable):
                         primitive_structure,
                         min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different from current
                         # pymatgen-analysis-defects default `min_atoms` ( = 80)
-                        min_image_distance=specified_min_image_distance,  # different from current
+                        min_image_distance=specified_min_image_distance,  # same as current
                         # pymatgen-analysis-defects default `min_length` ( = 10)
+                        ideal_threshold=self.supercell_gen_kwargs.get("ideal_threshold", 0.1),
                         force_cubic=self.supercell_gen_kwargs.get("force_cubic", False),
                         force_diagonal=self.supercell_gen_kwargs.get("force_diagonal", False),
                         pbar=pbar,
@@ -1282,9 +1293,7 @@ class DefectsGenerator(MSONable):
                 self.supercell_matrix = supercell_matrix
 
             self.bulk_supercell = (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
-            self.min_image_distance = supercells.get_min_image_distance(
-                self.bulk_supercell
-            )  # TODO: Test attr
+            self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
 
             # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
             if self.min_image_distance < specified_min_image_distance and self.generate_supercell:

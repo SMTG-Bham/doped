@@ -929,26 +929,32 @@ class Defect(core.Defect):
     def get_supercell_structure(
         self,
         sc_mat: Optional[np.ndarray] = None,
-        min_atoms: int = 50,  # different to current pymatgen default (80)
-        min_image_distance: float = 10.0,  # same as current pymatgen default
-        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
-        force_diagonal: bool = False,  # same as current pymatgen default
-        dummy_species: Optional[str] = None,
         target_frac_coords: Optional[np.ndarray] = None,
         return_sites: bool = False,
+        min_image_distance: float = 10.0,  # same as current pymatgen default
+        min_atoms: int = 50,  # different to current pymatgen default (80)
+        force_cubic: bool = False,
+        force_diagonal: bool = False,  # same as current pymatgen default
+        ideal_threshold: float = 0.1,
+        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
+        dummy_species: Optional[str] = None,
     ) -> Structure:
         """
-        Generate the supercell for a defect.
+        Generate the simulation supercell for a defect.
 
-        Redefined from the parent class to allow the use of target_frac_coords
+        Redefined from the parent class to allow the use of ``target_frac_coords``
         to place the defect at the closest equivalent site to the target
         fractional coordinates in the supercell, while keeping the supercell
         fixed (to avoid any issues with defect parsing).
         Also returns information about equivalent defect sites in the supercell.
 
+        If ``sc_mat`` is None, then the supercell is generated automatically
+        using the ``doped`` algorithm described in the ``get_ideal_supercell_matrix``
+        function docstring in ``doped.generation``.
+
         Args:
             sc_mat (3x3 matrix):
-                Transformation matrix of self.structure to create the supercell.
+                Transformation matrix of ``self.structure`` to create the supercell.
                 If None, then automatically computed using ``get_ideal_supercell_matrix``
                 from ``doped.generation``.
             target_frac_coords (3x1 matrix):
@@ -959,20 +965,37 @@ class Defect(core.Defect):
                 site and list of equivalent supercell sites.
             dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            min_atoms (int):
-                Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_image_distance (float):
-                Minimum image distance in Å of the supercell (i.e. minimum distance between
-                periodic images of atoms/sites in the lattice).
+                Minimum image distance in Å of the generated supercell (i.e. minimum
+                distance between periodic images of atoms/sites in the lattice),
+                if ``sc_mat`` is None.
                 (Default = 10.0)
+            min_atoms (int):
+                Minimum number of atoms allowed in the generated supercell, if ``sc_mat``
+                is None.
+                (Default = 50)
+            force_cubic (bool):
+                Enforce usage of ``CubicSupercellTransformation`` from
+                ``pymatgen`` for supercell generation (if ``sc_mat`` is None).
+                (Default = False)
+            force_diagonal (bool):
+                If True, return a transformation with a diagonal
+                transformation matrix (if ``sc_mat`` is None).
+                (Default = False)
+            ideal_threshold (float):
+                Threshold for increasing supercell size (beyond that which satisfies
+                ``min_image_distance`` and `min_atoms``) to achieve an ideal
+                supercell matrix (i.e. a diagonal expansion of the primitive or
+                conventional cell). Supercells up to ``1 + perfect_cell_threshold``
+                times larger (rounded up) are trialled, and will instead be
+                returned if they yield an ideal transformation matrix (if ``sc_mat``
+                is None).
+                (Default = 0.1; i.e. 10% larger than the minimum size)
             min_length (float):
-                Same as min_image_distance (kept for compatibility).
-            force_diagonal:
-                If True, generate a supercell with a diagonal transformation matrix
-                (if sc_mat is None).
+                Same as ``min_image_distance`` (kept for compatibility).
 
         Returns:
-            The defect supercell structure. If return_sites is True, also returns
+            The defect supercell structure. If ``return_sites`` is True, also returns
             the defect supercell site and list of equivalent supercell sites.
         """
         if sc_mat is None:
@@ -983,8 +1006,10 @@ class Defect(core.Defect):
 
             sc_mat = get_ideal_supercell_matrix(
                 self.structure,
-                min_atoms=min_atoms,
                 min_image_distance=min_image_distance,
+                min_atoms=min_atoms,
+                ideal_threshold=ideal_threshold,
+                force_cubic=force_cubic,
                 force_diagonal=force_diagonal,
             )
 
