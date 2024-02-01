@@ -67,7 +67,7 @@ def _custom_formatwarning(
 warnings.formatwarning = _custom_formatwarning
 
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
-# _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
+_ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
 _aniso_dielectric_but_outcar_problem_warning = (
     "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
