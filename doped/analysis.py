@@ -9,6 +9,7 @@ publication-quality outputs.
 import contextlib
 import os
 import warnings
+from importlib.metadata import version
 from multiprocessing import Pool, cpu_count
 from typing import Dict, Optional, Union
 
@@ -45,6 +46,7 @@ from doped.utils.parsing import (
     point_symmetry_from_defect_entry,
     reorder_s1_like_s2,
 )
+from doped.utils.phs import get_band_edge_info
 from doped.utils.plotting import _format_defect_name
 from doped.utils.symmetry import _frac_coords_sort_func, _get_all_equiv_sites, _get_sga
 
@@ -65,7 +67,7 @@ def _custom_formatwarning(
 warnings.formatwarning = _custom_formatwarning
 
 _ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
-_ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
+# _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
 _aniso_dielectric_but_outcar_problem_warning = (
     "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
@@ -1141,6 +1143,7 @@ class DefectParser:
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         bulk_band_gap_path: Optional[str] = None,
+        load_phs_data: bool = False,
         **kwargs,
     ):
         """
@@ -1186,6 +1189,11 @@ class DefectParser:
                 correct (eigen)values.
                 If None, will calculate "gap"/"vbm" using the outputs at:
                 DefectParser.defect_entry.calculation_metadata["bulk_path"]
+            load_phs_data (bool):
+                Automatically determines the band edge states of the defect to determine
+                if the defect is a PHS. Also returns single-particle levels and their
+                occupation. cite: https://doi.org/10.1103/PhysRevMaterials.5.123803
+                Default = False.
             **kwargs:
                 Keyword arguments to pass to `DefectParser()` methods
                 (`load_FNV_data()`, `load_eFNV_data()`, `load_bulk_gap_data()`)
@@ -1215,7 +1223,6 @@ class DefectParser:
             )
         bulk_vr = get_vasprun(bulk_vr_path)
         bulk_supercell = bulk_vr.final_structure.copy()
-
         # add defect simple properties
         (
             defect_vr_path,
@@ -1478,6 +1485,23 @@ class DefectParser:
                         f"energy diagram then this warning can usually be ignored, but if it is, "
                         f"you should double-check your calculations and parsed results!"
                     )
+
+        if load_phs_data:
+            v_vise = version("vise")
+            if v_vise <= "0.8.1" and defect_vr.parameters.get("LNONCOLLINEAR") is True:
+                raise TypeError(
+                    f"You have version {v_vise} of the package `vise`,"
+                    f" which does not allowing the parsing of non-collinear calculations."
+                    f" You can install the updated version of `vise` from the GitHub repo for this"
+                    f" functionality."
+                )
+
+            band_orb, vbm_info, cbm_info = get_band_edge_info(dp)
+            defect_entry.calculation_metadata["phs_data"] = {
+                "band_orb": band_orb,
+                "vbm_info": vbm_info,
+                "cbm_info": cbm_info,
+            }
 
         return dp
 
