@@ -4,6 +4,7 @@ Tests for the `doped.analysis` module, which also implicitly tests most of the
 """
 
 import gzip
+import json
 import os
 import shutil
 import unittest
@@ -72,6 +73,8 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         self.Sb2Se3_DATA_DIR = os.path.join(self.module_path, "data/Sb2Se3")
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
+
+        self.Cu2SiSe3_DATA_DIR = os.path.join(self.module_path, "data/Cu2SiSe3")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -364,6 +367,22 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+
+    def test_phs_Cu2SiSe3(self):
+        """
+        Test parsing of PHS in Cu2SiSe3.
+        """
+        defect = DefectParser.from_paths(
+            f"{self.Cu2SiSe3_DATA_DIR}/v_Cu_0/vasp_std",
+            f"{self.Cu2SiSe3_DATA_DIR}/bulk/vasp_std",
+            skip_corrections=True,
+            load_phs_data=True,
+        ).defect_entry
+
+        bes = defect.get_perturbed_host_state(save_plot=False)
+        with open(f"{self.Cu2SiSe3_DATA_DIR}/Cu2SiSe3_band_edge_states.json") as f:
+            expected = json.load(f)
+        assert bes == expected
 
 
 class DopedParsingTestCase(unittest.TestCase):
