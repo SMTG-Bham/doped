@@ -97,6 +97,7 @@ ignore = [
   "D212",    # Multi-line docstring summary should start at the first line
   "PLR2004", # Magic number
   "PLR",     # pylint refactor
+  "W605",    # Invalid escape sequence
 ]
 
 [tool.ruff.per-file-ignores]
