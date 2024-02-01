@@ -33,7 +33,7 @@
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
 - Code tidy up:
   - Test coverage?
-  - Auto-docs generation with little to no warnings/errors?
+  - Generate docs locally and check warnings
   - Add type hints for all functions.
 - Need JOSS requirements; how to run tests and community guidelines
 

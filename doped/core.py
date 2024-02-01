@@ -36,11 +36,11 @@ class DefectEntry(thermo.DefectEntry):
         charge_state:
             Charge state of the defect.
         sc_entry:
-            pymatgen ComputedStructureEntry for the _defect_ supercell.
+            ``pymatgen`` ``ComputedStructureEntry`` for the `defect` supercell.
         sc_defect_frac_coords:
             The fractional coordinates of the defect in the supercell.
         bulk_entry:
-            pymatgen ComputedEntry for the bulk supercell reference. Required
+            ``pymatgen`` ``ComputedEntry`` for the bulk supercell reference. Required
             for calculating the defect formation energy.
         corrections:
             A dictionary of energy corrections which are summed and added to
@@ -165,7 +165,7 @@ class DefectEntry(thermo.DefectEntry):
     @property
     def corrected_energy(self) -> float:
         """
-        The energy of the defect entry with _all_ corrections applied.
+        The energy of the defect entry with `all` corrections applied.
         """
         self._check_if_multiple_finite_size_corrections()
         return self.sc_entry.energy + sum(self.corrections.values())
@@ -250,10 +250,10 @@ class DefectEntry(thermo.DefectEntry):
         **kwargs,
     ) -> CorrectionResult:
         """
-        Compute the _isotropic_ Freysoldt (FNV) correction for the
+        Compute the `isotropic` Freysoldt (FNV) correction for the
         defect_entry.
 
-        The correction is added to the `defect_entry.corrections` dictionary
+        The correction is added to the ``defect_entry.corrections`` dictionary
         (to be used in following formation energy calculations).
         If this correction is used, please cite Freysoldt's
         original paper; 10.1103/PhysRevLett.102.016402.
@@ -263,22 +263,22 @@ class DefectEntry(thermo.DefectEntry):
                 Total dielectric constant of the host compound (including both
                 ionic and (high-frequency) electronic contributions), in the
                 same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the `defect_entry`
-                `calculation_metadata` if available.
+                then the dielectric constant is taken from the ``defect_entry``
+                ``calculation_metadata`` if available.
             defect_locpot:
                 Path to the output VASP LOCPOT file from the defect supercell
                 calculation, or the corresponding pymatgen Locpot object, or
                 a dictionary of the planar-averaged potential in the form:
                 {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-                If None, will try to use `defect_locpot` from the
-                `defect_entry` `calculation_metadata` if available.
+                If None, will try to use ``defect_locpot`` from the
+                ``defect_entry`` ``calculation_metadata`` if available.
             bulk_locpot:
                 Path to the output VASP LOCPOT file from the bulk supercell
                 calculation, or the corresponding pymatgen Locpot object, or
                 a dictionary of the planar-averaged potential in the form:
                 {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-                If None, will try to use `bulk_locpot` from the
-                `defect_entry` `calculation_metadata` if available.
+                If None, will try to use ``bulk_locpot`` from the
+                ``defect_entry`` ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the FNV electrostatic potential plots (for
                 manually checking the behaviour of the charge correction here).
@@ -288,7 +288,7 @@ class DefectEntry(thermo.DefectEntry):
             axis (int or None):
                 If int, then the FNV electrostatic potential plot along the
                 specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
-                the output charge correction is still that for _all_ axes.
+                the output charge correction is still that for `all` axes.
                 If None, then all three axes are plotted.
             return_correction_error (bool):
                 If True, also returns the average standard deviation of the
@@ -305,9 +305,9 @@ class DefectEntry(thermo.DefectEntry):
 
         Returns:
             CorrectionResults (summary of the corrections applied and metadata), and
-            the matplotlib figure object (or axis object if axis specified) if `plot`
+            the matplotlib figure object (or axis object if axis specified) if ``plot``
             is True, and the estimated charge correction error if
-            `return_correction_error` is True.
+            ``return_correction_error`` is True.
         """
         from doped.corrections import get_freysoldt_correction
 
@@ -370,29 +370,29 @@ class DefectEntry(thermo.DefectEntry):
         defect_entry. Compatible with both isotropic/cubic and anisotropic
         systems.
 
-        The correction is added to the `defect_entry.corrections` dictionary
+        The correction is added to the ``defect_entry.corrections`` dictionary
         (to be used in following formation energy calculations).
         If this correction is used, please cite the Kumagai & Oba paper:
         10.1103/PhysRevB.89.195205
 
         Typically for reasonably well-converged supercell sizes, the default
-        `defect_region_radius` works perfectly well. However, for certain materials
+        ``defect_region_radius`` works perfectly well. However, for certain materials
         at small/intermediate supercell sizes, you may want to adjust this (and/or
-        `excluded_indices`) to ensure the best sampling of the plateau region away
-        from the defect position - `doped` should throw a warning in these cases
+        ``excluded_indices``) to ensure the best sampling of the plateau region away
+        from the defect position - ``doped`` should throw a warning in these cases
         (about the correction error being above the default tolerance (50 meV)).
         For example, with layered materials, the defect charge is often localised
-        to one layer, so we may want to adjust `defect_region_radius` and/or
-        `excluded_indices` to ensure that only sites in other layers are used for
-        the sampling region (plateau).
+        to one layer, so we may want to adjust ``defect_region_radius`` and/or
+        ``excluded_indices`` to ensure that only sites in other layers are used for
+        the sampling region (plateau) - see example on doped docs.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
                 ionic and (high-frequency) electronic contributions), in the
                 same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the `defect_entry`
-                `calculation_metadata` if available.
+                then the dielectric constant is taken from the ``defect_entry``
+                ``calculation_metadata`` if available.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
@@ -405,13 +405,13 @@ class DefectEntry(thermo.DefectEntry):
             defect_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
                 calculation, or the corresponding pymatgen Outcar object.
-                If None, will try to use the `defect_supercell_site_potentials`
-                from the `defect_entry` `calculation_metadata` if available.
+                If None, will try to use the ``defect_supercell_site_potentials``
+                from the ``defect_entry`` ``calculation_metadata`` if available.
             bulk_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the bulk supercell
                 calculation, or the corresponding pymatgen Outcar object.
-                If None, will try to use the `bulk_supercell_site_potentials`
-                from the `defect_entry` `calculation_metadata` if available.
+                If None, will try to use the ``bulk_supercell_site_potentials``
+                from the ``defect_entry`` ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
                 manually checking the behaviour of the charge correction here).
@@ -433,8 +433,8 @@ class DefectEntry(thermo.DefectEntry):
 
         Returns:
             CorrectionResults (summary of the corrections applied and metadata), and
-            the matplotlib figure object if `plot` is True, and the estimated charge
-            correction error if `return_correction_error` is True.
+            the matplotlib figure object if ``plot`` is True, and the estimated charge
+            correction error if ``return_correction_error`` is True.
         """
         from doped.corrections import get_kumagai_correction
 
@@ -524,7 +524,7 @@ class DefectEntry(thermo.DefectEntry):
                 {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -533,11 +533,12 @@ class DefectEntry(thermo.DefectEntry):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energy. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
             vbm (float):
@@ -580,11 +581,11 @@ class DefectEntry(thermo.DefectEntry):
         per_site: bool = False,
     ) -> float:
         """
-        Compute the _equilibrium_ concentration (in cm^-3) for the DefectEntry
+        Compute the `equilibrium` concentration (in cm^-3) for the DefectEntry
         at a given chemical potential limit, fermi_level and temperature,
         assuming the dilute limit approximation.
 
-        Note that these are the _equilibrium_ defect concentrations!
+        Note that these are the `equilibrium` defect concentrations!
         DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
@@ -606,7 +607,7 @@ class DefectEntry(thermo.DefectEntry):
                 {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -615,11 +616,12 @@ class DefectEntry(thermo.DefectEntry):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energy and thus concentration. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
             temperature (float):
@@ -948,7 +950,6 @@ class Defect(core.Defect):
         self,
         sc_mat: Optional[np.ndarray] = None,
         min_atoms: int = 50,  # different to current pymatgen default (80)
-        max_atoms: int = 240,  # same as current pymatgen default (240)
         min_image_distance: float = 10.0,  # same as current pymatgen default
         min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
         force_diagonal: bool = False,  # same as current pymatgen default
@@ -968,8 +969,8 @@ class Defect(core.Defect):
         Args:
             sc_mat (3x3 matrix):
                 Transformation matrix of self.structure to create the supercell.
-                If None, then automatically computed using `get_ideal_supercell_matrix`
-                from `doped.generation`.
+                If None, then automatically computed using ``get_ideal_supercell_matrix``
+                from ``doped.generation``.
             target_frac_coords (3x1 matrix):
                 If set, the defect will be placed at the closest equivalent site to
                 these fractional coordinates (using self.equivalent_sites).
@@ -978,8 +979,6 @@ class Defect(core.Defect):
                 site and list of equivalent supercell sites.
             dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            max_atoms (int):
-                Maximum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_atoms (int):
                 Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_image_distance (float):
@@ -1005,7 +1004,6 @@ class Defect(core.Defect):
             sc_mat = get_ideal_supercell_matrix(
                 self.structure,
                 min_atoms=min_atoms,
-                max_atoms=max_atoms,
                 min_image_distance=min_image_distance,
                 force_diagonal=force_diagonal,
             )
