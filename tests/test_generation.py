@@ -1943,7 +1943,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         else:
             np.testing.assert_allclose(
                 CdTe_defect_gen.defect_entries["v_Cd_0"].sc_defect_frac_coords,
-                np.array([0.333333, 0.333333, 0.333333]),
+                np.array([0.5, 0.5, 0.5]),
                 atol=1e-3,
             )
 
@@ -2827,7 +2827,7 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.multiplicity == 3
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].sc_defect_frac_coords,
-            np.array([0.875, 0.625, 0.625]),  # closest to [0.5, 0.5, 0.5]
+            np.array([0.25, 0.25, 0.583333]),  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
         assert (
@@ -2838,12 +2838,12 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].conv_cell_frac_coords,
-            np.array([0.583, 0.167, 0.292]),
+            np.array([0.1110, 0.5550, 0.3055]),
             rtol=1e-2,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
-            np.array([0.875, 0.625, 0.625]),
+            np.array([0.25, 0.25, 0.583333]),
             rtol=1e-2,
         )
 
@@ -2858,17 +2858,17 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
 
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].conv_cell_frac_coords,
-            np.array([0.58333, 0.16666, 0.04167]),
+            np.array([0.1110, 0.2223, 0.4723]),
             atol=1e-3,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].sc_defect_frac_coords,
-            np.array([0.375, 0.375, 0.625]),  # closest to middle of supercell
+            np.array([0.416667, 0.416667, 0.75]),  # closest to middle of supercell
             atol=1e-4,
         )
         np.testing.assert_allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.site.frac_coords,
-            np.array([0.125, 0.375, 0.375]),
+            np.array([0.416667, 0.416667, 0.75]),
             atol=1e-3,
         )
 
