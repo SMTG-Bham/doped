@@ -1499,7 +1499,17 @@ class DefectParser:
                     f" functionality."
                 )
 
-            band_orb, vbm_info, cbm_info = get_band_edge_info(dp)
+            bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
+                "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
+            )
+            bulk_outcar_phs = get_outcar(bulk_outcar_path)
+            bulk_vr_phs = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
+            defect_vr_phs = get_vasprun(defect_vr_path, parse_projected_eigen=True)
+
+            band_orb, vbm_info, cbm_info = get_band_edge_info(
+                dp, bulk_vr_phs, bulk_outcar_phs, defect_vr_phs
+            )
+
             defect_entry.calculation_metadata["phs_data"] = {
                 "band_orb": band_orb,
                 "vbm_info": vbm_info,
