@@ -14,8 +14,6 @@ from pydefect.defaults import defaults
 from pymatgen.io.vasp.outputs import Vasprun
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
-from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_outcar, get_vasprun
-
 
 def make_band_edge_orbital_infos(
     vasprun: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
@@ -73,29 +71,18 @@ def make_band_edge_orbital_infos(
     )
 
 
-def get_band_edge_info(DefectParser):
+def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
     """
     Load metadata required for performing phs identification.
 
-    Requires "bulk_path" and "defect_path" to be present in
-    DefectEntry.calculation_metadata, and VASP OUTCAR files to be
-    present in these directories. Can read compressed "OUTCAR.gz"
-    files.
-
+    Args:
+        DefectParser: DefectParser object
+        bulk_vr: Vasprun object for bulk
+        bulk_outcar: Outcar object for bulk
+        defect_vr: Vasprun object for defect
     Returns:
-    pydefect EdgeInfo class
+        pydefect EdgeInfo class
     """
-    bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
-        "OUTCAR", DefectParser.defect_entry.calculation_metadata["bulk_path"]
-    )
-
-    bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
-        "vasprun.xml", DefectParser.defect_entry.calculation_metadata["bulk_path"]
-    )
-
-    bulk_outcar = get_outcar(bulk_outcar_path)
-    bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
-
     band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
     orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
     vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
@@ -109,11 +96,6 @@ def get_band_edge_info(DefectParser):
         dist_tol=0.05,
         neighbor_cutoff_factor=2,
     )
-
-    defect_vr_path, multiple = _get_output_files_and_check_if_multiple(
-        "vasprun.xml", DefectParser.defect_entry.calculation_metadata["defect_path"]
-    )
-    defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
 
     band_orb = make_band_edge_orbital_infos(
         defect_vr,
