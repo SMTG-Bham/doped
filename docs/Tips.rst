@@ -203,7 +203,7 @@ These states typically have wavefunctions distributed over many unit cells, requ
 large supercells to properly capture their physics (`an example  <https://www.nature.com/articles/s41524-020-00448-7>`_).
 Current corrections schemes can not account for errors obtained when calculating the transition energies of PHS,
 and therefore it is recommended to denote that the defect is a PHS and their transition energy is located near
-the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Matter. 2020
+the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
 
 In doped we employ the methodolgy of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
