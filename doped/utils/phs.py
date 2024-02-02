@@ -1,5 +1,10 @@
 """
 Helper functions for setting up PHS analysis.
+
+Contains modified versions of functions from pydefect
+https://github.com/kumagai-group/pydefect
+and vise
+https://github.com/kumagai-group/vise, to avoid the user requiring additional files i.e. PROCAR.
 """
 from typing import Any, List
 
