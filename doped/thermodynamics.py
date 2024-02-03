@@ -1753,7 +1753,7 @@ class DefectThermodynamics(MSONable):
         xlim: Optional[Tuple] = None,
         ylim: Optional[Tuple] = None,
         fermi_level: Optional[float] = None,
-        colormap: Union[str, colors.Colormap] = "Dark2",
+        colormap: Optional[Union[str, colors.Colormap]] = None,
         auto_labels: bool = False,
         filename: Optional[str] = None,
     ) -> Union[Figure, List[Figure]]:
@@ -1821,7 +1821,8 @@ class DefectThermodynamics(MSONable):
             colormap (str, matplotlib.colors.Colormap):
                 Colormap to use for the formation energy lines, either as a string (i.e.
                 name from https://matplotlib.org/stable/users/explain/colors/colormaps.html)
-                or a Colormap / ListedColormap object. (default: "Dark2")
+                or a Colormap / ListedColormap object. If None (default), uses `Dark2` (if
+                8 or less lines) or `tab20` (if more than 8 lines being plotted).
             auto_labels (bool):
                 Whether to automatically label the transition levels with their charge
                 states. If there are many transition levels, this can be quite ugly.
