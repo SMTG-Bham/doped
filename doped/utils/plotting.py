@@ -13,7 +13,7 @@ from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, ticker
+from matplotlib import colormaps, colors, ticker
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
@@ -49,15 +49,11 @@ def _chempot_warning(dft_chempots):
 
 
 def _get_plot_setup(colormap, xy):
+    if colormap is None:  # future updated colour handling (based on defect type etc) should remove
+        # the need for this!
+        colormap = "Dark2" if len(xy) <= 8 else "tab20"
     cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
     colors = cmap(np.linspace(0, 1, len(xy)))
-    if colormap == "Dark2" and len(xy) > 8:  # TODO: Auto change to tab10 or tab20, update warning and
-        # test
-        warnings.warn(
-            f"The chosen colormap is Dark2, which only has 8 colours, yet you have {len(xy)} "
-            f"defect species (so some defects will have the same line colour). Recommended to "
-            f"change/set colormap to 'tab10' or 'tab20' (10 and 20 colours each)."
-        )
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -753,7 +749,7 @@ def _TLD_plot(
     ylim=None,
     fermi_level=None,
     title=None,
-    colormap="Dark2",
+    colormap: Optional[Union[str, colors.Colormap]] = None,
     auto_labels=False,
     filename=None,
 ):
