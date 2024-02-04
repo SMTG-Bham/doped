@@ -5,6 +5,7 @@ import contextlib
 import copy
 import os
 import warnings
+from functools import lru_cache
 from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Tuple, Union, cast
 
@@ -96,6 +97,11 @@ def _test_potcar_functional_choice(
             raise e
 
     return potcar_functional
+
+
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
+    return Potcar(list(potcar_symbols), functional=potcar_functional)
 
 
 class DefectDictSet(DictSet):
@@ -259,7 +265,9 @@ class DefectDictSet(DictSet):
             self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
                 self.user_potcar_functional, self.potcar_symbols
             )
-        return super(self.__class__, self).potcar
+
+        # use our own POTCAR generation function to expedite generation and writing
+        return _get_potcar(tuple(self.potcar_symbols), self.user_potcar_functional)
 
     @property
     def poscar(self) -> Poscar:
