@@ -274,6 +274,8 @@ class DefectThermodynamics(MSONable):
         d) used as input to doped plotting/analysis functions
     """
 
+    # TODO: Need to list attributes in docstrings
+
     def __init__(
         self,
         defect_entries: Union[List[DefectEntry], Dict[str, DefectEntry]],

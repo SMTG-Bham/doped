@@ -109,17 +109,16 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             CdTe_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        assert not any(
-            "The KPOINTS for your bulk and defect calculations do not match" in str(warn.message)
-            for warn in w
-        )  # no KPOINTS warning
+        assert all("KPOINTS" not in str(warn.message) for warn in w)
         assert any(
             all(
                 i in str(warn.message)
                 for i in [
-                    f"Warning(s) encountered when parsing Int_Te_3_Unperturbed_1 at "
-                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl:",
-                    "There are mismatching INCAR tags for your bulk and defect calculations",
+                    "There are mismatching INCAR tags for (some of)",
+                    "(in the format: (INCAR tag, value in bulk calculation, value in defect "
+                    "calculation)):",
+                    "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
+                    "In general, the same INCAR settings should be used",
                 ]
             )
             for warn in w
@@ -128,13 +127,15 @@ class DefectsParsingTestCase(unittest.TestCase):
             all(
                 i in str(warn.message)
                 for i in [
-                    f"Warning(s) encountered when parsing Int_Te_3_2 at "
-                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
-                    "Multiple `OUTCAR` files found in defect directory",
+                    "Multiple `OUTCAR` files",
+                    "(directory: chosen file for parsing):",
+                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                    "OUTCAR files are used to",
+                    "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                 ]
             )
             for warn in w
-        )  # multiple OUTCARs warning
+        )
         assert any(
             "Beware: The Freysoldt (FNV) charge correction scheme has been used for some "
             "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
@@ -148,6 +149,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             CdTe_thermo.plot()
         print([warn.message for warn in w])  # for debugging
+        print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
         assert any("All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w)
@@ -292,6 +294,35 @@ class DefectsParsingTestCase(unittest.TestCase):
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
         return CdTe_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
+
+    def test_DefectsParser_corrections_errors_warning(self):
+        with warnings.catch_warnings(record=True) as w:
+            DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, error_tolerance=0.001
+            )  # low error tolerance to force warnings
+        print([warn.message for warn in w])  # for debugging
+
+        assert any(
+            all(
+                i in str(warn.message)
+                for i in [
+                    "Estimated error in the Freysoldt (FNV) ",
+                    "Estimated error in the Kumagai (eFNV) ",
+                    "charge correction for certain defects is greater than the `error_tolerance` (= "
+                    "0.001 eV):",
+                    "v_Cd_-2: 0.011 eV",
+                    "v_Cd_-1: 0.008 eV",
+                    "Int_Te_3_1: 0.003 eV",
+                    "Te_Cd_+1: 0.002 eV",
+                    "Int_Te_3_Unperturbed_1: 0.005 eV",
+                    "Int_Te_3_2: 0.012 eV",
+                    "You may want to check the accuracy of the corrections by",
+                    "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
+                    "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
+                ]
+            )
+            for warn in w
+        )  # correction errors warnings
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -557,9 +588,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 charge_state=2,  # test manually specifying charge state
             ).defect_entry
             assert (
-                f"Multiple `OUTCAR` files found in defect directory:"
-                f" {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using"
-                f" {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz to parse core levels and "
+                f"Multiple `OUTCAR` files found in defect directory: "
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using OUTCAR.gz to parse core levels and "
                 f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
             )
             assert (
@@ -736,15 +766,15 @@ class DopedParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
             assert (
-                f"Multiple `OUTCAR` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using"
-                f" {self.CdTe_BULK_DATA_DIR}/OUTCAR.gz to parse core levels and compute the Kumagai ("
-                f"eFNV) image charge correction." in str(w[0].message)
+                f"Multiple `OUTCAR` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using "
+                f"OUTCAR.gz to parse core levels and compute the Kumagai (eFNV) image charge "
+                f"correction." in str(w[0].message)
             )
             assert (
-                f"Multiple `OUTCAR` files found in defect directory:"
-                f" {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using"
-                f" {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz to parse core levels and "
-                f"compute the Kumagai (eFNV) image charge correction." in str(w[1].message)
+                f"Multiple `OUTCAR` files found in defect directory: "
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using "
+                f"OUTCAR.gz to parse core levels and compute the Kumagai (eFNV) image charge "
+                f"correction." in str(w[1].message)
             )
             # other warnings is charge correction error warning, already tested
 
@@ -770,14 +800,14 @@ class DopedParsingTestCase(unittest.TestCase):
             assert len(w) == 2  # multiple LOCPOTs (both defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
             assert (
-                f"Multiple `LOCPOT` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using"
-                f" {self.CdTe_BULK_DATA_DIR}/LOCPOT.gz to parse the electrostatic potential and compute "
-                f"the Freysoldt (FNV) charge correction." in str(w[0].message)
+                f"Multiple `LOCPOT` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using "
+                f"LOCPOT.gz to parse the electrostatic potential and compute the Freysoldt (FNV) charge "
+                f"correction." in str(w[0].message)
             )
             assert (
-                f"Multiple `LOCPOT` files found in defect directory: {defect_path}. Using"
-                f" {defect_path}/LOCPOT.gz to parse the electrostatic potential and compute the "
-                f"Freysoldt (FNV) charge correction." in str(w[1].message)
+                f"Multiple `LOCPOT` files found in defect directory: {defect_path}. Using LOCPOT.gz to "
+                f"parse the electrostatic potential and compute the Freysoldt (FNV) charge correction."
+                in str(w[1].message)
             )
 
     def test_multiple_vaspruns(self):
@@ -799,14 +829,12 @@ class DopedParsingTestCase(unittest.TestCase):
             assert len(w) == 2  # multiple `vasprun.xml`s (both defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
             assert (
-                f"Multiple `vasprun.xml` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using"
-                f" {self.CdTe_BULK_DATA_DIR}/vasprun.xml.gz to parse the calculation energy and metadata."
-                in str(w[0].message)
+                f"Multiple `vasprun.xml` files found in bulk directory: {self.CdTe_BULK_DATA_DIR}. Using "
+                f"vasprun.xml.gz to parse the calculation energy and metadata." in str(w[0].message)
             )
             assert (
-                f"Multiple `vasprun.xml` files found in defect directory: {defect_path}. Using"
-                f" {defect_path}/vasprun.xml.gz to parse the calculation energy and metadata."
-                in str(w[1].message)
+                f"Multiple `vasprun.xml` files found in defect directory: {defect_path}. Using "
+                f"vasprun.xml.gz to parse the calculation energy and metadata." in str(w[1].message)
             )
 
     def test_dielectric_initialisation(self):
@@ -1156,6 +1184,9 @@ class DopedParsingTestCase(unittest.TestCase):
         corr, corr_error = int_F_minus1_ent.get_kumagai_correction(return_correction_error=True)
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
         assert np.isclose(corr_error, 0.003, atol=1e-3)
+        assert np.isclose(
+            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.003, atol=1e-3
+        )
 
         # test returning correction error with plot:
         corr, fig, corr_error = int_F_minus1_ent.get_kumagai_correction(
@@ -1163,6 +1194,9 @@ class DopedParsingTestCase(unittest.TestCase):
         )
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
         assert np.isclose(corr_error, 0.003, atol=1e-3)
+        assert np.isclose(
+            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.003, atol=1e-3
+        )
 
         # test just correction returned with plot = False and return_correction_error = False:
         corr = int_F_minus1_ent.get_kumagai_correction()
@@ -1246,11 +1280,17 @@ class DopedParsingTestCase(unittest.TestCase):
         corr, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True)
         assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
         assert np.isclose(corr_error, 0.000, atol=1e-3)
+        assert np.isclose(
+            F_O_1_ent.corrections_metadata["freysoldt_charge_correction_error"], 0.000, atol=1e-3
+        )
 
         # test returning correction error with plot:
         corr, fig, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True, plot=True)
         assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
         assert np.isclose(corr_error, 0.000, atol=1e-3)
+        assert np.isclose(
+            F_O_1_ent.corrections_metadata["freysoldt_charge_correction_error"], 0.000, atol=1e-3
+        )
 
         # test just correction returned with plot = False and return_correction_error = False:
         corr = F_O_1_ent.get_freysoldt_correction()

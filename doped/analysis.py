@@ -138,7 +138,7 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
         defect_entry.name = (
             f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
             f"{'+' if charge_state > 0 else ''}{charge_state}"
-        )  # otherwise use default doped name  # TODO: Test!
+        )  # otherwise use default doped name  # TODO: Test - Xinwei's folders may be good test case
         # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
         # was used
 
@@ -857,7 +857,7 @@ class DefectsParser:
                     if defect_list:
                         warnings.warn(
                             f"Defects: {defect_list} each encountered the same warning:\n{warning}"
-                        )  # TODO: Quick manual test
+                        )
 
                 for file_type, directory_file_list in multiple_files_warning_dict.items():
                     if directory_file_list:
@@ -873,7 +873,8 @@ class DefectsParser:
                         )
 
                 parsing_warnings = new_parsing_warnings
-                warnings.warn("\n".join(parsing_warnings))
+                if parsing_warnings:
+                    warnings.warn("\n".join(parsing_warnings))
 
             if orientational_degeneracy_warning_called:  # TODO: Only call this when used in thermo
                 # functions?
@@ -965,7 +966,7 @@ class DefectsParser:
                 f"{name}: {error:.3f} eV" for name, error in correction_errors
             )
             warnings.warn(
-                f"Estimated error in the '{long_name} ({type})' charge correction for certain "
+                f"Estimated error in the {long_name} ({type}) charge correction for certain "
                 f"defects is greater than the `error_tolerance` (= {error_tolerance:.3f} eV):"
                 f"\n{correction_errors_string}\n"
                 f"You may want to check the accuracy of the corrections by plotting the site "
@@ -1083,9 +1084,7 @@ class DefectsParser:
             if result[1]:
                 # if orientational degeneracy warning, omit to prevent spamming:
                 warning_string = result[1].replace(f"\n{_orientational_degeneracy_warning}", "")
-                if warning_string := warning_string.replace(
-                    f"{_orientational_degeneracy_warning}", ""
-                ):  # TODO: Test this! (Roughly tested so far)
+                if warning_string := warning_string.replace(f"{_orientational_degeneracy_warning}", ""):
                     return (
                         f"Warning(s) encountered when parsing {defect_folder} at "
                         f"{result[0].calculation_metadata['defect_path']}:\n{warning_string}"
