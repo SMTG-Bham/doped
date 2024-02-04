@@ -93,7 +93,8 @@ def _get_sga(struct, symprec=0.01):
         if sga.get_symmetry_dataset() is not None:
             return sga
 
-    raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
+    raise ValueError("Could not get SpacegroupAnalyzer symmetry dataset of input structure!")  # well
+    # shiiii...
 
 
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):

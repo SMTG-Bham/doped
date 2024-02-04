@@ -716,7 +716,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             warnings.warn(
                 f"All formation energies for {def_name} are below zero across the "
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
-                f"mis-specification of chemical potentials (see docstrings and/or tutorials). "
+                f"mis-specification of chemical potentials (see docstrings and/or tutorials)."
             )
             ymin = min(ymin, *yvals)  # TODO: Test this
 
