@@ -10,7 +10,7 @@ import contextlib
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 from filelock import FileLock
@@ -505,10 +505,20 @@ def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type
     defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
 
 
-def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type="bulk"):
+_vasp_file_parsing_action_dict = {
+    "vasprun.xml": "parse the calculation energy and metadata.",
+    "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
+    "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
+}
+
+
+def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, dir_type="bulk"):
+    filename = os.path.basename(chosen_filepath)
+    if action is None:
+        action = _vasp_file_parsing_action_dict[file_type]
     warnings.warn(
-        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using "
-        f"{chosen_filepath} to {action}"
+        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
+        f"{action}"
     )
 
 
@@ -539,7 +549,8 @@ class DefectsParser:
         files, and tries to parse them as ``DefectEntry``\s.
 
         By default, tries to use multiprocessing to speed up defect parsing, which
-        can be controlled with the ``processes`` parameter.
+        can be controlled with ``processes``. If parsing hangs, this may be due to
+        memory issues, in which case you should reduce ``processes`` (e.g. 4 or less).
 
         Defect charge states are automatically determined from the defect calculation
         outputs if ``POTCAR``\s are set up with ``pymatgen`` (see docs Installation page),
@@ -784,9 +795,88 @@ class DefectsParser:
             if parsing_warnings := [
                 warning for warning in parsing_warnings if warning  # remove empty strings
             ]:
+                split_parsing_warnings = [warning.split("\n") for warning in parsing_warnings]
+                flattened_warnings_list = [
+                    warning for warning_list in split_parsing_warnings for warning in warning_list
+                ]
+                duplicate_warnings: Dict[str, List[str]] = {
+                    warning: []
+                    for warning in set(flattened_warnings_list)
+                    if flattened_warnings_list.count(warning) > 1
+                }
+                new_parsing_warnings = []
+                parsing_errors_dict: Dict[str, List[str]] = {
+                    message.split("got error: ")[1]: []
+                    for message in set(flattened_warnings_list)
+                    if "Parsing failed" in message
+                }
+                multiple_files_warning_dict: Dict[str, List[tuple]] = {
+                    "vasprun.xml": [],
+                    "OUTCAR": [],
+                    "LOCPOT": [],
+                }
+
+                for warnings_list in split_parsing_warnings:
+                    if "Warning(s) encountered" in warnings_list[0]:
+                        defect_name = warnings_list[0].split("when parsing ")[1].split(" at")[0]
+                    elif "Parsing failed" in warnings_list[0]:
+                        defect_name = warnings_list[0].split("Parsing failed for ")[1].split(", got ")[0]
+                        error = warnings_list[0].split("got error: ")[1]
+                        parsing_errors_dict[error].append(defect_name)
+                    else:
+                        defect_name = None
+
+                    new_warnings_list = []
+                    for warning in warnings_list:
+                        if warning.startswith("Multiple"):
+                            file_type = warning.split("`")[1]
+                            directory = warning.split("defect directory: ")[1].split(". Using")[0]
+                            chosen_file = warning.split("Using ")[1].split(" to")[0]
+                            multiple_files_warning_dict[file_type].append((directory, chosen_file))
+
+                        elif warning in duplicate_warnings:
+                            duplicate_warnings[warning].append(defect_name)
+
+                        else:
+                            new_warnings_list.append(warning)
+
+                    if [  # if we still have other warnings, keep them for parsing_warnings list
+                        warning
+                        for warning in new_warnings_list
+                        if "Warning(s) encountered" not in warning and "Parsing failed" not in warning
+                    ]:
+                        new_parsing_warnings.append("\n".join(new_warnings_list))
+
+                for error, defect_list in parsing_errors_dict.items():
+                    if defect_list:
+                        warnings.warn(
+                            f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
+                        )
+
+                for warning, defect_list in duplicate_warnings.items():
+                    if defect_list:
+                        warnings.warn(
+                            f"Defects: {defect_list} each encountered the same warning:\n{warning}"
+                        )  # TODO: Quick manual test
+
+                for file_type, directory_file_list in multiple_files_warning_dict.items():
+                    if directory_file_list:
+                        joined_info_string = "\n".join(
+                            [f"{directory}: {file}" for directory, file in directory_file_list]
+                        )
+                        warnings.warn(
+                            f"Multiple `{file_type}` files found in certain defect directories:\n"
+                            f"(directory: chosen file for parsing):\n"
+                            f"{joined_info_string}\n"
+                            f"{file_type} files are used to "
+                            f"{_vasp_file_parsing_action_dict[file_type]}"
+                        )
+
+                parsing_warnings = new_parsing_warnings
                 warnings.warn("\n".join(parsing_warnings))
 
-            if orientational_degeneracy_warning_called:
+            if orientational_degeneracy_warning_called:  # TODO: Only call this when used in thermo
+                # functions?
                 # warn and remove orientational degeneracy factors from all entries as not reliable
                 warnings.warn(_orientational_degeneracy_warning)
                 for defect_entry in parsed_defect_entries:
@@ -851,6 +941,46 @@ class DefectsParser:
             {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
         )
 
+        FNV_correction_errors = []
+        eFNV_correction_errors = []
+        for name, defect_entry in self.defect_dict.items():
+            if (
+                defect_entry.corrections_metadata.get("freysoldt_charge_correction_error", 0)
+                > error_tolerance
+            ):
+                FNV_correction_errors.append(
+                    (name, defect_entry.corrections_metadata["freysoldt_charge_correction_error"])
+                )
+            if (
+                defect_entry.corrections_metadata.get("kumagai_charge_correction_error", 0)
+                > error_tolerance
+            ):
+                eFNV_correction_errors.append(
+                    (name, defect_entry.corrections_metadata["kumagai_charge_correction_error"])
+                )
+
+        def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
+            long_name = "Freysoldt" if type == "FNV" else "Kumagai"
+            correction_errors_string = "\n".join(
+                f"{name}: {error:.3f} eV" for name, error in correction_errors
+            )
+            warnings.warn(
+                f"Estimated error in the '{long_name} ({type})' charge correction for certain "
+                f"defects is greater than the `error_tolerance` (= {error_tolerance:.3f} eV):"
+                f"\n{correction_errors_string}\n"
+                f"You may want to check the accuracy of the corrections by plotting the site "
+                f"potential differences (using `defect_entry.get_{long_name.lower()}_correction()`"
+                f" with `plot=True`). Large errors are often due to unstable or shallow defect "
+                f"charge states (which can't be accurately modelled with the supercell "
+                f"approach). If these errors are not acceptable, you may need to use a larger "
+                f"supercell for more accurate energies."
+            )
+
+        if FNV_correction_errors:
+            _call_multiple_corrections_tolerance_warning(FNV_correction_errors, type="FNV")
+        if eFNV_correction_errors:
+            _call_multiple_corrections_tolerance_warning(eFNV_correction_errors, type="eFNV")
+
         # check if same type of charge correction was used in each case or not:
         if (
             len(
@@ -876,6 +1006,63 @@ class DefectsParser:
             )  # either way have the error analysis for the charge corrections so in theory should be grand
         # note that we also check if multiple charge corrections have been applied to the same defect
         # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
+
+        mismatching_INCAR_warnings = [
+            (name, defect_entry.calculation_metadata.get("mismatching_INCAR_tags"))
+            for name, defect_entry in self.defect_dict.items()
+            if defect_entry.calculation_metadata.get("mismatching_INCAR_tags", True) is not True
+        ]
+        if mismatching_INCAR_warnings:
+            joined_info_string = "\n".join(
+                [f"{name}: {mismatching}" for name, mismatching in mismatching_INCAR_warnings]
+            )
+            warnings.warn(
+                f"There are mismatching INCAR tags for (some of) your bulk and defect calculations which "
+                f"are likely to cause errors in the parsed results (energies). Found the following "
+                f"differences:\n"
+                f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+                f"\n{joined_info_string}\n"
+                f"In general, the same INCAR settings should be used in all final calculations for these "
+                f"tags which can affect energies!"
+            )
+
+        mismatching_kpoints_warnings = [
+            (name, defect_entry.calculation_metadata.get("mismatching_KPOINTS"))
+            for name, defect_entry in self.defect_dict.items()
+            if defect_entry.calculation_metadata.get("mismatching_KPOINTS", True) is not True
+        ]
+        if mismatching_kpoints_warnings:  # TODO: Test
+            joined_info_string = "\n".join(
+                [f"{name}: {mismatching}" for name, mismatching in mismatching_kpoints_warnings]
+            )
+            warnings.warn(
+                f"There are mismatching KPOINTS for (some of) your bulk and defect calculations which "
+                f"are likely to cause errors in the parsed results (energies). Found the following "
+                f"differences:\n"
+                f"(in the format: (bulk kpoints, defect kpoints)):"
+                f"\n{joined_info_string}\n"
+                f"In general, the same KPOINTS settings should be used for all final calculations for "
+                f"accurate results!"
+            )
+
+        mismatching_potcars_warnings = [  # TODO: Test if possible
+            (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
+            for name, defect_entry in self.defect_dict.items()
+            if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols", True) is not True
+        ]
+        if mismatching_potcars_warnings:
+            joined_info_string = "\n".join(
+                [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
+            )
+            warnings.warn(
+                f"There are mismatching POTCAR symbols for (some of) your bulk and defect calculations "
+                f"which are likely to cause severe errors in the parsed results (energies). Found the "
+                f"following differences:\n"
+                f"(in the format: (bulk POTCARs, defect POTCARs)):"
+                f"\n{joined_info_string}\n"
+                f"In general, the same POTCAR settings should be used for all calculations for accurate "
+                f"results!"
+            )
 
         if self.json_filename is not False:  # save to json unless json_filename is False:
             if self.json_filename is None:
@@ -916,7 +1103,17 @@ class DefectsParser:
         with warnings.catch_warnings(record=True) as captured_warnings:
             parsed_defect_entry = self._parse_defect(defect_folder)
 
-        warnings_string = "\n".join(str(warning.message) for warning in captured_warnings)
+        ignore_messages = [
+            "Estimated error",
+            "There are mismatching",
+            "The KPOINTS",
+            "The POTCAR",
+        ]  # collectively warned later
+        warnings_string = "\n".join(
+            str(warning.message)
+            for warning in captured_warnings
+            if not any(warning.message.args[0].startswith(i) for i in ignore_messages)
+        )
 
         return parsed_defect_entry, warnings_string
 
@@ -1060,7 +1257,6 @@ def _get_bulk_locpot_dict(bulk_path, quiet=False):
             "LOCPOT",
             bulk_path,
             bulk_locpot_path,
-            "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
             dir_type="bulk",
         )
     bulk_locpot = get_locpot(bulk_locpot_path)
@@ -1076,7 +1272,6 @@ def _get_bulk_site_potentials(bulk_path, quiet=False):
             "OUTCAR",
             bulk_path,
             bulk_outcar_path,
-            "parse core levels and compute the Kumagai (eFNV) image charge correction.",
             dir_type="bulk",
         )
     bulk_outcar = get_outcar(bulk_outcar_path)
@@ -1213,7 +1408,6 @@ class DefectParser:
                 "vasprun.xml",
                 bulk_path,
                 bulk_vr_path,
-                "parse the calculation energy and metadata.",
                 dir_type="bulk",
             )
         bulk_vr = get_vasprun(bulk_vr_path)
@@ -1229,7 +1423,6 @@ class DefectParser:
                 "vasprun.xml",
                 defect_path,
                 defect_vr_path,
-                "parse the calculation energy and metadata.",
                 dir_type="defect",
             )
         defect_vr = get_vasprun(defect_vr_path)
@@ -1643,7 +1836,6 @@ class DefectParser:
                 "LOCPOT",
                 self.defect_entry.calculation_metadata["defect_path"],
                 defect_locpot_path,
-                "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
                 dir_type="defect",
             )
         defect_locpot = get_locpot(defect_locpot_path)
@@ -1704,7 +1896,6 @@ class DefectParser:
                 "OUTCAR",
                 self.defect_entry.calculation_metadata["defect_path"],
                 defect_outcar_path,
-                "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                 dir_type="defect",
             )
         defect_outcar = get_outcar(defect_outcar_path)
@@ -1738,7 +1929,6 @@ class DefectParser:
                     "vasprun.xml",
                     self.defect_entry.calculation_metadata["bulk_path"],
                     bulk_vr_path,
-                    "parse the calculation energy and metadata.",
                     dir_type="bulk",
                 )
             self.bulk_vr = get_vasprun(bulk_vr_path)
@@ -1752,7 +1942,6 @@ class DefectParser:
                     "vasprun.xml",
                     self.defect_entry.calculation_metadata["defect_path"],
                     defect_vr_path,
-                    "parse the calculation energy and metadata.",
                     dir_type="defect",
                 )
             self.defect_vr = get_vasprun(defect_vr_path)
@@ -1769,9 +1958,15 @@ class DefectParser:
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
         }
 
-        _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
-        _compare_potcar_symbols(run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"])
-        _compare_kpoints(run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"])
+        self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = _compare_incar_tags(
+            run_metadata["bulk_incar"], run_metadata["defect_incar"]
+        )
+        self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = _compare_potcar_symbols(
+            run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
+        )
+        self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = _compare_kpoints(
+            run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"]
+        )
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
@@ -1824,8 +2019,8 @@ class DefectParser:
             if multiple:
                 warnings.warn(
                     f"Multiple `vasprun.xml` files found in bulk directory: "
-                    f"{self.defect_entry.calculation_metadata['bulk_path']}. Using {bulk_vr_path} to "
-                    f"parse the calculation energy and metadata."
+                    f"{self.defect_entry.calculation_metadata['bulk_path']}. Using "
+                    f"{os.path.basename(bulk_vr_path)} to {_vasp_file_parsing_action_dict['vasprun.xml']}."
                 )
             self.bulk_vr = get_vasprun(bulk_vr_path)
 
@@ -1911,8 +2106,8 @@ class DefectParser:
             if multiple:
                 warnings.warn(
                     f"Multiple `vasprun.xml` files found in specified directory: "
-                    f"{bulk_band_gap_path}. Using {actual_bulk_vr_path} to  parse the calculation "
-                    f"energy and metadata."
+                    f"{bulk_band_gap_path}. Using {os.path.basename(actual_bulk_vr_path)} to "
+                    f"{_vasp_file_parsing_action_dict['vasprun.xml']}."
                 )
             actual_bulk_vr = get_vasprun(actual_bulk_vr_path)
             band_gap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
