@@ -61,5 +61,9 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
 
+    warnings.filterwarnings("ignore", message="get_vasp_input")  # deprecation warning introduced
+    # in pymatgen>2024.1.6, fixed in our PR: https://github.com/materialsproject/pymatgen/pull/3601
+    # Can delete later!
+
 
 _ignore_pmg_warnings()
