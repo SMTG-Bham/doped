@@ -83,14 +83,14 @@ def _test_potcar_functional_choice(
     if symbols is None:
         symbols = ["Mg"]
     try:
-        test_potcar = Potcar(symbols, functional=potcar_functional)
+        test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
     except OSError as e:
         # try other functional choices:
         if potcar_functional.startswith("PBE"):
             for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
                 with contextlib.suppress(OSError):
                     potcar_functional = pbe_potcar_string
-                    test_potcar = Potcar(symbols, functional=potcar_functional)
+                    test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
                     break
 
         if test_potcar is None:
