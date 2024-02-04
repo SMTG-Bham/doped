@@ -6,7 +6,8 @@ import copy
 import os
 import warnings
 from functools import lru_cache
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
+from multiprocessing.pool import Pool
 from typing import Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
@@ -2130,7 +2131,8 @@ class DefectsSet(MSONable):
                 (Default: False)
             processes (int):
                 Number of processes to use for multiprocessing for file writing.
-                If not set, defaults to one less than the number of CPUs available.
+                If not specified (default), then is dynamically set to the optimal
+                value for the number of folders to write. (Default: None)
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
@@ -2149,13 +2151,20 @@ class DefectsSet(MSONable):
             )
             for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
         ]
-        with Pool(processes=processes or cpu_count() - 1) as pool:
-            for _ in tqdm(
-                pool.imap(self._write_defect, args_list),
-                total=len(args_list),
-                desc="Generating and writing input files",
-            ):
-                pass
+        if processes is None:  # best setting for number of processes, from testing
+            processes = min(round(len(args_list) / 30), cpu_count() - 1)
+
+        if processes > 1:
+            with Pool(processes=processes or cpu_count() - 1) as pool:
+                for _ in tqdm(
+                    pool.imap(self._write_defect, args_list),
+                    total=len(args_list),
+                    desc="Generating and writing input files",
+                ):
+                    pass
+        else:
+            for args in tqdm(args_list, desc="Generating and writing input files"):
+                self._write_defect(args)
 
         dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
 
