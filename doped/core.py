@@ -342,6 +342,7 @@ class DefectEntry(thermo.DefectEntry):
                 for i in [0, 1, 2]
             ]
         ) * abs(self.charge_state)
+        self.corrections_metadata.update({"freysoldt_charge_correction_error": correction_error})
 
         return self._check_correction_error_and_return_output(
             fnv_correction_output,
@@ -469,6 +470,7 @@ class DefectEntry(thermo.DefectEntry):
 
         # correction energy error can be estimated from standard error of the mean:
         correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
             correction_error,

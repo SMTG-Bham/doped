@@ -93,8 +93,8 @@ def get_outcar(outcar_path):
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
     """
-    Search for all files with filenames matching ``output_file``, case-
-    insensitive.
+    Search for all files with filenames matching ``output_file``,
+    case-insensitive.
 
     Returns (output file path, Multiple?) where Multiple is True if multiple
     matching files are found.
@@ -545,6 +545,9 @@ def _compare_potcar_symbols(
     """
     Check all POTCAR symbols in the bulk are the same in the defect
     calculation.
+
+    Returns True if the symbols match, otherwise returns a list of the symbols
+    for the bulk and defect calculations.
     """
     for symbol in bulk_potcar_symbols:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
@@ -557,7 +560,7 @@ def _compare_potcar_symbols(
                 f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
                 f"The same POTCAR settings should be used for all calculations for accurate results!"
             )
-            return False
+            return [bulk_potcar_symbols, defect_potcar_symbols]
     return True
 
 
@@ -565,6 +568,9 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
+
+    Returns True if the KPOINTS match, otherwise returns a list of the KPOINTS
+    for the bulk and defect calculations.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
@@ -578,9 +584,10 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
             f"\n{sorted_bulk_kpoints}\n"
             f"and in the {defect_name} calculation:"
             f"\n{sorted_defect_kpoints}\n"
-            f"The same KPOINTS settings should be used for all final calculations for accurate results!"
+            f"In general, the same KPOINTS settings should be used for all final calculations for "
+            f"accurate results!"
         )
-        return False
+        return [sorted_bulk_kpoints, sorted_defect_kpoints]
 
     return True
 
@@ -594,6 +601,9 @@ def _compare_incar_tags(
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
+
+    Returns True if no mismatching tags are found, otherwise returns a list of
+    the mismatching tags.
     """
     if fatal_incar_mismatch_tags is None:
         fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
@@ -644,10 +654,10 @@ def _compare_incar_tags(
             f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
             f"calculation)):"
             f"\n{mismatch_list}\n"
-            f"The same INCAR settings should be used in all final calculations for these tags which can "
-            f"affect energies!"
+            f"In general, the same INCAR settings should be used in all final calculations for these tags "
+            f"which can affect energies!"
         )
-        return False
+        return mismatch_list
     return True
 
 
