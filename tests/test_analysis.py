@@ -73,6 +73,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Se3_DATA_DIR = os.path.join(self.module_path, "data/Sb2Se3")
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
+        self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
+        self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
+
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
@@ -395,6 +398,60 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_sb2si2te6_eFNV(self):
+        dp = DefectsParser(self.Sb2Si2Te6_DATA_DIR, dielectric=self.Sb2Si2Te6_dielectric)
+        v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
+        with warnings.catch_warnings(record=True) as w:
+            correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True)
+        assert any(
+            "Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. "
+            "which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
+            for warn in w
+        )
+        assert np.isclose(correction.correction_energy, 1.077, atol=1e-3)
+        assert np.isclose(
+            v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
+            0.067,
+            atol=1e-3,
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True, defect_region_radius=8.75)
+        assert not any("Estimated error" in str(warn.message) for warn in w)
+        assert np.isclose(correction.correction_energy, 1.206, atol=1e-3)
+        assert np.isclose(
+            v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
+            0.023,
+            atol=1e-3,
+        )
+
+        # get indices of sites within 3 Å of the defect site when projected along the _a_ lattice vector
+        # (inter-layer direction in our supercell)
+        sites_within_3A = [
+            i
+            for i, site in enumerate(v_Sb_minus_3_ent.defect_supercell)
+            if abs(site.frac_coords[0] - v_Sb_minus_3_ent.defect_supercell_site.frac_coords[0]) < 0.2
+        ]
+        with warnings.catch_warnings(record=True) as w:
+            correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(
+                plot=True, excluded_indices=sites_within_3A
+            )
+        assert not any("Estimated error" in str(warn.message) for warn in w)
+        assert np.isclose(correction.correction_energy, 1.234, atol=1e-3)
+        assert np.isclose(
+            v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
+            0.017,
+            atol=1e-3,
+        )
+
+        return fig
 
 
 class DopedParsingTestCase(unittest.TestCase):
