@@ -82,6 +82,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json"))
+        if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -406,7 +407,20 @@ class DefectsParsingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_sb2si2te6_eFNV(self):
-        dp = DefectsParser(self.Sb2Si2Te6_DATA_DIR, dielectric=self.Sb2Si2Te6_dielectric)
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.Sb2Si2Te6_DATA_DIR, dielectric=self.Sb2Si2Te6_dielectric)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert any(
+            "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
+            in str(warning.message)
+            for warning in w
+        )  # collated warning
+        assert not any(
+            "Estimated error in the Kumagai (eFNV) charge correction for defect" in str(warning.message)
+            for warning in w
+        )  # no individual level warning
+        assert not any("The defect supercell has been detected" in str(warning.message) for warning in w)
+
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
         with warnings.catch_warnings(record=True) as w:
             correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True)
