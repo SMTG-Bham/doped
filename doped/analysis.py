@@ -131,13 +131,18 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
             defect_name_w_charge_state, include_site_info_in_name=True
         )  # tries without site_info if with site_info fails
 
+    # (re-)determine doped defect name and store in metadata, regardless of whether folder name is
+    # recognised:
+    defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
+        f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
+        f"{'+' if charge_state > 0 else ''}{charge_state}"
+    )
+
     if formatted_defect_name is not None:
         defect_entry.name = defect_name_w_charge_state
     else:
-        defect_entry.name = (
-            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
-            f"{'+' if charge_state > 0 else ''}{charge_state}"
-        )  # otherwise use default doped name  # TODO: Test - Xinwei's folders may be good test case
+        defect_entry.name = defect_entry.calculation_metadata["full_unrelaxed_defect_name"]
+        # otherwise use default doped name  # TODO: Test - Xinwei's folders may be good test case
         # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
         # was used
 
@@ -1114,7 +1119,7 @@ class DefectsParser:
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
-                self._parse_parsing_warnings(
+                return self._parse_parsing_warnings(
                     result[1], defect_folder, result[0].calculation_metadata["defect_path"]
                 )
 
