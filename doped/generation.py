@@ -552,12 +552,11 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
     """
     comp_obj = Composition(element_symbol)
     comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
-    oxi_probabilities = {
+    if oxi_probabilities := {
         k.oxi_state: v
         for k, v in comp_obj.oxi_prob.items()
         if k.element.symbol == element_symbol and k.oxi_state != 0
-    }
-    if oxi_probabilities:  # not empty
+    }:  # not empty
         return {
             int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
         }
@@ -772,7 +771,7 @@ def guess_defect_charge_states(
         return vacancy_charge_states
 
     possible_oxi_states = _get_possible_oxi_states(defect)
-    max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
+    max_host_oxi_magnitude = int(max(abs(site.specie.oxi_state) for site in defect.structure))
     if defect.defect_type == core.DefectType.Substitution:
         orig_oxi = int(defect.structure[defect.defect_site_index].specie.oxi_state)
     else:  # interstitial
@@ -2222,11 +2221,17 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
         try:
 
             def _defect_entry_sorting_func(defect_entry):
-                name_from_defect = get_defect_name_from_defect(
-                    defect_entry.defect,
-                    element_list=element_list,
-                    symm_ops=symm_ops,
+                unrelaxed_defect_name_w_charge = defect_entry.calculation_metadata.get(
+                    "full_unrelaxed_defect_name"
                 )
+                if unrelaxed_defect_name_w_charge is not None:
+                    name_from_defect = unrelaxed_defect_name_w_charge.rsplit("_", 1)[0]  # without charge
+                else:
+                    name_from_defect = get_defect_name_from_defect(
+                        defect_entry.defect,
+                        element_list=element_list,
+                        symm_ops=symm_ops,
+                    )
                 return (
                     defect_entry.defect.defect_type.value,
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
