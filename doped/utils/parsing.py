@@ -459,8 +459,8 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>0.5 Å) in the defect supercell. This likely indicates a mismatch "
             f"between the bulk and defect supercell definitions or an unconverged supercell size, "
-            f"both of which will likely cause errors in parsing. The mean displacement of the "
-            f"following species, at sites far from the determined defect position, is >0.5 Å: "
+            f"both of which could cause errors in parsing. The mean displacement of the following "
+            f"species, at sites far from the determined defect position, is >0.5 Å: "
             f"{list(far_from_defect_large_disps.keys())}, with displacements (Å): "
             f"{far_from_defect_large_disps}"
         )
@@ -473,6 +473,15 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
 
     The template structure may have a different species ordering to the
     ``input_structure``.
+
+    NOTE: This assumes that both structures have the same lattice definitions
+    (i.e. that they match, and aren't rigidly translated/rotated with respect
+    to each other), which is mostly the case unless we have a mismatching
+    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
+    warning should be thrown anyway during parsing). Currently this function
+    is only used for analysing site displacements in the ``displacements`` module
+    so this is fine (user will already have been warned at this point if there is a
+    possible mismatch).
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
@@ -524,6 +533,14 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     potentials for the eFNV Kumagai correction, though no longer used for this
     purpose. If threshold is set to a low value, it will raise a warning if
     there is a large site displacement detected.
+
+    NOTE: This assumes that both structures have the same lattice definitions
+    (i.e. that they match, and aren't rigidly translated/rotated with respect
+    to each other), which is mostly the case unless we have a mismatching
+    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
+    warning should be thrown anyway during parsing). Currently this function
+    is no longer used, but if it is reintroduced at any point, this point should
+    be noted!
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
