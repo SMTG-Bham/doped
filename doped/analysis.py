@@ -109,13 +109,26 @@ def _convert_dielectric_to_tensor(dielectric):
     return dielectric
 
 
-def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_name: str) -> None:
+def check_and_set_defect_entry_name(
+    defect_entry: DefectEntry, possible_defect_name: str = "", bulk_symm_ops: Optional[list] = None
+) -> None:
     """
     Check that ``possible_defect_name`` is a recognised format by doped (i.e. in
     the format "{defect_name}_{optional_site_info}_{charge_state}").
 
     If the DefectEntry.name attribute is not defined or does not end with the
-    charge state, then the entry will be renamed with the doped default name.
+    charge state, then the entry will be renamed with the doped default name
+    for the `unrelaxed` defect.
+
+    Args:
+        defect_entry (DefectEntry): DefectEntry object.
+        possible_defect_name (str):
+            Possible defect name (usually the folder name) to check if
+            recognised by ``doped``, otherwise defect name is re-determined.
+        bulk_symm_ops (list):
+            List of symmetry operations of the defect_entry.bulk_supercell
+            structure (used in determining the `unrelaxed` point symmetry), to
+            avoid re-calculating. Default is None (recalculates).
     """
     formatted_defect_name = None
     charge_state = defect_entry.charge_state
@@ -133,10 +146,11 @@ def check_and_set_defect_entry_name(defect_entry: DefectEntry, possible_defect_n
 
     # (re-)determine doped defect name and store in metadata, regardless of whether folder name is
     # recognised:
-    defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
-        f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
-        f"{'+' if charge_state > 0 else ''}{charge_state}"
-    )
+    if "full_unrelaxed_defect_name" not in defect_entry.calculation_metadata:
+        defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
+            f"{get_defect_name_from_entry(defect_entry, symm_ops=bulk_symm_ops, relaxed=False)}_"
+            f"{'+' if charge_state > 0 else ''}{charge_state}"
+        )
 
     if formatted_defect_name is not None:
         defect_entry.name = defect_name_w_charge_state
@@ -1659,7 +1673,9 @@ class DefectParser:
             else:
                 dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
-        check_and_set_defect_entry_name(defect_entry, possible_defect_name)
+        check_and_set_defect_entry_name(
+            defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops
+        )
 
         dp = cls(
             defect_entry,
