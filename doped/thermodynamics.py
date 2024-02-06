@@ -7,7 +7,7 @@ import os
 import warnings
 from functools import reduce
 from itertools import chain, product
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,16 +28,14 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _get_bulk_supercell,
+    _get_defect_supercell_site,
     get_neutral_nelect_from_vasprun,
     get_orientational_degeneracy,
     get_vasprun,
-    point_symmetry_from_defect_entry,
 )
 from doped.utils.plotting import _TLD_plot
-from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
-
-if TYPE_CHECKING:
-    from pymatgen.core.structure import PeriodicSite
+from doped.utils.symmetry import _get_all_equiv_sites, _get_sga, point_symmetry_from_defect_entry
 
 
 def bold_print(string: str) -> None:
@@ -154,7 +152,7 @@ def group_defects_by_distance(
     defect_site_dict: Dict[
         str, Dict[Tuple, List[DefectEntry]]
     ] = {}  # {defect name: {(equiv defect sites): entry list}}
-    bulk_supercell_sga = _get_sga(entry_list[0].bulk_supercell)
+    bulk_supercell_sga = _get_sga(_get_bulk_supercell(entry_list[0]))
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
@@ -164,12 +162,9 @@ def group_defects_by_distance(
             entry_list, key=lambda x: abs(x.charge_state)
         )  # sort by charge, starting with closest to zero, for deterministic behaviour
         for entry in sorted_entry_list:
-            if "bulk_site" not in entry.calculation_metadata:
-                bulk_site: PeriodicSite = (
-                    entry.defect_supercell_site
-                )  # need to use relaxed defect site instead
-            else:
-                bulk_site = entry.calculation_metadata["bulk_site"]
+            bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
+            # need to use relaxed defect site if bulk_site not in calculation_metadata
+
             min_dist_list = [
                 min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
                     bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
@@ -227,7 +222,8 @@ def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[Defec
     These should be in the format:
     "{defect_name}_{optional_site_info}_{charge_state}".
     If the DefectEntry.name attribute is not defined or does not end with the
-    charge state, then the entry will be renamed with the doped default name.
+    charge state, then the entry will be renamed with the doped default name
+    for the `unrelaxed` defect.
 
     For example, ``v_Cd_C3v_+1``, ``v_Cd_Td_+1`` and ``v_Cd_C3v_+2`` will be grouped
     as {``v_Cd_C3v``: [``v_Cd_C3v_+1``, ``v_Cd_C3v_+2``], ``v_Cd_Td``: [``v_Cd_Td_+1``]}.
@@ -1565,14 +1561,14 @@ class DefectThermodynamics(MSONable):
         # get the most p/n-type limit, by getting the facet with the minimum/maximum max/min-intercept,
         # where max/min-intercept is the max/min intercept for that facet (i.e. the compensating intercept)
         idx = (
-            donor_intercepts_df.groupby("facet")["intercept"].transform(max)
+            donor_intercepts_df.groupby("facet")["intercept"].transform("max")
             == donor_intercepts_df["intercept"]
         )
         limiting_donor_intercept_row = donor_intercepts_df.iloc[
             donor_intercepts_df[idx]["intercept"].idxmin()
         ]
         idx = (
-            acceptor_intercepts_df.groupby("facet")["intercept"].transform(min)
+            acceptor_intercepts_df.groupby("facet")["intercept"].transform("min")
             == acceptor_intercepts_df["intercept"]
         )
         limiting_acceptor_intercept_row = acceptor_intercepts_df.iloc[
@@ -1712,7 +1708,9 @@ class DefectThermodynamics(MSONable):
         # min-intercept is the min intercept for that facet (i.e. the compensating intercept)
         limiting_intercept_rows = []
         for intercepts_df in [vbm_donor_intercepts_df, cbm_acceptor_intercepts_df]:
-            idx = intercepts_df.groupby("facet")["intercept"].transform(min) == intercepts_df["intercept"]
+            idx = (
+                intercepts_df.groupby("facet")["intercept"].transform("min") == intercepts_df["intercept"]
+            )
             limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
             limiting_intercept_rows.append(
                 [
@@ -2144,7 +2142,10 @@ class DefectThermodynamics(MSONable):
 
         list_of_dfs = []
         for facet in facets:
-            dft_chempots = chempots["facets_wrt_el_refs"][facet]
+            facets_wrt_el_refs = chempots.get("facets_wrt_el_refs") or chempots.get("facets_wrt_elt_refs")
+            if facets_wrt_el_refs is None:
+                raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
+            dft_chempots = facets_wrt_el_refs[facet]
             if el_refs is None:
                 el_refs = (
                     {el: 0 for el in dft_chempots}
@@ -2358,7 +2359,7 @@ class DefectThermodynamics(MSONable):
                         "unrelaxed point symmetry"
                     ] = point_symmetry_from_defect_entry(
                         defect_entry, relaxed=False, symprec=0.01
-                    )  # relaxed so defect symm_ops
+                    )  # unrelaxed so bulk symm_ops
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
@@ -2417,7 +2418,7 @@ class DefectThermodynamics(MSONable):
         """
         Returns a string representation of the DefectThermodynamics object.
         """
-        formula = self.defect_entries[0].bulk_entry.structure.composition.get_reduced_formula_and_factor(
+        formula = _get_bulk_supercell(self.defect_entries[0]).composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}

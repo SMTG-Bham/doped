@@ -51,7 +51,13 @@ from shakenbreak.plotting import _install_custom_font
 
 from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
-from doped.utils.parsing import get_locpot, get_outcar
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+    get_locpot,
+    get_outcar,
+)
 from doped.utils.plotting import _format_defect_name, _get_backend
 
 warnings.simplefilter("default")
@@ -200,8 +206,10 @@ def get_freysoldt_correction(
         dielectric=dielectric,
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
-        lattice=defect_entry.sc_entry.structure.lattice if isinstance(defect_locpot, dict) else None,
-        defect_frac_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect location in supercell
+        lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
+        defect_frac_coords=_get_defect_supercell_bulk_site_coords(
+            defect_entry
+        ),  # _relaxed_ defect location in supercell
         **kwargs,
     )
 
@@ -504,7 +512,7 @@ def get_kumagai_correction(
             defect_entry, "bulk_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
         )
 
-    defect_supercell = defect_entry.sc_entry.structure.copy()
+    defect_supercell = _get_defect_supercell(defect_entry).copy()
     defect_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     defect_calc_results_for_eFNV = CalcResults(
         structure=defect_supercell,
@@ -513,7 +521,7 @@ def get_kumagai_correction(
         potentials=defect_site_potentials,
     )
 
-    bulk_supercell = defect_entry.bulk_entry.structure.copy()
+    bulk_supercell = _get_bulk_supercell(defect_entry).copy()
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
         # check if the difference is tolerable (< 0.01 Å)
@@ -539,7 +547,9 @@ def get_kumagai_correction(
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect coords (except for vacancies)
+        defect_coords=_get_defect_supercell_bulk_site_coords(
+            defect_entry
+        ),  # _relaxed_ defect coords (except for vacancies)
         defect_region_radius=defect_region_radius,
         excluded_indices=excluded_indices,
         **kwargs,

@@ -25,7 +25,7 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tabulate import tabulate
@@ -40,7 +40,7 @@ from doped.core import (
     _guess_and_set_struct_oxi_states,
     doped_defect_from_pmg_defect,
 )
-from doped.utils import supercells, symmetry
+from doped.utils import parsing, supercells, symmetry
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -151,16 +151,8 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     if isinstance(defect_entry_or_defect, (DefectEntry, thermo.DefectEntry)):
         defect = defect_entry_or_defect.defect
         # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
-        defect_supercell_site = (
-            defect_entry_or_defect.defect_supercell_site
-            if hasattr(defect_entry_or_defect, "defect_supercell_site")
-            else PeriodicSite(
-                "X",
-                defect_entry_or_defect.sc_defect_frac_coords,
-                defect_entry_or_defect.sc_entry.structure.lattice,
-            )
-        )
-        defect_supercell = defect_entry_or_defect.sc_entry.structure
+        defect_supercell_site = parsing._get_defect_supercell_site(defect_entry_or_defect)
+        defect_supercell = parsing._get_defect_supercell(defect_entry_or_defect)
 
     elif isinstance(defect_entry_or_defect, (Defect, core.Defect)):
         if isinstance(defect_entry_or_defect, core.Defect):

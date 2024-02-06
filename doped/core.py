@@ -672,10 +672,11 @@ class DefectEntry(thermo.DefectEntry):
         """
         Returns a string representation of the DefectEntry object.
         """
-        if self.bulk_entry is not None:
-            formula = self.bulk_entry.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
+        from doped.utils.parsing import _get_bulk_supercell
+
+        bulk_supercell = _get_bulk_supercell(self)
+        if bulk_supercell is not None:
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         else:
             formula = self.defect.structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
