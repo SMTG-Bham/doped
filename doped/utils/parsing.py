@@ -814,8 +814,8 @@ def get_orientational_degeneracy(
     point group symbols (e.g. "Td", "C3v" etc).
 
     If a DefectEntry is supplied (and the point group symbols are not),
-    This is computed by determining the `relaxed` point symmetry and the
-    original/unrelaxed defect site symmetry, and then getting the ratio of
+    this is computed by determining the `relaxed` point symmetry and the
+    original/`unrelaxed` defect site symmetry, and then getting the ratio of
     their point group orders (equivalent to the ratio of partition
     functions or number of symmetry operations (i.e. degeneracy)).
 
@@ -824,7 +824,7 @@ def get_orientational_degeneracy(
     guaranteed to work in all cases; namely for non-diagonal supercell
     expansions, or sometimes for non-scalar supercell expansion matrices
     (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
-    which can mess up the periodicity of the cell. doped tries to automatically
+    which can mess up the periodicity of the cell. ``doped`` tries to automatically
     check if this is the case, and will warn you if so.
 
     This can also be checked by using this function on your doped `generated` defects:
@@ -864,11 +864,11 @@ def get_orientational_degeneracy(
             calculated by doped).
         bulk_symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the `relaxed` point symmetry), to
+            structure (used in determining the `unrelaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         defect_symm_ops (list):
             List of symmetry operations of the defect_entry.defect_supercell
-            structure (used in determining the `unrelaxed` point symmetry), to
+            structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.2, which is larger than
@@ -908,15 +908,6 @@ def get_orientational_degeneracy(
             symprec=symprec,  # same symprec as relaxed_point_group for consistency
             relaxed=False,  # unrelaxed
         )
-
-    # TODO: Implement this in point symmetry function:
-    # bulk_site = defect_entry.calculation_metadata["bulk_site"]
-    # bulk_index = defect_entry.bulk_entry.structure.index(bulk_site)
-    #
-    # symm_dataset = _get_sga(
-    #     defect_entry.bulk_entry.structure, symprec=0.1 * symprec
-    # ).get_symmetry_dataset()
-    # bulk_site_symm_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][bulk_index])
 
     return group_order_from_schoenflies(unrelaxed_point_group) / group_order_from_schoenflies(
         relaxed_point_group

@@ -73,7 +73,7 @@ Depends where we want supercell generation to happen. Can input to both `Defects
   - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
-
+- `doped` functions should be equally applicable to the base `pymatgen` `Defect`/`DefectEntry` objects (as well as the corresponding `doped` subclasses) as much as possible. Can we add some quick tests for this? 
 
 ## Docs
 - Add LDOS plotting, big selling point for defects and disorder!
