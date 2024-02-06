@@ -16,7 +16,7 @@ from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
@@ -105,7 +105,7 @@ class DefectEntry(thermo.DefectEntry):
     corrections: Dict[str, float] = field(default_factory=dict)
     corrections_metadata: Dict[str, Any] = field(default_factory=dict)
     sc_defect_frac_coords: Optional[Tuple[float, float, float]] = None
-    bulk_entry: Optional[ComputedStructureEntry] = None
+    bulk_entry: Optional[ComputedEntry] = None
     entry_id: Optional[str] = None
 
     # doped attributes:

@@ -986,17 +986,21 @@ def point_symmetry_from_defect_entry(
     # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
     # determination.
     if relaxed:
-        if not hasattr(defect_entry, "calculation_metadata") or not defect_entry.calculation_metadata:
+        if unrelaxed_defect_structure := _get_unrelaxed_defect_structure(defect_entry):
+            _matching = _check_relaxed_defect_symmetry_determination(
+                defect_entry,
+                unrelaxed_defect_structure=unrelaxed_defect_structure,
+                symprec=symprec,
+                verbose=True,
+            )
+        else:
             warnings.warn(
                 "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), but the "
-                "`calculation_metadata` attribute is not set for `DefectEntry`, suggesting that this "
-                "DefectEntry was not parsed from calculations using doped. This means doped cannot "
-                "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see docstring) - the point symmetry groups may not be correct here!"
-            )  # TODO: Can we not check though? Just using bulk supercell and defect site?
-        elif defect_entry.calculation_metadata.get("unrelaxed_defect_structure"):
-            _matching = _check_relaxed_defect_symmetry_determination(
-                defect_entry, symprec=symprec, verbose=True
+                "`calculation_metadata`/`bulk_entry.structure` attributes are not set for `DefectEntry`, "
+                "suggesting that this DefectEntry was not parsed from calculations using doped. This "
+                "means doped cannot automatically check if the supercell shape is breaking the cell "
+                "periodicity here or not (see docstring) - the point symmetry groups are not guaranteed "
+                "to be correct here!"
             )
 
     _failed = False
@@ -1097,18 +1101,66 @@ def point_symmetry_from_defect_entry(
     return schoenflies_from_hermann(sga.get_point_group_symbol())
 
 
+def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
+    bulk_supercell = None
+
+    if (
+        hasattr(defect_entry, "calculation_metadata")
+        and defect_entry.calculation_metadata
+        and "unrelaxed_defect_structure" in defect_entry.calculation_metadata
+    ):
+        return defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+
+    if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
+        bulk_supercell = defect_entry.bulk_supercell
+
+    elif (
+        hasattr(defect_entry, "bulk_entry")
+        and defect_entry.bulk_entry
+        and hasattr(defect_entry.bulk_entry, "structure")
+        and defect_entry.bulk_entry.structure
+    ):
+        bulk_supercell = defect_entry.bulk_entry.structure
+
+    if bulk_supercell is not None:
+        from doped.analysis import defect_from_structures
+
+        (
+            _defect,
+            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            _defect_site_index,
+            _bulk_site_index,
+            _guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_entry.sc_entry.structure,
+            return_all_info=True,
+        )
+        return unrelaxed_defect_structure
+
+    return None
+
+
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
+    unrelaxed_defect_structure: Structure = None,
     symprec: float = 0.2,
     verbose: bool = False,
 ):
     if defect_entry.defect_supercell_site is None:  # TODO: Can we use ``sc_defect_frac_coords`` instead
-        # if possible? And supercell_site not defined (i.e. non ``doped`` defect object)
+        # if possible? And supercell_site not defined (i.e. non ``doped`` defect object) And other
+        # times, use core attributes (bulk_entry.structure rather than bulk_supercell, etc)
         raise AttributeError(
             "`defect_entry.defect_supercell_site` not defined! Needed to check defect supercell "
             "periodicity (for symmetry determination)"
         )
-    unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
+
+    if unrelaxed_defect_structure is None:
+        unrelaxed_defect_structure = _get_unrelaxed_defect_structure(defect_entry)
     site = defect_entry.calculation_metadata.get("bulk_site", defect_entry.defect_supercell_site)
 
     if unrelaxed_defect_structure is not None:
