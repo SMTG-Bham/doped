@@ -17,6 +17,12 @@ from pymatgen.util.coord import pbc_diff
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+    _get_unrelaxed_defect_structure,
+)
 
 
 def _round_floats(obj, places=5):
@@ -965,15 +971,13 @@ def point_symmetry_from_defect_entry(
             symm_dataset["site_symmetry_symbols"][defect_entry.defect.defect_site_index]
         )
 
-    supercell = defect_entry.defect_supercell if relaxed else defect_entry.bulk_supercell
-    site = (
-        defect_entry.defect_supercell_site
-        if relaxed
-        else defect_entry.calculation_metadata.get("bulk_site", defect_entry.defect_supercell_site)
+    supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
+    defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(
+        defect_entry, relaxed=relaxed
     )
+
     if symm_ops is None:
-        symm_ops_cell = defect_entry.defect_supercell if relaxed else defect_entry.bulk_supercell
-        symm_ops = _get_sga(symm_ops_cell).get_symmetry_operations()
+        symm_ops = _get_sga(supercell).get_symmetry_operations()
 
     # For relaxed = True, often only works for relaxed defect structures if it is a scalar matrix
     # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
@@ -1004,10 +1008,10 @@ def point_symmetry_from_defect_entry(
             )
 
     _failed = False
-    if site is not None:
+    if defect_supercell_bulk_site_coords is not None:
         try:
             symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                site.frac_coords,
+                defect_supercell_bulk_site_coords,
                 supercell,
                 symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
                 symprec=symprec,
@@ -1022,16 +1026,16 @@ def point_symmetry_from_defect_entry(
             # Future work could try a local structure analysis to determine the local point symmetry to
             # counteract this.
             # unique_sites = _get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
-            #     site.frac_coords, defect_entry.bulk_supercell, symm_ops
+            #     site.frac_coords, bulk_supercell, symm_ops
             # )
             # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
-            #     defect_entry.bulk_supercell, unique_sites, symprec=symprec
+            #     bulk_supercell, unique_sites, symprec=symprec
             # )
             # symm_dataset = sga_with_all_X.get_symmetry_dataset()
         except AttributeError:
             _failed = True
 
-    if site is None or _failed:
+    if defect_supercell_bulk_site_coords is None or _failed:
         # possibly pymatgen DefectEntry object without defect_supercell_site set
         if relaxed:
             warnings.warn(
@@ -1058,7 +1062,7 @@ def point_symmetry_from_defect_entry(
         # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
         # determined using the point group of the unrelaxed defect structure:
         # unrelaxed_defect_supercell = defect_entry.calculation_metadata.get(
-        #     "unrelaxed_defect_structure", defect_entry.defect_supercell
+        #     "unrelaxed_defect_structure", defect_supercell
         # )
         # return schoenflies_from_hermann(
         #     _get_sga(unrelaxed_defect_supercell, symprec=symprec).get_symmetry_dataset()["pointgroup"],
@@ -1077,7 +1081,7 @@ def point_symmetry_from_defect_entry(
         # above:
         # schoenflies_from_hermann(
         #     _get_sga(
-        #         defect_entry.defect_supercell, symprec=symprec
+        #         defect_supercell, symprec=symprec
         #     ).get_symmetry_dataset()["pointgroup"]
         # )
 
@@ -1101,77 +1105,33 @@ def point_symmetry_from_defect_entry(
     return schoenflies_from_hermann(sga.get_point_group_symbol())
 
 
-def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
-    bulk_supercell = None
-
-    if (
-        hasattr(defect_entry, "calculation_metadata")
-        and defect_entry.calculation_metadata
-        and "unrelaxed_defect_structure" in defect_entry.calculation_metadata
-    ):
-        return defect_entry.calculation_metadata["unrelaxed_defect_structure"]
-
-    if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
-        bulk_supercell = defect_entry.bulk_supercell
-
-    elif (
-        hasattr(defect_entry, "bulk_entry")
-        and defect_entry.bulk_entry
-        and hasattr(defect_entry.bulk_entry, "structure")
-        and defect_entry.bulk_entry.structure
-    ):
-        bulk_supercell = defect_entry.bulk_entry.structure
-
-    if bulk_supercell is not None:
-        from doped.analysis import defect_from_structures
-
-        (
-            _defect,
-            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            _defect_site_index,
-            _bulk_site_index,
-            _guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_supercell,
-            defect_entry.sc_entry.structure,
-            return_all_info=True,
-        )
-        return unrelaxed_defect_structure
-
-    return None
-
-
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
     unrelaxed_defect_structure: Structure = None,
     symprec: float = 0.2,
     verbose: bool = False,
 ):
-    if defect_entry.defect_supercell_site is None:  # TODO: Can we use ``sc_defect_frac_coords`` instead
-        # if possible? And supercell_site not defined (i.e. non ``doped`` defect object) And other
-        # times, use core attributes (bulk_entry.structure rather than bulk_supercell, etc)
+    defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False)
+
+    if defect_supercell_bulk_site_coords is None:
         raise AttributeError(
-            "`defect_entry.defect_supercell_site` not defined! Needed to check defect supercell "
-            "periodicity (for symmetry determination)"
+            "`defect_entry.defect_supercell_site` or `defect_entry.sc_defect_frac_coords` are not "
+            "defined! Needed to check defect supercell periodicity (for symmetry determination)"
         )
 
     if unrelaxed_defect_structure is None:
         unrelaxed_defect_structure = _get_unrelaxed_defect_structure(defect_entry)
-    site = defect_entry.calculation_metadata.get("bulk_site", defect_entry.defect_supercell_site)
 
     if unrelaxed_defect_structure is not None:
         unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
             _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset()["pointgroup"],
         )
 
-        bulk_symm_ops = _get_sga(defect_entry.bulk_supercell).get_symmetry_operations()
+        bulk_supercell = _get_bulk_supercell(defect_entry)
+        bulk_symm_ops = _get_sga(bulk_supercell).get_symmetry_operations()
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            site.frac_coords,
-            defect_entry.bulk_supercell,
+            defect_supercell_bulk_site_coords,
+            bulk_supercell,
             symm_ops=bulk_symm_ops,
             symprec=symprec,
             dist_tol=symprec,

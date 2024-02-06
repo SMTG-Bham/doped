@@ -9,18 +9,13 @@ from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
-from pymatgen.core import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.utils.symmetry import (
-    _get_all_equiv_sites,
-    group_order_from_schoenflies,
-    point_symmetry_from_defect_entry,
-)
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -771,20 +766,22 @@ def get_interstitial_site_and_orientational_degeneracy(
         combined site and orientational degeneracy of the interstitial defect
         entry (int).
     """
+    from doped.utils.symmetry import _get_all_equiv_sites
+
     if interstitial_defect_entry.bulk_entry is None:
         raise ValueError(
             "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
             "degeneracies! (i.e. must be a parsed DefectEntry)"
         )
     equiv_sites = _get_all_equiv_sites(
-        interstitial_defect_entry.sc_defect_frac_coords,
-        interstitial_defect_entry.bulk_entry.structure,
+        _get_defect_supercell_bulk_site_coords(interstitial_defect_entry),
+        _get_bulk_supercell(interstitial_defect_entry),
     )
     equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
     defect_supercell_sites_of_same_species_array = np.array(
         [
             site.frac_coords
-            for site in interstitial_defect_entry.sc_entry.structure
+            for site in _get_defect_supercell(interstitial_defect_entry)
             if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
         ]
     )
@@ -792,7 +789,7 @@ def get_interstitial_site_and_orientational_degeneracy(
     distance_matrix = np.linalg.norm(
         np.dot(
             pbc_diff(defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array),
-            interstitial_defect_entry.bulk_entry.structure.lattice.matrix,
+            _get_bulk_supercell(interstitial_defect_entry).lattice.matrix,
         ),
         axis=-1,
     )
@@ -879,6 +876,8 @@ def get_orientational_degeneracy(
     Returns:
         float: orientational degeneracy factor for the defect.
     """
+    from doped.utils.symmetry import group_order_from_schoenflies, point_symmetry_from_defect_entry
+
     if defect_entry is None:
         if relaxed_point_group is None or unrelaxed_point_group is None:
             raise ValueError(
@@ -912,3 +911,94 @@ def get_orientational_degeneracy(
     return group_order_from_schoenflies(unrelaxed_point_group) / group_order_from_schoenflies(
         relaxed_point_group
     )
+
+
+def _get_bulk_supercell(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
+        return defect_entry.bulk_supercell
+
+    if (
+        hasattr(defect_entry, "bulk_entry")
+        and defect_entry.bulk_entry
+        and hasattr(defect_entry.bulk_entry, "structure")
+        and defect_entry.bulk_entry.structure
+    ):
+        return defect_entry.bulk_entry.structure
+
+    return None
+
+
+def _get_defect_supercell(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "defect_supercell") and defect_entry.defect_supercell:
+        return defect_entry.defect_supercell
+
+    if (
+        hasattr(defect_entry, "sc_entry")
+        and defect_entry.sc_entry
+        and hasattr(defect_entry.sc_entry, "structure")
+        and defect_entry.sc_entry.structure
+    ):
+        return defect_entry.sc_entry.structure
+
+    return None
+
+
+def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
+    if (
+        hasattr(defect_entry, "calculation_metadata")
+        and defect_entry.calculation_metadata
+        and "unrelaxed_defect_structure" in defect_entry.calculation_metadata
+    ):
+        return defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+
+    bulk_supercell = _get_bulk_supercell(defect_entry)
+
+    if bulk_supercell is not None:
+        from doped.analysis import defect_from_structures
+
+        (
+            _defect,
+            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            _defect_site_index,
+            _bulk_site_index,
+            _guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_supercell,
+            _get_defect_supercell(defect_entry),
+            return_all_info=True,
+        )
+        return unrelaxed_defect_structure
+
+    return None
+
+
+def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=True):
+    sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
+    site = None
+
+    if not relaxed and hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
+        site = defect_entry.calculation_metadata.get("bulk_site")
+    if sc_defect_frac_coords is None and site is None:
+        site = _get_defect_supercell_site(defect_entry)
+    if site is not None:
+        sc_defect_frac_coords = site.frac_coords
+
+    return sc_defect_frac_coords
+
+
+def _get_defect_supercell_site(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
+        return defect_entry.defect_supercell_site
+
+    if defect_entry.sc_defect_frac_coords is not None:
+        return PeriodicSite(
+            defect_entry.defect.site.species,
+            defect_entry.sc_defect_frac_coords,
+            _get_defect_supercell(defect_entry).lattice,
+        )
+
+    return None

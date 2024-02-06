@@ -13,6 +13,8 @@ from math import erfc, exp
 
 import numpy as np
 
+from doped.parsing import _get_bulk_supercell
+
 
 def get_murphy_image_charge_correction(
     lattice,
@@ -218,7 +220,7 @@ def lany_zunger_corrected_defect_dict(defect_dict: dict):
     """
     # Just need any DefectEntry from defect_dict to get the lattice and dielectric matrix
     random_defect_entry = list(defect_dict.values())[0]
-    lattice = random_defect_entry.bulk_entry.structure.lattice.matrix
+    lattice = _get_bulk_supercell(random_defect_entry).lattice.matrix
     dielectric = random_defect_entry.calculation_metadata["dielectric"]
     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
     lz_corrected_defect_dict = copy.deepcopy(defect_dict)

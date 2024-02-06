@@ -28,6 +28,11 @@ from doped.generation import (
     get_defect_name_from_entry,
     name_defect_entries,
 )
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+)
 from doped.utils.symmetry import _frac_coords_sort_func
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
@@ -638,21 +643,16 @@ class DefectRelaxSet(MSONable):
             self.bulk_supercell = None
 
         elif isinstance(self.defect_entry, DefectEntry):
-            self.defect_supercell = (
-                self.defect_entry.defect_supercell or self.defect_entry.sc_entry.structure
-            )
-            if self.defect_entry.bulk_supercell is not None:
-                self.bulk_supercell = self.defect_entry.bulk_supercell
-            elif self.defect_entry.bulk_entry is not None:
-                self.bulk_supercell = self.defect_entry.bulk_entry.structure
-            else:
+            self.defect_supercell = _get_defect_supercell(self.defect_entry)
+            self.bulk_supercell = _get_bulk_supercell(self.defect_entry)
+            if self.bulk_supercell is None:
                 raise ValueError(
                     "Bulk supercell must be defined in DefectEntry object attributes. Both "
                     "DefectEntry.bulk_supercell and DefectEntry.bulk_entry are None!"
                 )
 
             # get POSCAR comment:
-            sc_frac_coords = self.defect_entry.sc_defect_frac_coords
+            sc_frac_coords = _get_defect_supercell_bulk_site_coords(self.defect_entry)
             if sc_frac_coords is None:
                 raise ValueError(
                     "Fractional coordinates of defect in the supercell must be defined in "
@@ -1875,10 +1875,9 @@ class DefectsSet(MSONable):
                 # use defect supercell rather than defect.defect_structure because could be e.g. a
                 # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
                 # (Z>=31) one
-                if defect_entry.defect_supercell is not None:
-                    return defect_entry.defect_supercell.atomic_numbers
-                if defect_entry.sc_entry.structure is not None:
-                    return defect_entry.sc_entry.structure.atomic_numbers
+                defect_supercell = _get_defect_supercell(defect_entry)
+                if defect_supercell is not None:
+                    return defect_supercell.atomic_numbers
 
                 raise ValueError(
                     "Defect supercell needs to be defined in the DefectEntry attributes, but both "

@@ -33,6 +33,7 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _get_defect_supercell_bulk_site_coords,
     _get_output_files_and_check_if_multiple,
     check_atom_mapping_far_from_defect,
     get_defect_site_idxs_and_unrelaxed_structure,
@@ -42,10 +43,14 @@ from doped.utils.parsing import (
     get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
-    point_symmetry_from_defect_entry,
 )
 from doped.utils.plotting import _format_defect_name
-from doped.utils.symmetry import _frac_coords_sort_func, _get_all_equiv_sites, _get_sga
+from doped.utils.symmetry import (
+    _frac_coords_sort_func,
+    _get_all_equiv_sites,
+    _get_sga,
+    point_symmetry_from_defect_entry,
+)
 
 
 def _custom_formatwarning(
@@ -954,7 +959,9 @@ class DefectsParser:
 
         with contextlib.suppress(AttributeError, TypeError):  # sort by supercell frac cooords,
             # to aid deterministic naming:
-            entries_to_rename.sort(key=lambda x: _frac_coords_sort_func(x.sc_defect_frac_coords))
+            entries_to_rename.sort(
+                key=lambda x: _frac_coords_sort_func(_get_defect_supercell_bulk_site_coords(x))
+            )
 
         new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
         # set name attribute: (these are names without charges!)
@@ -1628,7 +1635,7 @@ class DefectParser:
             # but not interstitials
             defect_entry.defect.multiplicity = len(
                 _get_all_equiv_sites(
-                    defect_entry.sc_defect_frac_coords,
+                    _get_defect_supercell_bulk_site_coords(defect_entry),
                     defect_entry.defect.structure,
                     symm_ops=bulk_supercell_symm_ops,
                     symprec=0.01,
