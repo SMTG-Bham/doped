@@ -444,9 +444,12 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
                 searched_structure="bulk",
             )
             far_from_defect_disps[site.specie.symbol].append(
-                site.distance_and_image_from_frac_coords(
-                    bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
-                )[0]
+                round(
+                    site.distance_and_image_from_frac_coords(
+                        bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
+                    )[0],
+                    2,
+                )
             )
 
     if far_from_defect_large_disps := {
