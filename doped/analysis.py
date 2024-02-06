@@ -43,7 +43,6 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
     point_symmetry_from_defect_entry,
-    reorder_s1_like_s2,
 )
 from doped.utils.plotting import _format_defect_name
 from doped.utils.symmetry import _frac_coords_sort_func, _get_all_equiv_sites, _get_sga
@@ -280,9 +279,6 @@ def defect_from_structures(
 
         else:
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-
-        # ensure unrelaxed_defect_structure ordered to match defect_structure:
-        unrelaxed_defect_structure = reorder_s1_like_s2(unrelaxed_defect_structure, defect_supercell)
 
     else:
         warnings.warn(
