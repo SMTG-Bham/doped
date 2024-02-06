@@ -687,11 +687,21 @@ class DefectsParser:
         ):
             self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
         elif all("vasprun.xml" not in file for file in os.listdir(self.bulk_path)):
-            raise FileNotFoundError(
-                f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-                f"{self.bulk_path} or subfolder: {self.subfolder} - please ensure `vasprun.xml(.gz)` "
-                f"files are present and/or specify `bulk_path` manually."
-            )
+            possible_bulk_subfolders = [
+                dir
+                for dir in os.listdir(self.bulk_path)
+                if os.path.isdir(os.path.join(self.bulk_path, dir))
+                and any("vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, dir)))
+            ]
+            if len(possible_bulk_subfolders) == 1:
+                # if only one subfolder with a vasprun.xml file in it, use this
+                self.bulk_path = os.path.join(self.bulk_path, possible_bulk_subfolders[0])
+            else:
+                raise FileNotFoundError(
+                    f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
+                    f"{self.bulk_path} or subfolder: {self.subfolder} - please ensure `vasprun.xml(.gz)` "
+                    f"files are present and/or specify `bulk_path` manually."
+                )
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once

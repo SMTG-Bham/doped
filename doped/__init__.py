@@ -63,7 +63,7 @@ def _ignore_pmg_warnings():
 
     warnings.filterwarnings("ignore", message="get_vasp_input")  # deprecation warning introduced
     # in pymatgen>2024.1.6, fixed in our PR: https://github.com/materialsproject/pymatgen/pull/3601
-    # Can delete later!
+    # (now merged) -- delete later if pymatgen requirement is updated beyond this
 
 
 _ignore_pmg_warnings()
