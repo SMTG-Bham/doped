@@ -646,6 +646,8 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
 
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
+        self.liga5o8 = Structure.from_file(f"{self.data_dir}/LiGa5O8_CONTCAR")
+
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
         dumpfn(defect_gen, "test_defect_gen.json")
@@ -3218,3 +3220,20 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
             self.sqs_agsbte2, generate_supercell=False
         )
         self._general_defect_gen_check(agsbte2_defect_gen)
+
+    def test_liga5o8(self):
+        """
+        Test generating defects in LiGa5O8 (original material which inspired
+        re-examination of supercell generation algorithms).
+
+        LiGa5O8 is P4_332 which has a cubic unit cell (both primitive and
+        conventional, with side lengths of 8.21 Å). Previous approaches yield a
+        defect supercell size of 448 atoms, but actually a root 2 supercell
+        expansion with only 112 atoms and a min periodic image distance > 10 Å
+        is possible.
+        """
+        liga5o8_defect_gen, output = self._generate_and_test_no_warnings(self.liga5o8)
+        self._general_defect_gen_check(liga5o8_defect_gen)
+
+        assert len(liga5o8_defect_gen.bulk_supercell) == 112
+        assert np.isclose(liga5o8_defect_gen.min_image_distance, 11.6165, atol=0.01)
