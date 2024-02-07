@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
-import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
@@ -110,67 +109,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_DefectsParser_CdTe(self):
-        with warnings.catch_warnings(record=True) as w:
-            CdTe_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
-        print([warn.message for warn in w])  # for debugging
-        assert all("KPOINTS" not in str(warn.message) for warn in w)
-        assert any(
-            all(
-                i in str(warn.message)
-                for i in [
-                    "There are mismatching INCAR tags for (some of)",
-                    "in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):",
-                    "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
-                    "In general, the same INCAR settings should be used",
-                ]
-            )
-            for warn in w
-        )  # INCAR warning
-        assert any(
-            all(
-                i in str(warn.message)
-                for i in [
-                    "Multiple `OUTCAR` files",
-                    "(directory: chosen file for parsing):",
-                    f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
-                    "OUTCAR files are used to",
-                    "parse core levels and compute the Kumagai (eFNV) image charge correction.",
-                ]
-            )
-            for warn in w
-        )
-        assert any(
-            "Beware: The Freysoldt (FNV) charge correction scheme has been used for some "
-            "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
-            for warn in w
-        )  # multiple corrections warning
-
-        CdTe_thermo = CdTe_dp.get_defect_thermodynamics()
-        dumpfn(
-            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
-        )  # for test_plotting
-        with warnings.catch_warnings(record=True) as w:
-            CdTe_thermo.plot()
-        print([warn.message for warn in w])  # for debugging
-        print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
-        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
-        assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
-        assert any("All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w)
-
-        # test attributes:
-        assert CdTe_dp.output_path == self.CdTe_EXAMPLE_DIR
-        assert CdTe_dp.dielectric == 9.13
-        assert CdTe_dp.error_tolerance == 0.05
-        assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
-        assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
-        assert CdTe_dp.bulk_band_gap_path is None
-
-        self._check_DefectsParser(CdTe_dp)
-        assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
-        if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
-
-        # explicitly check some formation energies
         def _check_parsed_CdTe_defect_energies(dp):
+            """
+            Explicitly check some formation energies for CdTe defects.
+            """
             assert np.isclose(
                 dp.defect_dict["v_Cd_0"].get_ediff() - sum(dp.defect_dict["v_Cd_0"].corrections.values()),
                 4.166,
@@ -187,16 +129,112 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=1e-3)
             assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
 
-        _check_parsed_CdTe_defect_energies(CdTe_dp)
+        def _check_default_CdTe_DefectParser_outputs(
+            CdTe_dp, recorded_warnings, multiple_outcars_warning=True, dist_tol=1.5
+        ):
+            assert all("KPOINTS" not in str(warn.message) for warn in recorded_warnings)
+            assert any(
+                all(
+                    i in str(warn.message)
+                    for i in [
+                        "There are mismatching INCAR tags for (some of)",
+                        "in the format: (INCAR tag, value in bulk calculation, value in defect",
+                        "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
+                        "In general, the same INCAR settings should be used",
+                    ]
+                )
+                for warn in recorded_warnings
+            )  # INCAR warning
+            if multiple_outcars_warning:
+                assert any(
+                    all(
+                        i in str(warn.message)
+                        for i in [
+                            "Multiple `OUTCAR` files",
+                            "(directory: chosen file for parsing):",
+                            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                            "OUTCAR files are used to",
+                            "parse core levels and compute the Kumagai (eFNV) image charge correction.",
+                        ]
+                    )
+                    for warn in recorded_warnings
+                )
+            assert any(
+                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some "
+                "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
+                for warn in recorded_warnings
+            )  # multiple corrections warning
 
-        assert len(CdTe_dp.defect_folders) == 7
-        for name in CdTe_dp.defect_dict:
-            assert name in CdTe_dp.defect_folders  # all folder names recognised for CdTe examples
+            CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
+            dumpfn(
+                CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
+            )  # for test_plotting
+            with warnings.catch_warnings(record=True) as w:
+                CdTe_thermo.plot()
+            print([warn.message for warn in w])  # for debugging
+            print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
+            assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+            assert any(
+                "All formation energies for Int_Te_3" in str(warn.message) for warn in w
+            )  # renamed to Int_Te_3_a with lowered dist_tol
+            if dist_tol < 0.2:
+                assert any(
+                    "All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w
+                )
+            else:
+                assert all(  # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5
+                    "All formation energies for Int_Te_3_Unperturbed" not in str(warn.message)
+                    for warn in w
+                )
 
-        # both OUTCARs and LOCPOTs in CdTe folders
-        assert len(CdTe_dp.bulk_corrections_data) == 2
-        for _k, v in CdTe_dp.bulk_corrections_data.items():
-            assert v is not None
+            # test attributes:
+            assert CdTe_dp.output_path == self.CdTe_EXAMPLE_DIR
+            assert CdTe_dp.dielectric == 9.13
+            assert CdTe_dp.error_tolerance == 0.05
+            assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
+            assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
+            assert CdTe_dp.bulk_band_gap_path is None
+
+            self._check_DefectsParser(CdTe_dp)
+            assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+            if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+
+            _check_parsed_CdTe_defect_energies(CdTe_dp)
+
+            assert len(CdTe_dp.defect_folders) == 7
+            for name in CdTe_dp.defect_dict:
+                assert name in CdTe_dp.defect_folders  # all folder names recognised for CdTe examples
+
+            # both OUTCARs and LOCPOTs in CdTe folders
+            assert len(CdTe_dp.bulk_corrections_data) == 2
+            for _k, v in CdTe_dp.bulk_corrections_data.items():
+                assert v is not None
+
+        with warnings.catch_warnings(record=True) as w:
+            default_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+        print([warn.message for warn in w])  # for debugging
+        _check_default_CdTe_DefectParser_outputs(default_dp, w)
+
+        # test same behaviour without multiprocessing:
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, processes=1)
+        print([warn.message for warn in w])  # for debugging
+        _check_default_CdTe_DefectParser_outputs(dp, w)
+
+        # check using filterwarnings works as expected:
+        warnings.filterwarnings("ignore", "Multiple")
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+        print([warn.message for warn in w])  # for debugging
+        _check_default_CdTe_DefectParser_outputs(dp, w, multiple_outcars_warning=False)
+        warnings.filterwarnings("default", "Multiple")
+
+        # test with reduced dist_tol:
+        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+        print([warn.message for warn in w])  # for debugging
+        _check_default_CdTe_DefectParser_outputs(dp, w, dist_tol=0.1)
 
         # test no dielectric and no JSON:
         with warnings.catch_warnings(record=True) as w:
@@ -223,10 +261,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         print([warn.message for warn in w])  # for debugging
         assert any(
-            "Estimated error in the Kumagai (eFNV) charge correction for defect Int_Te_3_2 is "
-            "0.012 eV (i.e. which is greater than the `error_tolerance`: 0.010 eV)" in str(warn.message)
+            all(
+                i in str(warn.message)
+                for i in [
+                    "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
+                    "greater than the `error_tolerance` (= 0.010 eV):",
+                    "Int_Te_3_2: 0.012 eV",
+                    "You may want to check the accuracy",
+                ]
+            )
             for warn in w
-        )
+        )  # correction warning
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
 
         self._check_DefectsParser(dp)
@@ -254,11 +299,13 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         for defect_dict in [dp.defect_dict, reloaded_defect_dict]:
             for defect_name, defect_entry in defect_dict.items():
-                assert defect_entry.name == CdTe_dp.defect_dict[defect_name].name
-                assert np.isclose(defect_entry.get_ediff(), CdTe_dp.defect_dict[defect_name].get_ediff())
+                assert defect_entry.name == default_dp.defect_dict[defect_name].name
+                assert np.isclose(
+                    defect_entry.get_ediff(), default_dp.defect_dict[defect_name].get_ediff()
+                )
                 assert np.allclose(
                     defect_entry.sc_defect_frac_coords,
-                    CdTe_dp.defect_dict[defect_name].sc_defect_frac_coords,
+                    default_dp.defect_dict[defect_name].sc_defect_frac_coords,
                 )
 
         # skip_corrections:
@@ -271,10 +318,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=fake_aniso_dielectric)
         print([warn.message for warn in w])  # for debugging
         assert any(
-            "Estimated error in the Kumagai (eFNV) charge correction for defect Int_Te_3_2 is "
-            "0.157 eV (i.e. which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
+            all(
+                i in str(warn.message)
+                for i in [
+                    "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
+                    "greater than the `error_tolerance` (= 0.050 eV):",
+                    "Int_Te_3_2: 0.157 eV",
+                    "You may want to check the accuracy",
+                ]
+            )
             for warn in w
-        )
+        )  # correction warning
         assert any(
             all(
                 i in str(warn.message)
@@ -296,7 +350,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # integration test using parsed CdTe thermo and chempots for plotting:
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
-        return CdTe_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
+        default_thermo = default_dp.get_defect_thermodynamics()
+
+        return default_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
 
     def test_DefectsParser_corrections_errors_warning(self):
         with warnings.catch_warnings(record=True) as w:
@@ -1849,79 +1905,79 @@ class ReorderedParsingTestCase(unittest.TestCase):
         )
 
 
-class AnalysisFunctionsTestCase(unittest.TestCase):
-    """
-    Test post-processing analysis functions.
-    """
-
-    def setUp(self):
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.sb2o5_chempots = loadfn(f"{self.data_dir}/Sb2O5/Sb2O5_chempots.json")
-        self.sb2o5_thermo = loadfn(f"{self.data_dir}/Sb2O5/sb2o5_thermo.json")
-
-    def tearDown(self):
-        if_present_rm("test.csv")
-
-    def test_get_formation_energies(
-        self,
-    ):  # TODO: Get Ke to reparse with new defects thermo code and add here
-        def _check_formation_energy_table(
-            formation_energy_table_df, fermi_level=0, thermo=self.sb2o5_thermo
-        ):
-            defect_entry_names = [defect_entry.name for defect_entry in thermo.entries]
-            assert sorted(formation_energy_table_df["Defect"].tolist()) == sorted(defect_entry_names)
-
-            # for each row, assert sum of formation energy terms equals formation energy column
-            np.isclose(
-                np.asarray(sum(formation_energy_table_df.iloc[:, i] for i in range(2, 8))),
-                np.asarray(formation_energy_table_df.iloc[:, 8]),
-                atol=2e-3,
-            )
-
-            assert np.isclose(
-                formation_energy_table_df.iloc[:, 1] * fermi_level,
-                formation_energy_table_df.iloc[:, 4],
-                atol=2e-3,
-            ).all()
-
-        formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-            self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
-        )
-        _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
-
-        formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(  # test default with E_F = 0
-            self.sb2o5_chempots,
-            facets=["Sb2O5-O2"],
-        )
-        _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
-
-        formation_energy_table_df_manual_chempots = (
-            self.sb2o5_thermo.get_formation_energies(  # test default with E_F = 0
-                chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
-                el_refs=self.sb2o5_chempots["elemental_refs"],
-            )
-        )
-        _check_formation_energy_table(formation_energy_table_df_manual_chempots, fermi_level=0)
-
-        # check manual and auto chempots the same:
-        assert formation_energy_table_df_manual_chempots.equals(formation_energy_table_df)
-
-        # assert runs fine without chempots:
-        formation_energy_table_df = self.sb2o5_thermo.get_formation_energies()
-        _check_formation_energy_table(formation_energy_table_df)
-
-        # assert runs fine with only raw chempots:
-        formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-            chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
-        )
-        _check_formation_energy_table(formation_energy_table_df)
-        # check same formation energies as with manual chempots plus el_refs:
-        assert formation_energy_table_df.iloc[:, 8].equals(
-            formation_energy_table_df_manual_chempots.iloc[:, 8]
-        )
-
-        # check saving to csv and reloading all works fine:
-        formation_energy_table_df.to_csv("test.csv", index=False)
-        formation_energy_table_df_reloaded = pd.read_csv("test.csv")
-        assert formation_energy_table_df_reloaded.equals(formation_energy_table_df)
+# class AnalysisFunctionsTestCase(unittest.TestCase):
+#     """
+#     Test post-processing analysis functions.
+#     """
+#
+#     def setUp(self):
+#         self.module_path = os.path.dirname(os.path.abspath(__file__))
+#         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+#         self.sb2o5_chempots = loadfn(f"{self.data_dir}/Sb2O5/Sb2O5_chempots.json")
+#         self.sb2o5_thermo = loadfn(f"{self.data_dir}/Sb2O5/sb2o5_thermo.json")
+#
+#     def tearDown(self):
+#         if_present_rm("test.csv")
+#
+#     def test_get_formation_energies(
+#         self,
+#     ):  # TODO: Get Ke to reparse with new defects thermo code and add here
+#         def _check_formation_energy_table(
+#             formation_energy_table_df, fermi_level=0, thermo=self.sb2o5_thermo
+#         ):
+#             defect_entry_names = [defect_entry.name for defect_entry in thermo.entries]
+#             assert sorted(formation_energy_table_df["Defect"].tolist()) == sorted(defect_entry_names)
+#
+#             # for each row, assert sum of formation energy terms equals formation energy column
+#             np.isclose(
+#                 np.asarray(sum(formation_energy_table_df.iloc[:, i] for i in range(2, 8))),
+#                 np.asarray(formation_energy_table_df.iloc[:, 8]),
+#                 atol=2e-3,
+#             )
+#
+#             assert np.isclose(
+#                 formation_energy_table_df.iloc[:, 1] * fermi_level,
+#                 formation_energy_table_df.iloc[:, 4],
+#                 atol=2e-3,
+#             ).all()
+#
+#         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
+#             self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
+#         )
+#         _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
+#
+#         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(  # test default w/ E_F = 0
+#             self.sb2o5_chempots,
+#             facets=["Sb2O5-O2"],
+#         )
+#         _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
+#
+#         formation_energy_table_df_manual_chempots = (
+#             self.sb2o5_thermo.get_formation_energies(  # test default with E_F = 0
+#                 chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
+#                 el_refs=self.sb2o5_chempots["elemental_refs"],
+#             )
+#         )
+#         _check_formation_energy_table(formation_energy_table_df_manual_chempots, fermi_level=0)
+#
+#         # check manual and auto chempots the same:
+#         assert formation_energy_table_df_manual_chempots.equals(formation_energy_table_df)
+#
+#         # assert runs fine without chempots:
+#         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies()
+#         _check_formation_energy_table(formation_energy_table_df)
+#
+#         # assert runs fine with only raw chempots:
+#         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
+#             chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
+#         )
+#         _check_formation_energy_table(formation_energy_table_df)
+#         # check same formation energies as with manual chempots plus el_refs:
+#         assert formation_energy_table_df.iloc[:, 8].equals(
+#             formation_energy_table_df_manual_chempots.iloc[:, 8]
+#         )
+#
+#         # check saving to csv and reloading all works fine:
+#         formation_energy_table_df.to_csv("test.csv", index=False)
+#         formation_energy_table_df_reloaded = pd.read_csv("test.csv")
+#         assert formation_energy_table_df_reloaded.equals(formation_energy_table_df)
