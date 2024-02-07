@@ -65,5 +65,9 @@ def _ignore_pmg_warnings():
     # in pymatgen>2024.1.6, fixed in our PR: https://github.com/materialsproject/pymatgen/pull/3601
     # (now merged) -- delete later if pymatgen requirement is updated beyond this
 
+    # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
+    # otherwise) for the bulk):
+    warnings.filterwarnings("ignore", message="Not all sites have property")
+
 
 _ignore_pmg_warnings()

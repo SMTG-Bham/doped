@@ -901,6 +901,8 @@ def point_symmetry_from_defect_entry(
     symm_ops: Optional[list] = None,
     symprec: Optional[float] = None,
     relaxed: bool = True,
+    verbose: bool = True,
+    return_periodicity_breaking: bool = False,
 ):
     r"""
     Get the defect site point symmetry from a DefectEntry object.
@@ -955,9 +957,20 @@ def point_symmetry_from_defect_entry(
             unrelaxed bulk supercell`, otherwise uses the defect supercell to
             determine the site symmetry (i.e. try determine the point symmetry
             of a relaxed defect in the defect supercell). Default is True.
+        verbose (bool):
+            If True, prints a warning if the supercell is detected to break
+            the crystal periodicity (and hence not be able to return a reliable
+            `relaxed` point symmetry). Default is True.
+        return_periodicity_breaking (bool):
+            If True, also returns a boolean specifying if the supercell has been
+            detected to break the crystal periodicity (and hence not be able to
+            return a reliable `relaxed` point symmetry) or not. Mainly for
+            internal ``doped`` usage. Default is False.
 
     Returns:
-        str: Defect point symmetry.
+        str: Defect point symmetry (and if ``return_periodicity_breaking = True``,
+        a boolean specifying if the supercell has been detected to break the crystal
+        periodicity).
     """
     if symprec is None:
         symprec = 0.2 if relaxed else 0.01  # relaxed structures likely have structural noise
@@ -989,13 +1002,14 @@ def point_symmetry_from_defect_entry(
     # calculation_metadata if present, which, if it gives the same result as relaxed=False, means that
     # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
     # determination.
+    matching = True
     if relaxed:
         if unrelaxed_defect_structure := _get_unrelaxed_defect_structure(defect_entry):
-            _matching = _check_relaxed_defect_symmetry_determination(
+            matching = _check_relaxed_defect_symmetry_determination(
                 defect_entry,
                 unrelaxed_defect_structure=unrelaxed_defect_structure,
                 symprec=symprec,
-                verbose=True,
+                verbose=verbose,
             )
         else:
             warnings.warn(
@@ -1036,6 +1050,7 @@ def point_symmetry_from_defect_entry(
             _failed = True
 
     if defect_supercell_bulk_site_coords is None or _failed:
+        point_group = point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
         # possibly pymatgen DefectEntry object without defect_supercell_site set
         if relaxed:
             warnings.warn(
@@ -1043,8 +1058,9 @@ def point_symmetry_from_defect_entry(
                 "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
                 "group symmetry cannot be reliably automatically determined."
             )
+            return (point_group, not matching) if return_periodicity_breaking else point_group
 
-        return point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
+        return point_group
 
     if not relaxed:
         # `site_symmetry_symbols[-1]` should be used (within this equiv sites approach) for unrelaxed
@@ -1086,7 +1102,11 @@ def point_symmetry_from_defect_entry(
         # )
 
     if spglib_point_group_symbol is not None:
-        return spglib_point_group_symbol
+        return (
+            (spglib_point_group_symbol, not matching)
+            if return_periodicity_breaking
+            else (spglib_point_group_symbol)
+        )
 
     # symm_ops approach failed, just use diagonal defect supercell approach:
     if relaxed:
@@ -1102,7 +1122,8 @@ def point_symmetry_from_defect_entry(
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
     sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-    return schoenflies_from_hermann(sga.get_point_group_symbol())
+    point_group = schoenflies_from_hermann(sga.get_point_group_symbol())
+    return (point_group, not matching) if return_periodicity_breaking else point_group
 
 
 def _check_relaxed_defect_symmetry_determination(
@@ -1144,7 +1165,7 @@ def _check_relaxed_defect_symmetry_determination(
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
-                    "detected that the defect supercell is _possibly_ a non-scalar matrix expansion which "
+                    "detected that the defect supercell is likely a non-scalar matrix expansion which "
                     "could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
                     "point group symmetry from being automatically determined. You can set relaxed=False "
                     "to instead get the unrelaxed/initial point group symmetry, and/or manually "

@@ -82,12 +82,12 @@ def _monty_decode_nested_dicts(d):
             try:
                 d[key] = [MontyDecoder().process_decoded(i) for i in value]
             except Exception as exc:
-                print(f"Failed to decode {key} with error {exc}")
+                print(f"Failed to decode {key} with error {exc!r}")
         if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
             try:
                 d[key] = MontyDecoder().process_decoded(value)
             except Exception as exc:
-                print(f"Failed to decode {key} with error {exc}")
+                print(f"Failed to decode {key} with error {exc!r}")
 
 
 def _check_if_None_and_raise_error_if_so(var, var_name, display_name):

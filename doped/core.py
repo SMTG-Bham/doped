@@ -20,6 +20,20 @@ from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEn
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
+_orientational_degeneracy_warning = (
+    "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
+    "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
+    "point group symmetries (and thus orientational degeneracies) from being automatically "
+    "determined.\n"
+    "This will not affect defect formation energies / transition levels, but is important for "
+    "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
+    "doi.org/10.1039/D3CS00432E).\n"
+    "You can manually check (and edit) the computed relaxed/unrelaxed point symmetries and "
+    "corresponding orientational degeneracy factors by inspecting/editing the "
+    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+    "degeneracy_factors['orientational degeneracy'] attributes."
+)
+
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -647,6 +661,9 @@ class DefectEntry(thermo.DefectEntry):
                 "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
             )
+
+        if self.calculation_metadata.get("periodicity_breaking_supercell", False):
+            warnings.warn(_orientational_degeneracy_warning)
 
         formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, facet=facet, vbm=vbm, fermi_level=fermi_level
