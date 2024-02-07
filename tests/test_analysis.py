@@ -119,8 +119,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(warn.message)
                 for i in [
                     "There are mismatching INCAR tags for (some of)",
-                    "(in the format: (INCAR tag, value in bulk calculation, value in defect "
-                    "calculation)):",
+                    "in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):",
                     "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
                     "In general, the same INCAR settings should be used",
                 ]
@@ -306,26 +305,23 @@ class DefectsParsingTestCase(unittest.TestCase):
             )  # low error tolerance to force warnings
         print([warn.message for warn in w])  # for debugging
 
-        assert any(
-            all(
-                i in str(warn.message)
-                for i in [
-                    "Estimated error in the Freysoldt (FNV) ",
-                    "Estimated error in the Kumagai (eFNV) ",
-                    "charge correction for certain defects is greater than the `error_tolerance` (= "
-                    "0.001 eV):",
-                    "v_Cd_-2: 0.011 eV",
-                    "v_Cd_-1: 0.008 eV",
-                    "Int_Te_3_1: 0.003 eV",
-                    "Te_Cd_+1: 0.002 eV",
-                    "Int_Te_3_Unperturbed_1: 0.005 eV",
-                    "Int_Te_3_2: 0.012 eV",
-                    "You may want to check the accuracy of the corrections by",
-                    "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
-                    "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
-                ]
-            )
-            for warn in w
+        assert all(
+            any(i in str(warn.message) for warn in w)
+            for i in [
+                "Estimated error in the Freysoldt (FNV) ",
+                "Estimated error in the Kumagai (eFNV) ",
+                "charge correction for certain defects is greater than the `error_tolerance` (= "
+                "0.001 eV):",
+                "v_Cd_-2: 0.011 eV",
+                "v_Cd_-1: 0.008 eV",
+                "Int_Te_3_1: 0.003 eV",
+                "Te_Cd_+1: 0.002 eV",
+                "Int_Te_3_Unperturbed_1: 0.005 eV",
+                "Int_Te_3_2: 0.012 eV",
+                "You may want to check the accuracy of the corrections by",
+                "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
+                "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
+            ]
         )  # correction errors warnings
 
     @pytest.mark.mpl_image_compare(
@@ -419,7 +415,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Estimated error in the Kumagai (eFNV) charge correction for defect" in str(warning.message)
             for warning in w
         )  # no individual level warning
-        assert not any("The defect supercell has been detected" in str(warning.message) for warning in w)
+        # Sb2Si2Te6 supercell breaks periodicity:
+        assert any("The defect supercell has been detected" in str(warning.message) for warning in w)
 
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
         with warnings.catch_warnings(record=True) as w:
@@ -1273,19 +1270,13 @@ class DopedParsingTestCase(unittest.TestCase):
         corr = int_F_minus1_ent.get_kumagai_correction()
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
 
-        # test symmetry determination (warning here because periodicity breaking affects F_i):
+        # test symmetry determination (periodicity breaking does not affect F_i):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             relaxed_defect_name = get_defect_name_from_entry(int_F_minus1_ent)
-            assert len(w) == 1
-            assert (
-                "`unrelaxed` is set to False (i.e. get _relaxed_ defect symmetry), but doped has "
-                "detected that the supercell is a non-scalar matrix expansion which is breaking "
-                "the cell periodicity, likely preventing the correct point group symmetry "
-                in str(w[-1].message)
-            )
+            assert not w  # this supercell is not periodicity breaking
         assert relaxed_defect_name == "F_i_C4v_O2.67"
-        assert get_defect_name_from_entry(int_F_minus1_ent, unrelaxed=True) == "F_i_Cs_O2.67"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.67"
 
     def _check_defect_entry_corrections(self, defect_entry, ediff, correction):
         assert np.isclose(defect_entry.get_ediff(), ediff, atol=0.001)
@@ -1394,7 +1385,7 @@ class DopedParsingTestCase(unittest.TestCase):
             relaxed_defect_name = get_defect_name_from_entry(F_O_1_ent)
             assert len(w) == 0
         assert relaxed_defect_name == "F_O_D4h_Ti1.79"
-        assert get_defect_name_from_entry(F_O_1_ent, unrelaxed=True) == "F_O_D4h_Ti1.79"
+        assert get_defect_name_from_entry(F_O_1_ent, relaxed=False) == "F_O_D4h_Ti1.79"
 
     def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
         assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)

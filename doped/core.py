@@ -20,8 +20,6 @@ from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEn
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
-from doped.utils.displacements import _plot_site_displacements
-
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -715,6 +713,8 @@ class DefectEntry(thermo.DefectEntry):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
+        from doped.utils.displacements import _plot_site_displacements
+
         return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
