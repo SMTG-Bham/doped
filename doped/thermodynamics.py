@@ -554,6 +554,7 @@ class DefectThermodynamics(MSONable):
         stable_entries: dict = {}
         defect_charge_map: dict = {}
         transition_level_map: dict = {}
+        all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
 
         try:
             defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=self.dist_tol)
@@ -618,8 +619,8 @@ class DefectThermodynamics(MSONable):
             ]  # names without charge
             defect_name_wout_charge = min(possible_defect_names, key=len)
 
-            if any(
-                defect_name_wout_charge in i for i in transition_level_map
+            if defect_name_wout_charge in transition_level_map or any(
+                f"{defect_name_wout_charge}_{chr(96 + i)}" in transition_level_map for i in range(1, 27)
             ):  # defects with same name, rename to prevent overwriting:
                 # append "a,b,c.." for different defect species with the same name
                 i = 3
@@ -627,7 +628,12 @@ class DefectThermodynamics(MSONable):
                 if (
                     defect_name_wout_charge in transition_level_map
                 ):  # first repeat, direct match, rename previous entry
-                    for output_dict in [transition_level_map, stable_entries, defect_charge_map]:
+                    for output_dict in [
+                        transition_level_map,
+                        all_entries,
+                        stable_entries,
+                        defect_charge_map,
+                    ]:
                         val = output_dict.pop(defect_name_wout_charge)
                         output_dict[f"{defect_name_wout_charge}_{chr(96 + 1)}"] = val  # a
 
@@ -688,12 +694,16 @@ class DefectThermodynamics(MSONable):
                 defect_charge_map[defect_name_wout_charge] = [
                     entry.charge_state for entry in sorted_defect_entries
                 ]
+
+            all_entries[defect_name_wout_charge] = sorted_defect_entries
+
         self.transition_level_map = transition_level_map
         self.transition_levels = {
             defect_name: list(defect_tls.keys())
             for defect_name, defect_tls in transition_level_map.items()
         }
         self.stable_entries = stable_entries
+        self.all_entries = all_entries
         self.defect_charge_map = defect_charge_map
         self.stable_charges = {
             defect_name: [entry.charge_state for entry in entries]
