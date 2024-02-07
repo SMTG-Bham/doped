@@ -33,6 +33,7 @@ Depends where we want supercell generation to happen. Can input to both `Defects
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 
 ## Post-Processing
+- Symmetry determination in arbitrary (periodicity-breaking) supercells. Should be doable, with defect-expander (stenciling) type code to regenerate the structure in an appropriate larger non-periodicity-breaking cell.
 - For complex defects, auto symmetry determination is future work, and should be done manually (note in docs and give
   warning when parsing).
   - Previously had ideas (in `Dev_ToDo.md`) about split-interstitials/vacancies, but think these are now handled fine with current tools.
