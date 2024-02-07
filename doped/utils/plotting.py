@@ -636,22 +636,25 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
     ymin = 0
 
-    for defect_entry in defect_thermodynamics.defect_entries:
-        defect_entry_name = defect_entry.name  # all_lines name includes charge state
-        all_lines_xy[defect_entry_name] = [[], []]
-        for x_extrem in [lower_cap, upper_cap]:
-            all_lines_xy[defect_entry_name][0].append(x_extrem)
-            all_lines_xy[defect_entry_name][1].append(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+    for def_name, defect_entry_list in defect_thermodynamics.all_entries.items():
+        for defect_entry in defect_entry_list:
+            charge = defect_entry.charge_state
+            # all_lines name includes charge state:
+            defect_entry_name = f"{def_name}_{'+' if charge > 0 else ''}{charge}"
+            all_lines_xy[defect_entry_name] = [[], []]
+            for x_extrem in [lower_cap, upper_cap]:
+                all_lines_xy[defect_entry_name][0].append(x_extrem)
+                all_lines_xy[defect_entry_name][1].append(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+                    )
                 )
-            )
-            all_entries_y_range_vals.extend(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_window
+                all_entries_y_range_vals.extend(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_window
+                    )
+                    for x_window in xlim
                 )
-                for x_window in xlim
-            )
 
     for def_name, def_tl in defect_thermodynamics.transition_level_map.items():
         xy[def_name] = [[], []]
