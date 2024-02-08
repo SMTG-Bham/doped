@@ -1,0 +1,6 @@
+Defect,q,ΔEʳᵃʷ,qE_VBM,qE_F,Σμ_ref,Σμ_formal,E_corr,ΔEᶠᵒʳᵐ,Path
+Mg_O,4,-5.511,12.517,9.444,-3.399,-5.646,2.586,9.991,MgO/Defects/Mg_O_+4/vasp_std
+Mg_O,3,-0.999,9.388,7.083,-3.399,-5.646,1.572,7.999,MgO/Defects/Mg_O_+3/vasp_std
+Mg_O,2,3.908,6.259,4.722,-3.399,-5.646,0.723,6.567,MgO/Defects/Mg_O_+2/vasp_std
+Mg_O,1,11.911,3.129,2.361,-3.399,-5.646,0.199,8.555,MgO/Defects/Mg_O_+1/vasp_std
+Mg_O,0,20.109,0.0,0.0,-3.399,-5.646,0.0,11.064,MgO/Defects/Mg_O_0/vasp_std

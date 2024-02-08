@@ -1,0 +1,16 @@
+ALGO = Normal
+EDIFF = 1e-07
+ENCUT = 300
+GGA = Ps
+IBRION = -1
+ISMEAR = 0
+ISPIN = 2
+KPAR = 2
+LORBIT = 11
+LREAL = False
+NCORE = 8
+NEDOS = 2000
+NELM = 100
+NSW = 0
+PREC = Accurate
+SIGMA = 0.05
