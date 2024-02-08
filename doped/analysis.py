@@ -1793,7 +1793,7 @@ class DefectParser:
 
                 else:
                     warnings.warn(
-                        f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
+                        f"`LOCPOT` files (needed to compute the Kumagai eFNV charge correction for "
                         f"_anisotropic_ and isotropic systems) in the defect or bulk folder were unable "
                         f"to be parsed, giving the following error message:"
                         f"\n{kumagai_exc}\n"
