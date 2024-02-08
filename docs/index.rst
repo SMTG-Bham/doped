@@ -103,6 +103,7 @@ package was rewritten to operate using the new ``pymatgen-analysis-defects`` pac
 Studies using ``doped``, so far
 ===============================
 
+- X\. Wang et al. `arXiv <https://arxiv.org/abs/2402.04434>`_ 2024
 - I\. Mosquera-Lois et al. `arXiv <https://doi.org/10.48550/arXiv.2401.12127>`_ 2024
 - W\. Dou et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_ 2024
 - K\. Li et al. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
