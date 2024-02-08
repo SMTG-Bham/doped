@@ -727,7 +727,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
 
 
 def _get_ylim_from_y_range_vals(y_range_vals, ymin=0, auto_labels=False):
-    window = max(y_range_vals) - min(y_range_vals)
+    window = max(y_range_vals) - min(*y_range_vals, ymin)
     spacer = 0.1 * window
     ylim = (ymin, max(y_range_vals) + spacer)
     if auto_labels:  # need to manually set xlim or ylim if labels cross axes!!

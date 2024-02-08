@@ -14,6 +14,7 @@ import matplotlib as mpl
 import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.structure import Structure
 
 from doped.analysis import (
@@ -28,6 +29,7 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
 )
@@ -440,7 +442,26 @@ class DefectsParsingTestCase(unittest.TestCase):
         style=f"{module_path}/../doped/utils/doped.mplstyle",
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
-    def test_DefectsParser_YTOS(self):
+    def test_DefectsParser_YTOS_default_bulk(self):
+        # bulk path needs to be specified for YTOS as it's not the default name:
+        dp = DefectsParser(
+            output_path=self.YTOS_EXAMPLE_DIR,
+            dielectric=self.ytos_dielectric,
+        )
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+        dumpfn(
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )  # for test_plotting
+        return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="YTOS_example_defects_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_DefectsParser_YTOS_explicit_bulk(self):
         # bulk path needs to be specified for YTOS as it's not the default name:
         dp = DefectsParser(
             output_path=self.YTOS_EXAMPLE_DIR,
@@ -453,6 +474,16 @@ class DefectsParsingTestCase(unittest.TestCase):
             thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    def test_DefectsParser_no_defects_parsed_error(self):
+        with self.assertRaises(ValueError) as exc:
+            DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, subfolder="vasp_gam")
+        assert (
+            f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
+            f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "
+            f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
+            f"as expected (see `DefectsParser` docstring)." in str(exc.exception)
+        )
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -1852,6 +1883,28 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
+
+    def test_orientational_degeneracy_error(self):
+        # note most usages of get_orientational_degeneracy are tested (indirectly) via the
+        # DefectsParser/DefectThermodynamics tests
+        for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
+            print(defect_type)  # for debugging
+            with self.assertRaises(ValueError) as exc:
+                get_orientational_degeneracy(
+                    relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+                )
+            assert (
+                "From the input/determined point symmetries, an orientational degeneracy factor of 0.25 "
+                "is predicted, which is less than 1, which is not reasonable for vacancies/substitutions, "
+                "indicating an error in the symmetry determination!"
+            ) in str(exc.exception)
+
+        for defect_type in ["interstitial", DefectType.Interstitial]:
+            print(defect_type)  # for debugging
+            orientational_degeneracy = get_orientational_degeneracy(
+                relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+            )
+            assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
