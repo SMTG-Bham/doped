@@ -64,7 +64,9 @@ entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
 
 ## Studies using `doped`, so far
-<!-- Irea, Xinwei papers -->
+- X. Wang et al. [_arXiv_](https://arxiv.org/abs/2402.04434) 2024
+- I. Mosquera-Lois et al. [_arXiv_](
+https://doi.org/10.48550/arXiv.2401.12127) 2024
 - W. Dou et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-hm6vh) 2024
 - K. Li et al. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23) 2023
 - X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
