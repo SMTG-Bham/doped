@@ -711,6 +711,9 @@ class DefectsParser:
                     f"files are present and/or specify `bulk_path` manually."
                 )
 
+        # remove trailing '/.' from bulk_path if present:
+        self.bulk_path = self.bulk_path.rstrip("/.")
+
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
@@ -911,6 +914,15 @@ class DefectsParser:
             for warning, defect_list in duplicate_warnings.items():
                 if defect_list:
                     warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
+
+        if not parsed_defect_entries:
+            subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""
+            raise ValueError(
+                f"No defect calculations in `output_path` '{self.output_path}' were successfully parsed, "
+                f"using `bulk_path`: {self.bulk_path}{subfolder_string}. Please check the correct "
+                f"defect/bulk paths and subfolder are being set, and that the folder structure is as "
+                f"expected (see `DefectsParser` docstring)."
+            )
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:

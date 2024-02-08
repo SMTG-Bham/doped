@@ -442,7 +442,26 @@ class DefectsParsingTestCase(unittest.TestCase):
         style=f"{module_path}/../doped/utils/doped.mplstyle",
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
-    def test_DefectsParser_YTOS(self):
+    def test_DefectsParser_YTOS_default_bulk(self):
+        # bulk path needs to be specified for YTOS as it's not the default name:
+        dp = DefectsParser(
+            output_path=self.YTOS_EXAMPLE_DIR,
+            dielectric=self.ytos_dielectric,
+        )
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+        dumpfn(
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )  # for test_plotting
+        return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="YTOS_example_defects_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_DefectsParser_YTOS_explicit_bulk(self):
         # bulk path needs to be specified for YTOS as it's not the default name:
         dp = DefectsParser(
             output_path=self.YTOS_EXAMPLE_DIR,
@@ -455,6 +474,16 @@ class DefectsParsingTestCase(unittest.TestCase):
             thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    def test_DefectsParser_no_defects_parsed_error(self):
+        with self.assertRaises(ValueError) as exc:
+            DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, subfolder="vasp_gam")
+        assert (
+            f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
+            f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "
+            f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
+            f"as expected (see `DefectsParser` docstring)." in str(exc.exception)
+        )
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
