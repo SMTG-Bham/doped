@@ -250,7 +250,7 @@ class DefectDictSet(DictSet):
                 f"this up). As this is a neutral supercell, the INCAR file will be written without this "
                 f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
                 f"unphysical solutions, and POTCARs are also needed to set the charge state (i.e. "
-                f"NELECT) of charged defect supercells. Got error:\n{e}"
+                f"NELECT) of charged defect supercells. Got error:\n{e!r}"
             )
 
         if "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:

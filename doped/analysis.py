@@ -701,8 +701,9 @@ class DefectsParser:
                 if os.path.isdir(os.path.join(self.bulk_path, dir))
                 and any("vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, dir)))
             ]
-            if len(possible_bulk_subfolders) == 1:
-                # if only one subfolder with a vasprun.xml file in it, use this
+            if len(possible_bulk_subfolders) == 1 and subfolder is None:
+                # if only one subfolder with a vasprun.xml file in it, and `subfolder` wasn't explicitly
+                # set by the user, then use this
                 self.bulk_path = os.path.join(self.bulk_path, possible_bulk_subfolders[0])
             else:
                 raise FileNotFoundError(
@@ -813,7 +814,24 @@ class DefectsParser:
         if parsing_warnings := [
             warning for warning in parsing_warnings if warning  # remove empty strings
         ]:
-            split_parsing_warnings = [warning.split("\n") for warning in parsing_warnings]
+            split_parsing_warnings = [warning.split("\n\n") for warning in parsing_warnings]
+
+            def _mention_bulk_path_subfolder_for_correction_warnings(warning: str) -> str:
+                if "defect & bulk" in warning or "defect or bulk" in warning:
+                    # charge correction file warning, print subfolder and bulk_path:
+                    if self.subfolder == ".":
+                        warning += f"\n(using bulk path: {self.bulk_path} and without defect subfolders)"
+                    else:
+                        warning += (
+                            f"\n(using bulk path {self.bulk_path} and {self.subfolder} defect subfolders)"
+                        )
+
+                return warning
+
+            split_parsing_warnings = [
+                [_mention_bulk_path_subfolder_for_correction_warnings(warning) for warning in warning_list]
+                for warning_list in split_parsing_warnings
+            ]
             flattened_warnings_list = [
                 warning for warning_list in split_parsing_warnings for warning in warning_list
             ]
@@ -867,13 +885,12 @@ class DefectsParser:
 
             for error, defect_list in parsing_errors_dict.items():
                 if defect_list:
-                    warnings.warn(
-                        f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
-                    )
-
-            for warning, defect_list in duplicate_warnings.items():
-                if defect_list:
-                    warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
+                    if len(defect_list) > 1:
+                        warnings.warn(
+                            f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
+                        )
+                    else:
+                        warnings.warn(f"Parsing failed for defect {defect_list[0]} with error:\n{error}")
 
             for file_type, directory_file_list in multiple_files_warning_dict.items():
                 if directory_file_list:
@@ -1094,7 +1111,8 @@ class DefectsParser:
             if "Parsing failed" in warnings_string:
                 return warnings_string
             return (
-                f"Warning(s) encountered when parsing {defect_folder} at {defect_path}:\n{warnings_string}"
+                f"Warning(s) encountered when parsing {defect_folder} at {defect_path}:\n\n"
+                f"{warnings_string}"
             )
 
         return ""
@@ -1128,7 +1146,7 @@ class DefectsParser:
             "The KPOINTS",
             "The POTCAR",
         ]  # collectively warned later
-        warnings_string = "\n".join(
+        warnings_string = "\n\n".join(
             str(warning.message)
             for warning in captured_warnings
             if not any(warning.message.args[0].startswith(i) for i in ignore_messages)
@@ -1184,7 +1202,8 @@ class DefectsParser:
         el_refs: Optional[Dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
-        **kwargs,
+        dist_tol: float = 1.5,
+        check_compatibility: bool = True,
     ) -> DefectThermodynamics:
         """
         Generates a DefectThermodynamics object from the parsed ``DefectEntry``
@@ -1230,12 +1249,20 @@ class DefectsParser:
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
-            **kwargs:
-                Additional keyword arguments to pass to ``DefectThermodynamics()``,
-                such as ``check_compatibility``.
+            dist_tol (float):
+                Minimum distance (in Å) between equivalent defect sites (in the
+                supercell) to group together (for plotting and transition level
+                analysis). If the minimum distance between equivalent defect
+                sites is less than ``dist_tol``, then they will be grouped together,
+                otherwise treated as separate defects.
+                (Default: 1.5)
+            check_compatibility (bool):
+                Whether to check the compatibility of the bulk entry for each defect
+                entry (i.e. that all reference bulk energies are the same).
+                (Default: True)
 
         Returns:
-            doped DefectThermodynamics object (DefectThermodynamics)
+            doped DefectThermodynamics object (``DefectThermodynamics``)
         """
         if not self.defect_dict or self.defect_dict is None:
             raise ValueError(
@@ -1250,7 +1277,8 @@ class DefectsParser:
             el_refs=el_refs,
             vbm=vbm,
             band_gap=band_gap,
-            **kwargs,
+            dist_tol=dist_tol,
+            check_compatibility=check_compatibility,
         )
 
     def __repr__(self):
@@ -1350,8 +1378,8 @@ class DefectParser:
     @classmethod
     def from_paths(
         cls,
-        defect_path,
-        bulk_path,
+        defect_path: str,
+        bulk_path: str,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         charge_state: Optional[int] = None,
         initial_defect_structure_path: Optional[str] = None,
@@ -1732,9 +1760,10 @@ class DefectParser:
                         if not isotropic_dielectric:
                             warnings.warn(
                                 _aniso_dielectric_but_outcar_problem_warning
-                                + f"in the defect (at {defect_path}) & bulk (at {bulk_path}) folders were "
-                                f"unable to be parsed, giving the following error message:"
-                                f"\n{kumagai_exc}\n" + _aniso_dielectric_but_using_locpot_warning
+                                + "in the defect or bulk folder were unable to be parsed, giving the "
+                                "following error message:"
+                                + f"\n{kumagai_exc}\n"
+                                + _aniso_dielectric_but_using_locpot_warning
                             )
                     except Exception as freysoldt_exc:
                         warnings.warn(
@@ -1754,9 +1783,8 @@ class DefectParser:
                 else:
                     warnings.warn(
                         f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
-                        f"_anisotropic_ and isotropic systems) in the defect (at {defect_path}) & bulk "
-                        f"(at {bulk_path}) folders were unable to be parsed, giving the following error "
-                        f"message:"
+                        f"_anisotropic_ and isotropic systems) in the defect or bulk folder were unable "
+                        f"to be parsed, giving the following error message:"
                         f"\n{kumagai_exc}\n"
                         f"-> Charge corrections will not be applied for this defect."
                     )
@@ -1777,8 +1805,8 @@ class DefectParser:
                 if not isotropic_dielectric:
                     warnings.warn(
                         _aniso_dielectric_but_outcar_problem_warning
-                        + f"were not found in the defect (at {defect_path}) & bulk (at {bulk_path}) "
-                        f"folders.\n" + _aniso_dielectric_but_using_locpot_warning
+                        + "are missing from the defect or bulk folder.\n"
+                        + _aniso_dielectric_but_using_locpot_warning
                     )
             except Exception as freysoldt_exc:
                 warnings.warn(
@@ -1795,9 +1823,9 @@ class DefectParser:
         else:
             if int(self.defect_entry.charge_state) != 0:
                 warnings.warn(
-                    f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at {defect_path}) "
-                    f"and bulk (at {bulk_path}) folders. These are needed to perform the finite-size "
-                    f"charge corrections. Charge corrections will not be applied for this defect."
+                    "`LOCPOT` or `OUTCAR` files are missing from the defect or bulk folder. "
+                    "These are needed to perform the finite-size charge corrections. "
+                    "Charge corrections will not be applied for this defect."
                 )
                 skip_corrections = True
 
