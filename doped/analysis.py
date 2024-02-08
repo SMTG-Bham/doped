@@ -151,8 +151,6 @@ def check_and_set_defect_entry_name(
     else:
         defect_entry.name = defect_entry.calculation_metadata["full_unrelaxed_defect_name"]
         # otherwise use default doped name  # TODO: Test - Xinwei's folders may be good test case
-        # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
-        # was used
 
 
 def defect_from_structures(
