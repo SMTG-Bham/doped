@@ -1,32 +1,33 @@
 """
-Code to analyse the Wyckoff positions of defects.
-
-The database for Wyckoff analysis (`wyckpos.dat`) was obtained from code written by JaeHwan Shim
-@schinavro (ORCID: 0000-0001-7575-4788)(https://gitlab.com/ase/ase/-/merge_requests/1035) based on the
-tabulated datasets in https://github.com/xtalopt/randSpg (also found at
-https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
+Utility code and functions for symmetry analysis of structures and defects.
 """
 
 import os
 import warnings
-from typing import Any, Optional, Tuple, Union
+from typing import Optional
 
 import numpy as np
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.lattice import Lattice
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Lattice, PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import pbc_diff
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+    _get_unrelaxed_defect_structure,
+)
 
 
 def _round_floats(obj, places=5):
     """
-    Recursively round floats in a dictionary to `places` decimal places.
+    Recursively round floats in a dictionary to ``places`` decimal places.
     """
     if isinstance(obj, float):
         return _custom_round(obj, places) + 0.0
@@ -99,7 +100,67 @@ def _get_sga(struct, symprec=0.01):
         if sga.get_symmetry_dataset() is not None:
             return sga
 
-    raise ValueError("Could not get SpacegroupAnalyzer object of input structure!")  # well shiiii...
+    raise ValueError("Could not get SpacegroupAnalyzer symmetry dataset of input structure!")  # well
+    # shiiii...
+
+
+def apply_symm_op_to_site(symm_op: SymmOp, site: PeriodicSite, lattice: Lattice) -> PeriodicSite:
+    """
+    Apply the given symmetry operation to the input site (**not in place**) and
+    return the new site.
+    """
+    new_latt = np.dot(symm_op.rotation_matrix, lattice.matrix)
+    _lattice = Lattice(new_latt)
+
+    return PeriodicSite(
+        site.species,
+        symm_op.operate(site.frac_coords),
+        _lattice,
+        properties=site.properties,
+        skip_checks=True,
+        label=site.label,
+    )
+
+
+def apply_symm_op_to_struct(struct: Structure, symm_op: SymmOp, fractional: bool = False) -> Structure:
+    """
+    Apply a symmetry operation to a structure and return the new structure.
+
+    This differs from pymatgen's ``apply_operation`` method in that it
+    **does not apply the operation in place as well (i.e. does not modify
+    the input structure)**, which avoids the use of unnecessary and slow
+    ``Structure.copy()`` calls, making the structure manipulation / symmetry
+    analysis functions more efficient.
+    """
+    # using modified version of `pymatgen`'s `apply_operation` method:
+    _lattice = struct._lattice
+    if not fractional:
+        _lattice = Lattice([symm_op.apply_rotation_only(row) for row in _lattice.matrix])
+
+        def operate_site(site):
+            new_cart = symm_op.operate(site.coords)
+            new_frac = _lattice.get_fractional_coords(new_cart)
+            return PeriodicSite(
+                site.species,
+                new_frac,
+                _lattice,
+                properties=site.properties,
+                skip_checks=True,
+                label=site.label,
+            )
+
+    else:
+
+        def operate_site(site):
+            return apply_symm_op_to_site(symm_op, site, _lattice)
+
+    sites = [operate_site(site) for site in struct]
+
+    return Structure(
+        _lattice,
+        [site.species for site in sites],
+        [site.frac_coords for site in sites],
+    )
 
 
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
@@ -111,26 +172,20 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
-    struct_with_x = struct.copy()
-    struct_with_x.sites += [dummy_site]
-
     x_sites = []
     for symm_op in symm_ops:
-        transformed_struct = struct_with_x.copy()
-        transformed_struct.apply_operation(symm_op, fractional=True)
-        x_site = transformed_struct[-1].to_unit_cell()
+        x_site = apply_symm_op_to_site(symm_op, dummy_site, struct.lattice).to_unit_cell()
+        # frac_coords = np.mod(symm_op.operate(frac_coords), 1)  # to unit cell
         # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
         if (
             not x_sites
-            or min(
-                np.linalg.norm(
-                    np.dot(
-                        pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
-                        struct.lattice.matrix,
-                    ),
-                    axis=-1,
-                )
-            )
+            or np.linalg.norm(
+                np.dot(
+                    pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
+                    struct.lattice.matrix,
+                ),
+                axis=-1,
+            ).min()
             > dist_tol
         ):
             x_sites.append(x_site)
@@ -148,7 +203,7 @@ def _get_symm_dataset_of_struc_with_all_equiv_sites(
 
 def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
     """
-    Add all sites in unique_sites to a _copy_ of struct and return
+    Add all sites in unique_sites to a ``copy`` of struct and return
     SpacegroupAnalyzer of this new structure.
     """
     struct_with_all_X = struct.copy()
@@ -220,11 +275,10 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         supercell_matrix = -1 * mapping[2]
     else:
         supercell_matrix = mapping[2]
-    rotation_symmop = SymmOp.from_rotation_and_translation(
+    rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = prim_struct.copy()
-    output_prim_struct.apply_operation(rotation_symmop)
+    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op)
     clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
@@ -233,10 +287,10 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     """
     Determines the supercell transformation matrix to convert from the
     primitive structure to the target structure. The supercell matrix is
-    defined to be T in `T*P = S` where P and S.
+    defined to be T in ``T*P = S`` where P and S.
 
     are the primitive and supercell lattice matrices respectively.
-    Equivalently, multiplying `prim_struct * T` will give the target_struct.
+    Equivalently, multiplying ``prim_struct * T`` will give the target_struct.
 
     First tries to determine a simple (integer) transformation matrix with no
     basis set rotation required. If that fails, then defaults to using
@@ -555,6 +609,14 @@ def get_wyckoff_dict_from_sgn(sgn):
     """
     Get dictionary of {Wyckoff label: coordinates} for a given space group
     number.
+
+    The database used here for Wyckoff analysis (``wyckpos.dat``) was obtained
+    from code written by JaeHwan Shim @schinavro (ORCID: 0000-0001-7575-4788)
+    (https://gitlab.com/ase/ase/-/merge_requests/1035) based on the tabulated
+    datasets in https://github.com/xtalopt/randSpg (also found at
+    https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
+    By default, doped uses the Wyckoff functionality of spglib (along with
+    symmetry operations in pymatgen) when possible however.
     """
     datafile = _get_wyckoff_datafile()
     with open(datafile, encoding="utf-8") as f:
@@ -597,11 +659,11 @@ def get_wyckoff_label_and_equiv_coord_list(
     Return the Wyckoff label and list of equivalent fractional coordinates
     within the conventional cell for the input defect_entry or conv_cell_site
     (whichever is provided, defaults to defect_entry if both), given a
-    dictionary of Wyckoff labels and coordinates (`wyckoff_dict`).
+    dictionary of Wyckoff labels and coordinates (``wyckoff_dict``).
 
-    If `wyckoff_dict` is not provided, it is generated from the spacegroup
-    number (sgn) using `get_wyckoff_dict_from_sgn(sgn)`. If `sgn` is not
-    provided, it is obtained from the bulk structure of the `defect_entry` if
+    If ``wyckoff_dict`` is not provided, it is generated from the spacegroup
+    number (sgn) using ``get_wyckoff_dict_from_sgn(sgn)``. If ``sgn`` is not
+    provided, it is obtained from the bulk structure of the ``defect_entry`` if
     provided.
     """
     if wyckoff_dict is None:
@@ -618,8 +680,8 @@ def get_wyckoff_label_and_equiv_coord_list(
 
     def _compare_arrays(coord_list, coord_array):
         """
-        Compare a list of arrays of sympy expressions (`coord_list`) with an
-        array of coordinates (`coord_array`).
+        Compare a list of arrays of sympy expressions (``coord_list``) with an
+        array of coordinates (``coord_array``).
 
         Returns the matching array from the list.
         """
@@ -784,7 +846,7 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
 
 def _read_wyckoff_datafile(spacegroup, f, setting=None):
     """
-    Read the `wyckpos.dat` file of specific spacegroup and returns a dictionary
+    Read the ``wyckpos.dat`` file of specific spacegroup and returns a dictionary
     with this information.
     """
     if isinstance(spacegroup, int):
@@ -891,13 +953,15 @@ def point_symmetry_from_defect_entry(
     symm_ops: Optional[list] = None,
     symprec: Optional[float] = None,
     relaxed: bool = True,
+    verbose: bool = True,
+    return_periodicity_breaking: bool = False,
 ):
     r"""
     Get the defect site point symmetry from a DefectEntry object.
 
-    Note: If relaxed = True (default), then this tries to use the
+    Note: If ``relaxed = True`` (default), then this tries to use the
     defect_entry.defect_supercell to determine the site symmetry. This will
-    thus give the _relaxed_ defect point symmetry if this is a DefectEntry
+    thus give the `relaxed` defect point symmetry if this is a DefectEntry
     created from parsed defect calculations. However, it should be noted
     that this is not guaranteed to work in all cases; namely for non-diagonal
     supercell expansions, or sometimes for non-scalar supercell expansion
@@ -905,24 +969,32 @@ def point_symmetry_from_defect_entry(
     which can mess up the periodicity of the cell. doped tries to automatically
     check if this is the case, and will warn you if so.
 
-    This can also be checked by using this function on your doped _generated_ defects:
+    This can also be checked by using this function on your doped `generated` defects:
 
-    from doped.generation import get_defect_name_from_entry
-    for defect_name, defect_entry in defect_gen.items():
-        print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
-              get_defect_name_from_entry(defect_entry), "\n")
+    .. code-block:: python
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on your
-    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
+    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
     defect symmetry - otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
-    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-    from visualising the structures (e.g. using VESTA)(can use
-    `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
-    factor for given initial/relaxed point symmetries) and setting the corresponding
-    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    determine the relaxed defect and bulk-site point symmetries, and/or orientational
+    degeneracy, from visualising the structures (e.g. using VESTA)(can use
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational
+    degeneracy factor for given defect/bulk-site point symmetries) and setting the
+    corresponding values in the
+    ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+    ``degeneracy_factors['orientational degeneracy']`` attributes.
+    Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+    or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+    which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+    while for interstitials it is the point symmetry of the `final relaxed` interstitial
+    site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
     and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
     doi.org/10.1039/D3CS00432E).
@@ -939,19 +1011,44 @@ def point_symmetry_from_defect_entry(
             want to adjust for your system (e.g. if there are very slight
             octahedral distortions etc).
         relaxed (bool):
-            If False, determines the site symmetry using the defect site _in the
-            unrelaxed bulk supercell_, otherwise uses the defect supercell to
-            determine the site symmetry (i.e. try determine the point symmetry
-            of a relaxed defect in the defect supercell). Default is True.
+            If False, determines the site symmetry using the defect site `in the
+            unrelaxed bulk supercell` (i.e. the bulk site symmetry), otherwise
+            tries to determine the point symmetry of the relaxed defect in the
+            defect supercell. Default is True.
+        verbose (bool):
+            If True, prints a warning if the supercell is detected to break
+            the crystal periodicity (and hence not be able to return a reliable
+            `relaxed` point symmetry). Default is True.
+        return_periodicity_breaking (bool):
+            If True, also returns a boolean specifying if the supercell has been
+            detected to break the crystal periodicity (and hence not be able to
+            return a reliable `relaxed` point symmetry) or not. Mainly for
+            internal ``doped`` usage. Default is False.
 
     Returns:
-        str: Defect point symmetry.
+        str: Defect point symmetry (and if ``return_periodicity_breaking = True``,
+        a boolean specifying if the supercell has been detected to break the crystal
+        periodicity).
     """
-    supercell = defect_entry.defect_supercell if relaxed else defect_entry.bulk_supercell
     if symprec is None:
         symprec = 0.2 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very
         # slight distortions present in the unrelaxed material).
+
+    if not relaxed and defect_entry.defect.defect_type != DefectType.Interstitial:
+        # then easy, can just be taken from symmetry dataset of defect structure
+        symm_dataset = _get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
+        return schoenflies_from_hermann(
+            symm_dataset["site_symmetry_symbols"][defect_entry.defect.defect_site_index]
+        )
+
+    supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
+    defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(
+        defect_entry, relaxed=relaxed
+    )
+
+    if symm_ops is None:
+        symm_ops = _get_sga(supercell).get_symmetry_operations()
 
     # For relaxed = True, often only works for relaxed defect structures if it is a scalar matrix
     # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
@@ -963,25 +1060,30 @@ def point_symmetry_from_defect_entry(
     # calculation_metadata if present, which, if it gives the same result as relaxed=False, means that
     # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
     # determination.
+    matching = True
     if relaxed:
-        if not hasattr(defect_entry, "calculation_metadata") or not defect_entry.calculation_metadata:
+        if unrelaxed_defect_structure := _get_unrelaxed_defect_structure(defect_entry):
+            matching = _check_relaxed_defect_symmetry_determination(
+                defect_entry,
+                unrelaxed_defect_structure=unrelaxed_defect_structure,
+                symprec=symprec,
+                verbose=verbose,
+            )
+        else:
             warnings.warn(
                 "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), but the "
-                "`calculation_metadata` attribute is not set for `DefectEntry`, suggesting that this "
-                "DefectEntry was not parsed from calculations using doped. This means doped cannot "
-                "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see docstring) - the point symmetry groups may not be correct here!"
-            )
-        elif defect_entry.calculation_metadata.get("unrelaxed_defect_structure"):
-            _matching = _check_relaxed_defect_symmetry_determination(
-                defect_entry, symm_ops=symm_ops, symprec=symprec, verbose=True
+                "`calculation_metadata`/`bulk_entry.structure` attributes are not set for `DefectEntry`, "
+                "suggesting that this DefectEntry was not parsed from calculations using doped. This "
+                "means doped cannot automatically check if the supercell shape is breaking the cell "
+                "periodicity here or not (see docstring) - the point symmetry groups are not guaranteed "
+                "to be correct here!"
             )
 
     _failed = False
-    if defect_entry.defect_supercell_site is not None:
+    if defect_supercell_bulk_site_coords is not None:
         try:
             symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                defect_entry.defect_supercell_site.frac_coords,
+                defect_supercell_bulk_site_coords,
                 supercell,
                 symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
                 symprec=symprec,
@@ -996,16 +1098,17 @@ def point_symmetry_from_defect_entry(
             # Future work could try a local structure analysis to determine the local point symmetry to
             # counteract this.
             # unique_sites = _get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
-            #     defect_entry.defect_supercell_site.frac_coords, defect_entry.bulk_supercell, symm_ops
+            #     site.frac_coords, bulk_supercell, symm_ops
             # )
             # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
-            #     defect_entry.bulk_supercell, unique_sites, symprec=symprec
+            #     bulk_supercell, unique_sites, symprec=symprec
             # )
             # symm_dataset = sga_with_all_X.get_symmetry_dataset()
         except AttributeError:
             _failed = True
 
-    if defect_entry.defect_supercell_site is None or _failed:
+    if defect_supercell_bulk_site_coords is None or _failed:
+        point_group = point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
         # possibly pymatgen DefectEntry object without defect_supercell_site set
         if relaxed:
             warnings.warn(
@@ -1013,14 +1116,32 @@ def point_symmetry_from_defect_entry(
                 "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
                 "group symmetry cannot be reliably automatically determined."
             )
+            return (point_group, not matching) if return_periodicity_breaking else point_group
 
-        return point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
+        return point_group
 
     if not relaxed:
-        # site_symmetry_symbols[-1] works better for unrelaxed defects (as sometimes with the equivalent
-        # sites population it can change the overall point group symbol (but site symmetry symbol is
-        # still correct))
+        # `site_symmetry_symbols[-1]` should be used (within this equiv sites approach) for unrelaxed
+        # defects (rather than `pointgroup`), as the site symmetry can be lower than the crystal point
+        # group, but not vice versa; so when populating all equivalent sites (of the defect site,
+        # in the bulk supercell) the overall point group is retained and is not necessarily the defect
+        # site symmetry. e.g. consider populating all equivalent sites of a C1 interstitial site in a
+        # structure (such as CdTe), then the overall point group is still the bulk point group,
+        # but the site symmetry is in fact C1.
+        # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
+        # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
+        # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
         spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+
+        # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
+        # determined using the point group of the unrelaxed defect structure:
+        # unrelaxed_defect_supercell = defect_entry.calculation_metadata.get(
+        #     "unrelaxed_defect_structure", defect_supercell
+        # )
+        # return schoenflies_from_hermann(
+        #     _get_sga(unrelaxed_defect_supercell, symprec=symprec).get_symmetry_dataset()["pointgroup"],
+        # )
+        # But current approach works for all cases with unrelaxed defect structures
 
     else:
         # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
@@ -1029,15 +1150,28 @@ def point_symmetry_from_defect_entry(
         # possibility with the equivalent sites, as when relaxed=False)
         spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
 
+        # This also works (at least for non-periodicity-breaking supercells) for relaxed defects in most
+        # cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the approach
+        # above:
+        # schoenflies_from_hermann(
+        #     _get_sga(
+        #         defect_supercell, symprec=symprec
+        #     ).get_symmetry_dataset()["pointgroup"]
+        # )
+
     if spglib_point_group_symbol is not None:
-        return spglib_point_group_symbol
+        return (
+            (spglib_point_group_symbol, not matching)
+            if return_periodicity_breaking
+            else (spglib_point_group_symbol)
+        )
 
     # symm_ops approach failed, just use diagonal defect supercell approach:
     if relaxed:
         raise RuntimeError(
             "Site symmetry could not be determined using the defect supercell, and so the relaxed site "
-            "symmetry cannot be automatically determined (set relaxed=False to obtain the unrelaxed site "
-            "symmetry)."
+            "symmetry cannot be automatically determined (set relaxed=False to obtain the (unrelaxed) "
+            "bulk site symmetry)."
         )
 
     defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
@@ -1046,37 +1180,38 @@ def point_symmetry_from_defect_entry(
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
     sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-    return schoenflies_from_hermann(sga.get_point_group_symbol())
+    point_group = schoenflies_from_hermann(sga.get_point_group_symbol())
+    return (point_group, not matching) if return_periodicity_breaking else point_group
 
 
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
-    symm_ops: Optional[list] = None,
+    unrelaxed_defect_structure: Structure = None,
     symprec: float = 0.2,
     verbose: bool = False,
 ):
-    if defect_entry.defect_supercell_site is None:
+    defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False)
+
+    if defect_supercell_bulk_site_coords is None:
         raise AttributeError(
-            "`defect_entry.defect_supercell_site` not defined! Needed to check defect supercell "
-            "periodicity (for symmetry determination)"
-        )
-    unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
-    if unrelaxed_defect_structure is not None:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords,
-            unrelaxed_defect_structure,
-            symm_ops=symm_ops,
-            symprec=symprec,
-            dist_tol=symprec,
-        )
-        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
-            symm_dataset["site_symmetry_symbols"][-1]
+            "`defect_entry.defect_supercell_site` or `defect_entry.sc_defect_frac_coords` are not "
+            "defined! Needed to check defect supercell periodicity (for symmetry determination)"
         )
 
+    if unrelaxed_defect_structure is None:
+        unrelaxed_defect_structure = _get_unrelaxed_defect_structure(defect_entry)
+
+    if unrelaxed_defect_structure is not None:
+        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
+            _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset()["pointgroup"],
+        )
+
+        bulk_supercell = _get_bulk_supercell(defect_entry)
+        bulk_symm_ops = _get_sga(bulk_supercell).get_symmetry_operations()
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords,
-            defect_entry.bulk_supercell,
-            symm_ops=symm_ops,
+            defect_supercell_bulk_site_coords,
+            bulk_supercell,
+            symm_ops=bulk_symm_ops,
             symprec=symprec,
             dist_tol=symprec,
         )
@@ -1088,13 +1223,13 @@ def _check_relaxed_defect_symmetry_determination(
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
-                    "detected that the defect supercell is _possibly_ a non-scalar matrix expansion which "
+                    "detected that the defect supercell is likely a non-scalar matrix expansion which "
                     "could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
                     "point group symmetry from being automatically determined. You can set relaxed=False "
-                    "to instead get the unrelaxed/initial point group symmetry, and/or manually "
+                    "to instead get the (unrelaxed) bulk site symmetry, and/or manually "
                     "check/set/edit the point symmetries and corresponding orientational degeneracy "
                     "factors by inspecting/editing the "
-                    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+                    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
                     "degeneracy_factors['orientational degeneracy'] attributes."
                 )
             return False
@@ -1217,446 +1352,3 @@ def group_order_from_schoenflies(sch_symbol):
     Useful for symmetry and orientational degeneracy analysis.
     """
     return _point_group_order[sch_symbol]
-
-
-def get_min_image_distance(structure: Structure) -> float:
-    """
-    Get the minimum image distance (i.e. minimum distance between periodic
-    images of sites in a lattice) for the input structure.
-
-    This is also known as the Shortest Vector Problem (SVP), and has
-    no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
-
-    Args:
-        structure (Structure): Structure object.
-
-    Returns:
-        float: Minimum image distance.
-    """
-    return _get_min_image_distance_from_matrix(structure.lattice.matrix)
-
-
-def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
-    """
-    Returns the vector projection of vector b onto vector a.
-
-    Based on the _proj() function in
-    pymatgen.transformations.advanced_transformations, but
-    made significantly more efficient for looping over many
-    times in optimisation functions.
-
-    Args:
-        b (np.ndarray): Vector to project.
-        a (np.ndarray): Vector to project onto.
-
-    Returns:
-        np.ndarray: Vector projection of b onto a.
-    """
-    normalised_a = a / np.linalg.norm(a)
-    return np.dot(b, normalised_a) * normalised_a
-
-
-def _get_min_image_distance_from_matrix(matrix: np.ndarray) -> float:
-    """
-    Get the minimum image distance (i.e. minimum distance between periodic
-    images of sites in a lattice) for the input lattice matrix, using the
-    pymatgen get_points_in_sphere() Lattice method.
-
-    This is also known as the Shortest Vector Problem (SVP), and has
-    no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
-
-    Args:
-        matrix (np.ndarray): Lattice matrix.
-    """
-    # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
-    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
-    # while of course the minimum possible min image distance is the minimum cell vector length
-
-    lattice = Lattice(matrix)
-    eff_cubic_length = lattice.volume ** (1 / 3)
-    max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
-
-    zipped_fcoords_dist_idx_image = lattice.get_points_in_sphere(
-        [[0, 0, 0]], [0, 0, 0], r=max_min_dist * 1.01
-    )
-
-    # sort zipped list by dist:
-    zipped_fcoords_dist_idx_image.sort(key=lambda x: x[1])
-    min_dist = zipped_fcoords_dist_idx_image[1][1]  # second in list is min image (first is itself, zero)
-    if min_dist <= 0:
-        raise ValueError(
-            "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
-            "non-orthogonal lattice. Please check your inputs!"
-        )
-    return round(  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
-        min_dist, 4
-    )
-
-
-def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 10):
-    """
-    Get the minimum image distance (i.e. minimum distance between periodic
-    images of sites in a lattice) for the input lattice matrix, using brute
-    force numpy enumeration.
-
-    This is also known as the Shortest Vector Problem (SVP), and has
-    no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
-
-    As the cell angles deviate more from cubic (90°), the required
-    max_ijk to get the correct converged result increases. For near-cubic
-    systems, a max_ijk of 2 or 3 is usually sufficient.
-
-    Args:
-        matrix (np.ndarray): Lattice matrix.
-        max_ijk (int):
-            Maximum absolute i/j/k coefficient to allow in the search
-            for the shortest (minimum image) vector: [i*a, j*b, k*c].
-            (Default = 10)
-    """
-    # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
-    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
-    # while of course the minimum possible min image distance is the minimum cell vector length
-    ijk_range = np.array(range(-max_ijk, max_ijk + 1))
-    i, j, k = np.meshgrid(ijk_range, ijk_range, ijk_range, indexing="ij")
-    vectors = (
-        i[..., np.newaxis] * matrix[0] + j[..., np.newaxis] * matrix[1] + k[..., np.newaxis] * matrix[2]
-    )
-
-    distances = np.linalg.norm(vectors, axis=-1).flatten()
-    return round(  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
-        np.min(distances[distances > 0]), 4
-    )
-
-
-def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
-    """
-    Gets the side length of the largest possible cube that can fit in the cell
-    defined by the input lattice matrix.
-
-    As the cell angles deviate more from cubic (90°), the required
-    max_ijk to get the correct converged result increases. For near-cubic
-    systems, a max_ijk of 2 or 3 is usually sufficient.
-
-    Similar to the implementation in pymatgen's CubicSupercellTransformation,
-    but generalised to work for all cell shapes (e.g. needly thin cells etc),
-    as the pymatgen one relies on the input cell being nearly cubic.
-    E.g. gives incorrect cube size for: [[-1, -2, 0], [1, -1, 2], [1, -2, 3]]
-
-    Args:
-        matrix (np.ndarray): Lattice matrix.
-        max_ijk (int):
-            Maximum absolute i/j/k coefficient to allow in the search
-            for the shortest cube length, using the projections along:
-            [i*a, j*b, k*c].
-            (Default = 10)
-    """
-    a = matrix[0]
-    b = matrix[1]
-    c = matrix[2]
-
-    proj_ca = _proj(c, a)  # a-c plane
-    proj_ac = _proj(a, c)
-    proj_ba = _proj(b, a)  # b-a plane
-    proj_ab = _proj(a, b)
-    proj_cb = _proj(c, b)  # b-c plane
-    proj_bc = _proj(b, c)
-
-    ijk_range = np.array(range(-max_ijk, max_ijk + 1))
-
-    # Create a grid of i, j indices
-    I_vals, J_vals = np.meshgrid(ijk_range, ijk_range, indexing="ij")
-
-    # Flatten I and J for vectorized computation
-    I_flat = I_vals.flatten()
-    J_flat = J_vals.flatten()
-
-    # Include k in the vectorized computation
-    K = ijk_range[ijk_range != 0][:, None, None]  # exclude cases with k=0
-
-    # Vectorized computation for each of the three terms
-    term1 = c * K - I_flat[:, None] * proj_ca - J_flat[:, None] * proj_cb
-    term2 = a * K - I_flat[:, None] * proj_ac - J_flat[:, None] * proj_ab
-    term3 = b * K - I_flat[:, None] * proj_ba - J_flat[:, None] * proj_bc
-
-    # Concatenate the results and reshape
-    length_vecs = np.concatenate((term1, term2, term3), axis=1).reshape(-1, 3)
-
-    return np.min(np.linalg.norm(length_vecs, axis=1))
-
-
-def cubic_cell_metric(cell_matrix: np.ndarray) -> float:
-    """
-    Calculates the deviation of the given cell matrix from an ideal simple
-    cubic matrix, by evaluating the root mean square (RMS) difference of the
-    vector lengths from that of the effective cubic structure (i.e. the cube
-    root of the volume).
-
-    This is a fixed version of the simple cubic cell metric
-    in ASE (get_deviation_from_optimal_cell_shape(shape='sc')),
-    described in https://wiki.fysik.dtu.dk/ase/tutorials/defects/defects.html
-    which currently does not account for rotated matrices
-    (e.g. a cubic cell, which should have a perfect score of 0,
-    will have a bad score if its lattice vectors are rotated away
-    from x, y and z, or even if they are just swapped as z, x, y).
-
-    e.g. with ASE, [[1, 0, 0], [0, 1, 0], [0, 0, 1]] and
-    [[0, 0, 1], [1, 0, 0], [0, 1, 0]] give scores of 0 and 1,
-    but with this function they both give perfect scores of 0 as
-    desired.
-
-    Args:
-        cell_matrix (np.ndarray):
-            Cell matrix for which to calculate the cubic cell metric.
-
-    Returns:
-        float: Cubic cell metric (0 is perfectly cubic)
-    """
-    eff_cubic_length = float(abs(np.linalg.det(cell_matrix)) ** (1 / 3))
-    norms = np.linalg.norm(cell_matrix, axis=0)
-    return round(
-        np.sqrt(  # get rms difference to eff cubic
-            np.sum(((norms - eff_cubic_length) / eff_cubic_length) ** 2)
-        ),
-        4,
-    )  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
-
-
-def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> Tuple[Any, ...]:
-    lengths = tuple(np.sqrt(np.sum(matrix**2, axis=1)).tolist())
-    angles = np.zeros(3)
-    for dim in range(3):
-        j = (dim + 1) % 3
-        k = (dim + 2) % 3
-        angles[dim] = np.clip(np.dot(matrix[j], matrix[k]) / (lengths[j] * lengths[k]), -1, 1)
-    angles = np.arccos(angles) * 180.0 / np.pi
-    angles = tuple(angles.tolist())
-    return (*lengths, *angles)
-
-
-def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.ndarray:
-    """
-    Vectorized version of _lengths_and_angles_from_matrix().
-
-    Matrices is a numpy array of shape (n, 3, 3), where n is the number of
-    matrices.
-    """
-    lengths = np.linalg.norm(matrices, axis=2)  # Compute lengths (norms of row vectors)
-
-    angles = np.zeros((matrices.shape[0], 3))
-    for dim in range(3):  # compute angles
-        j = (dim + 1) % 3
-        k = (dim + 2) % 3
-        dot_products = np.sum(matrices[:, j, :] * matrices[:, k, :], axis=1)
-        angle = np.arccos(np.clip(dot_products / (lengths[:, j] * lengths[:, k]), -1, 1))
-        angles[:, dim] = np.degrees(angle)
-
-    # Return lengths and angles, as shape matrices.shape[0] x 6
-    return np.concatenate((lengths, angles), axis=1)
-
-
-def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
-    """
-    Sorting function to apply on an iterable of transformation matrices,.
-
-    where matrices are sorted by:
-    - minimum ASE style cubic-like metric
-      (using the fixed, efficient doped version)
-    - minimum absolute sum of elements
-    - minimum number of negative elements
-    - minimum largest (absolute) element
-    - maximum number of x, y, z that are equal
-    - maximum sum of diagonal elements.
-
-    Args:
-        P (np.ndarray): Transformation matrix.
-        cell (np.ndarray): Cell matrix (on which to apply P).
-
-    Returns:
-        tuple: Tuple of sorting criteria values
-    """
-    cubic_metric = cubic_cell_metric(np.dot(P, cell)) if cell is not None else cubic_cell_metric(P)
-
-    abs_P = np.abs(P)
-    abs_sum = np.sum(abs_P)
-    num_negs = np.sum(P < 0)
-    max_abs = np.max(abs_P)
-    diag_sum = np.sum(np.diag(P))
-    P_flat = P.flatten()
-    num_equals = sum(
-        P_flat[i] == P_flat[j] for i in range(len(P_flat)) for j in range(i, len(P_flat))
-    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
-
-    # Note: Initial idea was also to use cell symmetry operations to sort, but this is far too slow, and
-    #  in theory should be accounted for with the other (min dist, cubic cell metric) criteria anyway.
-    # struct = Structure(Lattice(P), ["H"], [[0, 0, 0]])
-    # sga = _get_sga(struct)
-    # symm_ops = len(sga.get_symmetry_operations())
-
-    return (cubic_metric, abs_sum, num_negs, max_abs, -num_equals, -diag_sum)
-
-
-def _lean_sort_func(P):
-    abs_P = np.abs(P)
-    abs_sum = np.sum(abs_P)
-    num_negs = np.sum(P < 0)
-    max_abs = np.max(abs_P)
-    diag_sum = np.sum(np.diag(P))
-    return (abs_sum, num_negs, max_abs, -diag_sum)
-
-
-def _vectorized_lean_sort_func(P_batch):
-    abs_P = np.abs(P_batch)
-    abs_sum = np.sum(abs_P, axis=(1, 2))
-    num_negs = np.sum(P_batch < 0, axis=(1, 2))
-    max_abs = np.max(abs_P, axis=(1, 2))
-    diag_sum = np.sum(np.diagonal(P_batch, axis1=1, axis2=2), axis=1)
-    return np.stack((abs_sum, num_negs, max_abs, -diag_sum), axis=1)
-
-
-def find_ideal_supercell(
-    cell: np.ndarray,
-    target_size: int,
-    limit: int = 2,
-    return_min_dist: bool = False,
-    verbose: bool = False,
-) -> Union[np.ndarray, tuple]:
-    """
-    Given an input cell matrix (e.g. Structure.lattice.matrix or Atoms.cell)
-    and chosen target_size (size of supercell in number of `cell`s), finds an
-    ideal supercell matrix (P) that yields the largest minimum image distance
-    (i.e. minimum distance between periodic images of sites in a lattice),
-    while also being as close to cubic as possible.
-
-    Supercell matrices are searched for by first identifying the ideal
-    (fractional) transformation matrix (P) that would yield a perfectly cubic
-    supercell with volume equal to target_size, and then scanning over all
-    matrices where the elements are within +/-`limit` of the ideal P matrix
-    elements (rounded to the nearest integer).
-    For relatively small target_sizes (<100) and/or cells with mostly similar
-    lattice vector lengths, the default `limit` of +/-2 performs well. For
-    larger `target_size`s, `cell`s with very different lattice vector lengths,
-    and/or cases where small differences in minimum image distance are
-    important, a larger `limit` may be required (though typically only improves
-    the minimum image distance by 1-10%).
-
-    This is also known as the Shortest Vector Problem (SVP), and has
-    no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)),
-    so can be slow for certain cases.
-
-    Args:
-        cell (np.ndarray): Unit cell matrix for which to find a supercell.
-        target_size (int): Target supercell size (in number of `cell`s).
-        limit (int):
-            Supercell matrices are searched for by first identifying the
-            ideal (fractional) transformation matrix (P) that would yield
-            a perfectly cubic supercell with volume equal to target_size,
-            and then scanning over all matrices where the elements are
-            within +/-`limit` of the ideal P matrix elements (rounded to the
-            nearest integer).
-            (Default = 2)
-        return_min_dist (bool):
-            Whether to return the minimum image distance (in Å) as a second
-            return value.
-            (Default = False)
-        verbose (bool): Whether to print out extra information.
-            (Default = False)
-
-    Returns:
-        np.ndarray: Supercell matrix (P).
-        float: Minimum image distance (in Å) if `return_min_dist` is True.
-    """
-    # Initial code here is based off that in ASE's find_optimal_cell_shape() function, but with significant
-    # efficiency improvements, and then re-based on the minimum image distance rather than cubic cell
-    # metric, then secondarily sorted by the (fixed) cubic cell metric (in doped), and then by some other
-    # criteria to give the cleanest output
-    target_metric = np.eye(3)  # simple cubic type target
-
-    # Normalize cell metric to reduce computation time during looping
-    norm = (target_size * np.linalg.det(cell) / np.linalg.det(target_metric)) ** (-1.0 / 3)
-    norm_cell = norm * cell
-
-    if verbose:
-        print(f"Normalization factor (Q): {norm}")
-
-    if target_size == 1:  # just identity innit
-        return np.eye(3, dtype=int), _get_min_image_distance_from_matrix(
-            cell
-        ) if return_min_dist else np.eye(3, dtype=int)
-
-    ideal_P = np.dot(target_metric, np.linalg.inv(norm_cell))  # Approximate initial P matrix
-
-    if verbose:
-        print("Idealized transformation matrix (ideal_P):")
-        print(ideal_P)
-
-    starting_P = np.array(np.around(ideal_P, 0), dtype=int)
-    if verbose:
-        print("Closest integer transformation matrix (P_0, starting_P):")
-        print(starting_P)
-
-    indices = np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit
-    dP_array = indices.reshape(-1, 3, 3)
-    P_array = starting_P[None, :, :] + dP_array
-
-    # Compute determinants and filter to only those with the correct size:
-    dets = np.abs(np.linalg.det(P_array))
-    rounded_dets = np.around(dets, 0).astype(int)
-    valid_P = P_array[rounded_dets == target_size]
-
-    # any P in valid_P that are all negative, flip the sign of the matrix:
-    valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
-
-    # get unique lattices before computing metrics:
-    cell_matrices = np.einsum("ijk,kl->ijl", valid_P, norm_cell)
-    lengths_angles = _vectorized_lengths_and_angles_from_matrices(cell_matrices)
-    # for each row in lengths_angles, get the product multiplied by the sum, as a hash:
-    lengths_angles_hash = np.around(np.prod(lengths_angles, axis=1) / np.sum(lengths_angles, axis=1), 4)
-    unique_hashes, indices = np.unique(lengths_angles_hash, return_index=True)
-    unique_cell_matrices = cell_matrices[indices]
-
-    if verbose:
-        print(f"Searched matrices (P_array): {len(P_array)}")
-        print(f"Valid matrices (matching target_size; valid_P): {len(valid_P)}")
-        print(f"Unique valid matrices (unique_cell_matrices): {len(unique_cell_matrices)}")
-
-    min_image_dists = np.array(
-        [_get_min_image_distance_from_matrix(cell_matrix) for cell_matrix in unique_cell_matrices]
-    )  # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
-    # so if the efficiency of this function was the bottleneck we could rank first with the fixed
-    # cubic-cell metric, then subselect and apply this function, but at present this is not the limiting
-    # factor in this function so not worth it.
-    if len(min_image_dists) == 0:
-        raise ValueError("No valid P matrices found with given settings")
-
-    # get indices of min_image_dists that are equal to the minimum
-    best_min_dist = np.max(min_image_dists)  # in terms of supercell effective cubic length
-    if verbose:
-        print(f"Best minimum image distance (best_min_dist): {best_min_dist}")
-
-    min_dist_indices = np.where(min_image_dists == best_min_dist)[0]
-
-    poss_P = []
-    for idx in min_dist_indices:
-        hash_value = unique_hashes[idx]
-        matching_indices = np.where(lengths_angles_hash == hash_value)[0]
-        poss_P.extend(valid_P[matching_indices])
-
-    poss_P.sort(key=lambda x: _P_matrix_sorting_func(x, norm_cell))
-    if verbose:
-        print(f"Number of possible P matrices with best_min_dist (poss_P): {len(poss_P)}")
-
-    optimal_P = poss_P[0]
-
-    # Finalize.
-    if verbose:
-        print("Optimal transformation matrix (P_opt):")
-        print(optimal_P)
-        print("Supercell size:")
-        print(np.round(np.dot(optimal_P, cell), 4))
-        print(f"Minimum image distance (Å): {(best_min_dist / norm)}")
-
-    return (optimal_P, best_min_dist / norm) if return_min_dist else optimal_P

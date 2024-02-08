@@ -13,7 +13,7 @@ from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, ticker
+from matplotlib import colormaps, colors, ticker
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
@@ -49,14 +49,11 @@ def _chempot_warning(dft_chempots):
 
 
 def _get_plot_setup(colormap, xy):
+    if colormap is None:  # future updated colour handling (based on defect type etc) should remove
+        # the need for this!
+        colormap = "Dark2" if len(xy) <= 8 else "tab20"
     cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
     colors = cmap(np.linspace(0, 1, len(xy)))
-    if colormap == "Dark2" and len(xy) >= 8:
-        warnings.warn(
-            f"The chosen colormap is Dark2, which only has 8 colours, yet you have {len(xy)} "
-            f"defect species (so some defects will have the same line colour). Recommended to "
-            f"change/set colormap to 'tab10' or 'tab20' (10 and 20 colours each)."
-        )
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -639,22 +636,25 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
     ymin = 0
 
-    for defect_entry in defect_thermodynamics.defect_entries:
-        defect_entry_name = defect_entry.name  # all_lines name includes charge state
-        all_lines_xy[defect_entry_name] = [[], []]
-        for x_extrem in [lower_cap, upper_cap]:
-            all_lines_xy[defect_entry_name][0].append(x_extrem)
-            all_lines_xy[defect_entry_name][1].append(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+    for def_name, defect_entry_list in defect_thermodynamics.all_entries.items():
+        for defect_entry in defect_entry_list:
+            charge = defect_entry.charge_state
+            # all_lines name includes charge state:
+            defect_entry_name = f"{def_name}_{'+' if charge > 0 else ''}{charge}"
+            all_lines_xy[defect_entry_name] = [[], []]
+            for x_extrem in [lower_cap, upper_cap]:
+                all_lines_xy[defect_entry_name][0].append(x_extrem)
+                all_lines_xy[defect_entry_name][1].append(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+                    )
                 )
-            )
-            all_entries_y_range_vals.extend(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_window
+                all_entries_y_range_vals.extend(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_window
+                    )
+                    for x_window in xlim
                 )
-                for x_window in xlim
-            )
 
     for def_name, def_tl in defect_thermodynamics.transition_level_map.items():
         xy[def_name] = [[], []]
@@ -719,7 +719,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             warnings.warn(
                 f"All formation energies for {def_name} are below zero across the "
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
-                f"mis-specification of chemical potentials (see docstrings and/or tutorials). "
+                f"mis-specification of chemical potentials (see docstrings and/or tutorials)."
             )
             ymin = min(ymin, *yvals)  # TODO: Test this
 
@@ -752,7 +752,7 @@ def _TLD_plot(
     ylim=None,
     fermi_level=None,
     title=None,
-    colormap="Dark2",
+    colormap: Optional[Union[str, colors.Colormap]] = None,
     auto_labels=False,
     filename=None,
 ):
