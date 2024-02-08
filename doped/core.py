@@ -28,9 +28,9 @@ _orientational_degeneracy_warning = (
     "This will not affect defect formation energies / transition levels, but is important for "
     "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
     "doi.org/10.1039/D3CS00432E).\n"
-    "You can manually check (and edit) the computed relaxed/unrelaxed point symmetries and "
+    "You can manually check (and edit) the computed defect/bulk point symmetries and "
     "corresponding orientational degeneracy factors by inspecting/editing the "
-    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
     "degeneracy_factors['orientational degeneracy'] attributes."
 )
 

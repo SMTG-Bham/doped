@@ -983,12 +983,18 @@ def point_symmetry_from_defect_entry(
     defect symmetry - otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
-    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-    from visualising the structures (e.g. using VESTA)(can use
-    ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
-    factor for given initial/relaxed point symmetries) and setting the corresponding
-    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    determine the relaxed defect and bulk-site point symmetries, and/or orientational
+    degeneracy, from visualising the structures (e.g. using VESTA)(can use
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational
+    degeneracy factor for given defect/bulk-site point symmetries) and setting the
+    corresponding values in the
+    ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+    ``degeneracy_factors['orientational degeneracy']`` attributes.
+    Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+    or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+    which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+    while for interstitials it is the point symmetry of the `final relaxed` interstitial
+    site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
     and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
     doi.org/10.1039/D3CS00432E).
@@ -1006,9 +1012,9 @@ def point_symmetry_from_defect_entry(
             octahedral distortions etc).
         relaxed (bool):
             If False, determines the site symmetry using the defect site `in the
-            unrelaxed bulk supercell`, otherwise uses the defect supercell to
-            determine the site symmetry (i.e. try determine the point symmetry
-            of a relaxed defect in the defect supercell). Default is True.
+            unrelaxed bulk supercell` (i.e. the bulk site symmetry), otherwise
+            tries to determine the point symmetry of the relaxed defect in the
+            defect supercell. Default is True.
         verbose (bool):
             If True, prints a warning if the supercell is detected to break
             the crystal periodicity (and hence not be able to return a reliable
@@ -1164,8 +1170,8 @@ def point_symmetry_from_defect_entry(
     if relaxed:
         raise RuntimeError(
             "Site symmetry could not be determined using the defect supercell, and so the relaxed site "
-            "symmetry cannot be automatically determined (set relaxed=False to obtain the unrelaxed site "
-            "symmetry)."
+            "symmetry cannot be automatically determined (set relaxed=False to obtain the (unrelaxed) "
+            "bulk site symmetry)."
         )
 
     defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
@@ -1220,10 +1226,10 @@ def _check_relaxed_defect_symmetry_determination(
                     "detected that the defect supercell is likely a non-scalar matrix expansion which "
                     "could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
                     "point group symmetry from being automatically determined. You can set relaxed=False "
-                    "to instead get the unrelaxed/initial point group symmetry, and/or manually "
+                    "to instead get the (unrelaxed) bulk site symmetry, and/or manually "
                     "check/set/edit the point symmetries and corresponding orientational degeneracy "
                     "factors by inspecting/editing the "
-                    "calculation_metadata['relaxed point symmetry']/['unrelaxed point symmetry'] and "
+                    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
                     "degeneracy_factors['orientational degeneracy'] attributes."
                 )
             return False

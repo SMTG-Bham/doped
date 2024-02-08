@@ -286,9 +286,9 @@ def get_defect_name_from_entry(
             octahedral distortions etc).
         relaxed (bool):
             If False, determines the site symmetry using the defect site `in the
-            unrelaxed bulk supercell`, otherwise uses the defect supercell to
-            determine the site symmetry (i.e. try determine the point symmetry
-            of a relaxed defect in the defect supercell). Default is True.
+            unrelaxed bulk supercell`, otherwise tries to determine the point
+            symmetry of the relaxed defect in the defect supercell).
+            Default is True.
 
     Returns:
         str: Defect name.
