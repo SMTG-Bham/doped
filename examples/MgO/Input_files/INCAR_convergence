@@ -1,0 +1,18 @@
+ALGO = Normal
+EDIFF = 1e-07
+ENCUT = 300  # Need ENCUT/ENMAX included in the INCAR for vaspup2.0 to converge-test this parameter
+GGA = Ps  # PBEsol
+IBRION = -1  # singleshot calcs
+ISMEAR = 0  # Note that ISMEAR = -5 will give better DOS convergence wrt kpoints (but won't work with 1x1x1 grid)
+ISPIN = 2  # can be removed if system is non-magnetic
+LORBIT = 11  # lm-projected DOS info
+LREAL = False
+NEDOS = 2000
+NELM = 100
+NSW = 0
+PREC = Accurate
+SIGMA = 0.05
+
+# Parallelisation settings:
+KPAR = 2
+NCORE = 8
