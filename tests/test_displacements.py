@@ -96,11 +96,11 @@ class DefectDisplacementsTestCase(unittest.TestCase):
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="YTOS_F_O_1_displacements.png",
+        filename="YTOS_Int_F_-1_site_displacements.png",
         style=f"{module_path}/../doped/utils/displacement.mplstyle",
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_plot_site_displacements_ytos(self):
         # Vacancy, total displacement
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/YTOS_F_O_1_defect_entry.json")
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/YTOS_Int_F_-1_defect_entry.json")
         return defect_entry.plot_site_displacements(separated_by_direction=True, use_plotly=False)
