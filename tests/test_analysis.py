@@ -23,6 +23,7 @@ from doped.analysis import (
     defect_from_structures,
     defect_name_from_structures,
 )
+from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
@@ -102,92 +103,84 @@ class DefectsParsingTestCase(unittest.TestCase):
                 assert sum(defect_entry.corrections.values()) != 0
             assert defect_entry.get_ediff()  # can get ediff fine
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
-    def test_DefectsParser_CdTe(self):
-        def _check_parsed_CdTe_defect_energies(dp):
-            """
-            Explicitly check some formation energies for CdTe defects.
-            """
-            assert np.isclose(
-                dp.defect_dict["v_Cd_0"].get_ediff() - sum(dp.defect_dict["v_Cd_0"].corrections.values()),
-                4.166,
-                atol=3e-3,
-            )  # uncorrected energy
-            assert np.isclose(dp.defect_dict["v_Cd_0"].get_ediff(), 4.166, atol=1e-3)
-            assert np.isclose(dp.defect_dict["v_Cd_-1"].get_ediff(), 6.355, atol=1e-3)
-            assert np.isclose(
-                dp.defect_dict["v_Cd_-2"].get_ediff()
-                - sum(dp.defect_dict["v_Cd_-2"].corrections.values()),
-                7.661,
-                atol=3e-3,
-            )  # uncorrected energy
-            assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=1e-3)
-            assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
+    def _check_parsed_CdTe_defect_energies(self, dp):
+        """
+        Explicitly check some formation energies for CdTe defects.
+        """
+        assert np.isclose(
+            dp.defect_dict["v_Cd_0"].get_ediff() - sum(dp.defect_dict["v_Cd_0"].corrections.values()),
+            4.166,
+            atol=3e-3,
+        )  # uncorrected energy
+        assert np.isclose(dp.defect_dict["v_Cd_0"].get_ediff(), 4.166, atol=1e-3)
+        assert np.isclose(dp.defect_dict["v_Cd_-1"].get_ediff(), 6.355, atol=1e-3)
+        assert np.isclose(
+            dp.defect_dict["v_Cd_-2"].get_ediff() - sum(dp.defect_dict["v_Cd_-2"].corrections.values()),
+            7.661,
+            atol=3e-3,
+        )  # uncorrected energy
+        assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=1e-3)
+        assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
 
-        def _check_default_CdTe_DefectParser_outputs(
-            CdTe_dp, recorded_warnings, multiple_outcars_warning=True, dist_tol=1.5
-        ):
-            assert all("KPOINTS" not in str(warn.message) for warn in recorded_warnings)
+    def _check_default_CdTe_DefectParser_outputs(
+        self, CdTe_dp, recorded_warnings, multiple_outcars_warning=True, dist_tol=1.5, test_attributes=True
+    ):
+        assert all("KPOINTS" not in str(warn.message) for warn in recorded_warnings)
+        assert any(
+            all(
+                i in str(warn.message)
+                for i in [
+                    "There are mismatching INCAR tags for (some of)",
+                    "in the format: (INCAR tag, value in bulk calculation, value in defect",
+                    "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
+                    "In general, the same INCAR settings should be used",
+                ]
+            )
+            for warn in recorded_warnings
+        )  # INCAR warning
+        if multiple_outcars_warning:
             assert any(
                 all(
                     i in str(warn.message)
                     for i in [
-                        "There are mismatching INCAR tags for (some of)",
-                        "in the format: (INCAR tag, value in bulk calculation, value in defect",
-                        "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
-                        "In general, the same INCAR settings should be used",
+                        "Multiple `OUTCAR` files",
+                        "(directory: chosen file for parsing):",
+                        f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                        "OUTCAR files are used to",
+                        "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                     ]
                 )
                 for warn in recorded_warnings
-            )  # INCAR warning
-            if multiple_outcars_warning:
-                assert any(
-                    all(
-                        i in str(warn.message)
-                        for i in [
-                            "Multiple `OUTCAR` files",
-                            "(directory: chosen file for parsing):",
-                            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
-                            "OUTCAR files are used to",
-                            "parse core levels and compute the Kumagai (eFNV) image charge correction.",
-                        ]
-                    )
-                    for warn in recorded_warnings
-                )
-            assert any(
-                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some "
-                "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
-                for warn in recorded_warnings
-            )  # multiple corrections warning
+            )
+        assert any(
+            "Beware: The Freysoldt (FNV) charge correction scheme has been used for some "
+            "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
+            for warn in recorded_warnings
+        )  # multiple corrections warning
 
-            CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
-            dumpfn(
-                CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
-            )  # for test_plotting
-            with warnings.catch_warnings(record=True) as w:
-                CdTe_thermo.plot()
-            print([warn.message for warn in w])  # for debugging
-            print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
-            assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+        CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
+        dumpfn(
+            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
+        )  # for test_plotting
+        with warnings.catch_warnings(record=True) as w:
+            CdTe_thermo.plot()
+        print([warn.message for warn in w])  # for debugging
+        print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
+        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+        assert any(
+            "All formation energies for Int_Te_3" in str(warn.message) for warn in w
+        )  # renamed to Int_Te_3_a with lowered dist_tol
+        if dist_tol < 0.2:
             assert any(
-                "All formation energies for Int_Te_3" in str(warn.message) for warn in w
-            )  # renamed to Int_Te_3_a with lowered dist_tol
-            if dist_tol < 0.2:
-                assert any(
-                    "All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w
-                )
-            else:
-                assert all(  # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5
-                    "All formation energies for Int_Te_3_Unperturbed" not in str(warn.message)
-                    for warn in w
-                )
+                "All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w
+            )
+        else:
+            assert all(  # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5
+                "All formation energies for Int_Te_3_Unperturbed" not in str(warn.message) for warn in w
+            )
 
-            # test attributes:
+        # test attributes:
+        if test_attributes:
             assert CdTe_dp.output_path == self.CdTe_EXAMPLE_DIR
             assert CdTe_dp.dielectric == 9.13
             assert CdTe_dp.error_tolerance == 0.05
@@ -195,47 +188,78 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
             assert CdTe_dp.bulk_band_gap_path is None
 
-            self._check_DefectsParser(CdTe_dp)
-            assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
-            if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+        self._check_DefectsParser(CdTe_dp)
+        assert os.path.exists(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json")
+        ) or os.path.exists(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json")
+        )  # custom json name
 
-            _check_parsed_CdTe_defect_energies(CdTe_dp)
+        self._check_parsed_CdTe_defect_energies(CdTe_dp)
 
-            assert len(CdTe_dp.defect_folders) == 7
-            for name in CdTe_dp.defect_dict:
-                assert name in CdTe_dp.defect_folders  # all folder names recognised for CdTe examples
+        assert len(CdTe_dp.defect_folders) == 7
+        for name in CdTe_dp.defect_dict:
+            assert name in CdTe_dp.defect_folders  # all folder names recognised for CdTe examples
 
-            # both OUTCARs and LOCPOTs in CdTe folders
-            assert len(CdTe_dp.bulk_corrections_data) == 2
-            for _k, v in CdTe_dp.bulk_corrections_data.items():
-                assert v is not None
+        # both OUTCARs and LOCPOTs in CdTe folders
+        assert len(CdTe_dp.bulk_corrections_data) == 2
+        for _k, v in CdTe_dp.bulk_corrections_data.items():
+            assert v is not None
 
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="CdTe_example_defects_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_DefectsParser_CdTe(self):
         with warnings.catch_warnings(record=True) as w:
             default_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        _check_default_CdTe_DefectParser_outputs(default_dp, w)
+        self._check_default_CdTe_DefectParser_outputs(default_dp, w)
 
+        # test reloading DefectsParser
+        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+
+        for defect_name, defect_entry in reloaded_defect_dict.items():
+            assert defect_entry.name == default_dp.defect_dict[defect_name].name
+            assert np.isclose(defect_entry.get_ediff(), default_dp.defect_dict[defect_name].get_ediff())
+            assert np.allclose(
+                defect_entry.sc_defect_frac_coords,
+                default_dp.defect_dict[defect_name].sc_defect_frac_coords,
+            )
+
+        # integration test using parsed CdTe thermo and chempots for plotting:
+        CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
+        default_thermo = default_dp.get_defect_thermodynamics()
+
+        return default_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
+
+    def test_DefectsParser_CdTe_without_multiprocessing(self):
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, processes=1)
         print([warn.message for warn in w])  # for debugging
-        _check_default_CdTe_DefectParser_outputs(dp, w)
+        self._check_default_CdTe_DefectParser_outputs(dp, w)
 
+    def test_DefectsParser_CdTe_filterwarnings(self):
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        _check_default_CdTe_DefectParser_outputs(dp, w, multiple_outcars_warning=False)
+        self._check_default_CdTe_DefectParser_outputs(dp, w, multiple_outcars_warning=False)
         warnings.filterwarnings("default", "Multiple")
 
+    def test_DefectsParser_CdTe_dist_tol(self):
         # test with reduced dist_tol:
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        _check_default_CdTe_DefectParser_outputs(dp, w, dist_tol=0.1)
+        self._check_default_CdTe_DefectParser_outputs(dp, w, dist_tol=0.1)
 
+    def test_DefectsParser_CdTe_no_dielectric_json(self):
         # test no dielectric and no JSON:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, json_filename=False)
@@ -248,6 +272,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp, skip_corrections=True)
         assert not os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
 
+    def test_DefectsParser_CdTe_custom_settings(self):
         # test custom settings:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -273,9 +298,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # correction warning
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
-
-        self._check_DefectsParser(dp)
-        _check_parsed_CdTe_defect_energies(dp)  # same energies as above
+        self._check_default_CdTe_DefectParser_outputs(dp, w, test_attributes=False)  # same energies as
+        # above
 
         # test changed attributes:
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
@@ -283,35 +307,24 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.error_tolerance == 0.01
         assert dp.bulk_band_gap_path == self.CdTe_BULK_DATA_DIR
         assert dp.processes == 4
-        self._check_DefectsParser(dp)
+        assert dp.json_filename == "test_pop.json"
 
+    def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
         with self.assertRaises(FileNotFoundError) as exc:
-            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam")
+            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam")
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
             f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam - please ensure `vasprun.xml(.gz)` "
             f"files are present and/or specify `bulk_path` manually."
         ) in str(exc.exception)
 
-        dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, processes=1, dielectric=9.13)
-        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
-
-        for defect_dict in [dp.defect_dict, reloaded_defect_dict]:
-            for defect_name, defect_entry in defect_dict.items():
-                assert defect_entry.name == default_dp.defect_dict[defect_name].name
-                assert np.isclose(
-                    defect_entry.get_ediff(), default_dp.defect_dict[defect_name].get_ediff()
-                )
-                assert np.allclose(
-                    defect_entry.sc_defect_frac_coords,
-                    default_dp.defect_dict[defect_name].sc_defect_frac_coords,
-                )
-
+    def test_DefectsParser_CdTe_skip_corrections(self):
         # skip_corrections:
         dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, skip_corrections=True)
         self._check_DefectsParser(dp, skip_corrections=True)
 
+    def test_DefectsParser_CdTe_aniso_dielectric(self):
         # anisotropic dielectric
         fake_aniso_dielectric = [1, 2, 3]
         with warnings.catch_warnings(record=True) as w:
@@ -329,30 +342,42 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             for warn in w
         )  # correction warning
+
+        for i in [
+            "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
+            "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
+            "_anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk folder.",
+            "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
+            "charge correction developed for _isotropic_ materials will be applied here, "
+            "which corresponds to using the effective isotropic average of the supplied "
+            "anisotropic dielectric. This could lead to significant errors for very anisotropic "
+            "systems and/or relatively small supercells!",
+            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
+            f"subfolders)",
+        ]:
+            print(i)
+            assert any(i in str(warn.message) for warn in w)
+
         assert any(
             all(
                 i in str(warn.message)
                 for i in [
-                    f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
-                    f"compute the _anisotropic_ Kumagai eFNV charge correction) were not found in the "
-                    f"defect (at {self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl) & bulk",
+                    "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
+                    "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
+                    "compute the _anisotropic_ Kumagai eFNV charge correction) are missing from the "
+                    "defect or bulk folder.",
                     "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
                     "charge correction developed for _isotropic_ materials will be applied here, "
                     "which corresponds to using the effective isotropic average of the supplied "
                     "anisotropic dielectric. This could lead to significant errors for very anisotropic "
                     "systems and/or relatively small supercells!",
+                    f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
+                    f"subfolders)",
                 ]
             )
             for warn in w
         )
         self._check_DefectsParser(dp)
-
-        # integration test using parsed CdTe thermo and chempots for plotting:
-        CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
-
-        default_thermo = default_dp.get_defect_thermodynamics()
-
-        return default_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
 
     def test_DefectsParser_corrections_errors_warning(self):
         with warnings.catch_warnings(record=True) as w:
@@ -471,8 +496,14 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Estimated error in the Kumagai (eFNV) charge correction for defect" in str(warning.message)
             for warning in w
         )  # no individual level warning
-        # Sb2Si2Te6 supercell breaks periodicity:
-        assert any("The defect supercell has been detected" in str(warning.message) for warning in w)
+        # Sb2Si2Te6 supercell breaks periodicity, but we don't throw warning when just parsing defects
+        assert not any("The defect supercell has been detected" in str(warning.message) for warning in w)
+
+        sb2si2te6_thermo = dp.get_defect_thermodynamics()
+        with warnings.catch_warnings(record=True) as w:
+            sb2si2te6_thermo.get_symmetries_and_degeneracies()
+        print([str(warning.message) for warning in w])
+        assert any(_orientational_degeneracy_warning in str(warning.message) for warning in w)
 
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
         with warnings.catch_warnings(record=True) as w:
@@ -664,17 +695,17 @@ class DopedParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
             ).defect_entry
+            print([str(warn.message) for warn in w])  # for debugging
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
             assert (
-                f"An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
-                f"the _anisotropic_ Kumagai eFNV charge correction) were not found in the defect "
-                f"(at {defect_path}) & bulk (at {self.CdTe_BULK_DATA_DIR}) folders.\n`LOCPOT` files were "
-                f"found in both defect & bulk folders, and so the Freysoldt (FNV) charge correction "
-                f"developed for _isotropic_ materials will be applied here, which corresponds to using "
-                f"the effective isotropic average of the supplied anisotropic dielectric. This could "
-                f"lead to significant errors for very anisotropic systems and/or relatively small "
-                f"supercells!" in str(w[-1].message)
+                "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
+                "the _anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk "
+                "folder.\n`LOCPOT` files were found in both defect & bulk folders, and so the "
+                "Freysoldt (FNV) charge correction developed for _isotropic_ materials will be applied "
+                "here, which corresponds to using the effective isotropic average of the supplied "
+                "anisotropic dielectric. This could lead to significant errors for very anisotropic "
+                "systems and/or relatively small supercells!" in str(w[-1].message)
             )
 
         assert np.isclose(
@@ -817,10 +848,9 @@ class DopedParsingTestCase(unittest.TestCase):
             assert len(w) == 1
             assert all(issubclass(warning.category, UserWarning) for warning in w)
             assert (
-                f"`LOCPOT` or `OUTCAR` files are not present in both the defect (at {defect_path}) and "
-                f"bulk (at {self.CdTe_BULK_DATA_DIR}) folders. These are needed to perform the "
-                f"finite-size charge corrections. Charge corrections will not be applied for this defect."
-                in str(w[0].message)
+                "`LOCPOT` or `OUTCAR` files are missing from the defect or bulk folder. These are needed "
+                "to perform the finite-size charge corrections. Charge corrections will not be applied "
+                "for this defect." in str(w[0].message)
             )
 
         assert np.isclose(
@@ -849,18 +879,22 @@ class DopedParsingTestCase(unittest.TestCase):
         assert np.isclose(parsed_v_cd_0.get_ediff(), 4.166, atol=1e-3)
 
     def _check_no_icorelevel_warning_int_te(self, dielectric, warnings, num_warnings, action):
+        print(
+            f"Running _check_no_icorelevel_warning_int_te with dielectric {dielectric}, expecting "
+            f"{num_warnings} warnings and action: {action}"
+        )  # for debugging
         result = defect_entry_from_paths(
             defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=dielectric,
             charge_state=2,
         )
+        print([warn.message for warn in warnings])  # for debugging
         assert len(warnings) == num_warnings
         assert all(issubclass(warning.category, UserWarning) for warning in warnings)
         assert (  # different warning start depending on whether isotropic or anisotropic dielectric
-            f"in the defect (at {self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl) & bulk (at "
-            f"{self.CdTe_BULK_DATA_DIR}) folders were unable to be parsed, giving the following error "
-            f"message:\nUnable to parse atomic core potentials from defect `OUTCAR` at "
+            f"in the defect or bulk folder were unable to be parsed, giving the following error message:\n"
+            f"Unable to parse atomic core potentials from defect `OUTCAR` at "
             f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
             f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
             f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
@@ -870,6 +904,10 @@ class DopedParsingTestCase(unittest.TestCase):
         return result
 
     def _parse_Int_Te_3_2_and_count_warnings(self, fake_aniso_dielectric, w, num_warnings):
+        print(
+            f"Running _parse_Int_Te_3_2_and_count_warnings with dielectric {fake_aniso_dielectric}, "
+            f"expecting {num_warnings} warnings"
+        )  # for debugging
         defect_entry_from_paths(
             defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
             bulk_path=self.CdTe_BULK_DATA_DIR,
@@ -878,7 +916,6 @@ class DopedParsingTestCase(unittest.TestCase):
         )
         print([warn.message for warn in w])  # for debugging
         assert len(w) == num_warnings
-        # defect and bulk)
         assert all(issubclass(warning.category, UserWarning) for warning in w)
 
     def test_multiple_outcars(self):
