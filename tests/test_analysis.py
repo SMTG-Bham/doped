@@ -14,6 +14,7 @@ import matplotlib as mpl
 import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.structure import Structure
 
 from doped.analysis import (
@@ -28,6 +29,7 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
 )
@@ -1852,6 +1854,28 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
+
+    def test_orientational_degeneracy_error(self):
+        # note most usages of get_orientational_degeneracy are tested (indirectly) via the
+        # DefectsParser/DefectThermodynamics tests
+        for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
+            print(defect_type)  # for debugging
+            with self.assertRaises(ValueError) as exc:
+                get_orientational_degeneracy(
+                    relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+                )
+            assert (
+                "From the input/determined point symmetries, an orientational degeneracy factor of 0.25 "
+                "is predicted, which is less than 1, which is not reasonable for vacancies/substitutions, "
+                "indicating an error in the symmetry determination!"
+            ) in str(exc.exception)
+
+        for defect_type in ["interstitial", DefectType.Interstitial]:
+            print(defect_type)  # for debugging
+            orientational_degeneracy = get_orientational_degeneracy(
+                relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+            )
+            assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
 
 
 class ReorderedParsingTestCase(unittest.TestCase):

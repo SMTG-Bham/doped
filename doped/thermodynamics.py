@@ -2408,6 +2408,7 @@ class DefectThermodynamics(MSONable):
                     ] = get_orientational_degeneracy(
                         relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
                         bulk_site_point_group=defect_entry.calculation_metadata["bulk site symmetry"],
+                        defect_type=defect_entry.defect.defect_type,
                     )
                 except Exception as e:
                     warnings.warn(

@@ -9,6 +9,7 @@ from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
@@ -804,6 +805,7 @@ def get_orientational_degeneracy(
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
     symprec: float = 0.2,
+    defect_type: Optional[Union[DefectType, str]] = None,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
@@ -887,6 +889,11 @@ def get_orientational_degeneracy(
             that used for only unrelaxed structures in doped (0.01), to account for
             residual structural noise in relaxed supercells. You may want to adjust
             for your system (e.g. if there are very slight octahedral distortions etc).
+        defect_type (DefectType or str):
+            The type of defect (e.g. Vacancy/"vacancy", Substitution/"substitution",
+            Interstitial/"interstitial") to check if the output orientational
+            degeneracy is reasonable (i.e. can only be less than 1 for interstitials).
+            Default is None (no check).
 
     Returns:
         float: orientational degeneracy factor for the defect.
@@ -906,6 +913,9 @@ def get_orientational_degeneracy(
             "(i.e. must be a parsed DefectEntry)"
         )
 
+    else:
+        defect_type = defect_entry.defect.defect_type
+
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
         relaxed_point_group = point_symmetry_from_defect_entry(
@@ -923,9 +933,21 @@ def get_orientational_degeneracy(
             relaxed=False,  # unrelaxed
         )
 
-    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
-        relaxed_point_group
-    )
+    orientational_degeneracy = group_order_from_schoenflies(
+        bulk_site_point_group
+    ) / group_order_from_schoenflies(relaxed_point_group)
+
+    if orientational_degeneracy < 1 and not (
+        defect_type == DefectType.Interstitial
+        or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
+    ):
+        raise ValueError(
+            f"From the input/determined point symmetries, an orientational degeneracy factor of "
+            f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable for "
+            f"vacancies/substitutions, indicating an error in the symmetry determination!"
+        )
+
+    return orientational_degeneracy
 
 
 def _get_bulk_supercell(defect_entry: DefectEntry):
