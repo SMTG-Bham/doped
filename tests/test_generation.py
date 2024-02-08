@@ -983,11 +983,11 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
     def _generate_and_test_no_warnings(self, structure, min_image_distance=None, **kwargs):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+        w = None
         try:
             with warnings.catch_warnings(record=True) as w:
                 warnings.resetwarnings()
                 defect_gen = DefectsGenerator(structure, **kwargs)
-                print([str(warning.message) for warning in w])  # for debugging
                 if min_image_distance is None:
                     assert not w
                 else:
@@ -1002,6 +1002,9 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        if w:
+            print([str(warning.message) for warning in w])  # for debugging
 
         return defect_gen, output
 
