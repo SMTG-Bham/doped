@@ -22,7 +22,7 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
-from doped.core import DefectEntry, _no_chempots_warning
+from doped.core import DefectEntry, _no_chempots_warning, _orientational_degeneracy_warning
 from doped.generation import _sort_defect_entries
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -152,7 +152,9 @@ def group_defects_by_distance(
     defect_site_dict: Dict[
         str, Dict[Tuple, List[DefectEntry]]
     ] = {}  # {defect name: {(equiv defect sites): entry list}}
-    bulk_supercell_sga = _get_sga(_get_bulk_supercell(entry_list[0]))
+    bulk_supercell = _get_bulk_supercell(entry_list[0])
+    bulk_lattice = bulk_supercell.lattice
+    bulk_supercell_sga = _get_sga(bulk_supercell)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
@@ -162,6 +164,13 @@ def group_defects_by_distance(
             entry_list, key=lambda x: abs(x.charge_state)
         )  # sort by charge, starting with closest to zero, for deterministic behaviour
         for entry in sorted_entry_list:
+            entry_bulk_supercell = _get_bulk_supercell(entry)
+            if entry_bulk_supercell.lattice != bulk_lattice:
+                # recalculate bulk_symm_ops if bulk supercell differs
+                bulk_supercell_sga = _get_sga(entry_bulk_supercell)
+                symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+                bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+
             bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
             # need to use relaxed defect site if bulk_site not in calculation_metadata
 
@@ -565,8 +574,8 @@ class DefectThermodynamics(MSONable):
             grouped_entries = group_defects_by_name(self.defect_entries)
             grouped_entries_list = list(grouped_entries.values())
             warnings.warn(
-                f"Grouping (inequivalent) defects by distance failed with error: {e}\nGrouping by defect "
-                f"names instead."
+                f"Grouping (inequivalent) defects by distance failed with error: {e!r}"
+                f"\nGrouping by defect names instead."
             )  # possibly different bulks (though this should be caught/warned about earlier), or not
             # parsed with recent doped versions etc
 
@@ -2353,15 +2362,17 @@ class DefectThermodynamics(MSONable):
             )
             if "relaxed point symmetry" not in defect_entry.calculation_metadata:
                 try:
-                    defect_entry.calculation_metadata[
-                        "relaxed point symmetry"
-                    ] = point_symmetry_from_defect_entry(
-                        defect_entry, relaxed=True
+                    (
+                        defect_entry.calculation_metadata["relaxed point symmetry"],
+                        defect_entry["periodicity_breaking_supercell"],
+                    ) = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=True, return_periodicity_breaking=True
                     )  # relaxed so defect symm_ops
+
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"error:\n{e!r}"
                     )
             if "unrelaxed point symmetry" not in defect_entry.calculation_metadata:
                 try:
@@ -2373,7 +2384,7 @@ class DefectThermodynamics(MSONable):
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"error:\n{e!r}"
                     )
 
             if (
@@ -2395,7 +2406,7 @@ class DefectThermodynamics(MSONable):
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"error:\n{e!r}"
                     )
 
             table_list.append(
@@ -2411,6 +2422,12 @@ class DefectThermodynamics(MSONable):
                     "g_Total": total_degeneracy,
                 }
             )
+
+        if any(
+            defect_entry.calculation_metadata.get("periodicity_breaking_supercell", False)
+            for defect_entry in self.defect_entries
+        ):
+            warnings.warn(_orientational_degeneracy_warning)
 
         symmetry_df = pd.DataFrame(table_list)
         # sort by defect and then charge state descending:
