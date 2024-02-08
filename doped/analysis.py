@@ -1659,11 +1659,13 @@ class DefectParser:
             relaxed=False,
             symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
         )
-        orientational_degeneracy = get_orientational_degeneracy(
-            relaxed_point_group=relaxed_point_group, bulk_site_point_group=bulk_site_point_group
-        )
-        # TODO: Show these properties in tutorials:
-        defect_entry.degeneracy_factors["orientational degeneracy"] = orientational_degeneracy
+        with contextlib.suppress(ValueError):
+            defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+                relaxed_point_group=relaxed_point_group,
+                bulk_site_point_group=bulk_site_point_group,
+                defect_type=defect.defect_type,
+            )
+        # TODO: Show these properties in tutorials
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
