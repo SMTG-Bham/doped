@@ -2230,7 +2230,7 @@ class DefectThermodynamics(MSONable):
         Table Key:
         'Defect' -> Defect name (without charge)
         'q' -> Defect charge state.
-        'Symm_Unrelax' -> Point group symmetry of the relaxed defect.
+        'Symm_Unrelax' -> Point group symmetry of the unrelaxed defect.
         'Symm_Relax' -> Point group symmetry of the relaxed defect.
         'g_Orient' -> Orientational degeneracy of the defect.
         'g_Spin' -> Spin degeneracy of the defect.
