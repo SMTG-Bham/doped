@@ -102,6 +102,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             if defect_entry.charge_state != 0 and not skip_corrections:
                 assert sum(defect_entry.corrections.values()) != 0
             assert defect_entry.get_ediff()  # can get ediff fine
+            assert defect_entry.calculation_metadata  # has metadata
 
     def _check_parsed_CdTe_defect_energies(self, dp):
         """
@@ -205,6 +206,34 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert len(CdTe_dp.bulk_corrections_data) == 2
         for _k, v in CdTe_dp.bulk_corrections_data.items():
             assert v is not None
+
+        # spot check some entries:
+        assert CdTe_dp.defect_dict["v_Cd_0"].calculation_metadata["defect_site_index"] is None
+        assert CdTe_dp.defect_dict["v_Cd_-2"].calculation_metadata["guessed_defect_displacement"] is None
+        assert CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["defect_site_index"] == 64
+        assert np.isclose(
+            CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["guessed_defect_displacement"],
+            1.45,
+            atol=1e-2,
+        )
+        assert np.isclose(
+            CdTe_dp.defect_dict["Int_Te_3_2"].calculation_metadata["guessed_defect_displacement"],
+            1.36,
+            atol=1e-2,
+        )
+        assert np.isclose(
+            CdTe_dp.defect_dict["Int_Te_3_Unperturbed_1"].calculation_metadata[
+                "guessed_defect_displacement"
+            ],
+            0.93,
+            atol=1e-2,
+        )
+        assert CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["defect_site_index"] == 31
+        assert np.isclose(
+            CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["guessed_defect_displacement"],
+            0.56,
+            atol=1e-2,
+        )
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
