@@ -10,7 +10,7 @@ import numpy as np
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Lattice, PeriodicSite, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import pbc_diff
@@ -104,6 +104,65 @@ def _get_sga(struct, symprec=0.01):
     # shiiii...
 
 
+def apply_symm_op_to_site(symm_op: SymmOp, site: PeriodicSite, lattice: Lattice) -> PeriodicSite:
+    """
+    Apply the given symmetry operation to the input site (**not in place**) and
+    return the new site.
+    """
+    new_latt = np.dot(symm_op.rotation_matrix, lattice.matrix)
+    _lattice = Lattice(new_latt)
+
+    return PeriodicSite(
+        site.species,
+        symm_op.operate(site.frac_coords),
+        _lattice,
+        properties=site.properties,
+        skip_checks=True,
+        label=site.label,
+    )
+
+
+def apply_symm_op_to_struct(struct: Structure, symm_op: SymmOp, fractional: bool = False) -> Structure:
+    """
+    Apply a symmetry operation to a structure and return the new structure.
+
+    This differs from pymatgen's ``apply_operation`` method in that it
+    **does not apply the operation in place as well (i.e. does not modify
+    the input structure)**, which avoids the use of unnecessary and slow
+    ``Structure.copy()`` calls, making the structure manipulation / symmetry
+    analysis functions more efficient.
+    """
+    # using modified version of `pymatgen`'s `apply_operation` method:
+    _lattice = struct._lattice
+    if not fractional:
+        _lattice = Lattice([symm_op.apply_rotation_only(row) for row in _lattice.matrix])
+
+        def operate_site(site):
+            new_cart = symm_op.operate(site.coords)
+            new_frac = _lattice.get_fractional_coords(new_cart)
+            return PeriodicSite(
+                site.species,
+                new_frac,
+                _lattice,
+                properties=site.properties,
+                skip_checks=True,
+                label=site.label,
+            )
+
+    else:
+
+        def operate_site(site):
+            return apply_symm_op_to_site(symm_op, site, _lattice)
+
+    sites = [operate_site(site) for site in struct]
+
+    return Structure(
+        _lattice,
+        [site.species for site in sites],
+        [site.frac_coords for site in sites],
+    )
+
+
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
@@ -113,26 +172,20 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
-    struct_with_x = struct.copy()
-    struct_with_x.sites += [dummy_site]
-
     x_sites = []
     for symm_op in symm_ops:
-        transformed_struct = struct_with_x.copy()
-        transformed_struct.apply_operation(symm_op, fractional=True)
-        x_site = transformed_struct[-1].to_unit_cell()
+        x_site = apply_symm_op_to_site(symm_op, dummy_site, struct.lattice).to_unit_cell()
+        # frac_coords = np.mod(symm_op.operate(frac_coords), 1)  # to unit cell
         # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
         if (
             not x_sites
-            or min(
-                np.linalg.norm(
-                    np.dot(
-                        pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
-                        struct.lattice.matrix,
-                    ),
-                    axis=-1,
-                )
-            )
+            or np.linalg.norm(
+                np.dot(
+                    pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
+                    struct.lattice.matrix,
+                ),
+                axis=-1,
+            ).min()
             > dist_tol
         ):
             x_sites.append(x_site)
@@ -222,11 +275,10 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         supercell_matrix = -1 * mapping[2]
     else:
         supercell_matrix = mapping[2]
-    rotation_symmop = SymmOp.from_rotation_and_translation(
+    rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = prim_struct.copy()
-    output_prim_struct.apply_operation(rotation_symmop)
+    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op)
     clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
