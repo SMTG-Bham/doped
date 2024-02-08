@@ -2287,8 +2287,8 @@ class DefectThermodynamics(MSONable):
     def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
         r"""
         Generates a table of the bulk-site & relaxed defect point group
-        symmetries, and spin/orientational/total degeneracies for each
-        defect in the ``DefectThermodynamics`` object.
+        symmetries, spin/orientational/total degeneracies and (bulk-)site
+        multiplicities for each defect in the ``DefectThermodynamics`` object.
 
         Table Key:
 
@@ -2299,6 +2299,7 @@ class DefectThermodynamics(MSONable):
         - 'g_Orient': Orientational degeneracy of the defect.
         - 'g_Spin': Spin degeneracy of the defect.
         - 'g_Total': Total degeneracy of the defect.
+        - 'Mult': Multiplicity of the defect site in the bulk cell, per primitive unit cell.
 
         For interstitials, the bulk site symmetry corresponds to the
         point symmetry of the interstitial site with `no relaxation
@@ -2408,12 +2409,22 @@ class DefectThermodynamics(MSONable):
                     ] = get_orientational_degeneracy(
                         relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
                         bulk_site_point_group=defect_entry.calculation_metadata["bulk site symmetry"],
+                        defect_type=defect_entry.defect.defect_type,
                     )
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
                         f"error:\n{e!r}"
                     )
+
+            try:
+                multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
+                    len(defect_entry.defect.structure.get_primitive_structure())
+                    / len(defect_entry.defect.structure)
+                )
+
+            except Exception:
+                multiplicity_per_unit_cell = "N/A"
 
             table_list.append(
                 {
@@ -2424,6 +2435,7 @@ class DefectThermodynamics(MSONable):
                     "g_Orient": defect_entry.degeneracy_factors.get("orientational degeneracy", "N/A"),
                     "g_Spin": defect_entry.degeneracy_factors.get("spin degeneracy", "N/A"),
                     "g_Total": total_degeneracy,
+                    "Mult": multiplicity_per_unit_cell,
                 }
             )
 

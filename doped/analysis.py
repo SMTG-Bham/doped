@@ -151,8 +151,6 @@ def check_and_set_defect_entry_name(
     else:
         defect_entry.name = defect_entry.calculation_metadata["full_unrelaxed_defect_name"]
         # otherwise use default doped name  # TODO: Test - Xinwei's folders may be good test case
-        # Note this can determine the wrong point group symmetry if a non-diagonal supercell expansion
-        # was used
 
 
 def defect_from_structures(
@@ -713,6 +711,9 @@ class DefectsParser:
                     f"files are present and/or specify `bulk_path` manually."
                 )
 
+        # remove trailing '/.' from bulk_path if present:
+        self.bulk_path = self.bulk_path.rstrip("/.")
+
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
@@ -913,6 +914,15 @@ class DefectsParser:
             for warning, defect_list in duplicate_warnings.items():
                 if defect_list:
                     warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
+
+        if not parsed_defect_entries:
+            subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""
+            raise ValueError(
+                f"No defect calculations in `output_path` '{self.output_path}' were successfully parsed, "
+                f"using `bulk_path`: {self.bulk_path}{subfolder_string}. Please check the correct "
+                f"defect/bulk paths and subfolder are being set, and that the folder structure is as "
+                f"expected (see `DefectsParser` docstring)."
+            )
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
@@ -1659,11 +1669,13 @@ class DefectParser:
             relaxed=False,
             symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
         )
-        orientational_degeneracy = get_orientational_degeneracy(
-            relaxed_point_group=relaxed_point_group, bulk_site_point_group=bulk_site_point_group
-        )
-        # TODO: Show these properties in tutorials:
-        defect_entry.degeneracy_factors["orientational degeneracy"] = orientational_degeneracy
+        with contextlib.suppress(ValueError):
+            defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+                relaxed_point_group=relaxed_point_group,
+                bulk_site_point_group=bulk_site_point_group,
+                defect_type=defect.defect_type,
+            )
+        # TODO: Show these properties in tutorials
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
