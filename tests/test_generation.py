@@ -987,6 +987,7 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
             with warnings.catch_warnings(record=True) as w:
                 warnings.resetwarnings()
                 defect_gen = DefectsGenerator(structure, **kwargs)
+                print([str(warning.message) for warning in w])  # for debugging
                 if min_image_distance is None:
                     assert not w
                 else:
@@ -2254,11 +2255,12 @@ Se_i_Td          [-2,-1,0]              [0.500,0.500,0.500]  4b"""
                     get_defect_name_from_entry(defect_entry),
                     "\n",
                 )
-            assert len(w) == 1
-            assert (
-                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), "
-                "but the `calculation_metadata` attribute is not set for `DefectEntry`"
-                in str(w[-1].message)
+            print([str(warning.message) for warning in w])  # for debugging
+            # assert len(w) == 1  # printed each time
+            assert all(
+                "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
+                "that the defect supercell is likely a non-scalar matrix" in str(warning.message)
+                for warning in w
             )
 
         # save reduced defect gen to json

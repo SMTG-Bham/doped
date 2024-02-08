@@ -1602,6 +1602,16 @@ class DefectParser:
                     defect_site = final_defect_site
 
         calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
+        calculation_metadata["defect_site_index"] = defect_site_index
+        # add displacement from (guessed) initial site to final defect site:
+        if defect_site_index is not None:  # not a vacancy
+            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
+            final_site = defect_vr.final_structure[defect_site_index]
+            guessed_displacement = final_site.distance(guessed_initial_site)
+            calculation_metadata["guessed_defect_displacement"] = guessed_displacement
+        else:  # vacancy
+            calculation_metadata["guessed_defect_displacement"] = None  # type: ignore
+
         calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
         if bulk_site_index is None:  # interstitial
             calculation_metadata["bulk_site"] = defect_site_in_bulk
