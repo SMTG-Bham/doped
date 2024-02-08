@@ -111,7 +111,8 @@ def check_and_set_defect_entry_name(
 
     If the DefectEntry.name attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
-    for the `unrelaxed` defect.
+    for the `unrelaxed` defect (i.e. using the point symmetry of the defect
+    site in the bulk cell).
 
     Args:
         defect_entry (DefectEntry): DefectEntry object.
@@ -1642,19 +1643,19 @@ class DefectParser:
         relaxed_point_group, periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry, relaxed=True, verbose=False, return_periodicity_breaking=True
         )  # relaxed so defect symm_ops
-        unrelaxed_point_group = point_symmetry_from_defect_entry(
+        bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,
             symm_ops=bulk_supercell_symm_ops,  # unrelaxed so bulk symm_ops
             relaxed=False,
             symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
         )
         orientational_degeneracy = get_orientational_degeneracy(
-            relaxed_point_group=relaxed_point_group, unrelaxed_point_group=unrelaxed_point_group
+            relaxed_point_group=relaxed_point_group, bulk_site_point_group=bulk_site_point_group
         )
         # TODO: Show these properties in tutorials:
         defect_entry.degeneracy_factors["orientational degeneracy"] = orientational_degeneracy
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
-        defect_entry.calculation_metadata["unrelaxed point symmetry"] = unrelaxed_point_group
+        defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
         if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:

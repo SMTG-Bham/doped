@@ -800,21 +800,28 @@ def get_interstitial_site_and_orientational_degeneracy(
 def get_orientational_degeneracy(
     defect_entry: Optional[DefectEntry] = None,
     relaxed_point_group: Optional[str] = None,
-    unrelaxed_point_group: Optional[str] = None,
+    bulk_site_point_group: Optional[str] = None,
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
     symprec: float = 0.2,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
-    by supplying either the DefectEntry object or the relaxed and unrelaxed
-    point group symbols (e.g. "Td", "C3v" etc).
+    by supplying either the DefectEntry object or the bulk-site & relaxed
+    defect point group symbols (e.g. "Td", "C3v" etc).
 
     If a DefectEntry is supplied (and the point group symbols are not),
-    this is computed by determining the `relaxed` point symmetry and the
-    original/`unrelaxed` defect site symmetry, and then getting the ratio of
+    this is computed by determining the `relaxed` defect point symmetry and the
+    (unrelaxed) bulk site symmetry, and then getting the ratio of
     their point group orders (equivalent to the ratio of partition
     functions or number of symmetry operations (i.e. degeneracy)).
+
+    For interstitials, the bulk site symmetry corresponds to the
+    point symmetry of the interstitial site with `no relaxation
+    of the host structure`, while for vacancies/substitutions it is
+    simply the symmetry of their corresponding bulk site.
+    This corresponds to the point symmetry of ``DefectEntry.defect``,
+    or ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
 
     Note: This tries to use the defect_entry.defect_supercell to determine
     the `relaxed` site symmetry. However, it should be noted that this is not
@@ -839,12 +846,18 @@ def get_orientational_degeneracy(
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
-    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-    from visualising the structures (e.g. using VESTA)(can use
-    ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
-    factor for given initial/relaxed point symmetries) and setting the corresponding
-    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    determine the relaxed defect and bulk-site point symmetries, and/or orientational
+    degeneracy, from visualising the structures (e.g. using VESTA)(can use
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational
+    degeneracy factor for given defect/bulk-site point symmetries) and setting the
+    corresponding values in the
+    ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+    ``degeneracy_factors['orientational degeneracy']`` attributes.
+    Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+    or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+    which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+    while for interstitials it is the point symmetry of the `final relaxed` interstitial
+    site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
     and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
     doi.org/10.1039/D3CS00432E).
@@ -854,14 +867,16 @@ def get_orientational_degeneracy(
         relaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
             of the `relaxed` defect structure, if already calculated / manually
             determined. Default is None (automatically calculated by doped).
-        unrelaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
-            of the non-relaxed (initial) defect site, if already calculated /
-            manually determined. This should match the site symmetry label from
-            ``doped`` when generating the defect. Default is None (automatically
-            calculated by doped).
+        bulk_site_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
+            of the defect site in the bulk, if already calculated / manually
+            determined. For vacancies/substitutions, this should match the site
+            symmetry label from ``doped`` when generating the defect, while for
+            interstitials it should be the point symmetry of the `final relaxed`
+            interstitial site, when placed in the bulk structure.
+            Default is None (automatically calculated by doped).
         bulk_symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the `unrelaxed` point symmetry), to
+            structure (used in determining the `unrelaxed` bulk site symmetry), to
             avoid re-calculating. Default is None (recalculates).
         defect_symm_ops (list):
             List of symmetry operations of the defect_entry.defect_supercell
@@ -879,9 +894,9 @@ def get_orientational_degeneracy(
     from doped.utils.symmetry import group_order_from_schoenflies, point_symmetry_from_defect_entry
 
     if defect_entry is None:
-        if relaxed_point_group is None or unrelaxed_point_group is None:
+        if relaxed_point_group is None or bulk_site_point_group is None:
             raise ValueError(
-                "Either the DefectEntry or both relaxed and unrelaxed point group symbols must be "
+                "Either the DefectEntry or both defect and bulk site point group symbols must be "
                 "provided for doped to determine the orientational degeneracy! "
             )
 
@@ -900,15 +915,15 @@ def get_orientational_degeneracy(
             relaxed=True,  # relaxed
         )
 
-    if unrelaxed_point_group is None:
-        unrelaxed_point_group = point_symmetry_from_defect_entry(
+    if bulk_site_point_group is None:
+        bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,  # type: ignore
             symm_ops=bulk_symm_ops,  # bulk not defect symm_ops
             symprec=symprec,  # same symprec as relaxed_point_group for consistency
             relaxed=False,  # unrelaxed
         )
 
-    return group_order_from_schoenflies(unrelaxed_point_group) / group_order_from_schoenflies(
+    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
         relaxed_point_group
     )
 

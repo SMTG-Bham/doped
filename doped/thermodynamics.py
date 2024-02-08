@@ -232,7 +232,8 @@ def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[Defec
     "{defect_name}_{optional_site_info}_{charge_state}".
     If the DefectEntry.name attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
-    for the `unrelaxed` defect.
+    for the `unrelaxed` defect (i.e. using the point symmetry of the defect
+    site in the bulk cell).
 
     For example, ``v_Cd_C3v_+1``, ``v_Cd_Td_+1`` and ``v_Cd_C3v_+2`` will be grouped
     as {``v_Cd_C3v``: [``v_Cd_C3v_+1``, ``v_Cd_C3v_+2``], ``v_Cd_Td``: [``v_Cd_Td_+1``]}.
@@ -2285,28 +2286,29 @@ class DefectThermodynamics(MSONable):
 
     def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
         r"""
-        Generates a table of the unrelaxed & relaxed point group symmetries,
-        and spin/orientational/total degeneracies for each defect in the
-        DefectThermodynamics object.
+        Generates a table of the bulk-site & relaxed defect point group
+        symmetries, and spin/orientational/total degeneracies for each
+        defect in the ``DefectThermodynamics`` object.
 
         Table Key:
 
         - 'Defect': Defect name (without charge)
         - 'q': Defect charge state.
-        - 'Symm_Unrelax': Point group symmetry of the relaxed defect.
-        - 'Symm_Relax': Point group symmetry of the relaxed defect.
+        - 'Site_Symm': Point group symmetry of the defect site in the bulk cell.
+        - 'Defect_Symm': Point group symmetry of the relaxed defect.
         - 'g_Orient': Orientational degeneracy of the defect.
         - 'g_Spin': Spin degeneracy of the defect.
         - 'g_Total': Total degeneracy of the defect.
 
-        For interstitials, the 'unrelaxed' point group symmetry
-        correspond to the point symmetry of the interstitial site
-        with `no relaxation of the host structure`. For vacancies
-        and substitutions, this is equivalent to the initial point
-        symmetry.
+        For interstitials, the bulk site symmetry corresponds to the
+        point symmetry of the interstitial site with `no relaxation
+        of the host structure`, while for vacancies/substitutions it is
+        simply the symmetry of their corresponding bulk site.
+        This corresponds to the point symmetry of ``DefectEntry.defect``,
+        or ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
 
         Point group symmetries are taken from the calculation_metadata
-        ("relaxed point symmetry" and "unrelaxed point symmetry") if
+        ("relaxed point symmetry" and "bulk site symmetry") if
         present (should be, if parsed with doped and defect supercell
         doesn't break host periodicity), otherwise are attempted to be
         recalculated.
@@ -2333,12 +2335,18 @@ class DefectThermodynamics(MSONable):
         - otherwise periodicity-breaking prevents this.
 
         If periodicity-breaking prevents auto-symmetry determination, you can manually
-        determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-        from visualising the structures (e.g. using VESTA)(can use
-        ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
-        factor for given initial/relaxed point symmetries) and setting the corresponding
-        values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-        symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+        determine the relaxed defect and bulk-site point symmetries, and/or orientational
+        degeneracy, from visualising the structures (e.g. using VESTA)(can use
+        ``get_orientational_degeneracy`` to obtain the corresponding orientational
+        degeneracy factor for given defect/bulk-site point symmetries) and setting the
+        corresponding values in the
+        ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+        ``degeneracy_factors['orientational degeneracy']`` attributes.
+        Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+        or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+        which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+        while for interstitials it is the point symmetry of the `final relaxed` interstitial
+        site when placed in the (unrelaxed) bulk structure.
         The degeneracy factor is used in the calculation of defect/carrier concentrations
         and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
         doi.org/10.1039/D3CS00432E).
@@ -2374,23 +2382,23 @@ class DefectThermodynamics(MSONable):
                         f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
                         f"error:\n{e!r}"
                     )
-            if "unrelaxed point symmetry" not in defect_entry.calculation_metadata:
+            if "bulk site symmetry" not in defect_entry.calculation_metadata:
                 try:
                     defect_entry.calculation_metadata[
-                        "unrelaxed point symmetry"
+                        "bulk site symmetry"
                     ] = point_symmetry_from_defect_entry(
                         defect_entry, relaxed=False, symprec=0.01
                     )  # unrelaxed so bulk symm_ops
                 except Exception as e:
                     warnings.warn(
-                        f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e!r}"
+                        f"Unable to determine bulk site symmetry for {defect_entry.name}, got error:"
+                        f"\n{e!r}"
                     )
 
             if (
                 all(
                     x in defect_entry.calculation_metadata
-                    for x in ["relaxed point symmetry", "unrelaxed point symmetry"]
+                    for x in ["relaxed point symmetry", "bulk site symmetry"]
                 )
                 and "orientational degeneracy" not in defect_entry.degeneracy_factors
             ):
@@ -2399,9 +2407,7 @@ class DefectThermodynamics(MSONable):
                         "orientational degeneracy"
                     ] = get_orientational_degeneracy(
                         relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
-                        unrelaxed_point_group=defect_entry.calculation_metadata[
-                            "unrelaxed point symmetry"
-                        ],
+                        bulk_site_point_group=defect_entry.calculation_metadata["bulk site symmetry"],
                     )
                 except Exception as e:
                     warnings.warn(
@@ -2413,10 +2419,8 @@ class DefectThermodynamics(MSONable):
                 {
                     "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     "q": defect_entry.charge_state,
-                    "Symm_Unrelax": defect_entry.calculation_metadata.get(
-                        "unrelaxed point symmetry", "N/A"
-                    ),
-                    "Symm_Relax": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
+                    "Site_Symm": defect_entry.calculation_metadata.get("bulk site symmetry", "N/A"),
+                    "Defect_Symm": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
                     "g_Orient": defect_entry.degeneracy_factors.get("orientational degeneracy", "N/A"),
                     "g_Spin": defect_entry.degeneracy_factors.get("spin degeneracy", "N/A"),
                     "g_Total": total_degeneracy,
