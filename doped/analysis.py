@@ -1261,7 +1261,7 @@ class DefectsParser:
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
             dist_tol (float):
-                Threshold for the minimum distance (in Å) between equivalent
+                Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting and transition level
                 analysis). If the minimum distance between equivalent defect
@@ -1619,9 +1619,13 @@ class DefectParser:
             guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
             final_site = defect_vr.final_structure[defect_site_index]
             guessed_displacement = final_site.distance(guessed_initial_site)
+            calculation_metadata["guessed_initial_defect_site"] = guessed_initial_site
             calculation_metadata["guessed_defect_displacement"] = guessed_displacement
+            calculation_metadata["bulk_site_index"] = bulk_site_index
         else:  # vacancy
+            calculation_metadata["guessed_initial_defect_site"] = bulk_supercell[bulk_site_index]
             calculation_metadata["guessed_defect_displacement"] = None  # type: ignore
+            calculation_metadata["bulk_site_index"] = bulk_site_index
 
         calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
         if bulk_site_index is None:  # interstitial
