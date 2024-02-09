@@ -2373,7 +2373,7 @@ class DefectThermodynamics(MSONable):
                 try:
                     (
                         defect_entry.calculation_metadata["relaxed point symmetry"],
-                        defect_entry["periodicity_breaking_supercell"],
+                        defect_entry.calculation_metadata["periodicity_breaking_supercell"],
                     ) = point_symmetry_from_defect_entry(
                         defect_entry, relaxed=True, return_periodicity_breaking=True
                     )  # relaxed so defect symm_ops
