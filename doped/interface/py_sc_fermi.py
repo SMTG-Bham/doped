@@ -127,8 +127,8 @@ class FermiSolver:
         )
         return defect_system
 
-    def update_defect_system_temperature(
-        self, defect_system: DefectSystem, temperature: float
+    @staticmethod
+    def update_defect_system_temperature(defect_system: DefectSystem, temperature: float
     ) -> DefectSystem:
         """
         Generates a new DefectSystem object with a new temperature, generated
@@ -145,10 +145,10 @@ class FermiSolver:
         nu_defect_system.temperature = temperature
         return nu_defect_system
 
-    def scan_annealing_temperature(
+    def scan_annealing_and_quench(
         self,
         chemical_potentials: dict[str, float],
-        temperature: float,
+        quenching_temperature: float,
         annealing_temperature_range: List[float],
         fix_defect_species: bool = True,
         exceptions: List[str] = [],
@@ -191,15 +191,14 @@ class FermiSolver:
         # generate a base defect system, and then make one at each temperature in temp_range
         defect_system = self.defect_system_from_chemical_potentials(chemical_potentials)
 
-        # if annealing_temperature is set, generate a defect system at the
-        # annealing temperature
+        # generate a defect system at each annealing temperature
         with Pool(processes=cpus) as pool:
             defect_systems = pool.map(
                 self.generate_annealed_defect_system,
                 [
                     {
                         "initial_system": defect_system,
-                        "target_temperature": temperature,
+                        "quenching_temperature": quenching_temperature,
                         "annealing_temperature": annealing_temperature,
                         "fix_defect_species": fix_defect_species,
                         "exceptions": exceptions,
@@ -207,6 +206,9 @@ class FermiSolver:
                     for annealing_temperature in annealing_temperature_range
                 ],
             )
+
+        for defect_system in defect_systems:
+            defect_system.report()
 
         # get the concentrations at each annealing temperature
         with Pool(processes=cpus) as pool:
@@ -428,8 +430,8 @@ class FermiSolver:
                     [
                         {
                             "initial_system": defect_system,
-                            "target_temperature": temperature,
-                            "annealing_temperature": annealing_temperature,
+                            "target_temperature": annealing_temperature,
+                            "annealing_temperature": temperature,
                             "fix_defect_species": fix_defect_species,
                             "exceptions": exceptions,
                         }
@@ -558,7 +560,7 @@ class FermiSolver:
                         [
                             {
                                 "initial_system": defect_system,
-                                "target_temperature": cool_to,
+                                "quenching_temperature": cool_to,
                                 "annealing_temperature": temperature,
                                 "fix_defect_species": fix_defect_species,
                                 "exceptions": exceptions,
@@ -597,7 +599,7 @@ class FermiSolver:
     def generate_annealed_defect_system(args: dict) -> DefectSystem:
         """generate a py-sc-fermi DefectSystem object that has defect concentrations
         fixed to the values determined at a high temperature (annealing_temperature),
-        and then set to a lower temperature (target_temperature)
+        and then set to a lower temperature (quenching_temperature)
 
         Args:
             mu (Dict[str, float]): set of chemical potentials used to generate the
@@ -627,7 +629,8 @@ class FermiSolver:
         defect_system.temperature = args["annealing_temperature"]
         initial_conc_dict = defect_system.concentration_dict()
 
-        # Exclude the exceptions and Fermi energy from fixing
+        # Exclude the exceptions, carrier concentrations and 
+        # Fermi energy from fixing
         exceptions = ["Fermi Energy", "n0", "p0"]
         exceptions.extend(args["exceptions"])
 
@@ -657,7 +660,7 @@ class FermiSolver:
                         v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
 
         target_system = deepcopy(defect_system)
-        target_system.temperature = args["target_temperature"]
+        target_system = FermiSolver.update_defect_system_temperature(target_system, args["quenching_temperature"])
         return target_system
 
     def chempot_grid(self, chemical_potentials, num_points=10, num_points_along_edge=5):
@@ -729,8 +732,8 @@ class FermiSolver:
                     [
                         {
                             "initial_system": defect_system,
-                            "target_temperature": temperature,
-                            "annealing_temperature": annealing_temperature,
+                            "target_temperature": annealing_temperature,
+                            "annealing_temperature": temperature,
                             "fix_defect_species": fix_defect_species,
                             "exceptions": exceptions,
                         }
