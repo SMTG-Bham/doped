@@ -373,6 +373,7 @@ class DefectThermodynamics(MSONable):
         self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
         self._dist_tol = dist_tol
+        self.check_compatibility = check_compatibility
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
