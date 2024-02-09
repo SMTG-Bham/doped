@@ -10,6 +10,7 @@ tutorials:
    :maxdepth: 2
 
    YT_defects_tutorial
-   dope_workflow_example
-   dope_parsing_example
-   dope_chemical_potentials
+   generation_tutorial
+   parsing_tutorial
+   chemical_potentials_tutorial
+   GGA_workflow_tutorial
