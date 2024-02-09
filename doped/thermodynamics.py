@@ -2114,7 +2114,8 @@ class DefectThermodynamics(MSONable):
                 for _, row in tl_df.iterrows():
                     if row["Charges"] != "None":
                         print(
-                            f"Transition level {row['Charges']} at {row['eV from VBM']} eV above the VBM"
+                            f"Transition level {row['Charges']} at {row['eV from VBM']:.3f} eV above the "
+                            f"VBM"
                         )
                 print("")  # add space
 

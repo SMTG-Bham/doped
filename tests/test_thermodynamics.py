@@ -4,7 +4,10 @@ Tests for doped.thermodynamics module.
 
 import os
 import shutil
+import sys
 import unittest
+import warnings
+from io import StringIO
 
 import matplotlib as mpl
 import numpy as np
@@ -31,6 +34,19 @@ def if_present_rm(path):
 
 
 class DefectThermodynamicsTestCase(unittest.TestCase):
+    def setUp(self):
+        for thermo, name in [
+            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
+            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
+            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
+            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
+            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
+        ]:
+            thermo.dist_tol = 1.5  # ensure dist_tol at default value
+            if "V2O5" not in name:
+                thermo.chempots = None  # reset to default value
+                thermo.el_refs = None  # reset to default value
+
     @classmethod
     def setUpClass(cls):
         cls.module_path = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +88,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
 
         cls.V2O5_defect_dict = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json"))
         cls.V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
+        cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
 
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
@@ -132,6 +149,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             os.path.exists(f"{i}_defect_thermodynamics.json")
             for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]
         )
+        assert defect_thermo.bulk_formula in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]
         for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]:
             if_present_rm(f"{i}_defect_thermodynamics.json")
 
@@ -162,10 +180,20 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
 
         assert isinstance(defect_thermo.get_equilibrium_concentrations(), pd.DataFrame)
         assert isinstance(defect_thermo.get_symmetries_and_degeneracies(), pd.DataFrame)
-        assert isinstance(defect_thermo.get_formation_energies(), pd.DataFrame)
-        assert isinstance(defect_thermo.get_transition_levels(), pd.DataFrame)
+        assert isinstance(defect_thermo.get_formation_energies(), (pd.DataFrame, list))
+        tl_df = defect_thermo.get_transition_levels()
+        assert set(tl_df.columns) == {"Charges", "Defect", "In Band Gap?", "eV from VBM"}
+        all_tl_df = defect_thermo.get_transition_levels(all=True)
+        assert set(all_tl_df.columns) == {
+            "Charges",
+            "Defect",
+            "In Band Gap?",
+            "eV from VBM",
+            "N(Metastable)",
+        }
         defect_thermo.print_transition_levels()
-        assert isinstance(defect_thermo.plot(), mpl.figure.Figure)
+        defect_thermo.print_transition_levels(all=True)
+        assert isinstance(defect_thermo.plot(), (mpl.figure.Figure, list))
 
         with self.assertRaises(TypeError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
@@ -175,15 +203,58 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             defect_thermo.get_quenched_fermi_level_and_concentrations()
         assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.exception)
 
-        with self.assertRaises(ValueError) as exc:
-            defect_thermo.get_doping_windows()
-        assert "No chemical potentials supplied or present" in str(exc.exception)
-        assert "so doping windows cannot be calculated." in str(exc.exception)
+        if defect_thermo.chempots is None:
+            with self.assertRaises(ValueError) as exc:
+                defect_thermo.get_doping_windows()
+            assert "No chemical potentials supplied or present" in str(exc.exception)
+            assert "so doping windows cannot be calculated." in str(exc.exception)
 
-        with self.assertRaises(ValueError) as exc:
-            defect_thermo.get_dopability_limits()
-        assert "No chemical potentials supplied or present" in str(exc.exception)
-        assert "so dopability limits cannot be calculated." in str(exc.exception)
+            with self.assertRaises(ValueError) as exc:
+                defect_thermo.get_dopability_limits()
+            assert "No chemical potentials supplied or present" in str(exc.exception)
+            assert "so dopability limits cannot be calculated." in str(exc.exception)
+
+        else:
+            assert isinstance(defect_thermo.get_doping_windows(), pd.DataFrame)
+            assert isinstance(defect_thermo.get_dopability_limits(), pd.DataFrame)
+            if "V2O5" in defect_thermo.bulk_formula:
+                for df in [defect_thermo.get_doping_windows(), defect_thermo.get_dopability_limits()]:
+                    assert set(df.columns).issubset(
+                        {
+                            "Compensating Defect",
+                            "Dopability Limit",
+                            "Facet",
+                            "Doping Window",
+                        }
+                    )
+                    assert set(df.index) == {"n-type", "p-type"}
+                    assert df.shape == (2, 3)
+                    assert set(df.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
+                    assert set(df.loc["p-type"]).issubset({"N/A", -np.inf, np.inf})
+
+            print(defect_thermo.get_doping_windows())
+            print(defect_thermo.get_dopability_limits())
+
+        # test setting dist_tol:
+        if defect_thermo.bulk_formula == "CdTe" and defect_thermo.dist_tol == 1.5:
+            self._check_CdTe_example_dist_tol(defect_thermo, 3)
+        self._set_and_check_dist_tol(1.0, defect_thermo, 4)
+        self._set_and_check_dist_tol(0.5, defect_thermo, 5)
+
+    def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
+        print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
+        tl_df = defect_thermo.get_transition_levels()
+        assert tl_df.shape == (num_grouped_defects, 4)
+        # number of entries in Figure label (i.e. grouped defects)
+        assert len(defect_thermo.plot().get_axes()[0].get_legend().get_texts()) == num_grouped_defects
+
+    def _set_and_check_dist_tol(self, dist_tol, defect_thermo, num_grouped_defects=0):
+        defect_thermo.dist_tol = dist_tol
+        assert defect_thermo.dist_tol == dist_tol
+        if defect_thermo.bulk_formula == "CdTe":
+            self._check_CdTe_example_dist_tol(defect_thermo, num_grouped_defects)
+        defect_thermo.print_transition_levels()
+        defect_thermo.print_transition_levels(all=True)
 
     def test_initialisation_and_attributes(self):
         """
@@ -199,6 +270,236 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             print(f"Checking {name}")
             defect_thermo = DefectThermodynamics(list(defect_dict.values()))
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
+
+            if "V2O5" in name:
+                defect_thermo = DefectThermodynamics(
+                    list(defect_dict.values()),
+                    chempots=self.V2O5_chempots,
+                    el_refs=self.V2O5_chempots["elemental_refs"],
+                )
+                self._check_defect_thermo(
+                    defect_thermo,
+                    defect_dict,
+                    chempots=self.V2O5_chempots,
+                    el_refs=self.V2O5_chempots["elemental_refs"],
+                )
+
+                defect_thermo = DefectThermodynamics(
+                    list(defect_dict.values()), chempots=self.V2O5_chempots
+                )
+                self._check_defect_thermo(
+                    defect_thermo,
+                    defect_dict,
+                    chempots=self.V2O5_chempots,
+                    el_refs=self.V2O5_chempots["elemental_refs"],
+                )
+
+    def test_DefectsParser_thermo_objs(self):
+        """
+        Test the `DefectThermodynamics` objects created from the
+        `DefectsParser.get_defect_thermodynamics()` method.
+        """
+        for defect_thermo, name in [
+            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
+            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
+            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
+            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
+            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
+        ]:
+            print(f"Checking {name}")
+            if "V2O5" in name:
+                self._check_defect_thermo(
+                    defect_thermo,
+                    chempots=self.V2O5_chempots,
+                    el_refs=self.V2O5_chempots["elemental_refs"],
+                )
+
+            else:
+                self._check_defect_thermo(defect_thermo)  # default values
+
+    def test_transition_levels_CdTe(self):
+        """
+        Test outputs of transition level functions for CdTe.
+        """
+        assert self.CdTe_defect_thermo.transition_level_map == {
+            "v_Cd": {0.46988348089141413: [0, -2]},
+            "Te_Cd": {},
+            "Int_Te_3": {0.03497090517885537: [2, 1]},
+        }
+
+        def _capture_transition_level_print(defect_thermo, **kwargs):
+            """
+            Capture the printed output of the transition levels.
+            """
+            original_stdout = sys.stdout  # Save a reference to the original standard output
+            sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+            w = None
+            try:
+                with warnings.catch_warnings(record=True) as w:
+                    defect_thermo.print_transition_levels(**kwargs)
+                output = sys.stdout.getvalue()  # Return a str containing the printed output
+            finally:
+                sys.stdout = original_stdout  # Reset standard output to its original value.
+
+            if w:
+                print([str(warning.message) for warning in w])  # for debugging
+            assert not w
+            return output
+
+        tl_info = ["Defect: v_Cd", "Defect: Te_Cd"]
+        tl_info_not_all = ["Transition level ε(0/-2) at 0.470 eV above the VBM"]
+        tl_info_all = [
+            "Transition level ε(-1*/-2) at 0.397 eV above the VBM",
+            "Transition level ε(0/-1*) at 0.543 eV above the VBM",
+            "*",
+        ]
+
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        for i in (
+            tl_info
+            + tl_info_not_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+        for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
+            assert i not in tl_output
+
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        for i in (
+            tl_info
+            + tl_info_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+
+        for i in tl_info_not_all:
+            assert i not in tl_output
+
+        self.CdTe_defect_thermo.dist_tol = 1
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        for i in (
+            tl_info
+            + tl_info_not_all
+            + [
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+        for i in [
+            *tl_info_all,
+            "Defect: Int_Te_3\x1b",
+            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+        ]:
+            assert i not in tl_output
+
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        for i in (
+            tl_info
+            + tl_info_all
+            + [
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+
+        for i in [
+            *tl_info_not_all,
+            "Defect: Int_Te_3\x1b",
+            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+        ]:
+            assert i not in tl_output
+
+        self.CdTe_defect_thermo.dist_tol = 0.5
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        for i in (
+            tl_info
+            + tl_info_not_all
+            + [
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Defect: Int_Te_3_Unperturbed",
+            ]
+        ):
+            assert i in tl_output
+        for i in [
+            *tl_info_all,
+            "Defect: Int_Te_3\x1b",
+            "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+        ]:
+            assert i not in tl_output
+
+        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        for i in (
+            tl_info
+            + tl_info_all
+            + [
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Defect: Int_Te_3_Unperturbed",
+            ]
+        ):
+            assert i in tl_output
+
+        for i in [
+            *tl_info_not_all,
+            "Defect: Int_Te_3\x1b",
+            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+        ]:
+            assert i not in tl_output
+
+    def test_get_transition_levels(self):
+        tl_df = self.CdTe_defect_thermo.get_transition_levels()
+        assert tl_df.shape == (3, 4)
+        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(0/-2)", 0.47, True]
+        assert list(tl_df.iloc[1]) == ["Te_Cd", "None", np.inf, False]
+        assert list(tl_df.iloc[2]) == ["Int_Te_3", "ε(+2/+1)", 0.035, True]
+
+        tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
+        assert tl_df.shape == (5, 5)
+        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(-1*/-2)", 0.397, True, 1]
+        assert list(tl_df.iloc[1]) == ["v_Cd", "ε(0/-1*)", 0.543, True, 1]
+        assert list(tl_df.iloc[2]) == ["Te_Cd", "None", np.inf, False, 0]
+        assert list(tl_df.iloc[3]) == ["Int_Te_3", "ε(+2/+1)", 0.035, True, 0]
+        assert list(tl_df.iloc[4]) == ["Int_Te_3", "ε(+2/+1*)", 0.09, True, 1]
+
+        self.CdTe_defect_thermo.dist_tol = 1
+        tl_df = self.CdTe_defect_thermo.get_transition_levels()
+        assert tl_df.shape == (4, 4)
+        assert list(tl_df.iloc[2]) == ["Int_Te_3_a", "None", np.inf, False]
+        assert list(tl_df.iloc[3]) == ["Int_Te_3_b", "ε(+2/+1)", 0.09, True]
+
+        tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
+        assert tl_df.shape == (5, 5)
+        assert list(tl_df.iloc[3]) == ["Int_Te_3_a", "None", np.inf, False, 0]
+        assert list(tl_df.iloc[4]) == ["Int_Te_3_b", "ε(+2/+1)", 0.09, True, 0]
+
+        self.CdTe_defect_thermo.dist_tol = 0.5
+        tl_df = self.CdTe_defect_thermo.get_transition_levels()
+        assert tl_df.shape == (5, 4)
+        assert list(tl_df.iloc[2]) == ["Int_Te_3_Unperturbed", "None", np.inf, False]
+        assert list(tl_df.iloc[3]) == ["Int_Te_3_a", "None", np.inf, False]
+        assert list(tl_df.iloc[4]) == ["Int_Te_3_b", "None", np.inf, False]
+
+        tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
+        assert tl_df.shape == (6, 5)
+        assert list(tl_df.iloc[3]) == ["Int_Te_3_Unperturbed", "None", np.inf, False, 0]
+        assert list(tl_df.iloc[4]) == ["Int_Te_3_a", "None", np.inf, False, 0]
+        assert list(tl_df.iloc[5]) == ["Int_Te_3_b", "None", np.inf, False, 0]
+
+    # def test_add_entries(self):
 
 
 # TODO: Test add entries, check_compatibility
