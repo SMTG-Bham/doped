@@ -1261,11 +1261,12 @@ class DefectsParser:
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
             dist_tol (float):
-                Minimum distance (in Å) between equivalent defect sites (in the
-                supercell) to group together (for plotting and transition level
+                Threshold for the minimum distance (in Å) between equivalent
+                defect sites, for different species of the same defect type,
+                to be grouped together (for plotting and transition level
                 analysis). If the minimum distance between equivalent defect
-                sites is less than ``dist_tol``, then they will be grouped together,
-                otherwise treated as separate defects.
+                sites is less than ``dist_tol``, then they will be grouped
+                together, otherwise treated as separate defects.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
