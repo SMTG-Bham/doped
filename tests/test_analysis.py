@@ -78,13 +78,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
         self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
 
+        self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
+
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json"))
         if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json"))
+        if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -192,11 +194,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.bulk_band_gap_path is None
 
         self._check_DefectsParser(CdTe_dp)
-        assert os.path.exists(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json")
-        ) or os.path.exists(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json")
-        )  # custom json name
+        assert (
+            os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+            or os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))  # custom json name
+            or os.path.exists(
+                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")  # custom json name
+            )
+        )
 
         self._check_parsed_CdTe_defect_energies(CdTe_dp)
 
@@ -211,18 +215,42 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # spot check some entries:
         assert CdTe_dp.defect_dict["v_Cd_0"].calculation_metadata["defect_site_index"] is None
+        assert np.allclose(
+            CdTe_dp.defect_dict["v_Cd_0"].calculation_metadata["guessed_initial_defect_site"].frac_coords,
+            [0.5, 0.5, 0.5],
+        )
+        assert CdTe_dp.defect_dict["v_Cd_0"].calculation_metadata["bulk_site_index"] == 7
         assert CdTe_dp.defect_dict["v_Cd_-2"].calculation_metadata["guessed_defect_displacement"] is None
+        assert np.allclose(
+            CdTe_dp.defect_dict["v_Cd_-2"].calculation_metadata["guessed_initial_defect_site"].frac_coords,
+            [0, 0, 0],
+        )
+        assert CdTe_dp.defect_dict["v_Cd_-2"].calculation_metadata["bulk_site_index"] == 0
         assert CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["defect_site_index"] == 64
         assert np.isclose(
             CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["guessed_defect_displacement"],
             1.45,
             atol=1e-2,
         )
+        assert np.allclose(
+            CdTe_dp.defect_dict["Int_Te_3_1"]
+            .calculation_metadata["guessed_initial_defect_site"]
+            .frac_coords,
+            [0.75, 0.25, 0.75],
+        )
+        assert CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["bulk_site_index"] is None
         assert np.isclose(
             CdTe_dp.defect_dict["Int_Te_3_2"].calculation_metadata["guessed_defect_displacement"],
             1.36,
             atol=1e-2,
         )
+        assert np.allclose(
+            CdTe_dp.defect_dict["Int_Te_3_2"]
+            .calculation_metadata["guessed_initial_defect_site"]
+            .frac_coords,
+            [0.9375, 0.9375, 0.6875],
+        )
+        assert CdTe_dp.defect_dict["Int_Te_3_2"].calculation_metadata["bulk_site_index"] is None
         assert np.isclose(
             CdTe_dp.defect_dict["Int_Te_3_Unperturbed_1"].calculation_metadata[
                 "guessed_defect_displacement"
@@ -230,12 +258,28 @@ class DefectsParsingTestCase(unittest.TestCase):
             0.93,
             atol=1e-2,
         )
+        assert np.allclose(
+            CdTe_dp.defect_dict["Int_Te_3_Unperturbed_1"]
+            .calculation_metadata["guessed_initial_defect_site"]
+            .frac_coords,
+            [0.6875, 0.3125, 0.8125],
+        )
+        assert (
+            CdTe_dp.defect_dict["Int_Te_3_Unperturbed_1"].calculation_metadata["bulk_site_index"] is None
+        )
         assert CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["defect_site_index"] == 31
         assert np.isclose(
             CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["guessed_defect_displacement"],
             0.56,
             atol=1e-2,
         )
+        assert np.allclose(
+            CdTe_dp.defect_dict["Te_Cd_+1"]
+            .calculation_metadata["guessed_initial_defect_site"]
+            .frac_coords,
+            [0.5, 0.5, 0.5],
+        )
+        assert CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["bulk_site_index"] == 7
 
     @pytest.mark.mpl_image_compare(
         baseline_dir=f"{data_dir}/remote_baseline_plots",
@@ -245,12 +289,16 @@ class DefectsParsingTestCase(unittest.TestCase):
     )
     def test_DefectsParser_CdTe(self):
         with warnings.catch_warnings(record=True) as w:
-            default_dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+            default_dp = DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR,
+                dielectric=9.13,
+                json_filename="CdTe_example_defect_dict.json",
+            )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectParser_outputs(default_dp, w)
 
         # test reloading DefectsParser
-        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
+        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
 
         for defect_name, defect_entry in reloaded_defect_dict.items():
             assert defect_entry.name == default_dp.defect_dict[defect_name].name
@@ -443,11 +491,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_DefectsParser_YTOS_default_bulk(self):
-        # bulk path needs to be specified for YTOS as it's not the default name:
-        dp = DefectsParser(
-            output_path=self.YTOS_EXAMPLE_DIR,
-            dielectric=self.ytos_dielectric,
-        )
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                output_path=self.YTOS_EXAMPLE_DIR,
+                dielectric=self.ytos_dielectric,
+                json_filename="YTOS_example_defect_dict.json",
+            )  # for testing in test_thermodynamics.py
+        print([warn.message for warn in w])  # for debugging
+        assert not w
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
@@ -462,12 +513,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
     )
     def test_DefectsParser_YTOS_explicit_bulk(self):
-        # bulk path needs to be specified for YTOS as it's not the default name:
-        dp = DefectsParser(
-            output_path=self.YTOS_EXAMPLE_DIR,
-            bulk_path=os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk"),
-            dielectric=self.ytos_dielectric,
-        )
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                output_path=self.YTOS_EXAMPLE_DIR,
+                bulk_path=os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk"),
+                dielectric=self.ytos_dielectric,
+            )
+        print([warn.message for warn in w])  # for debugging
+        assert not w
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
@@ -509,9 +562,11 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
                 bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
                 dielectric=self.Sb2Se3_dielectric,
-            )
+                json_filename="Sb2Se3_O_example_defect_dict.json",
+            )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         assert not w  # no warnings
+        self._check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         dumpfn(Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json"))  # for
         # test_plotting
@@ -545,7 +600,11 @@ class DefectsParsingTestCase(unittest.TestCase):
     )
     def test_sb2si2te6_eFNV(self):
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(self.Sb2Si2Te6_DATA_DIR, dielectric=self.Sb2Si2Te6_dielectric)
+            dp = DefectsParser(
+                self.Sb2Si2Te6_DATA_DIR,
+                dielectric=self.Sb2Si2Te6_dielectric,
+                json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
+            )
         print([str(warning.message) for warning in w])  # for debugging
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
@@ -559,7 +618,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         # Sb2Si2Te6 supercell breaks periodicity, but we don't throw warning when just parsing defects
         assert not any("The defect supercell has been detected" in str(warning.message) for warning in w)
 
+        self._check_DefectsParser(dp)
+
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
+        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         print([str(warning.message) for warning in w])
@@ -610,6 +672,37 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         return fig
+
+    @pytest.mark.mpl_image_compare(
+        baseline_dir=f"{data_dir}/remote_baseline_plots",
+        filename="neutral_v_O_plot.png",
+        style=f"{module_path}/../doped/utils/doped.mplstyle",
+        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+    )
+    def test_V2O5_FNV(self):
+        # only three inequivalent neutral V_O present
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                self.V2O5_DATA_DIR,
+                dielectric=[4.186, 19.33, 17.49],
+                json_filename="V2O5_example_defect_dict.json",  # testing in test_thermodynamics.py
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w  # no warnings
+        assert len(dp.defect_dict) == 3  # only three inequivalent neutral V_O present
+
+        self._check_DefectsParser(dp)
+
+        v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
+        v2o5_thermo = dp.get_defect_thermodynamics(chempots=v2o5_chempots)
+        dumpfn(v2o5_thermo, os.path.join(self.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
+
+        with warnings.catch_warnings(record=True) as w:
+            v2o5_thermo.get_symmetries_and_degeneracies()
+        print([str(warning.message) for warning in w])
+        assert not w  # no warnings
+
+        return v2o5_thermo.plot(facet="VO2-V2O5")
 
 
 class DopedParsingTestCase(unittest.TestCase):
