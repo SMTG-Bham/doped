@@ -3,7 +3,7 @@ figure.figsize : 4.7, 4.6
 figure.dpi: 600
 
 # Colors
-axes.prop_cycle: cycler('color', ['5FABA2', 'D4447E', 'E9A66C', '507BAA', 'F8D54D', '426600', 'ff0010', '9dcc00', 'c20088', '003380', 'ffa405', 'ffff00', 'ff5005', '5ef1f2', '740aff', '990000', '00998f', '005c31', '2bce48', 'ffcc99', '94ffb5', '8f7c00', '6fa8bb', '808080'])
+axes.prop_cycle: cycler('color', ['5FABA2', 'D4447E', 'E9A66C', '507BAA', '966eb4', 'F8D54D', '426600', 'ff0010', '9dcc00', 'c20088', '003380', 'ffa405', 'ffff00', 'ff5005', '5ef1f2', '990000', '005c31', '2bce48', 'ffcc99', '94ffb5', '8f7c00', '6fa8bb', '808080'])
 
 # Font
 font.family : sans-serif

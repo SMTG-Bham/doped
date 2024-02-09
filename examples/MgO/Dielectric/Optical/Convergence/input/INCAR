@@ -1,0 +1,17 @@
+ALGO = Normal
+CSHIFT = 1e-06
+EDIFF = 1e-07
+ENCUT = 450
+GGA = Ps
+ISMEAR = -5
+ISPIN = 2
+KPAR = 2
+LOPTICS = True
+LORBIT = 11
+LREAL = False
+NBANDS = 120
+NCORE = 6
+NEDOS = 2000
+NELM = 100
+PREC = Accurate
+SIGMA = 0.05

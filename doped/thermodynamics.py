@@ -3,11 +3,12 @@ Code for analysing the thermodynamics of defect formation in solids, including
 calculation of formation energies as functions of Fermi level and chemical
 potentials, charge transition levels, defect/carrier concentrations etc.
 """
+import inspect
 import os
 import warnings
 from functools import reduce
 from itertools import chain, product
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,22 +23,20 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
 from doped.chemical_potentials import get_X_poor_facet, get_X_rich_facet
-from doped.core import DefectEntry, _no_chempots_warning
+from doped.core import DefectEntry, _no_chempots_warning, _orientational_degeneracy_warning
 from doped.generation import _sort_defect_entries
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _get_bulk_supercell,
+    _get_defect_supercell_site,
     get_neutral_nelect_from_vasprun,
     get_orientational_degeneracy,
     get_vasprun,
-    point_symmetry_from_defect_entry,
 )
 from doped.utils.plotting import _TLD_plot
-from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
-
-if TYPE_CHECKING:
-    from pymatgen.core.structure import PeriodicSite
+from doped.utils.symmetry import _get_all_equiv_sites, _get_sga, point_symmetry_from_defect_entry
 
 
 def bold_print(string: str) -> None:
@@ -118,14 +117,14 @@ def group_defects_by_distance(
     """
     Given an input list of DefectEntry objects, returns a dictionary of {simple
     defect name: {(equivalent defect sites): [DefectEntry]}, where 'simple
-    defect name' is the nominal defect type (e.g. `Te_i` for
-    `Te_i_Td_Cd2.83_+2`), `(equivalent defect sites)` is a tuple of the
-    equivalent defect sites (in the bulk supercell), and `[DefectEntry]` is a
-    list of DefectEntry objects with the same simple defect name and a minimum
-    distance between equivalent defect sites less than `dist_tol` (1.5 Å by
-    default).
+    defect name' is the nominal defect type (e.g. ``Te_i`` for
+    ``Te_i_Td_Cd2.83_+2``), ``(equivalent defect sites)`` is a tuple of the
+    equivalent defect sites (in the bulk supercell), and ``[DefectEntry]`` is a
+    list of DefectEntry objects with the same simple defect name and a closest
+    distance between symmetry-equivalent sites less than ``dist_tol``
+    (1.5 Å by default).
 
-    If a DefectEntry's site has a minimum distance less than `dist_tol` to
+    If a DefectEntry's site has a closest distance less than ``dist_tol`` to
     multiple sets of equivalent sites, then it is matched to the one with
     the lowest minimum distance.
 
@@ -133,10 +132,12 @@ def group_defects_by_distance(
         entry_list ([DefectEntry]):
             A list of DefectEntry objects to group together.
         dist_tol (float):
-            Minimum distance (in Å) between equivalent defect sites (in the
-            supercell) to group together. If the minimum distance between
-            equivalent defect sites is less than `dist_tol`, then they will
-            be grouped together, otherwise treated as separate defects.
+            Threshold for the closest distance (in Å) between equivalent
+            defect sites, for different species of the same defect type,
+            to be grouped together (for plotting and transition level
+            analysis). If the minimum distance between equivalent defect
+            sites is less than ``dist_tol``, then they will be grouped
+            together, otherwise treated as separate defects.
             (Default: 1.5)
 
     Returns:
@@ -154,7 +155,9 @@ def group_defects_by_distance(
     defect_site_dict: Dict[
         str, Dict[Tuple, List[DefectEntry]]
     ] = {}  # {defect name: {(equiv defect sites): entry list}}
-    bulk_supercell_sga = _get_sga(entry_list[0].bulk_supercell)
+    bulk_supercell = _get_bulk_supercell(entry_list[0])
+    bulk_lattice = bulk_supercell.lattice
+    bulk_supercell_sga = _get_sga(bulk_supercell)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
@@ -164,12 +167,16 @@ def group_defects_by_distance(
             entry_list, key=lambda x: abs(x.charge_state)
         )  # sort by charge, starting with closest to zero, for deterministic behaviour
         for entry in sorted_entry_list:
-            if "bulk_site" not in entry.calculation_metadata:
-                bulk_site: PeriodicSite = (
-                    entry.defect_supercell_site
-                )  # need to use relaxed defect site instead
-            else:
-                bulk_site = entry.calculation_metadata["bulk_site"]
+            entry_bulk_supercell = _get_bulk_supercell(entry)
+            if entry_bulk_supercell.lattice != bulk_lattice:
+                # recalculate bulk_symm_ops if bulk supercell differs
+                bulk_supercell_sga = _get_sga(entry_bulk_supercell)
+                symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+                bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+
+            bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
+            # need to use relaxed defect site if bulk_site not in calculation_metadata
+
             min_dist_list = [
                 min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
                     bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
@@ -219,18 +226,20 @@ def group_defects_by_distance(
 
 def group_defects_by_name(entry_list: List[DefectEntry]) -> Dict[str, List[DefectEntry]]:
     """
-    Given an input list of DefectEntry objects, returns a dictionary of {defect
-    name without charge: [DefectEntry]}, where the values are lists of
-    DefectEntry objects with the same defect name (excluding charge state).
+    Given an input list of DefectEntry objects, returns a dictionary of
+    ``{defect name without charge: [DefectEntry]}``, where the values are lists
+    of DefectEntry objects with the same defect name (excluding charge state).
 
     The DefectEntry.name attributes are used to get the defect names.
     These should be in the format:
     "{defect_name}_{optional_site_info}_{charge_state}".
     If the DefectEntry.name attribute is not defined or does not end with the
-    charge state, then the entry will be renamed with the doped default name.
+    charge state, then the entry will be renamed with the doped default name
+    for the `unrelaxed` defect (i.e. using the point symmetry of the defect
+    site in the bulk cell).
 
-    For example, `v_Cd_C3v_+1`, `v_Cd_Td_+1` and `v_Cd_C3v_+2` will be grouped
-    as {`v_Cd_C3v`: [`v_Cd_C3v_+1`, `v_Cd_C3v_+2`], `v_Cd_Td`: [`v_Cd_Td_+1`]}.
+    For example, ``v_Cd_C3v_+1``, ``v_Cd_Td_+1`` and ``v_Cd_C3v_+2`` will be grouped
+    as {``v_Cd_C3v``: [``v_Cd_C3v_+1``, ``v_Cd_C3v_+2``], ``v_Cd_Td``: [``v_Cd_Td_+1``]}.
 
     Args:
         entry_list ([DefectEntry]):
@@ -274,6 +283,8 @@ class DefectThermodynamics(MSONable):
         d) used as input to doped plotting/analysis functions
     """
 
+    # TODO: Need to list attributes in docstrings
+
     def __init__(
         self,
         defect_entries: Union[List[DefectEntry], Dict[str, DefectEntry]],
@@ -298,7 +309,7 @@ class DefectThermodynamics(MSONable):
 
         Args:
             defect_entries ([DefectEntry] or {str: DefectEntry}):
-                A list or dict of DefectEntry objects. Note that `DefectEntry.name`
+                A list or dict of DefectEntry objects. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
                 If the DefectEntry.name attribute is not defined or does not end with
@@ -311,11 +322,11 @@ class DefectThermodynamics(MSONable):
                 doped's chemical potential parsing functions (see tutorials)) which
                 allows easy analysis over a range of chemical potentials - where facet(s)
                 (chemical potential limit(s)) to analyse/plot can later be chosen using
-                the `facets` argument.
+                the ``facets`` argument.
                 Alternatively this can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!) for a single facet (limit),
                 in the format: {element symbol: chemical potential} - if manually
-                specifying chemical potentials this way, you can set the `el_refs` option
+                specifying chemical potentials this way, you can set the ``el_refs`` option
                 with the DFT reference energies of the elemental phases in order to show
                 the formal (relative) chemical potentials above the formation energy
                 plot.
@@ -334,17 +345,18 @@ class DefectThermodynamics(MSONable):
                 VBM eigenvalue in the bulk supercell, to use as Fermi level reference
                 point for analysis. If None (default), will use "vbm" from the
                 calculation_metadata dict attributes of the DefectEntry objects in
-                `defect_entries`.
+                ``defect_entries``.
             band_gap (float):
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
-                dict attributes of the DefectEntry objects in `defect_entries`.
+                dict attributes of the DefectEntry objects in ``defect_entries``.
             dist_tol (float):
-                Minimum distance (in Å) between equivalent defect sites (in the
-                supercell) to group together (for plotting and transition level
+                Threshold for the closest distance (in Å) between equivalent
+                defect sites, for different species of the same defect type,
+                to be grouped together (for plotting and transition level
                 analysis). If the minimum distance between equivalent defect
-                sites is less than `dist_tol`, then they will be grouped together,
-                otherwise treated as separate defects.
+                sites is less than ``dist_tol``, then they will be grouped
+                together, otherwise treated as separate defects.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
@@ -362,6 +374,7 @@ class DefectThermodynamics(MSONable):
         self._defect_entries = defect_entries
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
         self._dist_tol = dist_tol
+        self.check_compatibility = check_compatibility
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -510,18 +523,18 @@ class DefectThermodynamics(MSONable):
         return self.chempots, self.el_refs
 
     def _parse_transition_levels(self):
-        """
+        r"""
         Parses the charge transition levels for defect entries in the
         DefectThermodynamics object, and stores information about the stable
         charge states, transition levels etc.
 
-        Defect entries of the same type (e.g. Te_i, v_Cd) are grouped together
+        Defect entries of the same type (e.g. ``Te_i``, ``v_Cd``) are grouped together
         (for plotting and transition level analysis) based on the minimum
         distance between (equivalent) defect sites, to distinguish between
-        different inequivalent sites. `DefectEntry`s of the same type and with
-        a minimum distance between equivalent defect sites less than `dist_tol`
+        different inequivalent sites. ``DefectEntry``\s of the same type and with
+        a closest distance between equivalent defect sites less than ``dist_tol``
         (1.5 Å by default) are grouped together. If a DefectEntry's site has a
-        minimum distance less than `dist_tol` to multiple sets of equivalent
+        closest distance less than ``dist_tol`` to multiple sets of equivalent
         sites, then it is matched to the one with the lowest minimum distance.
 
         Code for parsing the transition levels was originally templated from
@@ -556,6 +569,7 @@ class DefectThermodynamics(MSONable):
         stable_entries: dict = {}
         defect_charge_map: dict = {}
         transition_level_map: dict = {}
+        all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
 
         try:
             defect_site_dict = group_defects_by_distance(self.defect_entries, dist_tol=self.dist_tol)
@@ -566,8 +580,8 @@ class DefectThermodynamics(MSONable):
             grouped_entries = group_defects_by_name(self.defect_entries)
             grouped_entries_list = list(grouped_entries.values())
             warnings.warn(
-                f"Grouping (inequivalent) defects by distance failed with error: {e}\nGrouping by defect "
-                f"names instead."
+                f"Grouping (inequivalent) defects by distance failed with error: {e!r}"
+                f"\nGrouping by defect names instead."
             )  # possibly different bulks (though this should be caught/warned about earlier), or not
             # parsed with recent doped versions etc
 
@@ -620,8 +634,8 @@ class DefectThermodynamics(MSONable):
             ]  # names without charge
             defect_name_wout_charge = min(possible_defect_names, key=len)
 
-            if any(
-                defect_name_wout_charge in i for i in transition_level_map
+            if defect_name_wout_charge in transition_level_map or any(
+                f"{defect_name_wout_charge}_{chr(96 + i)}" in transition_level_map for i in range(1, 27)
             ):  # defects with same name, rename to prevent overwriting:
                 # append "a,b,c.." for different defect species with the same name
                 i = 3
@@ -629,7 +643,12 @@ class DefectThermodynamics(MSONable):
                 if (
                     defect_name_wout_charge in transition_level_map
                 ):  # first repeat, direct match, rename previous entry
-                    for output_dict in [transition_level_map, stable_entries, defect_charge_map]:
+                    for output_dict in [
+                        transition_level_map,
+                        all_entries,
+                        stable_entries,
+                        defect_charge_map,
+                    ]:
                         val = output_dict.pop(defect_name_wout_charge)
                         output_dict[f"{defect_name_wout_charge}_{chr(96 + 1)}"] = val  # a
 
@@ -690,12 +709,16 @@ class DefectThermodynamics(MSONable):
                 defect_charge_map[defect_name_wout_charge] = [
                     entry.charge_state for entry in sorted_defect_entries
                 ]
+
+            all_entries[defect_name_wout_charge] = sorted_defect_entries
+
         self.transition_level_map = transition_level_map
         self.transition_levels = {
             defect_name: list(defect_tls.keys())
             for defect_name, defect_tls in transition_level_map.items()
         }
         self.stable_entries = stable_entries
+        self.all_entries = all_entries
         self.defect_charge_map = defect_charge_map
         self.stable_charges = {
             defect_name: [entry.charge_state for entry in entries]
@@ -786,7 +809,7 @@ class DefectThermodynamics(MSONable):
         Args:
             defect_entries ([DefectEntry] or {str: DefectEntry}):
                 A list or dict of DefectEntry objects, to add to the
-                DefectThermodynamics.defect_entries list. Note that `DefectEntry.name`
+                DefectThermodynamics.defect_entries list. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
                 If the DefectEntry.name attribute is not defined or does not end with
@@ -818,8 +841,8 @@ class DefectThermodynamics(MSONable):
 
     @defect_entries.setter
     def defect_entries(self, input_defect_entries):
-        """
-        Set the list of parsed `DefectEntry`s to include in the
+        r"""
+        Set the list of parsed ``DefectEntry``\s to include in the
         DefectThermodynamics object, and reparse the thermodynamic information
         (transition levels etc).
         """
@@ -837,8 +860,8 @@ class DefectThermodynamics(MSONable):
     @chempots.setter
     def chempots(self, input_chempots):
         """
-        Set the chemical potentials dictionary (`chempots`), and reparse to
-        have the required `doped` format.
+        Set the chemical potentials dictionary (``chempots``), and reparse to
+        have the required ``doped`` format.
         """
         if input_chempots is None:
             self._chempots = None
@@ -857,7 +880,7 @@ class DefectThermodynamics(MSONable):
     def el_refs(self, input_el_refs):
         """
         Set the elemental reference energies for the chemical potentials
-        (`el_refs`), and reparse to have the required `doped` format.
+        (``el_refs``), and reparse to have the required ``doped`` format.
         """
         self._chempots, self._el_refs = _parse_chempots(self._chempots, input_el_refs)
 
@@ -887,19 +910,31 @@ class DefectThermodynamics(MSONable):
 
     @property
     def dist_tol(self):
-        """
+        r"""
         Get the distance tolerance (in Å) used for grouping (equivalent)
         defects together (for plotting and transition level analysis).
+
+        ``DefectEntry``\s of the same type and with a closest distance between
+        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
+        grouped together. If a DefectEntry's site has a closest distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        matched to the one with the lowest minimum distance.
         """
         return self._dist_tol
 
     @dist_tol.setter
     def dist_tol(self, input_dist_tol: float):
-        """
+        r"""
         Set the distance tolerance (in Å) used for grouping (equivalent)
         defects together (for plotting and transition level analysis), and
         reparse the thermodynamic information (transition levels etc) with this
         tolerance.
+
+        ``DefectEntry``\s of the same type and with a closest distance between
+        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
+        grouped together. If a DefectEntry's site has a closest distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        matched to the one with the lowest minimum distance.
         """
         self._dist_tol = input_dist_tol
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
@@ -931,13 +966,13 @@ class DefectThermodynamics(MSONable):
         per_site: bool = False,
         skip_formatting: bool = False,
     ) -> pd.DataFrame:
-        """
-        Compute the _equilibrium_ concentrations (in cm^-3) for all
-        `DefectEntry`s in the `DefectThermodynamics` object, at a given
+        r"""
+        Compute the `equilibrium` concentrations (in cm^-3) for all
+        ``DefectEntry``\s in the ``DefectThermodynamics`` object, at a given
         chemical potential limit, fermi_level and temperature, assuming the
         dilute limit approximation.
 
-        Note that these are the _equilibrium_ defect concentrations!
+        Note that these are the `equilibrium` defect concentrations!
         DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
@@ -959,7 +994,7 @@ class DefectThermodynamics(MSONable):
                 {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -968,13 +1003,15 @@ class DefectThermodynamics(MSONable):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energies and thus concentrations. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
+
             fermi_level (float):
                 Value corresponding to the electron chemical potential, referenced
                 to the VBM. If None (default), set to the mid-gap Fermi level (E_g/2).
@@ -983,7 +1020,8 @@ class DefectThermodynamics(MSONable):
                 Default is 300 K.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual defect charge
-                states (e.g. v_Cd_0, v_Cd_-1, v_Cd_-2 instead of v_Cd). (default: True)
+                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
+                (default: True)
             per_site (bool):
                 Whether to return the concentrations as fractional concentrations per site,
                 rather than the default of per cm^3. (default: False)
@@ -1087,12 +1125,12 @@ class DefectThermodynamics(MSONable):
     ) -> Union[float, Tuple[float, float, float]]:
         """
         Calculate the self-consistent Fermi level, at a given chemical
-        potential limit and temperature, assuming _equilibrium_ defect
+        potential limit and temperature, assuming `equilibrium` defect
         concentrations (i.e. under annealing) and the dilute limit
         approximation, by self-consistently solving for the Fermi level which
         yields charge neutrality.
 
-        Note that this assumes _equilibrium_ defect concentrations!
+        Note that this assumes `equilibrium` defect concentrations!
         DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
@@ -1106,7 +1144,7 @@ class DefectThermodynamics(MSONable):
         Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
         can be the most time-consuming part of this function, so if you are running
         this function multiple times, it is faster to initialise the FermiDos object
-        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        yourself (and set ``nelecs`` appropriately - important!), and set ``bulk_dos_vr``
         to this object instead.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
@@ -1120,7 +1158,7 @@ class DefectThermodynamics(MSONable):
             bulk_dos_vr (str or Vasprun or FermiDos):
                 Path to the vasprun.xml(.gz) output of a bulk electronic density of states
                 (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
-                this is a static calculation with the _primitive_ cell of the bulk, with
+                this is a static calculation with the `primitive` cell of the bulk, with
                 relatively dense k-point sampling (especially for materials with disperse
                 band edges) to ensure an accurately-converged DOS and thus Fermi level.
                 ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
@@ -1134,7 +1172,7 @@ class DefectThermodynamics(MSONable):
                 can have the doped form: {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -1144,13 +1182,15 @@ class DefectThermodynamics(MSONable):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energies and thus concentrations and Fermi
                 level. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
+
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium Fermi level.
                 Default is 300 K.
@@ -1205,7 +1245,7 @@ class DefectThermodynamics(MSONable):
 
         According to the 'frozen defect' approximation, we typically expect defect
         concentrations to reach equilibrium during annealing/crystal growth
-        (at elevated temperatures), but _not_ upon quenching (i.e. at
+        (at elevated temperatures), but `not` upon quenching (i.e. at
         room/operating temperature) where we expect kinetic inhibition of defect
         annhiliation and hence non-equilibrium defect concentrations / Fermi level.
         Typically this is approximated by computing the equilibrium Fermi level and
@@ -1214,7 +1254,7 @@ class DefectThermodynamics(MSONable):
         relative populations of defect charge states (and the Fermi level) can
         re-equilibrate at the lower (room) temperature. See discussion in
         doi.org/10.1039/D3CS00432E (brief), doi.org/10.1016/j.cpc.2019.06.017 (detailed)
-        and `doped`/`py-sc-fermi` tutorials for more information.
+        and ``doped``/``py-sc-fermi`` tutorials for more information.
         In certain cases (such as Li-ion battery materials or extremely slow charge
         capture/emission), these approximations may have to be adjusted such that some
         defects/charge states are considered fixed and some are allowed to
@@ -1233,7 +1273,7 @@ class DefectThermodynamics(MSONable):
         Note: For dense k-point DOS calculations, loading the vasprun.xml(.gz) file
         can be the most time-consuming part of this function, so if you are running
         this function multiple times, it is faster to initialise the FermiDos object
-        yourself (and set `nelecs` appropriately - important!), and set `bulk_dos_vr`
+        yourself (and set ``nelecs`` appropriately - important!), and set ``bulk_dos_vr``
         to this object instead.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
@@ -1251,7 +1291,7 @@ class DefectThermodynamics(MSONable):
             bulk_dos_vr (str or Vasprun or FermiDos):
                 Path to the vasprun.xml(.gz) output of a bulk electronic density of states
                 (DOS) calculation, or the corresponding pymatgen Vasprun object. Usually
-                this is a static calculation with the _primitive_ cell of the bulk, with
+                this is a static calculation with the `primitive` cell of the bulk, with
                 relatively dense k-point sampling (especially for materials with disperse
                 band edges) to ensure an accurately-converged DOS and thus Fermi level.
                 ISMEAR = -5 (tetrahedron smearing) is usually recommended for best
@@ -1265,7 +1305,7 @@ class DefectThermodynamics(MSONable):
                 can have the doped form: {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -1275,13 +1315,15 @@ class DefectThermodynamics(MSONable):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energies and thus concentrations and Fermi
                 level. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
+
             annealing_temperature (float):
                 Temperature in Kelvin at which to calculate the high temperature
                 (fixed) total defect concentrations, which should correspond to the
@@ -1389,7 +1431,7 @@ class DefectThermodynamics(MSONable):
                 This can have the doped form of: {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -1397,13 +1439,15 @@ class DefectThermodynamics(MSONable):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating the formation energy. Can be:
+
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
-                - None (default), if `chempots` corresponds to a single chemical
+                - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
                   limit in the doped chempots dict.
+
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. The VBM value is taken from
@@ -1451,9 +1495,9 @@ class DefectThermodynamics(MSONable):
     ) -> pd.DataFrame:
         """
         Find the dopability limits of the defect system, searching over all
-        facets (chemical potential limits) in `chempots` and returning the most
+        facets (chemical potential limits) in ``chempots`` and returning the most
         p/n-type conditions, or for a given chemical potential limit (if
-        `facet` is set or `chempots` corresponds to a single chemical potential
+        ``facet`` is set or ``chempots`` corresponds to a single chemical potential
         limit; i.e. {element symbol: chemical potential}).
 
         The dopability limites are defined by the (first) Fermi level positions at
@@ -1475,7 +1519,7 @@ class DefectThermodynamics(MSONable):
                 This can have the form of {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -1483,13 +1527,15 @@ class DefectThermodynamics(MSONable):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating formation energies (and thus dopability limits). Can be:
+
                 - None, in which case we search over all facets (chemical potential
-                  limits) in `chempots` and return the most n/p-type conditions,
-                  unless `chempots` corresponds to a single chemical potential limit.
+                  limits) in ``chempots`` and return the most n/p-type conditions,
+                  unless ``chempots`` corresponds to a single chemical potential limit.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
+
                 (Default: None)
 
         Returns:
@@ -1552,14 +1598,14 @@ class DefectThermodynamics(MSONable):
         # get the most p/n-type limit, by getting the facet with the minimum/maximum max/min-intercept,
         # where max/min-intercept is the max/min intercept for that facet (i.e. the compensating intercept)
         idx = (
-            donor_intercepts_df.groupby("facet")["intercept"].transform(max)
+            donor_intercepts_df.groupby("facet")["intercept"].transform("max")
             == donor_intercepts_df["intercept"]
         )
         limiting_donor_intercept_row = donor_intercepts_df.iloc[
             donor_intercepts_df[idx]["intercept"].idxmin()
         ]
         idx = (
-            acceptor_intercepts_df.groupby("facet")["intercept"].transform(min)
+            acceptor_intercepts_df.groupby("facet")["intercept"].transform("min")
             == acceptor_intercepts_df["intercept"]
         )
         limiting_acceptor_intercept_row = acceptor_intercepts_df.iloc[
@@ -1594,9 +1640,9 @@ class DefectThermodynamics(MSONable):
     ) -> pd.DataFrame:
         """
         Find the doping windows of the defect system, searching over all facets
-        (chemical potential limits) in `chempots` and returning the most
+        (chemical potential limits) in ``chempots`` and returning the most
         p/n-type conditions, or for a given chemical potential limit (if
-        `facet` is set or `chempots` corresponds to a single chemical potential
+        ``facet`` is set or ``chempots`` corresponds to a single chemical potential
         limit; i.e. {element symbol: chemical potential}).
 
         Doping window is defined by the formation energy of the lowest energy
@@ -1616,7 +1662,7 @@ class DefectThermodynamics(MSONable):
                 This can have the form of {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -1624,13 +1670,15 @@ class DefectThermodynamics(MSONable):
             facet (str):
                 The phase diagram facet (chemical potential limit) to use for
                 calculating formation energies (and thus doping windows). Can be:
+
                 - None, in which case we search over all facets (chemical potential
-                  limits) in `chempots` and return the most n/p-type conditions,
-                  unless `chempots` corresponds to a single chemical potential limit.
+                  limits) in ``chempots`` and return the most n/p-type conditions,
+                  unless ``chempots`` corresponds to a single chemical potential limit.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
+
                 (Default: None)
 
         Returns:
@@ -1697,7 +1745,9 @@ class DefectThermodynamics(MSONable):
         # min-intercept is the min intercept for that facet (i.e. the compensating intercept)
         limiting_intercept_rows = []
         for intercepts_df in [vbm_donor_intercepts_df, cbm_acceptor_intercepts_df]:
-            idx = intercepts_df.groupby("facet")["intercept"].transform(min) == intercepts_df["intercept"]
+            idx = (
+                intercepts_df.groupby("facet")["intercept"].transform("min") == intercepts_df["intercept"]
+            )
             limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
             limiting_intercept_rows.append(
                 [
@@ -1740,7 +1790,7 @@ class DefectThermodynamics(MSONable):
         xlim: Optional[Tuple] = None,
         ylim: Optional[Tuple] = None,
         fermi_level: Optional[float] = None,
-        colormap: Union[str, colors.Colormap] = "Dark2",
+        colormap: Optional[Union[str, colors.Colormap]] = None,
         auto_labels: bool = False,
         filename: Optional[str] = None,
     ) -> Union[Figure, List[Figure]]:
@@ -1756,19 +1806,21 @@ class DefectThermodynamics(MSONable):
                 This can have the form of {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
                 (Default: None)
             facet (str):
                 The phase diagram facet (chemical potential limit) to for which to
-                plot formation energies. Can be:
+                plot formation energies. Can be either:
+
                 - None, in which case plots are generated for all facets in chempots.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
+
                 (Default: None)
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
@@ -1782,7 +1834,7 @@ class DefectThermodynamics(MSONable):
                 Whether to print the chemical potential table above the plot.
                 (Default: True)
             all_entries (bool, str):
-                Whether to plot the formation energy lines of _all_ defect entries,
+                Whether to plot the formation energy lines of `all` defect entries,
                 rather than the default of showing only the equilibrium states at each
                 Fermi level position (traditional). If instead set to "faded", will plot
                 the equilibrium states in bold, and all unstable states in faded grey
@@ -1806,7 +1858,8 @@ class DefectThermodynamics(MSONable):
             colormap (str, matplotlib.colors.Colormap):
                 Colormap to use for the formation energy lines, either as a string (i.e.
                 name from https://matplotlib.org/stable/users/explain/colors/colormaps.html)
-                or a Colormap / ListedColormap object. (default: "Dark2")
+                or a Colormap / ListedColormap object. If None (default), uses `Dark2` (if
+                8 or less lines) or `tab20` (if more than 8 lines being plotted).
             auto_labels (bool):
                 Whether to automatically label the transition levels with their charge
                 states. If there are many transition levels, this can be quite ugly.
@@ -1903,12 +1956,13 @@ class DefectThermodynamics(MSONable):
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
-        `all = True`.
+        ``all = True``.
 
         Returns a DataFrame with columns:
+
         - "Defect": Defect name
         - "Charges": Defect charge states which make up the transition level
-            (as a string if `format_charges=True`, otherwise as a list of integers)
+            (as a string if ``format_charges=True``, otherwise as a list of integers)
         - "eV from VBM": Transition level position in eV from the VBM
         - "In Band Gap?": Whether the transition level is within the host band gap
         - "N(Metastable)": Number of metastable states involved in the transition level
@@ -2001,7 +2055,7 @@ class DefectThermodynamics(MSONable):
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
-        `all = True`.
+        ``all = True``.
 
         Args:
               all (bool):
@@ -2038,24 +2092,34 @@ class DefectThermodynamics(MSONable):
         facet: Optional[str] = None,
         fermi_level: Optional[float] = None,
     ) -> Union[pd.DataFrame, List[pd.DataFrame]]:
-        """
+        r"""
         Generates defect formation energy tables (DataFrames) for either a
-        single chemical potential limit (i.e. phase diagram `facet`) or each
-        facet in the phase diagram (chempots dict), depending on input `facet`
-        and `chempots`.
+        single chemical potential limit (i.e. phase diagram ``facet``) or each
+        facet in the phase diagram (chempots dict), depending on input ``facet``
+        and ``chempots``.
 
-        Table Key: (all energies in eV)
-        'Defect' -> Defect name
-        'q' -> Defect charge state.
-        'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
-        'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
-        'qE_F' -> Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-                  (if "vbm" in DefectEntry.calculation_metadata)
-        'Σμ_ref' -> Sum of reference energies of the elemental phases in the chemical potentials sum.
-        'Σμ_formal' -> Sum of _formal_ atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
-        'E_corr' -> Finite-size supercell charge correction.
-        'ΔEᶠᵒʳᵐ' -> Defect formation energy, with the specified chemical potentials and Fermi level.
-                    Equals the sum of all other terms.
+        Table Key: (all energies in eV):
+
+        - 'Defect':
+            Defect name (without charge)
+        - 'q':
+            Defect charge state.
+        - 'ΔEʳᵃʷ':
+            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+        - 'qE_VBM':
+            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+        - 'qE_F':
+            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+            (if "vbm" in DefectEntry.calculation_metadata)
+        - 'Σμ_ref':
+            Sum of reference energies of the elemental phases in the chemical potentials sum.
+        - 'Σμ_formal':
+            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+        - 'E_corr':
+            Finite-size supercell charge correction.
+        - 'ΔEᶠᵒʳᵐ':
+            Defect formation energy, with the specified chemical potentials and Fermi level.
+            Equals the sum of all other terms.
 
         Args:
             chempots (dict):
@@ -2064,7 +2128,7 @@ class DefectThermodynamics(MSONable):
                 This can have the form of {"facets": [{'facet': [chempot_dict]}]}
                 (the format generated by doped's chemical potential parsing functions
                 (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using `facet`.
+                then be chosen using ``facet``.
                 Alternatively, can be a dictionary of **DFT**/absolute chemical
                 potentials (not formal chemical potentials!), in the format:
                 {element symbol: chemical potential}.
@@ -2072,11 +2136,13 @@ class DefectThermodynamics(MSONable):
             facet (str):
                 The phase diagram facet (chemical potential limit) to for which to
                 tabulate formation energies. Can be:
+
                 - None, in which case tables are generated for all facets in chempots.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor facet will be used (e.g. "Li-rich").
                 - A key in the (self.)chempots["facets"] dictionary, if the chempots
                   dict is in the doped format (see chemical potentials tutorial).
+
                 (Default: None)
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
@@ -2089,7 +2155,7 @@ class DefectThermodynamics(MSONable):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. The VBM value is taken from the
-                calculation_metadata dict attributes of `DefectEntry`s in
+                calculation_metadata dict attributes of ``DefectEntry``\s in
                 self.defect_entries if present, otherwise self.vbm.
                 If None (default), set to the mid-gap Fermi level (E_g/2).
 
@@ -2113,7 +2179,10 @@ class DefectThermodynamics(MSONable):
 
         list_of_dfs = []
         for facet in facets:
-            dft_chempots = chempots["facets_wrt_el_refs"][facet]
+            facets_wrt_el_refs = chempots.get("facets_wrt_el_refs") or chempots.get("facets_wrt_elt_refs")
+            if facets_wrt_el_refs is None:
+                raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
+            dft_chempots = facets_wrt_el_refs[facet]
             if el_refs is None:
                 el_refs = (
                     {el: 0 for el in dft_chempots}
@@ -2138,18 +2207,29 @@ class DefectThermodynamics(MSONable):
         Returns a defect formation energy table for a single chemical potential
         limit (i.e. phase diagram facet) as a pandas DataFrame.
 
-        Table Key: (all energies in eV)
-        'Defect' -> Defect name (without charge)
-        'q' -> Defect charge state.
-        'ΔEʳᵃʷ' -> Raw DFT energy difference between defect and host supercell (E_defect - E_host).
-        'qE_VBM' -> Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
-        'qE_F' -> Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-                  (if "vbm" in DefectEntry.calculation_metadata)
-        'Σμ_ref' -> Sum of reference energies of the elemental phases in the chemical potentials sum.
-        'Σμ_formal' -> Sum of _formal_ atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
-        'E_corr' -> Finite-size supercell charge correction.
-        'ΔEᶠᵒʳᵐ' -> Defect formation energy, with the specified chemical potentials and Fermi level.
-                    Equals the sum of all other terms.
+        Table Key: (all energies in eV):
+
+        - 'Defect':
+            Defect name (without charge)
+        - 'q':
+            Defect charge state.
+        - 'ΔEʳᵃʷ':
+            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+        - 'qE_VBM':
+            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+        - 'qE_F':
+            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+            (if "vbm" in DefectEntry.calculation_metadata)
+        - 'Σμ_ref':
+            Sum of reference energies of the elemental phases in the chemical potentials sum.
+        - 'Σμ_formal':
+            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+        - 'E_corr':
+            Finite-size supercell charge correction.
+        - 'ΔEᶠᵒʳᵐ':
+            Defect formation energy, with the specified chemical potentials and Fermi level.
+            Equals the sum of all other terms.
+
 
         Args:
             chempots (dict):
@@ -2223,57 +2303,68 @@ class DefectThermodynamics(MSONable):
 
     def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
         r"""
-        Generates a table of the unrelaxed & relaxed point group symmetries,
-        and spin/orientational/total degeneracies for each defect in the
-        DefectThermodynamics object.
+        Generates a table of the bulk-site & relaxed defect point group
+        symmetries, spin/orientational/total degeneracies and (bulk-)site
+        multiplicities for each defect in the ``DefectThermodynamics`` object.
 
         Table Key:
-        'Defect' -> Defect name (without charge)
-        'q' -> Defect charge state.
-        'Symm_Unrelax' -> Point group symmetry of the relaxed defect.
-        'Symm_Relax' -> Point group symmetry of the relaxed defect.
-        'g_Orient' -> Orientational degeneracy of the defect.
-        'g_Spin' -> Spin degeneracy of the defect.
-        'g_Total' -> Total degeneracy of the defect.
 
-        For interstitials, the 'unrelaxed' point group symmetry
-        correspond to the point symmetry of the interstitial site
-        with _no relaxation of the host structure_. For vacancies
-        and substitutions, this is equivalent to the initial point
-        symmetry.
+        - 'Defect': Defect name (without charge)
+        - 'q': Defect charge state.
+        - 'Site_Symm': Point group symmetry of the defect site in the bulk cell.
+        - 'Defect_Symm': Point group symmetry of the relaxed defect.
+        - 'g_Orient': Orientational degeneracy of the defect.
+        - 'g_Spin': Spin degeneracy of the defect.
+        - 'g_Total': Total degeneracy of the defect.
+        - 'Mult': Multiplicity of the defect site in the bulk cell, per primitive unit cell.
+
+        For interstitials, the bulk site symmetry corresponds to the
+        point symmetry of the interstitial site with `no relaxation
+        of the host structure`, while for vacancies/substitutions it is
+        simply the symmetry of their corresponding bulk site.
+        This corresponds to the point symmetry of ``DefectEntry.defect``,
+        or ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
 
         Point group symmetries are taken from the calculation_metadata
-        ("relaxed point symmetry" and "unrelaxed point symmetry") if
+        ("relaxed point symmetry" and "bulk site symmetry") if
         present (should be, if parsed with doped and defect supercell
         doesn't break host periodicity), otherwise are attempted to be
         recalculated.
 
         Note: doped tries to use the defect_entry.defect_supercell to determine
-        the _relaxed_ site symmetry. However, it should be noted that this is not
+        the `relaxed` site symmetry. However, it should be noted that this is not
         guaranteed to work in all cases; namely for non-diagonal supercell
         expansions, or sometimes for non-scalar supercell expansion matrices
         (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
         which can mess up the periodicity of the cell. doped tries to automatically
         check if this is the case, and will warn you if so.
 
-        This can also be checked by using this function on your doped _generated_ defects:
+        This can also be checked by using this function on your doped `generated` defects:
 
-        from doped.generation import get_defect_name_from_entry
-        for defect_name, defect_entry in defect_gen.items():
-            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
-                  get_defect_name_from_entry(defect_entry), "\n")
+        .. code-block:: python
+
+            from doped.generation import get_defect_name_from_entry
+            for defect_name, defect_entry in defect_gen.items():
+                print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                      get_defect_name_from_entry(defect_entry), "\n")
 
         And if the point symmetries match in each case, then doped should be able to
         correctly determine the final relaxed defect symmetry (and orientational degeneracy)
         - otherwise periodicity-breaking prevents this.
 
         If periodicity-breaking prevents auto-symmetry determination, you can manually
-        determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-        from visualising the structures (e.g. using VESTA)(can use
-        `get_orientational_degeneracy` to obtain the corresponding orientational degeneracy
-        factor for given initial/relaxed point symmetries) and setting the corresponding
-        values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-        symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+        determine the relaxed defect and bulk-site point symmetries, and/or orientational
+        degeneracy, from visualising the structures (e.g. using VESTA)(can use
+        ``get_orientational_degeneracy`` to obtain the corresponding orientational
+        degeneracy factor for given defect/bulk-site point symmetries) and setting the
+        corresponding values in the
+        ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+        ``degeneracy_factors['orientational degeneracy']`` attributes.
+        Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+        or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+        which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+        while for interstitials it is the point symmetry of the `final relaxed` interstitial
+        site when placed in the (unrelaxed) bulk structure.
         The degeneracy factor is used in the calculation of defect/carrier concentrations
         and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
         doi.org/10.1039/D3CS00432E).
@@ -2297,33 +2388,35 @@ class DefectThermodynamics(MSONable):
             )
             if "relaxed point symmetry" not in defect_entry.calculation_metadata:
                 try:
-                    defect_entry.calculation_metadata[
-                        "relaxed point symmetry"
-                    ] = point_symmetry_from_defect_entry(
-                        defect_entry, relaxed=True
+                    (
+                        defect_entry.calculation_metadata["relaxed point symmetry"],
+                        defect_entry.calculation_metadata["periodicity_breaking_supercell"],
+                    ) = point_symmetry_from_defect_entry(
+                        defect_entry, relaxed=True, return_periodicity_breaking=True
                     )  # relaxed so defect symm_ops
+
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"error:\n{e!r}"
                     )
-            if "unrelaxed point symmetry" not in defect_entry.calculation_metadata:
+            if "bulk site symmetry" not in defect_entry.calculation_metadata:
                 try:
                     defect_entry.calculation_metadata[
-                        "unrelaxed point symmetry"
+                        "bulk site symmetry"
                     ] = point_symmetry_from_defect_entry(
                         defect_entry, relaxed=False, symprec=0.01
-                    )  # relaxed so defect symm_ops
+                    )  # unrelaxed so bulk symm_ops
                 except Exception as e:
                     warnings.warn(
-                        f"Unable to determine unrelaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"Unable to determine bulk site symmetry for {defect_entry.name}, got error:"
+                        f"\n{e!r}"
                     )
 
             if (
                 all(
                     x in defect_entry.calculation_metadata
-                    for x in ["relaxed point symmetry", "unrelaxed point symmetry"]
+                    for x in ["relaxed point symmetry", "bulk site symmetry"]
                 )
                 and "orientational degeneracy" not in defect_entry.degeneracy_factors
             ):
@@ -2332,29 +2425,42 @@ class DefectThermodynamics(MSONable):
                         "orientational degeneracy"
                     ] = get_orientational_degeneracy(
                         relaxed_point_group=defect_entry.calculation_metadata["relaxed point symmetry"],
-                        unrelaxed_point_group=defect_entry.calculation_metadata[
-                            "unrelaxed point symmetry"
-                        ],
+                        bulk_site_point_group=defect_entry.calculation_metadata["bulk site symmetry"],
+                        defect_type=defect_entry.defect.defect_type,
                     )
                 except Exception as e:
                     warnings.warn(
                         f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
-                        f"error:\n{e}"
+                        f"error:\n{e!r}"
                     )
+
+            try:
+                multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
+                    len(defect_entry.defect.structure.get_primitive_structure())
+                    / len(defect_entry.defect.structure)
+                )
+
+            except Exception:
+                multiplicity_per_unit_cell = "N/A"
 
             table_list.append(
                 {
                     "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     "q": defect_entry.charge_state,
-                    "Symm_Unrelax": defect_entry.calculation_metadata.get(
-                        "unrelaxed point symmetry", "N/A"
-                    ),
-                    "Symm_Relax": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
+                    "Site_Symm": defect_entry.calculation_metadata.get("bulk site symmetry", "N/A"),
+                    "Defect_Symm": defect_entry.calculation_metadata.get("relaxed point symmetry", "N/A"),
                     "g_Orient": defect_entry.degeneracy_factors.get("orientational degeneracy", "N/A"),
                     "g_Spin": defect_entry.degeneracy_factors.get("spin degeneracy", "N/A"),
                     "g_Total": total_degeneracy,
+                    "Mult": multiplicity_per_unit_cell,
                 }
             )
+
+        if any(
+            defect_entry.calculation_metadata.get("periodicity_breaking_supercell", False)
+            for defect_entry in self.defect_entries
+        ):
+            warnings.warn(_orientational_degeneracy_warning)
 
         symmetry_df = pd.DataFrame(table_list)
         # sort by defect and then charge state descending:
@@ -2372,14 +2478,18 @@ class DefectThermodynamics(MSONable):
         """
         Returns a string representation of the DefectThermodynamics object.
         """
-        formula = self.defect_entries[0].bulk_entry.structure.composition.get_reduced_formula_and_factor(
+        formula = _get_bulk_supercell(self.defect_entries[0]).composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectThermodynamics for bulk composition {formula} with {len(self.defect_entries)} "
-            f"defect entries (in self.defect_entries). Available attributes:\n{attrs}\n\nAvailable "
+            f"defect entries (in self.defect_entries). Available attributes:\n"
+            f"{attrs | properties}\n\nAvailable "
             f"methods:\n{methods}"
         )
 
