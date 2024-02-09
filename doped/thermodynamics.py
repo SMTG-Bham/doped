@@ -119,11 +119,11 @@ def group_defects_by_distance(
     defect name' is the nominal defect type (e.g. ``Te_i`` for
     ``Te_i_Td_Cd2.83_+2``), ``(equivalent defect sites)`` is a tuple of the
     equivalent defect sites (in the bulk supercell), and ``[DefectEntry]`` is a
-    list of DefectEntry objects with the same simple defect name and a minimum
-    distance between equivalent defect sites less than ``dist_tol`` (1.5 Å by
-    default).
+    list of DefectEntry objects with the same simple defect name and a closest
+    distance between symmetry-equivalent sites less than ``dist_tol``
+    (1.5 Å by default).
 
-    If a DefectEntry's site has a minimum distance less than ``dist_tol`` to
+    If a DefectEntry's site has a closest distance less than ``dist_tol`` to
     multiple sets of equivalent sites, then it is matched to the one with
     the lowest minimum distance.
 
@@ -131,7 +131,7 @@ def group_defects_by_distance(
         entry_list ([DefectEntry]):
             A list of DefectEntry objects to group together.
         dist_tol (float):
-            Threshold for the minimum distance (in Å) between equivalent
+            Threshold for the closest distance (in Å) between equivalent
             defect sites, for different species of the same defect type,
             to be grouped together (for plotting and transition level
             analysis). If the minimum distance between equivalent defect
@@ -350,7 +350,7 @@ class DefectThermodynamics(MSONable):
                 If None (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in ``defect_entries``.
             dist_tol (float):
-                Threshold for the minimum distance (in Å) between equivalent
+                Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting and transition level
                 analysis). If the minimum distance between equivalent defect
@@ -530,9 +530,9 @@ class DefectThermodynamics(MSONable):
         (for plotting and transition level analysis) based on the minimum
         distance between (equivalent) defect sites, to distinguish between
         different inequivalent sites. ``DefectEntry``\s of the same type and with
-        a minimum distance between equivalent defect sites less than ``dist_tol``
+        a closest distance between equivalent defect sites less than ``dist_tol``
         (1.5 Å by default) are grouped together. If a DefectEntry's site has a
-        minimum distance less than ``dist_tol`` to multiple sets of equivalent
+        closest distance less than ``dist_tol`` to multiple sets of equivalent
         sites, then it is matched to the one with the lowest minimum distance.
 
         Code for parsing the transition levels was originally templated from
@@ -908,19 +908,31 @@ class DefectThermodynamics(MSONable):
 
     @property
     def dist_tol(self):
-        """
+        r"""
         Get the distance tolerance (in Å) used for grouping (equivalent)
         defects together (for plotting and transition level analysis).
+
+        ``DefectEntry``\s of the same type and with a closest distance between
+        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
+        grouped together. If a DefectEntry's site has a closest distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        matched to the one with the lowest minimum distance.
         """
         return self._dist_tol
 
     @dist_tol.setter
     def dist_tol(self, input_dist_tol: float):
-        """
+        r"""
         Set the distance tolerance (in Å) used for grouping (equivalent)
         defects together (for plotting and transition level analysis), and
         reparse the thermodynamic information (transition levels etc) with this
         tolerance.
+
+        ``DefectEntry``\s of the same type and with a closest distance between
+        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
+        grouped together. If a DefectEntry's site has a closest distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        matched to the one with the lowest minimum distance.
         """
         self._dist_tol = input_dist_tol
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
