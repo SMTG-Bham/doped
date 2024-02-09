@@ -2228,8 +2228,8 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     defect_entry.defect.defect_type.value,
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
-                    # name without charge:
-                    name_from_defect,
+                    defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    name_from_defect,  # doped name without charge
                     defect_entry.charge_state,  # charge state
                 )
 

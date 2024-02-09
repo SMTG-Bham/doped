@@ -418,6 +418,14 @@ class DefectThermodynamics(MSONable):
         # order entries for deterministic behaviour (particularly for plotting)
         self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
 
+        bulk_entry = self.defect_entries[0].bulk_entry
+        if bulk_entry is not None:
+            self.bulk_formula = bulk_entry.structure.composition.get_reduced_formula_and_factor(
+                iupac_ordering=True
+            )[0]
+        else:
+            self.bulk_formula = None
+
     def _sort_parse_and_check_entries(self, check_compatibility: bool = True):
         """
         Sort the defect entries, parse the transition levels, and check the
@@ -487,12 +495,8 @@ class DefectThermodynamics(MSONable):
                 {Chemical Formula} is the chemical formula of the host material.
         """
         if filename is None:
-            bulk_entry = self.defect_entries[0].bulk_entry
-            if bulk_entry is not None:
-                formula = bulk_entry.structure.composition.get_reduced_formula_and_factor(
-                    iupac_ordering=True
-                )[0]
-                filename = f"{formula}_defect_thermodynamics.json"
+            if self.bulk_formula is not None:
+                filename = f"{self.bulk_formula}_defect_thermodynamics.json"
             else:
                 filename = "defect_thermodynamics.json"
 
@@ -664,15 +668,17 @@ class DefectThermodynamics(MSONable):
             if len(ints_and_facets_list) > 0:  # unpack into lists
                 _, facets = zip(*ints_and_facets_list)
                 transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
-                    intersection[0]: [sorted_defect_entries[i].charge_state for i in facet]
+                    intersection[0]: sorted(
+                        [sorted_defect_entries[i].charge_state for i in facet], reverse=True
+                    )
                     for intersection, facet in ints_and_facets_list
                 }
                 stable_entries[defect_name_wout_charge] = [
                     sorted_defect_entries[i] for dual in facets for i in dual
                 ]
-                defect_charge_map[defect_name_wout_charge] = [
-                    entry.charge_state for entry in sorted_defect_entries
-                ]
+                defect_charge_map[defect_name_wout_charge] = sorted(
+                    [entry.charge_state for entry in sorted_defect_entries], reverse=True
+                )
 
             elif len(sorted_defect_entries) == 1:
                 transition_level_map[defect_name_wout_charge] = {}
@@ -706,20 +712,50 @@ class DefectThermodynamics(MSONable):
 
                 transition_level_map[defect_name_wout_charge] = {}
                 stable_entries[defect_name_wout_charge] = [sorted_defect_entries[vbm_def_index]]
-                defect_charge_map[defect_name_wout_charge] = [
-                    entry.charge_state for entry in sorted_defect_entries
-                ]
+                defect_charge_map[defect_name_wout_charge] = sorted(
+                    [entry.charge_state for entry in sorted_defect_entries], reverse=True
+                )
 
             all_entries[defect_name_wout_charge] = sorted_defect_entries
 
         self.transition_level_map = transition_level_map
+        self.stable_entries = stable_entries
+        self.all_entries = all_entries
+        self.defect_charge_map = defect_charge_map
+
+        # sort dictionaries deterministically:
+        self._name_wout_charge_appearance_order = {
+            entry.name.rsplit("_", 1)[0]: self._defect_entries.index(entry)
+            for entry in self._defect_entries  # already sorted according to _sort_defect_entries()
+        }
+
+        def _map_sorting_func(name_wout_charge):
+            for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
+                appearance_order = self._name_wout_charge_appearance_order.get(
+                    name_wout_charge.rsplit("_", i)[0]
+                )
+                if appearance_order is not None:
+                    return (appearance_order, name_wout_charge)
+
+            return (100, name_wout_charge)
+
+        self.transition_level_map = dict(
+            sorted(self.transition_level_map.items(), key=lambda item: _map_sorting_func(item[0]))
+        )
+        self.stable_entries = dict(
+            sorted(self.stable_entries.items(), key=lambda item: _map_sorting_func(item[0]))
+        )
+        self.all_entries = dict(
+            sorted(self.all_entries.items(), key=lambda item: _map_sorting_func(item[0]))
+        )
+        self.defect_charge_map = dict(
+            sorted(self.defect_charge_map.items(), key=lambda item: _map_sorting_func(item[0]))
+        )
+
         self.transition_levels = {
             defect_name: list(defect_tls.keys())
             for defect_name, defect_tls in transition_level_map.items()
         }
-        self.stable_entries = stable_entries
-        self.all_entries = all_entries
-        self.defect_charge_map = defect_charge_map
         self.stable_charges = {
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
@@ -1065,8 +1101,6 @@ class DefectThermodynamics(MSONable):
             )
 
         conc_df = pd.DataFrame(energy_concentration_list)
-        # sort by defect and then charge state descending:
-        conc_df = conc_df.sort_values(by=["Defect", "Raw Charge"], ascending=[True, False])
 
         if per_charge:
             conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
@@ -1586,8 +1620,6 @@ class DefectThermodynamics(MSONable):
                 )
 
         if not donor_intercepts:
-            if not acceptor_intercepts:
-                raise ValueError("No stable charged defects found in the system!")
             donor_intercepts = [("N/A", "N/A", -np.inf)]
         if not acceptor_intercepts:
             acceptor_intercepts = [("N/A", "N/A", np.inf)]
@@ -1713,7 +1745,7 @@ class DefectThermodynamics(MSONable):
                     )
                     for facet in facets
                 )
-            else:  # acceptor
+            elif entry.charge_state < 0:  # acceptor
                 cbm_acceptor_intercepts.extend(
                     (
                         facet,
@@ -1727,10 +1759,7 @@ class DefectThermodynamics(MSONable):
                     for facet in facets
                 )
         if not vbm_donor_intercepts:
-            if cbm_acceptor_intercepts:
-                vbm_donor_intercepts = [("N/A", "N/A", np.inf)]
-            else:
-                raise ValueError("No stable charged defects found in the system!")
+            vbm_donor_intercepts = [("N/A", "N/A", np.inf)]
         if not cbm_acceptor_intercepts:
             cbm_acceptor_intercepts = [("N/A", "N/A", -np.inf)]
 
@@ -2015,30 +2044,34 @@ class DefectThermodynamics(MSONable):
                     for TL, transition_level_charges in transition_level_dict.items()
                 )
 
+        # now get metastable TLs
         if all:
-            for i, j in product(self.defect_entries, repeat=2):
-                defect_name_wout_charge = i.name.rsplit("_", 1)[0]
-                if (defect_name_wout_charge == j.name.rsplit("_", 1)[0]) and (
-                    i.charge_state - j.charge_state == 1
-                ):
-                    TL = j.get_ediff() - i.get_ediff() - self.vbm
-                    i_meta = not any(i == y for y in self.all_stable_entries)
-                    j_meta = not any(j == y for y in self.all_stable_entries)
-                    transition_level_map_list.append(
-                        {
-                            "Defect": defect_name_wout_charge,
-                            "Charges": _TL_naming_func(
-                                [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
-                            ),
-                            "eV from VBM": round(TL, 3),
-                            "In Band Gap?": (TL > 0) and (self.band_gap > TL),
-                            "N(Metastable)": [i_meta, j_meta].count(True),
-                        }
-                    )
+            for defect_name_wout_charge, grouped_defect_entries in self.all_entries.items():
+                sorted_defect_entries = sorted(
+                    grouped_defect_entries, key=lambda x: x.charge_state
+                )  # sort by charge
+                for i, j in product(sorted_defect_entries, repeat=2):
+                    if i.charge_state - j.charge_state == 1:
+                        TL = j.get_ediff() - i.get_ediff() - self.vbm
+                        i_meta = not any(i == y for y in self.all_stable_entries)
+                        j_meta = not any(j == y for y in self.all_stable_entries)
+                        transition_level_map_list.append(
+                            {
+                                "Defect": defect_name_wout_charge,
+                                "Charges": _TL_naming_func(
+                                    [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
+                                ),
+                                "eV from VBM": round(TL, 3),
+                                "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                                "N(Metastable)": [i_meta, j_meta].count(True),
+                            }
+                        )
 
         tl_df = pd.DataFrame(transition_level_map_list)
-        # sort df by Defect, then by TL position:
-        tl_df = tl_df.sort_values(by=["Defect", "eV from VBM"])
+        # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
+        tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._name_wout_charge_appearance_order)
+        tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "eV from VBM"])
+        tl_df = tl_df.drop(columns="Defect Appearance Order")
         return tl_df.reset_index(drop=True)
 
     def print_transition_levels(self, all: bool = False):
@@ -2076,7 +2109,7 @@ class DefectThermodynamics(MSONable):
 
         else:
             all_TLs_df = self.get_transition_levels(all=True)
-            for defect_name, tl_df in all_TLs_df.groupby("Defect"):
+            for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
                 for _, row in tl_df.iterrows():
                     if row["Charges"] != "None":
@@ -2255,10 +2288,6 @@ class DefectThermodynamics(MSONable):
         table = []
 
         defect_entries = self.defect_entries.copy()
-        # sort by defect name, then charge state (most positive to most negative), then energy:
-        defect_entries = sorted(
-            defect_entries, key=lambda entry: (entry.defect.name, -entry.charge_state, entry.get_ediff())
-        )
         for defect_entry in defect_entries:
             row = [
                 defect_entry.name.rsplit("_", 1)[0],  # name without charge,
@@ -2463,8 +2492,6 @@ class DefectThermodynamics(MSONable):
             warnings.warn(_orientational_degeneracy_warning)
 
         symmetry_df = pd.DataFrame(table_list)
-        # sort by defect and then charge state descending:
-        symmetry_df = symmetry_df.sort_values(by=["Defect", "q"], ascending=[True, False])
 
         if not skip_formatting:
             symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
