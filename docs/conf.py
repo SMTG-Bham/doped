@@ -63,6 +63,8 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 myst_enable_extensions = [
     "html_admonition",
+    "html_image", # to parse html syntax to insert images
+    "dollarmath", #"amsmath", # to parse Latex-style math
 ]
 
 # -- Options for HTML output -------------------------------------------------
