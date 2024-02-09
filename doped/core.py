@@ -5,6 +5,7 @@ Core functions and classes for defects in doped.
 
 import collections
 import contextlib
+import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
@@ -698,9 +699,13 @@ class DefectEntry(thermo.DefectEntry):
             )[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
-            f"{self.defect.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"{self.defect.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
     def __eq__(self, other):

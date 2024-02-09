@@ -3,6 +3,7 @@ Code to generate VASP defect calculation input files.
 """
 import contextlib
 import copy
+import inspect
 import os
 import warnings
 from functools import lru_cache
@@ -450,9 +451,12 @@ class DefectDictSet(DictSet):
         """
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectDictSet with supercell composition {self.structure.composition}."
-            f"Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -1749,9 +1753,13 @@ class DefectRelaxSet(MSONable):
         formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
-            f"{self.defect_entry.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"{self.defect_entry.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 
@@ -2176,10 +2184,13 @@ class DefectsSet(MSONable):
         ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
-            f"defect entries in self.defect_entries. Available attributes:\n{attrs}\n\nAvailable "
-            f"methods:\n{methods}"
+            f"defect entries in self.defect_entries. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 
