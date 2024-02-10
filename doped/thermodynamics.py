@@ -3,6 +3,7 @@ Code for analysing the thermodynamics of defect formation in solids, including
 calculation of formation energies as functions of Fermi level and chemical
 potentials, charge transition levels, defect/carrier concentrations etc.
 """
+import contextlib
 import inspect
 import os
 import warnings
@@ -868,12 +869,13 @@ class DefectThermodynamics(MSONable):
                 (Default: True)
         """
         if isinstance(defect_entries, dict):
-            if not defect_entries:
-                raise ValueError(
-                    "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
-                    "correct format (i.e. {'defect_name': defect_entry}), or as a list: [defect_entry]."
-                )
             defect_entries = list(defect_entries.values())
+
+        if not defect_entries:
+            raise ValueError(
+                "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
+                "correct format (i.e. {'defect_name': defect_entry}), or as a list: [defect_entry]."
+            )
 
         self._defect_entries += defect_entries
         self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
@@ -1570,16 +1572,21 @@ class DefectThermodynamics(MSONable):
             )
 
         # otherwise is string:
+        possible_defect_names = [
+            defect_entry,
+        ]
+        with contextlib.suppress(ValueError):  # in case formatted/not charge state:
+            possible_defect_names.append(
+                f"{defect_entry.rsplit('_', 1)[0]}_{int(defect_entry.rsplit('_', 1)[1])}"
+            )
+            possible_defect_names.append(
+                f"{defect_entry.rsplit('_', 1)[0]}_+{int(defect_entry.rsplit('_', 1)[1])}"
+            )
+
         exact_match_defect_entries = [
             entry
             for entry in self.defect_entries
-            if (
-                entry.name == defect_entry
-                or entry.name == f"{defect_entry.rsplit('_', 1)[0]}_{int(defect_entry.rsplit('_', 1)[1])}"
-                or entry.name == f"{defect_entry.rsplit('_', 1)[0]}_"
-                f"+{int(defect_entry.rsplit('_', 1)[1])}"
-            )  # in case
-            # difference is just formatted/not charge state
+            if any(entry.name == possible_defect_name for possible_defect_name in possible_defect_names)
         ]
         if len(exact_match_defect_entries) == 1:
             return exact_match_defect_entries[0].formation_energy(
@@ -1593,11 +1600,7 @@ class DefectThermodynamics(MSONable):
         if matching_defect_entries := [
             entry
             for entry in self.defect_entries
-            if (
-                defect_entry in entry.name
-                or f"{defect_entry.rsplit('_', 1)[0]}_{int(defect_entry.rsplit('_', 1)[1])}" in entry.name
-                or f"{defect_entry.rsplit('_', 1)[0]}_+{int(defect_entry.rsplit('_', 1)[1])}" in entry.name
-            )
+            if any(possible_defect_name in entry.name for possible_defect_name in possible_defect_names)
         ]:
             return min(
                 entry.formation_energy(

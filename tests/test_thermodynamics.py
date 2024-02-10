@@ -83,17 +83,16 @@ def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
 
 class DefectThermodynamicsTestCase(unittest.TestCase):
     def setUp(self):
-        for thermo, name in [
-            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
-            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
-            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
-            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
-            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
-        ]:
-            thermo.dist_tol = 1.5  # ensure dist_tol at default value
-            if "V2O5" not in name:
-                thermo.chempots = None  # reset to default value
-                thermo.el_refs = None  # reset to default value
+        self.CdTe_defect_thermo = deepcopy(self.orig_CdTe_defect_thermo)
+        self.CdTe_defect_dict = deepcopy(self.orig_CdTe_defect_dict)
+        self.YTOS_defect_thermo = deepcopy(self.orig_YTOS_defect_thermo)
+        self.YTOS_defect_dict = deepcopy(self.orig_YTOS_defect_dict)
+        self.Sb2Se3_defect_thermo = deepcopy(self.orig_Sb2Se3_defect_thermo)
+        self.Sb2Se3_defect_dict = deepcopy(self.orig_Sb2Se3_defect_dict)
+        self.Sb2Si2Te6_defect_thermo = deepcopy(self.orig_Sb2Si2Te6_defect_thermo)
+        self.Sb2Si2Te6_defect_dict = deepcopy(self.orig_Sb2Si2Te6_defect_dict)
+        self.V2O5_defect_thermo = deepcopy(self.orig_V2O5_defect_thermo)
+        self.V2O5_defect_dict = deepcopy(self.orig_V2O5_defect_dict)
 
     @classmethod
     def setUpClass(cls):
@@ -118,25 +117,35 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
 
         cls.V2O5_DATA_DIR = os.path.join(cls.module_path, "data/V2O5")
 
-        cls.CdTe_defect_dict = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
-        cls.CdTe_defect_thermo = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"))
-        cls.YTOS_defect_dict = loadfn(os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json"))
-        cls.YTOS_defect_thermo = loadfn(os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json"))
-        cls.Sb2Se3_defect_dict = loadfn(
+        cls.orig_CdTe_defect_dict = loadfn(
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")
+        )
+        cls.orig_CdTe_defect_thermo = loadfn(
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
+        )
+        cls.orig_YTOS_defect_dict = loadfn(
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json")
+        )
+        cls.orig_YTOS_defect_thermo = loadfn(
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )
+        cls.orig_Sb2Se3_defect_dict = loadfn(
             os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json")
         )
-        cls.Sb2Se3_defect_thermo = loadfn(
+        cls.orig_Sb2Se3_defect_thermo = loadfn(
             os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
         )
-        cls.Sb2Si2Te6_defect_dict = loadfn(
+        cls.orig_Sb2Si2Te6_defect_dict = loadfn(
             os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json")
         )
-        cls.Sb2Si2Te6_defect_thermo = loadfn(
+        cls.orig_Sb2Si2Te6_defect_thermo = loadfn(
             os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json")
         )
 
-        cls.V2O5_defect_dict = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json"))
-        cls.V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
+        cls.orig_V2O5_defect_dict = loadfn(
+            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json")
+        )
+        cls.orig_V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
         cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
 
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
@@ -778,12 +787,51 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
                         form_en_df_row[8],
                         atol=1e-3,
                     )
+                    # Test usage of ``DefectThermodynamics.get_formation_energy()`` where charge state
+                    # isn't specified:
+                    lowest_e_form = thermo_obj.get_formation_energy(
+                        form_en_df_row[0], facet=facet, fermi_level=fermi_level
+                    )
+                    assert np.isclose(  # test get_formation_energy method
+                        lowest_e_form,
+                        min(
+                            [
+                                thermo_obj.get_formation_energy(
+                                    entry, facet=facet, fermi_level=fermi_level
+                                )
+                                for entry in thermo_obj.defect_entries
+                                if form_en_df_row[0] in entry.name
+                            ]
+                        ),
+                    )
+
                     assert np.isclose(  # test get_formation_energy() method
                         thermo_obj.get_formation_energy(
                             entry, fermi_level=fermi_level, facet=facet, chempots=thermo_obj.chempots
                         ),
                         form_en_df_row[8],
                         atol=1e-3,
+                    )
+                    lowest_e_form = thermo_obj.get_formation_energy(
+                        form_en_df_row[0],
+                        facet=facet,
+                        fermi_level=fermi_level,
+                        chempots=thermo_obj.chempots,
+                    )
+                    assert np.isclose(  # test get_formation_energy method
+                        lowest_e_form,
+                        min(
+                            [
+                                thermo_obj.get_formation_energy(
+                                    entry,
+                                    facet=facet,
+                                    fermi_level=fermi_level,
+                                    chempots=thermo_obj.chempots,
+                                )
+                                for entry in thermo_obj.defect_entries
+                                if form_en_df_row[0] in entry.name
+                            ]
+                        ),
                     )
 
                     # test DefectEntry.formation_energy() method:
@@ -1122,8 +1170,6 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
                     chempots_dict["facets_wrt_el_refs"][facet][el] + chempots_dict["elemental_refs"][el],
                 )
 
-    # TODO: Quick test case of get_formation_energy where charge state isn't specified
-
     def test_parse_chempots_CdTe(self):
         """
         Testing different combos of setting `chempots` and `el_refs`.
@@ -1238,8 +1284,28 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         assert defect_thermo.chempots == manual_zeroed_rel_chempots_dict
         assert defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
 
+    def test_add_entries(self):
+        partial_defect_thermo = DefectThermodynamics(list(self.CdTe_defect_dict.values())[:4])
+        assert not partial_defect_thermo.get_formation_energies().equals(
+            self.CdTe_defect_thermo.get_formation_energies()
+        )
+        assert not partial_defect_thermo.get_symmetries_and_degeneracies().equals(
+            self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
+        )
 
-class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsTestCase):
+        partial_defect_thermo.add_entries(list(self.CdTe_defect_dict.values())[4:])
+        assert partial_defect_thermo.get_formation_energies().equals(
+            self.CdTe_defect_thermo.get_formation_energies()
+        )
+        assert partial_defect_thermo.get_symmetries_and_degeneracies().equals(
+            self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
+        )
+
+
+class DefectThermodynamicsPlotsTestCase(unittest.TestCase):
+    def setUp(self):
+        DefectThermodynamicsTestCase.setUp(self)  # get attributes from DefectThermodynamicsTestCase
+
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
@@ -1302,14 +1368,11 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsTestCase):
     def test_default_CdTe_plot_Cd_rich(self):
         return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Cd-rich")
 
-    # def test_add_entries(self):
 
-
+# TODO: Test check_compatibility
 # TODO: Save all defects in CdTe thermo to JSON and test methods on it
 # TODO: Test warnings for failed symmetry determination with periodicity-breaking Sb2Si2Te6 and ZnS (and
 #  no warnings with CdTe, Sb2Se3, YTOS)
 # TODO: Spot check one or two DefectEntry concentration methods
-# TODO: Test add entries, check_compatibility
 # TODO: Add V2O5 test plotting all lines
-# TODO: Move over all symmetry/degeneracy thermo tests from test_analysis.py to here
 # TODO: Add GGA MgO tests as well
