@@ -60,6 +60,26 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
+def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
+    original_stdout = sys.stdout  # Save a reference to the original standard output
+    sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+    w = None
+    try:
+        with warnings.catch_warnings(record=True) as w:
+            result = func(*args, **kwargs)
+        output = sys.stdout.getvalue()  # Return a str containing the printed output
+    finally:
+        sys.stdout = original_stdout  # Reset standard output to its original value.
+
+    print(f"Running {func.__name__} with args: {args} and kwargs: {kwargs}:")
+    print(output)
+    if w:
+        print(f"Warnings:\n{[str(warning.message) for warning in w]}")
+    print(f"Result: {result}\n")
+
+    return result, output, w
+
+
 class DefectThermodynamicsTestCase(unittest.TestCase):
     def setUp(self):
         for thermo, name in [
@@ -355,25 +375,6 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             "Int_Te_3": {0.03497090517885537: [2, 1]},
         }
 
-        def _capture_transition_level_print(defect_thermo, **kwargs):
-            """
-            Capture the printed output of the transition levels.
-            """
-            original_stdout = sys.stdout  # Save a reference to the original standard output
-            sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-            w = None
-            try:
-                with warnings.catch_warnings(record=True) as w:
-                    defect_thermo.print_transition_levels(**kwargs)
-                output = sys.stdout.getvalue()  # Return a str containing the printed output
-            finally:
-                sys.stdout = original_stdout  # Reset standard output to its original value.
-
-            if w:
-                print([str(warning.message) for warning in w])  # for debugging
-            assert not w
-            return output
-
         tl_info = ["Defect: v_Cd", "Defect: Te_Cd"]
         tl_info_not_all = ["Transition level ε(0/-2) at 0.470 eV above the VBM"]
         tl_info_all = [
@@ -382,7 +383,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             "*",
         ]
 
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_not_all
@@ -395,7 +400,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
             assert i not in tl_output
 
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels, all=True
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_all
@@ -411,7 +420,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             assert i not in tl_output
 
         self.CdTe_defect_thermo.dist_tol = 1
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_not_all
@@ -429,7 +442,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         ]:
             assert i not in tl_output
 
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels, all=True
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_all
@@ -449,7 +466,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             assert i not in tl_output
 
         self.CdTe_defect_thermo.dist_tol = 0.5
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_not_all
@@ -468,7 +489,11 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         ]:
             assert i not in tl_output
 
-        tl_output = _capture_transition_level_print(self.CdTe_defect_thermo, all=True)
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels, all=True
+        )
+        assert not result
+        assert not w
         for i in (
             tl_info
             + tl_info_all
@@ -529,6 +554,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
 
     def test_get_symmetries_degeneracies_CdTe(self):
         sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
+        print(sym_degen_df)
         assert sym_degen_df.shape == (7, 8)
         assert list(sym_degen_df.columns) == [
             "Defect",
@@ -559,9 +585,386 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         non_formatted_sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies(
             skip_formatting=True
         )
+        print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(cdte_sym_degen_lists):
             row[1] = int(row[1])
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
+
+    def _check_form_en_df_total(self, form_en_df):
+        """
+        Check the sum of formation energy terms equals the total formation
+        energy in the `get_formation_energies` DataFrame.
+        """
+        columns_to_sum = form_en_df.iloc[:, 2:8]
+        # ignore strings if chempots is "N/A":
+        numeric_columns = columns_to_sum.apply(pd.to_numeric, errors="coerce")
+        print(f"Numeric columns: {numeric_columns}")  # for debugging
+
+        # assert the sum of formation energy terms equals the total formation energy:
+        for i, _row in enumerate(form_en_df.iterrows()):
+            assert np.isclose(numeric_columns.iloc[i].sum(), form_en_df.iloc[i]["ΔEᶠᵒʳᵐ"], atol=1e-3)
+
+    def test_get_formation_energies_CdTe(self):
+        form_en_df_cols = [
+            "Defect",
+            "q",
+            "ΔEʳᵃʷ",
+            "qE_VBM",
+            "qE_F",
+            "Σμ_ref",
+            "Σμ_formal",
+            "E_corr",
+            "ΔEᶠᵒʳᵐ",
+            "Path",
+        ]
+
+        form_en_df, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies
+        )
+
+        assert len(w) == 1
+        assert (
+            "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
+            "energies (and concentrations) will likely be highly inaccurate!"
+        ) in str(w[0].message)
+
+        assert (
+            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
+            "VBM)."
+        ) in output
+
+        assert form_en_df.shape == (7, 10)
+        assert list(form_en_df.columns) == form_en_df_cols
+        # hardcoded tests to ensure ordering is consistent:
+        cdte_form_en_lists = [
+            [
+                "v_Cd",
+                "0",
+                4.166,
+                0.0,
+                0.0,
+                "N/A",
+                0,
+                0.0,
+                4.166,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
+            ],
+            [
+                "v_Cd",
+                "-1",
+                6.13,
+                -1.646,
+                -0.749,
+                "N/A",
+                0,
+                0.225,
+                3.959,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl",
+            ],
+            [
+                "v_Cd",
+                "-2",
+                7.661,
+                -3.293,
+                -1.499,
+                "N/A",
+                0,
+                0.738,
+                3.607,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
+            ],
+            [
+                "Te_Cd",
+                "+1",
+                -2.906,
+                1.646,
+                0.749,
+                "N/A",
+                0,
+                0.238,
+                -0.272,
+                f"{self.CdTe_EXAMPLE_DIR}/Te_Cd_+1/vasp_ncl",
+            ],
+            [
+                "Int_Te_3",
+                "+2",
+                -7.105,
+                3.293,
+                1.499,
+                "N/A",
+                0,
+                0.904,
+                -1.409,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+            ],
+            [
+                "Int_Te_3",
+                "+1",
+                -4.819,
+                1.646,
+                0.749,
+                "N/A",
+                0,
+                0.3,
+                -2.123,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
+            ],
+            [
+                "Int_Te_3_Unperturbed",
+                "+1",
+                -4.762,
+                1.646,
+                0.749,
+                "N/A",
+                0,
+                0.297,
+                -2.069,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
+            ],
+        ]
+        self._check_form_en_df_total(form_en_df)  # test sum of formation energy terms equals total
+
+        for i, row in enumerate(cdte_form_en_lists):
+            assert list(form_en_df.iloc[i]) == row
+
+        non_formatted_form_en_df, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies, skip_formatting=True
+        )
+
+        assert len(w) == 1
+        assert (
+            "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
+            "energies (and concentrations) will likely be highly inaccurate!"
+        ) in str(w[0].message)
+        assert (
+            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
+            "VBM)."
+        ) in output
+
+        for i, row in enumerate(cdte_form_en_lists):
+            row[1] = int(row[1])
+            assert list(non_formatted_form_en_df.iloc[i]) == row  # and all other terms the same
+
+        # with chempots:
+        list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots
+        )
+        assert isinstance(list_of_dfs, list)
+        assert len(list_of_dfs) == 2
+        assert not w
+        assert "Fermi level was not set" in output
+
+        te_rich_df = list_of_dfs[1]  # Te-rich
+        for facet in ["Te-rich", "CdTe-Te"]:
+            df, output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, facet=facet
+            )
+            assert "Fermi level was not set" in output
+            assert not w
+            assert df.equals(te_rich_df)
+            assert df.shape == (7, 10)
+            assert list(df.columns) == form_en_df_cols
+
+        list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies,
+            chempots=self.CdTe_chempots,
+            el_refs=self.CdTe_chempots["elemental_refs"],
+        )
+        assert "Fermi level was not set" in output
+        assert not w
+        assert list_of_dfs[1].equals(te_rich_df)
+
+        manual_te_rich_df, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies,
+            chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
+            el_refs=self.CdTe_chempots["elemental_refs"],
+        )
+        assert "Fermi level was not set" in output
+        assert not w
+        assert manual_te_rich_df.equals(te_rich_df)
+
+        manual_te_rich_df_w_fermi, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies,
+            chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
+            el_refs=self.CdTe_chempots["elemental_refs"],
+            fermi_level=0.7493,  # default mid-gap value
+        )
+        assert "Fermi level was not set" not in output
+        assert not w
+        assert manual_te_rich_df_w_fermi.equals(te_rich_df)
+
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        preset_te_rich_dfs, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies
+        )
+        assert "Fermi level was not set" in output
+        assert not w
+        assert preset_te_rich_dfs[1].equals(te_rich_df)
+
+        cdte_te_rich_form_en_lists = [
+            [
+                "v_Cd",
+                "0",
+                4.166,
+                0.0,
+                0.0,
+                -1.016,
+                -1.251,
+                0.0,
+                1.899,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
+            ],
+            [
+                "v_Cd",
+                "-1",
+                6.13,
+                -1.646,
+                -0.749,
+                -1.016,
+                -1.251,
+                0.225,
+                1.692,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl",
+            ],
+            [
+                "v_Cd",
+                "-2",
+                7.661,
+                -3.293,
+                -1.499,
+                -1.016,
+                -1.251,
+                0.738,
+                1.34,
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
+            ],
+            [
+                "Te_Cd",
+                "+1",
+                -2.906,
+                1.646,
+                0.749,
+                3.455,
+                -1.251,
+                0.238,
+                1.932,
+                f"{self.CdTe_EXAMPLE_DIR}/Te_Cd_+1/vasp_ncl",
+            ],
+            [
+                "Int_Te_3",
+                "+2",
+                -7.105,
+                3.293,
+                1.499,
+                4.471,
+                0.0,
+                0.904,
+                3.062,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+            ],
+            [
+                "Int_Te_3",
+                "+1",
+                -4.819,
+                1.646,
+                0.749,
+                4.471,
+                0.0,
+                0.3,
+                2.347,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
+            ],
+            [
+                "Int_Te_3_Unperturbed",
+                "+1",
+                -4.762,
+                1.646,
+                0.749,
+                4.471,
+                0.0,
+                0.297,
+                2.402,
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
+            ],
+        ]
+
+        self._check_form_en_df_total(te_rich_df)  # test sum of formation energy terms equals total
+
+        for i, row in enumerate(cdte_te_rich_form_en_lists):
+            assert list(te_rich_df.iloc[i]) == row
+
+        # test same non-formatted output with chempots:
+        list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, skip_formatting=True
+        )
+        assert not w
+        assert "Fermi level was not set" in output
+        non_formatted_te_rich_df = list_of_dfs[1]  # Te-rich
+        for facet in ["Te-rich", "CdTe-Te"]:
+            df, output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_defect_thermo.get_formation_energies,
+                self.CdTe_chempots,
+                facet=facet,
+                skip_formatting=True,
+            )
+            assert "Fermi level was not set" in output
+            assert not w
+            assert df.equals(non_formatted_te_rich_df)
+
+        for i, row in enumerate(cdte_te_rich_form_en_lists):
+            row[1] = int(row[1])
+            assert list(non_formatted_te_rich_df.iloc[i]) == row
+
+        # hard test random case with random chempots, el_refs and fermi level
+        manual_form_en_df, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.get_formation_energies,
+            chempots={"Te": 3, "Cd": -1},
+            fermi_level=3,
+            el_refs={"Cd": -12, "Te": -1},
+        )
+        assert "Fermi level was not set" not in output
+        assert not w
+        assert manual_form_en_df.shape == (7, 10)
+        self._check_form_en_df_total(manual_form_en_df)  # test sum of formation energy terms equals total
+
+        # first 4 columns the same, then 3 diff, one the same (E_corr), E_form diff, path the same:
+        for i, row in manual_form_en_df.iterrows():
+            assert list(row)[:4] == list(te_rich_df.iloc[i])[:4]
+            assert list(row)[4:7] != list(te_rich_df.iloc[i])[4:7]
+            assert list(row)[7] == list(te_rich_df.iloc[i])[7]
+            assert list(row)[8] != list(te_rich_df.iloc[i])[8]
+            assert list(row)[9] == list(te_rich_df.iloc[i])[9]
+
+        assert list(manual_form_en_df.iloc[2]) == [
+            "v_Cd",
+            "-2",
+            7.661,
+            -3.293,
+            -6,
+            -12,
+            -1,
+            0.738,
+            -13.895,
+            f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
+        ]
+        assert list(manual_form_en_df.iloc[4]) == [
+            "Int_Te_3",
+            "+2",
+            -7.105,
+            3.293,
+            6,
+            1,
+            -3,
+            0.904,
+            1.092,
+            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+        ]
+
+    def test_parse_chempots_CdTe(self):
+        """
+        Testing different combos of setting `chempots` and `el_refs`.
+        """
+        # Note that `_parse_chempots()` has also been indirectly tested via the plotting tests
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsTestCase):
