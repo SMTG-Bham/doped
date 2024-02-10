@@ -935,14 +935,11 @@ class DefectThermodynamics(MSONable):
         (i.e. relative to the elemental references) that should be given here,
         otherwise the absolute (DFT) chemical potentials should be given.
 
-        If None (default), sets all chemical potentials to zero. Chemical
+        If None (default), sets all formal chemical potentials (i.e. relative
+        to the elemental reference energies in ``el_refs``) to zero. Chemical
         potentials can also be supplied later in each analysis function.
         (Default: None)
         """
-        if input_chempots is None:
-            self._chempots = None
-            self._el_refs = None
-            return
         self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
 
     @property
@@ -2185,6 +2182,7 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[dict] = None,
         facet: Optional[str] = None,
         fermi_level: Optional[float] = None,
+        skip_formatting: bool = False,
     ) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         r"""
         Generates defect formation energy tables (DataFrames) for either a
@@ -2260,6 +2258,10 @@ class DefectThermodynamics(MSONable):
                 calculation_metadata dict attributes of ``DefectEntry``\s in
                 self.defect_entries if present, otherwise self.vbm.
                 If None (default), set to the mid-gap Fermi level (E_g/2).
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ints and floats instead).
+                (default: False)
 
         Returns:
             pandas DataFrame or list of DataFrames
@@ -2293,7 +2295,7 @@ class DefectThermodynamics(MSONable):
                 )
 
             single_formation_energy_df = self._single_formation_energy_table(
-                relative_chempots, el_refs, fermi_level
+                relative_chempots, el_refs, fermi_level, skip_formatting
             )
             list_of_dfs.append(single_formation_energy_df)
 
@@ -2304,6 +2306,7 @@ class DefectThermodynamics(MSONable):
         relative_chempots: dict,
         el_refs: dict,
         fermi_level: float = 0,
+        skip_formatting: bool = False,
     ) -> pd.DataFrame:
         """
         Returns a defect formation energy table for a single chemical potential
@@ -2345,6 +2348,10 @@ class DefectThermodynamics(MSONable):
                 Value corresponding to the electron chemical potential, referenced
                 to the VBM (where ``"vbm"`` in ``defect_entry.calculation_metadata`` is
                 used, or if not present, ``self.vbm``).
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ints and floats instead).
+                (default: False)
 
         Returns:
             pandas DataFrame sorted by formation energy
@@ -2355,7 +2362,9 @@ class DefectThermodynamics(MSONable):
         for defect_entry in defect_entries:
             row = [
                 defect_entry.name.rsplit("_", 1)[0],  # name without charge,
-                defect_entry.charge_state,
+                defect_entry.charge_state
+                if skip_formatting
+                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}",
             ]
             row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
             if "vbm" in defect_entry.calculation_metadata:

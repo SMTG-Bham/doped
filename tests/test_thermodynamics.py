@@ -7,6 +7,7 @@ import shutil
 import sys
 import unittest
 import warnings
+from copy import deepcopy
 from functools import wraps
 from io import StringIO
 
@@ -622,17 +623,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             self.CdTe_defect_thermo.get_formation_energies
         )
 
-        assert len(w) == 1
-        assert (
-            "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
-            "energies (and concentrations) will likely be highly inaccurate!"
-        ) in str(w[0].message)
-
-        assert (
-            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
-            "VBM)."
-        ) in output
-
+        self._check_chempot_w_and_fermi_message(w, output)
         assert form_en_df.shape == (7, 10)
         assert list(form_en_df.columns) == form_en_df_cols
         # hardcoded tests to ensure ordering is consistent:
@@ -731,16 +722,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             self.CdTe_defect_thermo.get_formation_energies, skip_formatting=True
         )
 
-        assert len(w) == 1
-        assert (
-            "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
-            "energies (and concentrations) will likely be highly inaccurate!"
-        ) in str(w[0].message)
-        assert (
-            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
-            "VBM)."
-        ) in output
-
+        self._check_chempot_w_and_fermi_message(w, output)
         for i, row in enumerate(cdte_form_en_lists):
             row[1] = int(row[1])
             assert list(non_formatted_form_en_df.iloc[i]) == row  # and all other terms the same
@@ -759,9 +741,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             df, output, w = _run_func_and_capture_stdout_warnings(
                 self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, facet=facet
             )
-            assert "Fermi level was not set" in output
-            assert not w
-            assert df.equals(te_rich_df)
+            self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, te_rich_df)
             assert df.shape == (7, 10)
             assert list(df.columns) == form_en_df_cols
 
@@ -779,10 +759,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
             el_refs=self.CdTe_chempots["elemental_refs"],
         )
-        assert "Fermi level was not set" in output
-        assert not w
-        assert manual_te_rich_df.equals(te_rich_df)
-
+        self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, manual_te_rich_df, te_rich_df)
         manual_te_rich_df_w_fermi, output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.get_formation_energies,
             chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
@@ -907,10 +884,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
                 facet=facet,
                 skip_formatting=True,
             )
-            assert "Fermi level was not set" in output
-            assert not w
-            assert df.equals(non_formatted_te_rich_df)
-
+            self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, non_formatted_te_rich_df)
         for i, row in enumerate(cdte_te_rich_form_en_lists):
             row[1] = int(row[1])
             assert list(non_formatted_te_rich_df.iloc[i]) == row
@@ -960,11 +934,110 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
             f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
         ]
 
+    def _check_no_w_fermi_message_and_new_matches_ref_df(self, output, w, new_df, ref_df):
+        assert "Fermi level was not set" in output
+        assert not w
+        assert new_df.equals(ref_df)
+
+    def _check_chempot_w_and_fermi_message(self, w, output):
+        assert len(w) == 1
+        assert (
+            "No chemical potentials supplied, so using 0 for all chemical potentials. Formation "
+            "energies (and concentrations) will likely be highly inaccurate!"
+        ) in str(w[0].message)
+
+        assert (
+            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
+            "VBM)."
+        ) in output
+
+    def _check_chempots_dict(self, chempots_dict):
+        # in the chempots dict, for each subdict in chempots["facets"], it should match the sum of
+        # the chempots["facets_wrt_el_refs"] and chempots["elemental_refs"]:
+        for facet, subdict in chempots_dict["facets"].items():
+            for el, mu in subdict.items():
+                assert np.isclose(
+                    mu,
+                    chempots_dict["facets_wrt_el_refs"][facet][el] + chempots_dict["elemental_refs"][el],
+                )
+
     def test_parse_chempots_CdTe(self):
         """
         Testing different combos of setting `chempots` and `el_refs`.
         """
         # Note that `_parse_chempots()` has also been indirectly tested via the plotting tests
+        orig_cdte_defect_thermo = deepcopy(self.CdTe_defect_thermo)
+        assert not self.CdTe_defect_thermo.chempots
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        assert self.CdTe_defect_thermo.chempots == self.CdTe_chempots
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        assert self.CdTe_defect_thermo.chempots == self.CdTe_chempots  # the same
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
+
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        semi_manual_chempots_dict = {
+            "facets_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+            "elemental_refs": {"Te": -4.47069234, "Cd": -1.01586484},
+            "facets": {"User Chemical Potentials": {"Cd": -2.26586484, "Te": -4.47069234}},
+        }
+        assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
+
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict  # the same
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
+
+        self.CdTe_defect_thermo.chempots = None
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        manual_zeroed_rel_chempots_dict = deepcopy(semi_manual_chempots_dict)
+        manual_zeroed_rel_chempots_dict["facets_wrt_el_refs"]["User Chemical Potentials"] = {
+            "Cd": 0,
+            "Te": 0,
+        }
+        manual_zeroed_rel_chempots_dict["facets"]["User Chemical Potentials"] = self.CdTe_chempots[
+            "elemental_refs"
+        ]
+        assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # unchanged
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
+        assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict  # the same
+
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
+        self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
+        assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict
+
+        defect_thermo = deepcopy(orig_cdte_defect_thermo)
+        defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
+        self._check_chempots_dict(defect_thermo.chempots)
+        zero_el_refs_te_rich_chempots_dict = {
+            "facets_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+            "elemental_refs": {"Te": 0, "Cd": 0},
+            "facets": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+        }
+        assert defect_thermo.chempots == zero_el_refs_te_rich_chempots_dict
+        assert defect_thermo.el_refs == {"Te": 0, "Cd": 0}
+        defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self._check_chempots_dict(defect_thermo.chempots)
+        assert defect_thermo.chempots == semi_manual_chempots_dict
+        assert defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
+
+        defect_thermo = deepcopy(orig_cdte_defect_thermo)
+        defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self._check_chempots_dict(defect_thermo.chempots)
+        assert defect_thermo.chempots == manual_zeroed_rel_chempots_dict
+        assert defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
+
+        defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
+        self._check_chempots_dict(defect_thermo.chempots)
+        assert defect_thermo.chempots == semi_manual_chempots_dict
+        assert defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsTestCase):
