@@ -576,7 +576,7 @@ class DefectEntry(thermo.DefectEntry):
             formation_energy += self.charge_state * (vbm + fermi_level)
         elif "vbm" in self.calculation_metadata:
             formation_energy += self.charge_state * (self.calculation_metadata["vbm"] + fermi_level)
-        else:
+        elif self.charge_state != 0:  # fine if charge state is zero
             warnings.warn(
                 "VBM eigenvalue was not set, and is not present in DefectEntry.calculation_metadata. "
                 "Formation energy will be inaccurate!"
