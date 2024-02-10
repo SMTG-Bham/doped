@@ -488,7 +488,7 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         ]:
             assert i not in tl_output
 
-    def test_get_transition_levels(self):
+    def test_get_transition_levels_CdTe(self):
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (3, 4)
         assert list(tl_df.iloc[0]) == ["v_Cd", "ε(0/-2)", 0.47, True]
@@ -527,6 +527,44 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         assert list(tl_df.iloc[4]) == ["Int_Te_3_a", "None", np.inf, False, 0]
         assert list(tl_df.iloc[5]) == ["Int_Te_3_b", "None", np.inf, False, 0]
 
+    def test_get_symmetries_degeneracies_CdTe(self):
+        sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
+        assert sym_degen_df.shape == (7, 8)
+        assert list(sym_degen_df.columns) == [
+            "Defect",
+            "q",
+            "Site_Symm",
+            "Defect_Symm",
+            "g_Orient",
+            "g_Spin",
+            "g_Total",
+            "Mult",
+        ]
+        # hardcoded tests to ensure ordering is consistent (by defect type according to
+        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # as would appear on a TL diagram)
+        cdte_sym_degen_lists = [
+            ["v_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["v_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+            ["v_Cd", "-2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["Te_Cd", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+            ["Int_Te_3", "+2", "C1", "Cs", 0.5, 1, 0.5, 24.0],
+            ["Int_Te_3", "+1", "Cs", "C2v", 0.5, 2, 1.0, 12.0],
+            ["Int_Te_3_Unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
+        ]
+        for i, row in enumerate(cdte_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
+        non_formatted_sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies(
+            skip_formatting=True
+        )
+        for i, row in enumerate(cdte_sym_degen_lists):
+            row[1] = int(row[1])
+            assert list(non_formatted_sym_degen_df.iloc[i]) == row
+
+
+class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsTestCase):
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
@@ -592,6 +630,9 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
     # def test_add_entries(self):
 
 
+# TODO: Save all defects in CdTe thermo to JSON and test methods on it
+# TODO: Test warnings for failed symmetry determination with periodicity-breaking Sb2Si2Te6 and ZnS (and
+#  no warnings with CdTe, Sb2Se3, YTOS)
 # TODO: Test DefectEntry formation energy and concentration methods
 # TODO: Test add entries, check_compatibility
 # TODO: Add V2O5 test plotting all lines
