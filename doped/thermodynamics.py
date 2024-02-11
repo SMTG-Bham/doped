@@ -36,7 +36,7 @@ from doped.utils.parsing import (
     get_orientational_degeneracy,
     get_vasprun,
 )
-from doped.utils.plotting import _TLD_plot
+from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
 from doped.utils.symmetry import _get_all_equiv_sites, _get_sga, point_symmetry_from_defect_entry
 
 
@@ -446,9 +446,18 @@ class DefectThermodynamics(MSONable):
         Sort the defect entries, parse the transition levels, and check the
         compatibility of the bulk entries (if check_compatibility is True).
         """
-        # TODO: Currently with this code, entries with the same name will overwrite each other. Should only
-        #  do this if they have the same energy, otherwise rename to avoid overwriting:
-        defect_entries_dict = {entry.name: entry for entry in self.defect_entries}
+        defect_entries_dict: Dict[str, DefectEntry] = {}
+        for entry in self.defect_entries:  # rename defect entry names in dict if necessary ("_a", "_b"...)
+            entry_name, [
+                defect_entries_dict,
+            ] = _rename_key_and_dicts(
+                entry.name,
+                [
+                    defect_entries_dict,
+                ],
+            )
+            defect_entries_dict[entry_name] = entry
+
         sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
         self._defect_entries = list(sorted_defect_entries_dict.values())
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
@@ -573,7 +582,7 @@ class DefectThermodynamics(MSONable):
         """
         # determine defect charge transition levels:
         midgap_formation_energies = [  # without chemical potentials
-            self.get_formation_energy(entry, fermi_level=0.5 * self.band_gap)  # type: ignore
+            entry.formation_energy(fermi_level=0.5 * self.band_gap, vbm=self.vbm)
             for entry in self.defect_entries
         ]
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
@@ -603,9 +612,9 @@ class DefectThermodynamics(MSONable):
 
         for grouped_defect_entries in grouped_entries_list:
             sorted_defect_entries = sorted(
-                grouped_defect_entries, key=lambda x: abs(x.charge_state)
-            )  # sort by charge, starting with closest to zero, for deterministic behaviour
-            # thus uses name of neutral (or closest to neutral) species to get name (without charge)
+                grouped_defect_entries, key=lambda x: (abs(x.charge_state), x.get_ediff())
+            )  # sort by charge, starting with closest to zero, and then formation energy for
+            # deterministic behaviour
 
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are
@@ -644,38 +653,20 @@ class DefectThermodynamics(MSONable):
                 ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
-            # take simplest (shortest) possible defect name as the name for that group
-            possible_defect_names = [
-                defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries
+            # take simplest (shortest) possible defect name, with lowest energy, as the name for that group
+            possible_defect_names_and_energies = [
+                (defect_entry.name.rsplit("_", 1)[0], defect_entry.get_ediff())
+                for defect_entry in sorted_defect_entries
             ]  # names without charge
-            defect_name_wout_charge = min(possible_defect_names, key=len)
+            defect_name_wout_charge = min(
+                possible_defect_names_and_energies, key=lambda x: (len(x[0]), x[1])
+            )[0]
 
-            if defect_name_wout_charge in transition_level_map or any(
-                f"{defect_name_wout_charge}_{chr(96 + i)}" in transition_level_map for i in range(1, 27)
-            ):  # defects with same name, rename to prevent overwriting:
-                # append "a,b,c.." for different defect species with the same name
-                i = 3
-
-                if (
-                    defect_name_wout_charge in transition_level_map
-                ):  # first repeat, direct match, rename previous entry
-                    for output_dict in [
-                        transition_level_map,
-                        all_entries,
-                        stable_entries,
-                        defect_charge_map,
-                    ]:
-                        val = output_dict.pop(defect_name_wout_charge)
-                        output_dict[f"{defect_name_wout_charge}_{chr(96 + 1)}"] = val  # a
-
-                    defect_name_wout_charge = f"{defect_name_wout_charge}_{chr(96 + 2)}"  # b
-
-                else:
-                    defect_name_wout_charge = f"{defect_name_wout_charge}_{chr(96 + i)}"  # c
-
-                while defect_name_wout_charge in transition_level_map:
-                    i += 1
-                    defect_name_wout_charge = f"{defect_name_wout_charge}_{chr(96 + i)}"  # d, e, f etc
+            defect_name_wout_charge, output_dicts = _rename_key_and_dicts(
+                defect_name_wout_charge,
+                [transition_level_map, all_entries, stable_entries, defect_charge_map],
+            )
+            transition_level_map, all_entries, stable_entries, defect_charge_map = output_dicts
 
             if len(ints_and_facets_list) > 0:  # unpack into lists
                 _, facets = zip(*ints_and_facets_list)
@@ -701,11 +692,11 @@ class DefectThermodynamics(MSONable):
                 # confirm formation energies dominant for one defect over other identical defects
                 name_set = [entry.name for entry in sorted_defect_entries]
                 vb_list = [
-                    self.get_formation_energy(entry, fermi_level=limits[0][0])
+                    entry.formation_energy(fermi_level=limits[0][0], vbm=self.vbm)
                     for entry in sorted_defect_entries
                 ]
                 cb_list = [
-                    self.get_formation_energy(entry, fermi_level=limits[0][1])
+                    entry.formation_energy(fermi_level=limits[0][1], vbm=self.vbm)
                     for entry in sorted_defect_entries
                 ]
 
