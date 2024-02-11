@@ -2044,20 +2044,22 @@ class DefectThermodynamics(MSONable):
                     else None
                 )
 
-                fig = _TLD_plot(
-                    self,
-                    dft_chempots=dft_chempots,
-                    el_refs=el_refs,
-                    chempot_table=chempot_table,
-                    all_entries=all_entries,
-                    xlim=xlim,
-                    ylim=ylim,
-                    fermi_level=fermi_level,
-                    title=plot_title,
-                    colormap=colormap,
-                    auto_labels=auto_labels,
-                    filename=plot_filename,
-                )
+                with warnings.catch_warnings():  # avoid double warning about no chempots supplied
+                    warnings.filterwarnings("ignore", "No chemical potentials")
+                    fig = _TLD_plot(
+                        self,
+                        dft_chempots=dft_chempots,
+                        el_refs=el_refs,
+                        chempot_table=chempot_table,
+                        all_entries=all_entries,
+                        xlim=xlim,
+                        ylim=ylim,
+                        fermi_level=fermi_level,
+                        title=plot_title,
+                        colormap=colormap,
+                        auto_labels=auto_labels,
+                        filename=plot_filename,
+                    )
                 figs.append(fig)
 
             return figs[0] if len(figs) == 1 else figs

@@ -770,7 +770,7 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
                 f"mis-specification of chemical potentials (see docstrings and/or tutorials)."
             )
-            ymin = min(ymin, *yvals)  # TODO: Test this
+            ymin = min(ymin, *yvals)
 
     return (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin
 
