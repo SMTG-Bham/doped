@@ -416,10 +416,27 @@ class DefectPlottingTestCase(unittest.TestCase):
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
+    def test_plot_facet_no_chempots_error(self):
+        with self.assertRaises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(facet="Te-rich")
+        assert (
+            "You have specified an X-rich/poor facet, but no `chempots` have been supplied, "
+            "so `facet` cannot be used here!"
+        ) in str(exc.exception)
+
+    def test_plot_facet_user_chempots_error(self):
+        with self.assertRaises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, facet="Te-rich")
+        assert (
+            "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped "
+            "format (i.e. with `facets` in the chempots dict), and instead correspond to just a single "
+            "phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
+        ) in str(exc.exception)
+
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
     def test_default_CdTe_plot_no_chempots(self):
         with warnings.catch_warnings(record=True) as w:
-            plot = self.CdTe_defect_thermo.plot(facet="Te-rich")
+            plot = self.CdTe_defect_thermo.plot()
         print([str(warn.message) for warn in w])  # for debugging
         assert len(w) == 2
         assert any("All formation energies for" in str(warn.message) for warn in w)
