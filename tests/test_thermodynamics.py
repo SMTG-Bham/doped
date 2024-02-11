@@ -296,12 +296,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_dict, "V2O5_defect_dict"),
         ]:
             print(f"Checking {name}")
-            defect_thermo = DefectThermodynamics(list(defect_dict.values()))
+            defect_thermo = DefectThermodynamics(list(defect_dict.values()))  # test init with list
+            self._check_defect_thermo(defect_thermo, defect_dict)  # default values
+
+            defect_thermo = DefectThermodynamics(defect_dict)  # test init with dict
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
 
             if "V2O5" in name:
                 defect_thermo = DefectThermodynamics(
-                    list(defect_dict.values()),
+                    defect_dict,
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
@@ -1277,5 +1280,4 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 # TODO: Test warnings for failed symmetry determination with periodicity-breaking Sb2Si2Te6 and ZnS (and
 #  no warnings with CdTe, Sb2Se3, YTOS)
 # TODO: Spot check one or two DefectEntry concentration methods
-# TODO: Add V2O5 test plotting all lines
 # TODO: Add GGA MgO tests as well
