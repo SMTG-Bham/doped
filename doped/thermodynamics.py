@@ -49,23 +49,30 @@ def bold_print(string: str) -> None:
     print("\033[1m" + string + "\033[0m")
 
 
-def _raise_facet_with_user_chempots_error():
+def _raise_facet_with_user_chempots_error(no_chempots=True):
+    problem = (
+        (
+            "the supplied chempots are not in the doped format (i.e. with `facets` in the chempots dict), "
+            "and instead correspond to just a single phase diagram facet / chemical potential limit"
+        )
+        if no_chempots
+        else "no `chempots` have been supplied"
+    )
     raise ValueError(
-        "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped format "
-        "(i.e. with `facets` in the chempots dict), and instead correspond to just a single phase diagram "
-        "facet / chemical potential limit, so `facet` cannot be used here!"
+        f"You have specified an X-rich/poor facet, but {problem}, so `facet` cannot be used here!"
     )
 
 
 def _parse_facet(chempots: Dict, facet: Optional[str] = None):
     if facet is not None:
+        if "facets" not in chempots or "User Chemical Potentials" in chempots["facets"]:
+            # user specified chempots
+            _raise_facet_with_user_chempots_error(no_chempots=True)
+        if "No User Chemical Potentials" in chempots["facets"]:
+            _raise_facet_with_user_chempots_error(no_chempots=False)
         if "rich" in facet:
-            if "facets" not in chempots:  # user specified chempots
-                _raise_facet_with_user_chempots_error()
             facet = get_X_rich_facet(facet.split("-")[0], chempots)
         elif "poor" in facet:
-            if "facets" not in chempots:  # user specified chempots
-                _raise_facet_with_user_chempots_error()
             facet = get_X_poor_facet(facet.split("-")[0], chempots)
 
     return facet
@@ -2314,8 +2321,8 @@ class DefectThermodynamics(MSONable):
         if chempots is None:
             _no_chempots_warning()
             chempots = {
-                "facets": {"No User Chemical Potentials": {}},
-                "facets_wrt_el_refs": {"No User Chemical Potentials": {}},
+                "facets": {"No User Chemical Potentials": None},
+                "facets_wrt_el_refs": {"No User Chemical Potentials": None},
             }
 
         facet = _parse_facet(chempots, facet)
