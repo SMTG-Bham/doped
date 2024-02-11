@@ -8,46 +8,14 @@ import sys
 import unittest
 import warnings
 from copy import deepcopy
-from functools import wraps
 from io import StringIO
 
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
-import pytest
 from monty.serialization import dumpfn, loadfn
 
 from doped.thermodynamics import DefectThermodynamics
-
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
-mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
-
-# Define paths for baseline_dir and style as constants
-BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
-STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
-
-
-def custom_mpl_image_compare(filename):
-    """
-    Set our default settings for MPL image compare.
-    """
-
-    def decorator(func):
-        @wraps(func)
-        @pytest.mark.mpl_image_compare(
-            baseline_dir=BASELINE_DIR,
-            filename=filename,
-            style=STYLE,
-            savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-        )
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
 
 
 def if_present_rm(path):
@@ -81,7 +49,7 @@ def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
     return result, output, w
 
 
-class DefectThermodynamicsTestCase(unittest.TestCase):
+class DefectThermodynamicsSetupMixin(unittest.TestCase):
     def setUp(self):
         self.CdTe_defect_thermo = deepcopy(self.orig_CdTe_defect_thermo)
         self.CdTe_defect_dict = deepcopy(self.orig_CdTe_defect_dict)
@@ -148,6 +116,8 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         cls.orig_V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
         cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
 
+
+class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
         assert {entry.name for entry in defect_thermo.defect_entries} == set(defect_dict.keys())
@@ -1300,73 +1270,6 @@ class DefectThermodynamicsTestCase(unittest.TestCase):
         assert partial_defect_thermo.get_symmetries_and_degeneracies().equals(
             self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
         )
-
-
-class DefectThermodynamicsPlotsTestCase(unittest.TestCase):
-    def setUp(self):
-        DefectThermodynamicsTestCase.setUp(self)  # get attributes from DefectThermodynamicsTestCase
-
-    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot(self):
-        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
-
-    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot_specified_chempots(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots(self):
-        return self.CdTe_defect_thermo.plot(
-            chempots={"Cd": -1.25, "Te": 0}, el_refs=self.CdTe_chempots["elemental_refs"]
-        )
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots_at_init(self):
-        defect_thermo = DefectThermodynamics(
-            list(self.CdTe_defect_dict.values()),
-            chempots={"Cd": -1.25, "Te": 0},
-            el_refs=self.CdTe_chempots["elemental_refs"],
-        )
-        return defect_thermo.plot()
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots_1by1(self):
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot()
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots_1by1_other(self):
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
-        return self.CdTe_defect_thermo.plot()
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots_1by1_other2(self):
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot(chempots={"Cd": -1.25, "Te": 0})
-
-    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
-    def test_default_CdTe_plot_manual_chempots_1by1_other3(self):
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
-        return self.CdTe_defect_thermo.plot(el_refs=self.CdTe_chempots["elemental_refs"])
-
-    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot_edited_el_refs(self):
-        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
-
-    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot_edited_el_refs_other(self):
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
-
-    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
-    def test_default_CdTe_plot_Cd_rich(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Cd-rich")
 
 
 # TODO: Test check_compatibility
