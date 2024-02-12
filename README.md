@@ -16,7 +16,7 @@ Tutorials showing the code functionality and usage are provided on the [docs](ht
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-<a href="https://doped.readthedocs.io/en/latest/dope_chemical_potentials.html#analysing-and-visualising-the-chemical-potential-limits"><img align="left" width="365" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_chempot_plotting.png"></a> <a href="https://doped.readthedocs.io/en/latest/dope_parsing_example.html#defect-formation-energy-transition-level-diagrams"><img align="right" width="385" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_TLD_plot.png"></a>
+<a href="https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits"><img align="left" width="365" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_chempot_plotting.png"></a> <a href="https://doped.readthedocs.io/en/latest/dope_parsing_example.html#defect-formation-energy-transition-level-diagrams"><img align="right" width="385" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_TLD_plot.png"></a>
 <br><br><br><br><br><br><br><br><br><br><br>
 
 
