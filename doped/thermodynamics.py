@@ -66,6 +66,8 @@ def _raise_facet_with_user_chempots_error(no_chempots=True):
 
 def _parse_facet(chempots: Dict, facet: Optional[str] = None):
     if facet is not None:
+        if facet in chempots["facets"]:
+            return facet  # direct match, just return facet name
         if "facets" not in chempots or "User Chemical Potentials" in chempots["facets"]:
             # user specified chempots
             _raise_facet_with_user_chempots_error(no_chempots=True)
@@ -2019,8 +2021,6 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
-    # TODO: Make a specific tutorial in docs for editing return Matplotlib figures, or with rcParams,
-    #  or with a stylesheet
     # TODO: Add option to only plot defect states that are stable at some point in the bandgap
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
