@@ -206,22 +206,70 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(defect_thermo.all_stable_entries, list)
         assert isinstance(defect_thermo.all_unstable_entries, list)
 
-        assert isinstance(defect_thermo.get_equilibrium_concentrations(), pd.DataFrame)
-        assert isinstance(defect_thermo.get_symmetries_and_degeneracies(), pd.DataFrame)
-        assert isinstance(defect_thermo.get_formation_energies(), (pd.DataFrame, list))
-        tl_df = defect_thermo.get_transition_levels()
-        assert set(tl_df.columns) == {"Charges", "Defect", "In Band Gap?", "eV from VBM"}
-        all_tl_df = defect_thermo.get_transition_levels(all=True)
-        assert set(all_tl_df.columns) == {
-            "Charges",
-            "Defect",
-            "In Band Gap?",
-            "eV from VBM",
-            "N(Metastable)",
-        }
-        defect_thermo.print_transition_levels()
-        defect_thermo.print_transition_levels(all=True)
-        assert isinstance(defect_thermo.plot(), (mpl.figure.Figure, list))
+        df, output, symm_w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_symmetries_and_degeneracies
+        )
+        assert not output
+        assert isinstance(df, pd.DataFrame)
+        df, conc_output, conc_w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_concentrations
+        )
+        assert isinstance(df, pd.DataFrame)
+        if chempots is not None:
+            assert any(
+                "No facet (chemical potential limit) specified! Using" in str(warn.message)
+                for warn in conc_w
+            )
+
+        df_or_list, form_e_output, form_e_w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_formation_energies
+        )
+        assert isinstance(df_or_list, (pd.DataFrame, list))
+        for output in [form_e_output, conc_output]:
+            assert "Fermi level was not set, so using mid-gap Fermi level" in output
+        for w in [conc_w, form_e_w]:
+            chempots_warning = any(
+                "No chemical potentials supplied, so using 0 for all chemical potentials"
+                in str(warn.message)
+                for warn in w
+            )
+            assert chempots_warning == (chempots is None)
+
+        for w in [symm_w, conc_w]:  # the dub
+            if defect_thermo.bulk_formula == "SiSbTe3":  # periodicity-breaking, should have warning
+                # TODO: Update this with ZnS example when ready
+                assert any(
+                    "The defect supercell has been detected to possibly have" in str(warn.message)
+                    for warn in w
+                )
+            else:
+                assert len(w) in {0, 1}
+
+        figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
+        assert isinstance(figure_or_list, (mpl.figure.Figure, list))
+        assert not output
+        if chempots is None:
+            assert any(
+                "You have not specified chemical potentials (`chempots`), so chemical potentials are set "
+                "to zero for each species." in str(warn.message)
+                for warn in w
+            )
+
+        with warnings.catch_warnings(record=True) as w:
+            tl_df = defect_thermo.get_transition_levels()
+            assert set(tl_df.columns) == {"Charges", "Defect", "In Band Gap?", "eV from VBM"}
+            all_tl_df = defect_thermo.get_transition_levels(all=True)
+            assert set(all_tl_df.columns) == {
+                "Charges",
+                "Defect",
+                "In Band Gap?",
+                "eV from VBM",
+                "N(Metastable)",
+            }
+            defect_thermo.print_transition_levels()
+            defect_thermo.print_transition_levels(all=True)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
 
         with self.assertRaises(TypeError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
@@ -296,7 +344,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_dict, "V2O5_defect_dict"),
         ]:
             print(f"Checking {name}")
-            defect_thermo = DefectThermodynamics(list(defect_dict.values()))  # test init with list
+            with warnings.catch_warnings(record=True) as w:
+                defect_thermo = DefectThermodynamics(list(defect_dict.values()))  # test init with list
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
 
             defect_thermo = DefectThermodynamics(defect_dict)  # test init with dict
@@ -1275,9 +1326,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
 
-# TODO: Test check_compatibility
 # TODO: Save all defects in CdTe thermo to JSON and test methods on it
-# TODO: Test warnings for failed symmetry determination with periodicity-breaking Sb2Si2Te6 and ZnS (and
-#  no warnings with CdTe, Sb2Se3, YTOS)
 # TODO: Spot check one or two DefectEntry concentration methods
 # TODO: Add GGA MgO tests as well
+# TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
+# TODO: Test check_compatibility
