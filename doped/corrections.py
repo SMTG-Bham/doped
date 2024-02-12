@@ -128,6 +128,7 @@ def get_freysoldt_correction(
     filename: Optional[str] = None,
     axis: Optional[int] = None,
     verbose: bool = True,
+    style_file: Optional[str] = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -175,6 +176,10 @@ def get_freysoldt_correction(
             If None, then all three axes are plotted.
         verbose (bool):
             Whether to print the correction energy (default = True).
+        style_file (str):
+            Path to a ``.mplstyle`` file to use for the plot. If ``None``
+            (default), uses the default doped style
+            (from ``doped/utils/doped.mplstyle``).
         **kwargs:
             Additional kwargs to pass to
             pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -229,6 +234,7 @@ def get_freysoldt_correction(
                 fnv_correction.metadata["plot_data"][direction],
                 ax=axs[direction],
                 title=axis_label_dict[direction],
+                style_file=style_file,
             )
     else:
         fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])

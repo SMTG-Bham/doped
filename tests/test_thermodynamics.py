@@ -853,16 +853,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     lowest_e_form = thermo_obj.get_formation_energy(
                         form_en_df_row[0], facet=facet, fermi_level=fermi_level
                     )
-                    assert np.isclose(  # test get_formation_energy method
+                    assert np.isclose(
                         lowest_e_form,
                         min(
-                            [
-                                thermo_obj.get_formation_energy(
-                                    entry, facet=facet, fermi_level=fermi_level
-                                )
-                                for entry in thermo_obj.defect_entries
-                                if form_en_df_row[0] in entry.name
-                            ]
+                            thermo_obj.get_formation_energy(entry, facet=facet, fermi_level=fermi_level)
+                            for entry in thermo_obj.defect_entries
+                            if form_en_df_row[0] in entry.name
                         ),
                     )
 
@@ -1461,7 +1457,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
-            os.path.join(self.module_path, "data/CdTe_thermo_v2.3_wout_meta.json")
+            os.path.join(self.module_path, "../examples/CdTe_thermo_wout_meta.json")
         )
         # random defect_entry:
         for _ in range(10):

@@ -259,6 +259,7 @@ class DefectEntry(thermo.DefectEntry):
         axis=None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
+        style_file: Optional[str] = None,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -310,6 +311,10 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
+            style_file (str):
+                Path to a ``.mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style
+                (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
                 pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -339,6 +344,7 @@ class DefectEntry(thermo.DefectEntry):
             plot=plot,
             filename=filename,
             axis=axis,
+            style_file=style_file,
             **kwargs,
         )
         correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
@@ -376,6 +382,7 @@ class DefectEntry(thermo.DefectEntry):
         filename: Optional[str] = None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
+        style_file: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -439,6 +446,10 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
+            style_file (str):
+                Path to a ``.mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style
+                (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
                 pydefect.corrections.efnv_correction.ExtendedFnvCorrection
@@ -468,6 +479,7 @@ class DefectEntry(thermo.DefectEntry):
             bulk_outcar=bulk_outcar,
             plot=plot,
             filename=filename,
+            style_file=style_file,
             **kwargs,
         )
         correction = efnv_correction_output if not plot and filename is None else efnv_correction_output[0]
