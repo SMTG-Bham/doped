@@ -14,3 +14,5 @@ tutorials:
    parsing_tutorial
    chemical_potentials_tutorial
    GGA_workflow_tutorial
+   plotting_customisation_tutorial
+   advanced_analysis_tutorial
