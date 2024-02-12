@@ -312,7 +312,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(defect_thermo.get_dopability_limits())
 
         # test setting dist_tol:
-        if defect_thermo.bulk_formula == "CdTe" and defect_thermo.dist_tol == 1.5:
+        if (
+            defect_thermo.bulk_formula == "CdTe"
+            and defect_thermo.dist_tol == 1.5
+            and len(defect_thermo.defect_entries) < 20
+        ):  # CdTe example defects
             self._check_CdTe_example_dist_tol(defect_thermo, 3)
         self._set_and_check_dist_tol(1.0, defect_thermo, 4)
         self._set_and_check_dist_tol(0.5, defect_thermo, 5)
@@ -327,7 +331,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _set_and_check_dist_tol(self, dist_tol, defect_thermo, num_grouped_defects=0):
         defect_thermo.dist_tol = dist_tol
         assert defect_thermo.dist_tol == dist_tol
-        if defect_thermo.bulk_formula == "CdTe":
+        if defect_thermo.bulk_formula == "CdTe" and len(defect_thermo.defect_entries) < 20:
             self._check_CdTe_example_dist_tol(defect_thermo, num_grouped_defects)
         defect_thermo.print_transition_levels()
         defect_thermo.print_transition_levels(all=True)
@@ -1325,9 +1329,110 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
         )
 
+    def test_CdTe_all_intrinsic_defects(self):
+        for i in [
+            "CdTe_defect_dict_v2.3",
+            "CdTe_defect_dict_v2.3_wout_meta",
+            "CdTe_LZ_defect_dict_v2.3_wout_meta",
+            "CdTe_defect_dict_old_names",
+        ]:
+            cdte_defect_dict = loadfn(os.path.join(self.module_path, f"data/{i}.json"))
+            cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
+            self._check_defect_thermo(cdte_defect_thermo, cdte_defect_dict)
+
+        sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
+        print(sym_degen_df)
+        assert sym_degen_df.shape == (50, 8)
+        assert list(sym_degen_df.columns) == [
+            "Defect",
+            "q",
+            "Site_Symm",
+            "Defect_Symm",
+            "g_Orient",
+            "g_Spin",
+            "g_Total",
+            "Mult",
+        ]
+        # hardcoded tests to ensure ordering is consistent (by defect type according to
+        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # as would appear on a TL diagram)
+        cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
+            ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+            ["vac_1_Cd", "-2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["vac_1_Cd_1_not_in_gap", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+            ["vac_1_Cd_C2v_Bipolaron_S0", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["vac_1_Cd_C2v_Bipolaron_S1", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["vac_1_Cd_Td", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["vac_2_Te", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+            ["vac_2_Te", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["vac_2_Te", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+            ["vac_2_Te", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+            ["vac_2_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["vac_2_Te_C3v_low_energy_metastable", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
+            ["vac_2_Te_orig_metastable", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+            ["vac_2_Te_orig_non_JT_distorted", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["vac_2_Te_shaken", "-2", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["vac_2_Te_unperturbed", "-2", "Td", "C2", 12.0, 1, 12.0, 1.0],
+            ["as_1_Cd_on_Te", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
+            ["as_1_Cd_on_Te", "-1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+            ["as_1_Cd_on_Te", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
+            ["as_1_Cd_on_Te", "0", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+            ["as_1_Cd_on_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["as_2_Cd_on_Te_metastable", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["as_2_Cd_on_Te_orig_C2v", "0", "Td", "D2d", 3.0, 1, 3.0, 1.0],
+            ["as_1_Te_on_Cd", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+            ["as_1_Te_on_Cd", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+            ["as_1_Te_on_Cd", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
+            ["as_1_Te_on_Cd", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+            ["as_1_Te_on_Cd", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["as_2_Te_on_Cd_C1_meta", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
+            ["as_2_Te_on_Cd_C2v_meta", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
+            ["as_2_Te_on_Cd_C3v_metastable", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+            ["as_2_Te_on_Cd_Cs_meta", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+            ["as_2_Te_on_Cd_metastable1", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
+            ["as_2_Te_on_Cd_metastable2", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
+            ["Int_Cd_1", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["Int_Cd_1", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+            ["Int_Cd_1", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["Int_Cd_3", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["Int_Cd_3", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+            ["Int_Cd_3", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+            ["Int_Te_3", "0", "C1", "C2", 0.5, 1, 0.5, 24.0],
+            ["Int_Te_3", "-1", "C1", "C2", 0.5, 2, 1.0, 24.0],
+            ["Int_Te_3", "-2", "C1", "C2", 0.5, 1, 0.5, 24.0],
+            ["Int_Te_3", "+2", "C1", "Cs", 0.5, 1, 0.5, 24.0],
+            ["Int_Te_3", "+1", "Cs", "C2v", 0.5, 2, 1.0, 12.0],
+            ["Int_Te_3_C3v_meta", "+2", "C1", "C3v", 0.16666666666666666, 1, 0.16666666666666666, 24.0],
+            ["Int_Te_3_orig_dimer_meta", "+2", "C1", "C2", 0.5, 1, 0.5, 24.0],
+            ["Int_Te_3_unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
+            ["Int_Te_3_unperturbed", "0", "Cs", "C2v", 0.5, 1, 0.5, 12.0],
+        ]
+        for i, row in enumerate(cdte_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
+        cdte_defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json"))
+        cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
+        cdte_defect_thermo.chempots = self.CdTe_chempots
+        self._check_defect_thermo(
+            cdte_defect_thermo,
+            cdte_defect_dict,
+            chempots=self.CdTe_chempots,
+            el_refs=self.CdTe_chempots["elemental_refs"],
+        )
+
+        sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
+        for i, row in enumerate(cdte_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
 
 # TODO: Save all defects in CdTe thermo to JSON and test methods on it
 # TODO: Spot check one or two DefectEntry concentration methods
 # TODO: Add GGA MgO tests as well
 # TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
 # TODO: Test check_compatibility
+# TODO: Test how attributes change when reloaded from JSON (e.g.
+#  entry.corrections_metadata["kumagai_charge_correction"]["pydefect_ExtendedFnvCorrection"] currently
+#  changes irreversibly to dict due to being a dataclass)
