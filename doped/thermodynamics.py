@@ -7,6 +7,7 @@ import contextlib
 import inspect
 import os
 import warnings
+from copy import deepcopy
 from functools import reduce
 from itertools import chain, product
 from typing import Dict, List, Optional, Tuple, Union
@@ -18,7 +19,7 @@ from matplotlib import colors
 from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.electronic_structure.dos import FermiDos, f0
+from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
 from pymatgen.io.vasp.outputs import Vasprun
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
@@ -1163,6 +1164,7 @@ class DefectThermodynamics(MSONable):
                 facet=facet,
                 el_refs=el_refs,
                 fermi_level=fermi_level,
+                vbm=self.vbm,
                 temperature=temperature,
                 per_site=per_site,
             )
@@ -1372,6 +1374,8 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[dict] = None,
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
+        delta_gap: float = 0,
+        **kwargs,
     ) -> Tuple[float, float, float, pd.DataFrame]:
         r"""
         Calculate the self-consistent Fermi level and corresponding
@@ -1486,6 +1490,17 @@ class DefectThermodynamics(MSONable):
                 (constrained equilibrium) Fermi level, given the fixed total
                 concentrations, which should correspond to operating temperature
                 of the material (typically room temperature). Default is 300 K.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the annealing
+                temperature (e.g. due to thermal renormalisation), relative to the
+                original band gap of the FermiDos object. If set, applies a scissor
+                correction to ``fermi_dos`` which renormalises the band gap symmetrically
+                about the VBM and CBM (i.e. assuming equal up/downshifts of the band-edges
+                around their original eigenvalues) while the defect levels remain fixed.
+                (Default: 0)
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
+                is not 0).
 
         Returns:
             Predicted quenched Fermi level (in eV from the VBM), the corresponding
@@ -1499,8 +1514,18 @@ class DefectThermodynamics(MSONable):
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
+        annealing_dos = (
+            fermi_dos
+            if delta_gap == 0
+            else scissor_dos(
+                delta_gap,
+                fermi_dos,
+                verbose=kwargs.get("verbose", False),
+                tol=kwargs.get("tol", 1e-8),
+            )
+        )
         annealing_fermi_level = self.get_equilibrium_fermi_level(
-            fermi_dos,
+            annealing_dos,
             chempots=chempots,
             facet=facet,
             el_refs=el_refs,
@@ -2788,3 +2813,98 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
     return e_conc, h_conc
+
+
+def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
+    """
+    Given an input Dos/FermiDos object, rigidly shifts the valence and
+    conduction bands of the DOS object to give a band gap that is now
+    increased/decreased by ``delta_gap`` eV, where this rigid scissor
+    shift is applied symmetrically around the original gap (i.e. the
+    VBM is downshifted by ``delta_gap/2`` and the CBM is upshifted by
+    ``delta_gap/2``).
+
+    Note this assumes a non-spin-polarised (i.e. non-magnetic) density
+    of states!
+
+    Args:
+        delta_gap (float):
+            The amount by which to increase/decrease the band gap (in eV).
+        dos (Dos/FermiDos):
+            The input DOS object to scissor.
+        tol (float):
+            The tolerance to use for determining the VBM and CBM (used in
+            Dos.get_gep(tol=tol)). Default: 1e-8.
+        verbose (bool):
+            Whether to print information about the original and new band gaps.
+
+    Returns:
+        FermiDos: The scissored DOS object.
+    """
+    dos = deepcopy(dos)  # don't overwrite object
+    # shift just CBM upwards first, then shift all rigidly down by Eg/2 (simpler code with this approach)
+    cbm_index = np.where(
+        (dos.densities[Spin.up] > tol) & (dos.energies - dos.efermi > dos.get_gap(tol=tol) / 2)
+    )[0][0]
+    cbm_energy = dos.energies[cbm_index]
+    # get closest index with energy near cbm_energy + delta_gap:
+    new_cbm_index = np.argmin(np.abs(dos.energies - (cbm_energy + delta_gap)))
+    new_cbm_energy = dos.energies[new_cbm_index]
+    vbm_index = np.where(
+        (dos.densities[Spin.up] > tol) & (dos.energies - dos.efermi < dos.get_gap(tol=tol) / 2)
+    )[0][-1]
+    vbm_energy = dos.energies[vbm_index]
+
+    if not np.isclose(cbm_energy - vbm_energy, dos.get_gap(tol=tol), atol=1e-1) and np.isclose(
+        new_cbm_energy - cbm_energy, delta_gap, atol=1e-2
+    ):
+        warnings.warn(
+            "The new band gap does not appear to be equal to the original band gap plus the scissor "
+            "shift, suggesting an error in `scissor_dos`, beware!\n"
+            f"Got original gap (from manual indexing): {cbm_energy - vbm_energy}, {dos.get_gap(tol=tol)} "
+            f"from dos.get_gap(tol=tol) and new gap: {dos.get_gap(tol=tol) + delta_gap}"
+        )
+
+    # Determine the number of values in energies/densities to remove/add to avoid duplication
+    values_to_remove_or_add = int(new_cbm_index - cbm_index)
+    scissored_dos_dict = dos.as_dict()
+
+    # Shift the CBM and remove/add values:
+    if values_to_remove_or_add < 0:  # remove values
+        scissored_dos_dict["energies"] = np.concatenate(
+            (dos.energies[: cbm_index + values_to_remove_or_add], dos.energies[cbm_index:] + delta_gap)
+        )
+        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
+            (
+                dos.densities[Spin.up][: cbm_index + values_to_remove_or_add],
+                dos.densities[Spin.up][cbm_index:],
+            )
+        )
+        # Assuming non-spin-polarised bulk here:
+        scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
+    elif values_to_remove_or_add > 0:
+        # add more zero DOS values:
+        scissored_dos_dict["energies"] = np.concatenate(
+            (
+                dos.energies[:cbm_index],
+                dos.energies[cbm_index:new_cbm_index],
+                dos.energies[cbm_index:] + delta_gap,
+            )
+        )
+        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
+            (
+                dos.densities[Spin.up][:cbm_index],
+                np.zeros(values_to_remove_or_add),
+                dos.densities[Spin.up][cbm_index:],
+            )
+        )
+        scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
+
+    # now shift all energies rigidly, so we've shifted symmetrically around the original gap (eigenvalues)
+    scissored_dos_dict["energies"] -= delta_gap / 2
+    scissored_dos_dict["efermi"] -= delta_gap / 2
+
+    if verbose:
+        print(f"Orig gap: {dos.get_gap(tol=tol)}, new gap:{dos.get_gap(tol=tol) + delta_gap}")
+    scissored_dos_dict["structure"] = dos.structure.as_dict()
+    return FermiDos.from_dict(scissored_dos_dict)
