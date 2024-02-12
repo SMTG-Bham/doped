@@ -527,3 +527,40 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="neutral_v_O_plot_faded.png")
     def test_V2O5_O_rich_faded_plot(self):
         return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries="faded")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
+    def test_CdTe_LZ_all_defects_plot(self):
+        lz_cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+        )
+        CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
+        return CdTe_LZ_thermo_wout_meta.plot(facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
+    def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
+        lz_cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+        )
+        lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
+        lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
+
+        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
+    def test_CdTe_FNV_all_defects_plot_default_old_names(self):
+        # Tests naming handling when old/unrecognised defect names are used
+        cdte_defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json"))
+        cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
+        with warnings.catch_warnings(record=True) as w:
+            plot = cdte_defect_thermo.plot()
+        print([str(warn.message) for warn in w])  # for debugging
+        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+        assert any(
+            "All formation energies for as_1_Te_on_Cd are below zero across the entire band gap range. "
+            "This is typically unphysical (see docs), and likely due to mis-specification of chemical "
+            "potentials (see docstrings and/or tutorials)." in str(warn.message)
+            for warn in w
+        )
+        assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
+        assert len(w) == 3
+        return plot
