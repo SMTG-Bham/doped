@@ -3,19 +3,52 @@ Tests for doped.thermodynamics module.
 """
 
 import os
+import random
 import shutil
 import sys
 import unittest
 import warnings
 from copy import deepcopy
+from functools import wraps
 from io import StringIO
 
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 from monty.serialization import dumpfn, loadfn
 
-from doped.thermodynamics import DefectThermodynamics
+from doped.thermodynamics import DefectThermodynamics, scissor_dos
+
+# for pytest-mpl:
+module_path = os.path.dirname(os.path.abspath(__file__))
+data_dir = os.path.join(module_path, "data")
+
+# Define paths for baseline_dir and style as constants
+BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
+STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
+
+
+def custom_mpl_image_compare(filename):
+    """
+    Set our default settings for MPL image compare.
+    """
+
+    def decorator(func):
+        @wraps(func)
+        @pytest.mark.mpl_image_compare(
+            baseline_dir=BASELINE_DIR,
+            filename=filename,
+            style=STYLE,
+            savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+        )
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def if_present_rm(path):
@@ -1332,7 +1365,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_CdTe_all_intrinsic_defects(self):
         for i in [
             "CdTe_defect_dict_v2.3",
-            "CdTe_defect_dict_v2.3_wout_meta",
             "CdTe_LZ_defect_dict_v2.3_wout_meta",
             "CdTe_defect_dict_old_names",
         ]:
@@ -1427,9 +1459,344 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(i, row)
             assert list(sym_degen_df.iloc[i]) == row
 
+    def test_formation_energy_mult_degen(self):
+        cdte_defect_thermo = DefectThermodynamics.from_json(
+            os.path.join(self.module_path, "data/CdTe_thermo_v2.3_wout_meta.json")
+        )
+        # random defect_entry:
+        for _ in range(10):
+            random_defect_entry = random.choice(cdte_defect_thermo.defect_entries)
+            print(f"Randomly testing concentration method for {random_defect_entry.name}")
 
-# TODO: Save all defects in CdTe thermo to JSON and test methods on it
-# TODO: Spot check one or two DefectEntry concentration methods
+            for temperature in [300, 1000]:
+                for fermi_level in [0.25, 0.9, 3]:
+                    orig_conc = random_defect_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        facet="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                    )
+                    new_entry = deepcopy(random_defect_entry)
+                    new_entry.defect.multiplicity *= 2
+
+                    new_conc = new_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        facet="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                    )
+                    assert np.isclose(new_conc, orig_conc * 2)
+
+                    new_entry.degeneracy_factors["spin degeneracy"] *= 0.5
+                    new_conc = new_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        facet="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                    )
+                    assert np.isclose(new_conc, orig_conc)
+
+                    new_entry.degeneracy_factors["orientational degeneracy"] *= 3
+                    new_conc = new_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        facet="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                    )
+                    assert np.isclose(new_conc, orig_conc * 3)
+
+                    new_entry.degeneracy_factors["fake degeneracy"] = 7
+                    new_conc = new_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        facet="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                    )
+                    assert np.isclose(new_conc, orig_conc * 21)
+
+
+def belas_linear_fit(T):  #
+    """
+    Linear fit of CdTe gap dependence with temperature.
+    """
+    return 1.6395 - 0.000438 * T
+
+
+class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module_path = os.path.dirname(os.path.abspath(__file__))
+        cls.CdTe_EXAMPLE_DIR = os.path.join(cls.module_path, "../examples/CdTe")
+        cls.CdTe_chempots = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
+        cls.defect_dict = loadfn(
+            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+        )
+        cls.defect_thermo = DefectThermodynamics(cls.defect_dict)
+        cls.defect_thermo.chempots = cls.CdTe_chempots
+
+        cls.fermi_dos = loadfn(
+            os.path.join(cls.module_path, "data/CdTe_prim_k181818_NKRED_2_fermi_dos.json")
+        )
+        cls.anneal_temperatures = np.arange(200, 1401, 50)
+
+        cls.annealing_dict = {}
+
+        for anneal_temp in cls.anneal_temperatures:
+            gap_shift = belas_linear_fit(anneal_temp) - 1.5
+            scissored_dos = scissor_dos(gap_shift, cls.fermi_dos, verbose=True)
+
+            (
+                fermi_level,
+                e_conc,
+                h_conc,
+                conc_df,
+            ) = cls.defect_thermo.get_quenched_fermi_level_and_concentrations(
+                # quenching to 300K (default)
+                cls.fermi_dos,
+                facet="Te-rich",
+                annealing_temperature=anneal_temp,
+                delta_gap=gap_shift,
+            )
+            (
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+            ) = cls.defect_thermo.get_equilibrium_fermi_level(
+                scissored_dos,
+                facet="Te-rich",
+                temperature=anneal_temp,
+                return_concs=True,
+            )
+            cls.annealing_dict[anneal_temp] = {
+                "annealing_fermi_level": annealing_fermi_level,
+                "annealing_e_conc": annealing_e_conc,
+                "annealing_h_conc": annealing_h_conc,
+                "fermi_level": fermi_level,
+                "e_conc": e_conc,
+                "h_conc": h_conc,
+                "conc_df": conc_df,
+            }
+
+    def belas_linear_fit(self, T):  # linear fit of CdTe gap dependence with temperature
+        return 1.6395 - 0.000438 * T
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
+    def test_calculated_fermi_levels(self):
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+
+        anneal_fermi_levels = np.array(
+            [v["annealing_fermi_level"] for k, v in self.annealing_dict.items()]
+        )
+        quenched_fermi_levels = np.array([v["fermi_level"] for k, v in self.annealing_dict.items()])
+        assert np.isclose(np.mean(self.anneal_temperatures[12:16]), 875)
+        assert np.isclose(np.mean(quenched_fermi_levels[12:16]), 0.318674, atol=1e-3)
+
+        ax.plot(
+            self.anneal_temperatures,
+            anneal_fermi_levels,
+            marker="o",
+            label="$E_F$ during annealing (@ $T_{anneal}$)",
+            color="k",
+            alpha=0.25,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            quenched_fermi_levels,
+            marker="o",
+            label="$E_F$ upon cooling (@ $T$ = 300K)",
+            color="k",
+            alpha=0.9,
+        )
+        ax.set_xlabel("Anneal Temperature (K)")
+        ax.set_ylabel("Fermi Level wrt VBM (eV)")
+        ax.set_xlim(300, 1400)
+        ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC", label="Typical Anneal Range")
+        ax.fill_between(
+            self.anneal_temperatures,
+            (1.5 - belas_linear_fit(self.anneal_temperatures)) / 2,
+            0,
+            alpha=0.2,
+            color="C0",
+            label="VBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+        ax.fill_between(
+            self.anneal_temperatures,
+            1.5 - (1.5 - belas_linear_fit(self.anneal_temperatures)) / 2,
+            1.5,
+            alpha=0.2,
+            color="C1",
+            label="CBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+
+        ax.legend(fontsize=8)
+
+        ax.imshow(  # show VB in blue from -0.3 to 0 eV:
+            [(1, 1), (0, 0)],
+            cmap=plt.cm.Blues,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], -0.3, 0),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+
+        ax.imshow(
+            [
+                (
+                    0,
+                    0,
+                ),
+                (1, 1),
+            ],
+            cmap=plt.cm.Oranges,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], 1.5, 1.8),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+        ax.set_ylim(-0.2, 1.7)
+
+        return f
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations.png")
+    def test_calculated_concentrations(self):
+        annealing_n = np.array(
+            [self.annealing_dict[k]["annealing_e_conc"] for k in self.anneal_temperatures]
+        )
+        annealing_p = np.array(
+            [self.annealing_dict[k]["annealing_h_conc"] for k in self.anneal_temperatures]
+        )
+        quenched_n = np.array([self.annealing_dict[k]["e_conc"] for k in self.anneal_temperatures])
+        quenched_p = np.array([self.annealing_dict[k]["h_conc"] for k in self.anneal_temperatures])
+
+        def _array_from_conc_df(name):
+            return np.array(
+                [
+                    self.annealing_dict[temp]["conc_df"][
+                        (self.annealing_dict[temp]["conc_df"]["Defect"] == name)
+                        & (self.annealing_dict[temp]["conc_df"]["Charge"] == 0)
+                    ]["Total Concentration (cm^-3)"].to_numpy()[0]
+                    for temp in self.anneal_temperatures
+                ]
+            )
+
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+
+        wienecke_data = np.array(
+            [
+                [675.644735186816, 15.19509584755584],
+                [774.64775443452, 15.983458618047331],
+                [773.2859479179771, 15.780402388747808],
+                [876.594540193735, 16.456749859094277],
+                [866.7316643602969, 16.470175483037483],
+                [931.3592904767895, 16.68944378653258],
+                [972.2040508240029, 16.939464368267398],
+                [1043.955214492389, 17.234473455894925],
+                [1030.0320795068562, 17.11399747952909],
+                [1077.6449867907913, 17.335494943226077],
+                [1082.4820732167568, 17.165318826904443],
+            ]
+        )
+        emanuelsson_data = np.array([[750 + 273.15, np.log10(1.2e17)]])
+        expt_data = np.append(wienecke_data, emanuelsson_data, axis=0)
+
+        ax.plot(self.anneal_temperatures, quenched_p, label="p", alpha=0.85, linestyle="--")
+        ax.plot(self.anneal_temperatures, quenched_n, label="n", alpha=0.85, linestyle="--")
+
+        ax.plot(
+            self.anneal_temperatures,
+            annealing_p,
+            label="p ($T_{anneal}$)",
+            alpha=0.5,
+            c="C0",
+            linestyle="--",
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            annealing_n,
+            label="n ($T_{anneal}$)",
+            alpha=0.5,
+            c="C1",
+            linestyle="--",
+        )
+
+        ax.scatter(expt_data[:, 0], 10 ** (expt_data[:, 1]), marker="x", label="Expt", c="C0", alpha=0.5)
+
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("v_Cd"),
+            marker="o",
+            label=r"$V_{Cd}$",
+            linestyle="--",
+            c="#0D7035",
+            alpha=0.7,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("Te_Cd"),
+            marker="o",
+            label=r"$Te_{Cd}$",
+            c="#F08613",
+            alpha=0.7,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("Te_i_Td_Te2.83"),
+            marker="o",
+            label="$Te_i$",
+            linestyle=":",
+            c="#F0B713",
+            alpha=0.7,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("Cd_i_Td_Te2.83"),
+            marker="o",
+            label="$Cd_i(Te)$",
+            linestyle=":",
+            c="#35AD88",
+            alpha=0.7,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("v_Te"),
+            marker="o",
+            label=r"$V_{Te}$",
+            linestyle="--",
+            c="#D95F02",
+            alpha=0.7,
+        )
+        ax.plot(
+            self.anneal_temperatures,
+            _array_from_conc_df("Cd_i_Td_Cd2.83"),
+            marker="o",
+            label="$Cd_i(Cd)$",
+            linestyle=":",
+            c="#35AD88",
+            alpha=0.3,
+        )
+
+        ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC")
+
+        ax.set_xlabel("Anneal Temperature (K)")
+        ax.set_ylabel(r"Concentration (cm$^{-3}$)")
+        ax.set_yscale("log")
+        ax.set_xlim(300, 1400)
+        ax.set_ylim(1e12, 1e18)
+        # typical anneal range is 500 - 700, so shade in this region:
+        ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC")
+        ax.legend(fontsize=8)
+
+        return f
+
+
 # TODO: Add GGA MgO tests as well
 # TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
 # TODO: Test check_compatibility

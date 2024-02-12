@@ -10,12 +10,10 @@ import os
 import shutil
 import unittest
 import warnings
-from functools import wraps
 
 import matplotlib as mpl
-import pytest
 from monty.serialization import loadfn
-from test_thermodynamics import DefectThermodynamicsSetupMixin
+from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
 
 from doped import analysis
 from doped.thermodynamics import DefectThermodynamics
@@ -33,36 +31,6 @@ def if_present_rm(path):
             os.remove(path)
         elif os.path.isdir(path):
             shutil.rmtree(path)
-
-
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
-
-# Define paths for baseline_dir and style as constants
-BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
-STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
-
-
-def custom_mpl_image_compare(filename):
-    """
-    Set our default settings for MPL image compare.
-    """
-
-    def decorator(func):
-        @wraps(func)
-        @pytest.mark.mpl_image_compare(
-            baseline_dir=BASELINE_DIR,
-            filename=filename,
-            style=STYLE,
-            savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-        )
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
 
 
 class DefectPlottingTestCase(unittest.TestCase):
@@ -412,7 +380,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))
-        return thermo.plot(chempots, facet="VO2-V2O5")
+        return thermo.plot(chempots, facet="V2O5-O2")
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
@@ -538,6 +506,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
+        # Matches SK Thesis Fig 6.1b
         lz_cdte_defect_dict = loadfn(
             os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
         )
