@@ -3,19 +3,23 @@ Code to compute finite-size charge corrections for charged defects in periodic
 systems.
 
 The charge-correction methods implemented are:
-1) Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic systems.
+
+1. Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic systems.
    This is the recommended default as it works regardless of system (an)isotropy, has a more efficient
    implementation and tends to be more robust in cases of small supercells.
    Includes:
+
        a) anisotropic PC energy
        b) potential alignment by atomic site averaging outside Wigner Seitz radius
 
-2) Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV correction fails for some
+2. Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV correction fails for some
    reason. Includes:
+
        a) point-charge (PC) energy
        b) potential alignment by planar averaging
 
-If you use the corrections implemented in this module, cite:
+If you use the corrections implemented in this module, please cite:
+
     Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for the eFNV correction
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Status Solidi B. 248, 1067-1076 (2011) for FNV
@@ -31,10 +35,9 @@ centroid of charge difference between bulk/defect LOCPOTs (for FNV) or bulk/defe
 eFNV) were developed, they should be used here.
 """
 
-import logging
 import os
 import warnings
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -48,8 +51,14 @@ from shakenbreak.plotting import _install_custom_font
 
 from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
-from doped.plotting import _format_defect_name, _get_backend
-from doped.utils.parsing import get_locpot, get_outcar
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+    get_locpot,
+    get_outcar,
+)
+from doped.utils.plotting import _format_defect_name, _get_backend
 
 warnings.simplefilter("default")
 # `message` only needs to match start of message:
@@ -73,12 +82,12 @@ def _monty_decode_nested_dicts(d):
             try:
                 d[key] = [MontyDecoder().process_decoded(i) for i in value]
             except Exception as exc:
-                print(f"Failed to decode {key} with error {exc}")
+                print(f"Failed to decode {key} with error {exc!r}")
         if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
             try:
                 d[key] = MontyDecoder().process_decoded(value)
             except Exception as exc:
-                print(f"Failed to decode {key} with error {exc}")
+                print(f"Failed to decode {key} with error {exc!r}")
 
 
 def _check_if_None_and_raise_error_if_so(var, var_name, display_name):
@@ -119,13 +128,14 @@ def get_freysoldt_correction(
     filename: Optional[str] = None,
     axis: Optional[int] = None,
     verbose: bool = True,
+    style_file: Optional[str] = None,
     **kwargs,
 ) -> CorrectionResult:
     """
-    Function to compute the _isotropic_ Freysoldt (FNV) correction for the
+    Function to compute the `isotropic` Freysoldt (FNV) correction for the
     input defect_entry.
 
-    This function _does not_ add the correction to `defect_entry.corrections`
+    This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_freysoldt_correction method does).
     If this correction is used, please cite Freysoldt's
     original paper; 10.1103/PhysRevLett.102.016402.
@@ -137,22 +147,22 @@ def get_freysoldt_correction(
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant of the host compound (including both
             ionic and (high-frequency) electronic contributions). If None,
-            then the dielectric constant is taken from the `defect_entry`
-            `calculation_metadata` if available.
+            then the dielectric constant is taken from the ``defect_entry``
+            ``calculation_metadata`` if available.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding pymatgen Locpot object, or
             a dictionary of the planar-averaged potential in the form:
             {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-            If None, will try to use `defect_locpot_dict` from the
-            `defect_entry` `calculation_metadata` if available.
+            If None, will try to use ``defect_locpot_dict`` from the
+            ``defect_entry`` ``calculation_metadata`` if available.
         bulk_locpot:
             Path to the output VASP LOCPOT file from the bulk supercell
             calculation, or the corresponding pymatgen Locpot object, or
             a dictionary of the planar-averaged potential in the form:
             {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
-            If None, will try to use `bulk_locpot_dict` from the
-            `defect_entry` `calculation_metadata` if available.
+            If None, will try to use ``bulk_locpot_dict`` from the
+            ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
             manually checking the behaviour of the charge correction here).
@@ -162,10 +172,14 @@ def get_freysoldt_correction(
         axis (int or None):
             If int, then the FNV electrostatic potential plot along the
             specified axis (0, 1, 2 for a, b, c) will be plotted. Note that
-            the output charge correction is still that for _all_ axes.
+            the output charge correction is still that for `all` axes.
             If None, then all three axes are plotted.
         verbose (bool):
             Whether to print the correction energy (default = True).
+        style_file (str):
+            Path to a ``.mplstyle`` file to use for the plot. If ``None``
+            (default), uses the default doped style
+            (from ``doped/utils/doped.mplstyle``).
         **kwargs:
             Additional kwargs to pass to
             pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -173,7 +187,7 @@ def get_freysoldt_correction(
 
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
-        the matplotlib figure object (or axis object if axis specified) if `plot`
+        the matplotlib figure object (or axis object if axis specified) if ``plot``
         is True.
     """
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
@@ -197,8 +211,10 @@ def get_freysoldt_correction(
         dielectric=dielectric,
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
-        lattice=defect_entry.sc_entry.structure.lattice if isinstance(defect_locpot, dict) else None,
-        defect_frac_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect location in supercell
+        lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
+        defect_frac_coords=_get_defect_supercell_bulk_site_coords(
+            defect_entry
+        ),  # _relaxed_ defect location in supercell
         **kwargs,
     )
 
@@ -218,6 +234,7 @@ def get_freysoldt_correction(
                 fnv_correction.metadata["plot_data"][direction],
                 ax=axs[direction],
                 title=axis_label_dict[direction],
+                style_file=style_file,
             )
     else:
         fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
@@ -300,6 +317,8 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
 def get_kumagai_correction(
     defect_entry,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
+    defect_region_radius: Optional[float] = None,
+    excluded_indices: Optional[List[int]] = None,
     defect_outcar: Optional[Union[str, Outcar]] = None,
     bulk_outcar: Optional[Union[str, Outcar]] = None,
     plot: bool = False,
@@ -313,30 +332,50 @@ def get_kumagai_correction(
     the input defect_entry. Compatible with both isotropic/cubic and
     anisotropic systems.
 
-    This function _does not_ add the correction to `defect_entry.corrections`
+    This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_kumagai_correction method does).
     If this correction is used, please cite the Kumagai & Oba paper:
     10.1103/PhysRevB.89.195205
 
+    Typically for reasonably well-converged supercell sizes, the default
+    ``defect_region_radius`` works perfectly well. However, for certain materials
+    at small/intermediate supercell sizes, you may want to adjust this (and/or
+    ``excluded_indices``) to ensure the best sampling of the plateau region away
+    from the defect position - ``doped`` should throw a warning in these cases
+    (about the correction error being above the default tolerance (50 meV)).
+    For example, with layered materials, the defect charge is often localised
+    to one layer, so we may want to adjust ``defect_region_radius`` and/or
+    ``excluded_indices`` to ensure that only sites in other layers are used for
+    the sampling region (plateau) - see example on doped docs.
+
     Args:
-        defect_entry:
+        defect_entry (DefectEntry):
             DefectEntry object with the following for which to compute the
             Kumagai finite-size charge correction.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant of the host compound (including both
             ionic and (high-frequency) electronic contributions). If None,
-            then the dielectric constant is taken from the `defect_entry`
-            `calculation_metadata` if available.
-        defect_outcar:
+            then the dielectric constant is taken from the ``defect_entry``
+            ``calculation_metadata`` if available.
+        defect_region_radius (float):
+            Radius of the defect region (in Å). Sites outside the defect
+            region are used for sampling the electrostatic potential far
+            from the defect (to obtain the potential alignment).
+            If None (default), uses the Wigner-Seitz radius of the supercell.
+        excluded_indices (list):
+            List of site indices (in the defect supercell) to exclude from
+            the site potential sampling in the correction calculation/plot.
+            If None (default), no sites are excluded.
+        defect_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `defect_site_potentials`
-            from the `defect_entry` `calculation_metadata` if available.
-        bulk_outcar:
+            If None, will try to use the ``defect_site_potentials``
+            from the ``defect_entry`` ``calculation_metadata`` if available.
+        bulk_outcar (str or Outcar):
             Path to the output VASP OUTCAR file from the bulk supercell
             calculation, or the corresponding pymatgen Outcar object.
-            If None, will try to use the `bulk_site_potentials`
-            from the `defect_entry` `calculation_metadata` if available.
+            If None, will try to use the ``bulk_site_potentials``
+            from the ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
             manually checking the behaviour of the charge correction here).
@@ -355,21 +394,101 @@ def get_kumagai_correction(
 
     Returns:
         CorrectionResults (summary of the corrections applied and metadata), and
-        the matplotlib figure object if `plot` is True.
+        the matplotlib figure object if ``plot`` is True.
     """
     # suppress pydefect INFO messages
+    import logging
+
     from vise import user_settings  #
 
     user_settings.logger.setLevel(logging.CRITICAL)
     from pydefect.analyzer.calc_results import CalcResults
-    from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+    from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
+    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+    from pydefect.corrections.ewald import Ewald
     from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+    from pydefect.defaults import defaults
+    from pydefect.util.error_classes import SupercellError
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")
     warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     _ignore_pmg_warnings()
+
+    def doped_make_efnv_correction(
+        charge: float,
+        calc_results: CalcResults,
+        perfect_calc_results: CalcResults,
+        dielectric_tensor: np.array,
+        defect_region_radius: Optional[float] = None,
+        defect_coords: Optional[Union[np.array, list]] = None,
+        accuracy: float = defaults.ewald_accuracy,
+        unit_conversion: float = 180.95128169876497,
+        excluded_indices: Optional[list] = None,
+    ):
+        """
+        This is a modified version of pydefect's make_efnv_correction function
+        (in pydefect.cli.vasp.make_efnv_correction) to allow the defect region
+        radius to be adjusted (e.g. in cases of layered materials, where often
+        the defect charge is localised to one layer, so we likely want to
+        adjust the defect region radius to ensure that only `other` layers are
+        used for the sampling (plateau) region).
+
+        If defect_region_radius is not specified, then the ``pydefect`` default
+        (which is the Wigner-Seitz region of the supercell) is used.
+
+        Notes:
+        (1) The formula written in YK2014 need to be divided by 4pi in the SI unit.
+        (2) When assuming an element charge locate at the defect_coords and
+            angstrom for length, relative dielectric tensor, Multiply
+            elementary_charge * 1e10 / epsilon_0 = 180.95128169876497
+            to make potential in V.
+        """
+        if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
+            raise SupercellError("The lattice constants for defect and perfect models are different")
+        structure_analyzer = DefectStructureComparator(
+            calc_results.structure, perfect_calc_results.structure
+        )
+        if defect_coords is None:
+            defect_coords = structure_analyzer.defect_center_coord
+        lattice = calc_results.structure.lattice
+        sites, rel_coords = [], []
+
+        excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
+
+        for d, p in structure_analyzer.atom_mapping.items():
+            if d not in excluded_indices:
+                specie = str(calc_results.structure[d].specie)
+                frac_coords = calc_results.structure[d].frac_coords
+                distance, _ = lattice.get_distance_and_image(defect_coords, frac_coords)
+                pot = calc_results.potentials[d] - perfect_calc_results.potentials[p]
+                sites.append(PotentialSite(specie, distance, pot, None))
+                coord = calc_results.structure[d].frac_coords
+                rel_coords.append([x - y for x, y in zip(coord, defect_coords)])
+
+        lattice = calc_results.structure.lattice
+        ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
+        point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
+
+        if defect_region_radius is None:
+            defect_region_radius = calc_max_sphere_radius(lattice.matrix)
+
+        for site, rel_coord in zip(sites, rel_coords):
+            if site.distance > defect_region_radius:
+                if charge == 0:
+                    site.pc_potential = 0
+                else:
+                    site.pc_potential = ewald.atomic_site_potential(rel_coord) * charge * unit_conversion
+
+        return ExtendedFnvCorrection(
+            charge=charge,
+            point_charge_correction=point_charge_correction * unit_conversion,
+            defect_region_radius=defect_region_radius,
+            sites=sites,
+            defect_coords=tuple(defect_coords),
+        )
 
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
     if hasattr(defect_entry, "calculation_metadata"):
@@ -399,7 +518,7 @@ def get_kumagai_correction(
             defect_entry, "bulk_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
         )
 
-    defect_supercell = defect_entry.sc_entry.structure.copy()
+    defect_supercell = _get_defect_supercell(defect_entry).copy()
     defect_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     defect_calc_results_for_eFNV = CalcResults(
         structure=defect_supercell,
@@ -408,8 +527,20 @@ def get_kumagai_correction(
         potentials=defect_site_potentials,
     )
 
-    bulk_supercell = defect_entry.bulk_entry.structure.copy()
+    bulk_supercell = _get_bulk_supercell(defect_entry).copy()
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
+    if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
+        # check if the difference is tolerable (< 0.01 Å)
+        if np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
+            # scale bulk lattice to match defect lattice:
+            bulk_supercell.scale_lattice(defect_supercell.lattice.volume)
+        else:
+            raise ValueError(
+                f"Bulk and defect supercells have different lattices, and so the eFNV (Kumagai) "
+                f"correction cannot be computed!\nBulk lattice:\n{bulk_supercell.lattice}\nDefect "
+                f"lattice:\n{defect_supercell.lattice}"
+            )
+
     bulk_calc_results_for_eFNV = CalcResults(
         structure=bulk_supercell,
         energy=np.inf,
@@ -417,12 +548,16 @@ def get_kumagai_correction(
         potentials=bulk_site_potentials,
     )
 
-    efnv_correction = make_efnv_correction(
+    efnv_correction = doped_make_efnv_correction(
         charge=defect_entry.charge_state,
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=defect_entry.sc_defect_frac_coords,  # _relaxed_ defect coords (except for vacancies)
+        defect_coords=_get_defect_supercell_bulk_site_coords(
+            defect_entry
+        ),  # _relaxed_ defect coords (except for vacancies)
+        defect_region_radius=defect_region_radius,
+        excluded_indices=excluded_indices,
         **kwargs,
     )
     kumagai_correction_result = CorrectionResult(

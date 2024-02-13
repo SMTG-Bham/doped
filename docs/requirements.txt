@@ -1,13 +1,15 @@
 # required dependencies:
+filelock
 tabulate
-matplotlib
-numpy>=1.21.0
-pymatgen>=2022.8.23
-pymatgen-analysis-defects
+matplotlib>=3.5.2
+numpy>=1.21  # needed for numpy.typing.NDArray
+pymatgen>=2023.11.12  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
+pymatgen-analysis-defects>=2023.8.22
 monty
-shakenbreak
+shakenbreak>=3.3.0
 packaging
-pandas
+pandas>=1.1.0
+pydefect
 
 # optional dependencies:
 py-sc-fermi

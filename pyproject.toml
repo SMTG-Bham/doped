@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.2.0"
+version = "2.3.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -16,16 +16,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
     "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.2.0",
+    "shakenbreak>=3.3.0",
     "pandas",
     "pydefect",  # for Kumagai (eFNV) correction
+    "filelock",
 ]
 
 [project.urls]
@@ -52,7 +53,6 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 [tool.setuptools.package-data]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
-"doped.utils.legacy_pmg" = ["*.rst"]
 
 [tool.black]
 line-length = 107
@@ -97,6 +97,7 @@ ignore = [
   "D212",    # Multi-line docstring summary should start at the first line
   "PLR2004", # Magic number
   "PLR",     # pylint refactor
+  "W605",    # Invalid escape sequence
 ]
 
 [tool.ruff.per-file-ignores]
