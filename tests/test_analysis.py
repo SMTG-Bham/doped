@@ -52,9 +52,6 @@ def if_present_rm(path):
 
 
 # TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
-# TODO: When adding full parsing tests (e.g. with full CdTe thermo or similar), add quick loop-over test of
-#  the symmetry determination functions -> Use saved CdTe defect dict, and apply get_name function to
-#  these defect entries
 
 
 class DefectsParsingTestCase(unittest.TestCase):
@@ -422,8 +419,15 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # correction warning
 
+        assert any(
+            "Defects: ['v_Cd_-2', 'v_Cd_-1'] each encountered the same warning:" in str(warn.message)
+            for warn in w
+        ) or any(
+            "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:" in str(warn.message)
+            for warn in w
+        )
+
         for i in [
-            "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
             "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
             "_anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk folder.",
             "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
@@ -434,14 +438,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
             f"subfolders)",
         ]:
-            print(i)
             assert any(i in str(warn.message) for warn in w)
 
         assert any(
             all(
                 i in str(warn.message)
                 for i in [
-                    "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
                     "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
                     "compute the _anisotropic_ Kumagai eFNV charge correction) are missing from the "
                     "defect or bulk folder.",
