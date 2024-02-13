@@ -1,5 +1,5 @@
 """
-Tests for the `doped.utils.wyckoff` module.
+Tests for the `doped.utils.symmetry` module.
 """
 import os
 import unittest
@@ -8,7 +8,7 @@ import numpy as np
 from pymatgen.core.structure import Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.utils.wyckoff import get_wyckoff_dict_from_sgn, get_wyckoff_label_and_equiv_coord_list
+from doped.utils.symmetry import get_wyckoff_dict_from_sgn, get_wyckoff_label_and_equiv_coord_list
 
 
 class WyckoffTest(unittest.TestCase):

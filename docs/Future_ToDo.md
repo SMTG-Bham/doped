@@ -26,8 +26,17 @@
   `Defect`. Is this useful info?
 - Ideally, one should be able to input just defect objects somewhere -> an alternative input to `DefectsGenerator`?
 Depends where we want supercell generation to happen. Can input to both `DefectsGenerator` or `DefectsSet` (but it'll just send it to `DefectsGenerator` with `kwargs`).
+- **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
+  plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Needs to be at
+  this point because we need relaxed structures. Sensible naming scheme. Would be useful as this is a
+  workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
+  scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 
 ## Post-Processing
+- Symmetry determination in arbitrary (periodicity-breaking) supercells. Should be doable, with defect-expander (stenciling) type code to regenerate the structure in an appropriate larger non-periodicity-breaking cell.
+- For complex defects, auto symmetry determination is future work, and should be done manually (note in docs and give
+  warning when parsing).
+  - Previously had ideas (in `Dev_ToDo.md`) about split-interstitials/vacancies, but think these are now handled fine with current tools.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on
   formation energy diagrams. Main things for this are:
   - Input file generation
@@ -36,3 +45,38 @@ Depends where we want supercell generation to happen. Can input to both `Defects
     to get the maximum position. (Note in docs that the user can do this if they want it).
   - General plotting (in transition level diagrams) and analysis (e.g. our site displacement/strain
     functions).
+- Complex defect / defect cluster automatic handling. Means we can natively handle complex defects, and
+  also important for e.g. `ShakeNBreak` parsing, as in many cases we're ending up with what are
+  effectively defect clusters rather than point defects (e.g. V_Sb^+1 actually Se_Sb^-1 + V_Se^+2 in
+  Xinwei's https://doi.org/10.1103/PhysRevB.108.134102), so it would be really nice to have this automatic parsing
+  built-in, and can either use in SnB or recommend SnB users to check with this.
+  - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
+    more common than thought.
+  - Kumagai's atom-pairing defect analysis code for identifying 'non-trivial' defects is essentially
+    this, could be used here?
+  - Could do by using the site displacements, with atoms moving outside their vdW radius being flagged
+    as (possibly) defective? And see if their stoichiometric sum matches the expected point defect
+    stoichiometry. Expected to match one of these transformation motifs:
+    - Substitutions:
+      - `A_B` -> `A_C` + `C_B`
+      - `A_B` -> `A_i` + `V_B`
+      - `A_B` -> `A_i` + `C_B` + `V_C`
+      - `A_B` -> `C_i` + `A_B` + `V_C` (same defect but inducing a neighbouring Frenkel pair)
+    - Vacancies:
+      - `V_B` -> `A_B` + `V_A`
+      - `A_B` -> 2`V_A` + `A_i` (split-vacancy)
+      - `V_B` -> `A_i` + `V_B` + `V_A` (same defect but inducing a neighbouring Frenkel pair)
+    - Interstitials:
+      - `A_i` -> `A_B` + `B_i`
+      - `A_i` -> 2`A_i` + `V_A` (split-interstitial)
+      - `A_i` -> `B_i` + `A_i` + `V_B` (same defect but inducing a neighbouring Frenkel pair)
+  - How does this change the thermodynamics (i.e. entropic cost to clustering)?
+  - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
+    Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
+    colour just different linestyles? (or something similar)
+- `doped` functions should be equally applicable to the base `pymatgen` `Defect`/`DefectEntry` objects (as well as the corresponding `doped` subclasses) as much as possible. Can we add some quick tests for this? 
+
+## Docs
+- Add LDOS plotting, big selling point for defects and disorder!
+- Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
+

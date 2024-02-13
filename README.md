@@ -16,7 +16,7 @@ Tutorials showing the code functionality and usage are provided on the [docs](ht
 ### Example Outputs:
 Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
 
-<a href="https://doped.readthedocs.io/en/latest/dope_chemical_potentials.html#analysing-and-visualising-the-chemical-potential-limits"><img align="left" width="365" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_chempot_plotting.png"></a> <a href="https://doped.readthedocs.io/en/latest/dope_parsing_example.html#defect-formation-energy-transition-level-diagrams"><img align="right" width="385" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_TLD_plot.png"></a>
+<a href="https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits"><img align="left" width="365" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_chempot_plotting.png"></a> <a href="https://doped.readthedocs.io/en/latest/dope_parsing_example.html#defect-formation-energy-transition-level-diagrams"><img align="right" width="385" src="https://raw.githubusercontent.com/SMTG-Bham/doped/master/docs/doped_TLD_plot.png"></a>
 <br><br><br><br><br><br><br><br><br><br><br>
 
 
@@ -37,7 +37,7 @@ See the docs [Installation](https://doped.readthedocs.io/en/latest/Installation.
 
 
 ## `ShakeNBreak`
-As shown in the example notebook, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://arxiv.org/abs/2207.09862), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-Bham/doped/blob/master/dope_workflow_example.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
+As shown in the example notebook, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-Bham/doped/blob/master/dope_workflow_example.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
 
 Summary GIF:
 ![ShakeNBreak Summary](https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif)
@@ -63,8 +63,12 @@ and morphed over time as more and more functionality was added. After breaking c
 entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
 
-## Studies using `doped` (so far)
-
+## Studies using `doped`, so far
+- X. Wang et al. [_arXiv_](https://arxiv.org/abs/2402.04434) 2024
+- I. Mosquera-Lois et al. [_arXiv_](
+https://doi.org/10.48550/arXiv.2401.12127) 2024
+- W. Dou et al. [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-hm6vh) 2024
+- K. Li et al. [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23) 2023
 - X. Wang et al. [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
 - Y. Kumagai et al [_PRX Energy_](http://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.3c05204) 2023

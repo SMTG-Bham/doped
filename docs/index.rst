@@ -1,5 +1,5 @@
 doped
-=========
+=====
 
 .. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-Bham/doped/actions
@@ -100,9 +100,13 @@ The `docs`_ website setup was templated from the ``ShakeNBreak`` docs set up by 
 morphed over time as more and more functionality was added. After breaking changes in ``pymatgen``, the
 package was rewritten to operate using the new ``pymatgen-analysis-defects`` package.
 
-Studies using ``doped``
-========================
+Studies using ``doped``, so far
+===============================
 
+- X\. Wang et al. `arXiv <https://arxiv.org/abs/2402.04434>`_ 2024
+- I\. Mosquera-Lois et al. `arXiv <https://doi.org/10.48550/arXiv.2401.12127>`_ 2024
+- W\. Dou et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_ 2024
+- K\. Li et al. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
 - X\. Wang et al. `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
 - Y\. Kumagai et al. `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos `Journal of Physical Chemistry C`_ 2023
@@ -115,11 +119,11 @@ Studies using ``doped``
 - I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon `npj Computational Materials`_ 2023
 - Y\. T. Huang & S. R. Kavanagh et al. `Nature Communications`_ 2022
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt `Faraday Discussions`_ 2022
+- Y-S\. Choi et al. `ACS Appl. Energy Mater. <https://doi.org/10.1021/acsaem.2c03466>`__ 2022
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh `ACS Energy Letters <https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380>`__ 2021
 - C\. J. Krajewska et al. `Chemical Science`_ 2021
 
-.. CSTX JPCC (for setting up phase diagram calcs)
-.. Kumagai PRX Energy (for defect generation)
+.. Xinwei early 2024 paper
 .. Se
 .. Oba book
 .. BiOI
