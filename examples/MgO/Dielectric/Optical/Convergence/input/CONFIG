@@ -1,0 +1,12 @@
+# vaspup2.0 - Seán Kavanagh (sean.kavanagh.19@ucl.ac.uk), 2023
+# This is config for automating NBANDS convergence.
+# (For LOPTICS calculation)(High-frequency dielectric constant)
+
+conv_nbands="1"		# 1 for ON, 0 for OFF
+nbands_start="8"	# Value to start NBANDS calcs from
+# Need to include NBANDS flag in INCAR
+nbands_end="208"		# Value to end NBANDS calcs on
+nbands_step="20"		# NBANDS increment
+
+run_vasp="1"		# Run VASP after generating the files? (1 for ON, 0 for OFF)
+#name="Optical" # Optional name to append to each jobname (remove "#")

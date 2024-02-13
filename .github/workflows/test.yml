@@ -35,13 +35,17 @@ jobs:
 
       - name: Test
         run:  |
-          pytest --mpl -vv tests  # test everything
+          pytest -vv tests  # test everything
+
+      - name: Plotting Tests
+        run: |
+          pytest --mpl -m "mpl_image_compare" tests  # test everything
           
       - name: Generate GH Actions test plots
         if: always()  # always generate the plots, even if the tests fail
         run:  |
           # Generate the test plots in case there were any failures:
-          pytest --mpl-generate-path=tests/remote_baseline -k "plot" tests
+          pytest --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" tests
 
       # Upload test plots
       - name: Archive test plots

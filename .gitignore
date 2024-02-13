@@ -31,3 +31,21 @@ local_doped_testing/
 # Sphinx documentation
 docs/_build/
 docs/jupyter_execute/
+
+# VSCode
+.vscode/settings.json
+
+# MgO example
+Test_disp.ipynb
+examples/MgO/Defects/parse.sh
+examples/MgO/Defects/*/vasp_std/KPOINTS
+examples/MgO/Defects/*/vasp_std/INCAR
+examples/MgO/Defects/*/vasp_std/*.cmdx
+examples/MgO/Defects/*/vasp_std/POSCAR
+examples/MgO/Defects/*/vasp_std/CONTCAR
+examples/MgO/SnB/*/*/KPOINTS
+examples/MgO/SnB/*/*/INCAR
+examples/MgO/SnB/*/*/*.cmdx
+examples/MgO/SnB/*.sh
+examples/MgO/Bulk_relax/*INCAR
+examples/MgO/Bulk_relax/*KPOINTS

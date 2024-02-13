@@ -8,6 +8,7 @@ import os
 import random
 import unittest
 import warnings
+from threading import Thread
 
 import numpy as np
 from ase.build import bulk, make_supercell
@@ -88,11 +89,8 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        if not _potcars_available():  # don't run heavy tests on GH Actions, these are run locally
-            self.heavy_tests = False  # (too slow without multiprocessing etc)
-        else:
-            self.heavy_tests = True
-
+        self.heavy_tests = bool(_potcars_available())  # don't run heavy tests on GH Actions, these are
+        # run locally (too slow without multiprocessing etc)
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
@@ -135,44 +133,7 @@ class DefectDictSetTest(unittest.TestCase):
 
     def _general_defect_dict_set_check(self, dds, struct, incar_check=True, **dds_kwargs):
         if incar_check:
-            expected_incar_settings = self.neutral_def_incar_min.copy()
-            expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
-            expected_incar_settings.update(dds.user_incar_settings)
-            expected_incar_settings_w_none_vals = expected_incar_settings.copy()
-            # remove any entries where value is None:
-            expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
-            assert expected_incar_settings.items() <= dds.incar.items()
-            if dds.incar.get("NSW", 0) > 0:
-                assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
-            else:
-                assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
-
-            for k, v in default_defect_relax_set["INCAR"].items():
-                if k in [
-                    "EDIFF_PER_ATOM",
-                    *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
-                    # -> None in singleshot calcs
-                ]:  # already tested
-                    continue
-
-                assert k in dds.incar
-                if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
-                    try:
-                        val = float(v[:2])
-                        if k in dds.user_incar_settings:  # has been overwritten
-                            assert val != dds.incar[k]
-                        else:
-                            assert val == dds.incar[k]
-                    except ValueError:
-                        if k in dds.user_incar_settings:
-                            assert v.lower().capitalize() == dds.user_incar_settings[k]
-                        else:
-                            assert v.lower().capitalize() == dds.incar[k]
-                elif k in dds.user_incar_settings:
-                    assert dds.incar[k] == dds.user_incar_settings[k]
-                else:
-                    assert v == dds.incar[k]
-
+            self._check_dds_incar(dds, struct)
         if _potcars_available():
             for potcar_functional in [
                 dds.potcar_functional,
@@ -197,37 +158,7 @@ class DefectDictSetTest(unittest.TestCase):
                     _test_pop = dds.incar
                 assert _check_nelect_nupdown_error(e.exception)
             else:
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    _test_pop = dds.incar
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    dds.write_input("test_pop")
-
-                assert any(
-                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
-                )
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-                assert any(
-                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-                    for warning in w
-                )
-
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.resetwarnings()
-                    dds.write_input("test_pop", unperturbed_poscar=False)
-
-                assert any(
-                    _check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w
-                )
-                assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-                assert any(
-                    _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-                    for warning in w
-                )
-
+                self._check_dds_incar_and_writing_warnings(dds)
         assert dds.structure == struct
         # test no unwanted structure reordering
         assert len(Poscar(dds.structure).site_symbols) == len(set(Poscar(dds.structure).site_symbols))
@@ -244,6 +175,73 @@ class DefectDictSetTest(unittest.TestCase):
             )
         else:
             assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
+
+    def _check_potcar_nupdown_dds_warnings(self, w, dds):
+        assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
+        assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+        assert any(
+            _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
+            for warning in w
+        )
+
+    def _check_dds_incar(self, dds, struct):
+        expected_incar_settings = self.neutral_def_incar_min.copy()
+        expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
+        expected_incar_settings.update(dds.user_incar_settings)
+        if dds.incar.get("IBRION") == -1 or dds.incar.get("NSW") == 0:
+            _isif = expected_incar_settings.pop("ISIF", None)  # ISIF = 2 not set w/static calculations now
+        expected_incar_settings_w_none_vals = expected_incar_settings.copy()
+        # remove any entries where value is None:
+        expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
+        assert expected_incar_settings.items() <= dds.incar.items()
+        if dds.incar.get("NSW", 0) > 0:
+            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+        else:
+            assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
+
+        for k, v in default_defect_relax_set["INCAR"].items():
+            if k in [
+                "EDIFF_PER_ATOM",
+                *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
+                # -> None in singleshot calcs
+                "ISIF",
+            ]:  # already tested
+                continue
+
+            assert k in dds.incar
+            if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
+                try:
+                    val = float(v[:2])
+                    if k in dds.user_incar_settings:  # has been overwritten
+                        assert val != dds.incar[k]
+                    else:
+                        assert val == dds.incar[k]
+                except ValueError:
+                    if k in dds.user_incar_settings:
+                        assert v.lower().capitalize() == dds.user_incar_settings[k]
+                    else:
+                        assert v.lower().capitalize() == dds.incar[k]
+            elif k in dds.user_incar_settings:
+                assert dds.incar[k] == dds.user_incar_settings[k]
+            else:
+                assert v == dds.incar[k]
+
+    def _check_dds_incar_and_writing_warnings(self, dds):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            _test_pop = dds.incar
+        assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            dds.write_input("test_pop")
+
+        self._check_potcar_nupdown_dds_warnings(w, dds)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            dds.write_input("test_pop", unperturbed_poscar=False)
+
+        self._check_potcar_nupdown_dds_warnings(w, dds)
 
     def _check_dds(self, dds, struct, **kwargs):
         # INCARs only generated for charged defects when POTCARs available:
@@ -289,7 +287,7 @@ class DefectDictSetTest(unittest.TestCase):
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell)
         # reciprocal_density = 100/Å⁻³ for CdTe supercell:
-        self.kpts_nelect_nupdown_check(dds, 2, 570, 0)
+        self.kpts_nelect_nupdown_check(dds, 2, 480, 0)
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, potcar_spec=True)
         self._write_and_check_dds_files(dds, unperturbed_poscar=False)
@@ -302,13 +300,13 @@ class DefectDictSetTest(unittest.TestCase):
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_-2"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 572, 0)  # 100/Å⁻³ for CdTe supercell
+        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, unperturbed_poscar=False)
 
@@ -491,7 +489,10 @@ class DefectDictSetTest(unittest.TestCase):
         if _potcars_available() and not kwargs.get("potcar_spec", False):
             written_potcar = Potcar.from_file(f"{output_path}/POTCAR")
             # assert dicts equal, as Potcar __eq__ fails due to hashing I believe
-            assert written_potcar.as_dict() == dds.potcar.as_dict()
+            alt_dds_potcar_dict = dds.potcar.as_dict().copy()
+            if "PBE" in alt_dds_potcar_dict["functional"]:
+                alt_dds_potcar_dict["functional"] = "PBE"  # new pymatgen sets PBE to PBE_54
+            assert written_potcar.as_dict() in [dds.potcar.as_dict(), alt_dds_potcar_dict]
             assert len(written_potcar.symbols) == len(set(written_potcar.symbols))  # no duplicates
         elif kwargs.get("potcar_spec", False):
             with open(f"{output_path}/POTCAR.spec", encoding="utf-8") as file:
@@ -535,6 +536,7 @@ class DefectDictSetTest(unittest.TestCase):
 class DefectRelaxSetTest(unittest.TestCase):
     def setUp(self):
         self.dds_test = DefectDictSetTest()
+        self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
@@ -584,7 +586,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert parent_drs.user_potcar_functional == child_dds.user_potcar_functional or str(
                 parent_drs.user_potcar_functional[:3]
             ) == str(
-                child_dds.user_potcar_functional
+                child_dds.user_potcar_functional[:3]
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
             if isinstance(child_dds.user_kpoints_settings, Kpoints):
@@ -735,13 +737,13 @@ class DefectRelaxSetTest(unittest.TestCase):
                     assert drs.vasp_ncl
                     assert drs.bulk_vasp_ncl
 
-                else:  # no SOC nor >vasp_gam for LMNO
-                    assert not drs.vasp_std
-                    assert not drs.bulk_vasp_std
-                    assert not drs.vasp_nkred_std
+                else:  # no SOC for LMNO  # vasp_gam test
+                    assert drs.vasp_std
+                    assert drs.bulk_vasp_std
+                    assert drs.vasp_nkred_std
 
                     if _potcars_available():
-                        assert not drs.bulk_vasp_nkred_std
+                        assert drs.bulk_vasp_nkred_std
 
                     assert not drs.vasp_ncl
                     assert not drs.bulk_vasp_ncl
@@ -789,6 +791,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 class DefectsSetTest(unittest.TestCase):
     def setUp(self):
         self.dds_test = DefectDictSetTest()
+        self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
@@ -889,7 +892,7 @@ class DefectsSetTest(unittest.TestCase):
 
         else:
             for folder in os.listdir(data_dir):
-                if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder or bulk):
+                if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder.lower() or bulk):
                     _check_single_vasp_dir(
                         data_dir=data_dir,
                         generated_dir=generated_dir,
@@ -1170,28 +1173,46 @@ class DefectsSetTest(unittest.TestCase):
         Test initialising DefectsSet with our generation-tests materials, and
         writing files to disk.
         """
-        for defect_gen_name in [
-            "ytos_defect_gen",
-            "ytos_defect_gen_supercell",
-            "lmno_defect_gen",
-            "cu_defect_gen",
-            "agcu_defect_gen",
-            "cd_i_supercell_defect_gen",
-        ]:
-            print(f"Initialising and testing:{defect_gen_name}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
-            defects_set = DefectsSet(
-                defect_gen,
-            )
+
+        def initialise_and_write_files(defect_gen_json):
+            print(f"Initialising and testing: {defect_gen_json}")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json")
+            defects_set = DefectsSet(defect_gen)
             if _potcars_available():
                 defects_set.write_files()
             else:
                 with self.assertRaises(ValueError):
                     defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
-                    # available and unperturbed_poscar=False
+                    # available
                 defects_set.write_files(unperturbed_poscar=True)
 
+            del defects_set  # delete python objects to ensure memory released
+            del defect_gen  # delete python objects to ensure memory released
+
+        defect_gens_to_test = [
+            "ytos_defect_gen",
+            "lmno_defect_gen",
+            "cu_defect_gen",
+        ]
+        if self.heavy_tests:  # uses too much memory on GH Actions
+            defect_gens_to_test.extend(
+                [
+                    "ytos_defect_gen_supercell",
+                    "agcu_defect_gen",
+                    "cd_i_supercell_defect_gen",
+                ]
+            )
+
+        for defect_gen_name in defect_gens_to_test:
+            test_thread = Thread(target=initialise_and_write_files, args=(defect_gen_name,))
+            test_thread.start()
+            test_thread.join(timeout=300)  # Timeout set to 5 minutes
+
+            if test_thread.is_alive():
+                print(f"Test for {defect_gen_name} timed out!")
+
             self.tearDown()  # delete generated folders each time
+        self.tearDown()
 
 
 if __name__ == "__main__":

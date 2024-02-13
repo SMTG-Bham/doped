@@ -68,7 +68,7 @@ class ChemPotsTestCase(unittest.TestCase):
         chempot_df = stable_cpa.calculate_chempots()
         assert list(chempot_df["O"])[0] == 0
         # check if it's no longer Element
-        assert type(list(stable_cpa.intrinsic_chem_limits["elemental_refs"].keys())[0]) == str
+        assert type(list(stable_cpa.intrinsic_chempots["elemental_refs"].keys())[0]) == str
 
         self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.unstable_system)
         self.unstable_cpa.from_csv(self.csv_path)
@@ -83,17 +83,17 @@ class ChemPotsTestCase(unittest.TestCase):
         assert list(chempot_df["La_limiting_phase"])[0] == "La2Zr2O7"
         assert np.isclose(list(chempot_df["La"])[0], -9.46298748)
 
-    def test_cpa_chem_limits(self):
-        # test accessing cpa.chem_limits without previously calling cpa.calculate_chempots()
+    def test_ext_cpa_chempots(self):
+        # test accessing cpa.chempots without previously calling cpa.calculate_chempots()
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        _compare_chempot_dicts(stable_cpa.chem_limits, self.parsed_chempots)
+        _compare_chempot_dicts(stable_cpa.chempots, self.parsed_chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
+        assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
     def test_sort_by(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -277,7 +277,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
 
         # check chem limits the same:
-        _compare_chempot_dicts(stable_cpa.chem_limits, reloaded_cpa.chem_limits)
+        _compare_chempot_dicts(stable_cpa.chempots, reloaded_cpa.chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
@@ -305,13 +305,13 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_cpa.from_csv("competing_phases.csv")
 
         # check chem limits the same:
-        _compare_chempot_dicts(reloaded_cpa.chem_limits, stable_cpa.chem_limits)
+        _compare_chempot_dicts(reloaded_cpa.chempots, stable_cpa.chempots)
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
-        assert self.ext_cpa.chem_limits["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
+        assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
         # test correct sorting:
         self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True, sort_by_energy=True)
@@ -368,7 +368,7 @@ class ChemPotsTestCase(unittest.TestCase):
             assert trimmed_df.equals(reloaded_cpa.formation_energy_df)
 
             # check chem limits the same:
-            _compare_chempot_dicts(cpa.chem_limits, reloaded_cpa.chem_limits)
+            _compare_chempot_dicts(cpa.chempots, reloaded_cpa.chempots)
 
         # test ValueError without energy_per_fu/energy_per_atom column:
         too_minimal_formation_energy_df = formation_energy_df[["formula"]]
@@ -511,6 +511,27 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         assert "Zr4O" not in [e.name for e in self.cp.entries]
 
+    def test_init_ZnSe(self):
+        """
+        As noted by Savya Aggarwal, the legacy MP API code didn't return ZnSe2
+        as a competing phase despite being on the hull and bordering ZnSe,
+        because the legacy MP API database wrongly had the data['e_above_hull']
+        value as 0.147 eV/atom (when it should be 0 eV/atom).
+        https://legacy.materialsproject.org/materials/mp-1102515/ https://next-
+        gen.materialsproject.org/materials/mp-1102515?formula=ZnSe2.
+
+        Updated code which re-calculates the energy above hull avoids this
+        issue.
+        """
+        cp = chemical_potentials.CompetingPhases("ZnSe", api_key=self.api_key)
+        assert any(e.name == "ZnSe2" for e in cp.entries)
+        assert len(cp.entries) == 14  # ZnSe2 now present
+        znse2_entry = [e for e in cp.entries if e.name == "ZnSe2"][0]
+        assert znse2_entry.data["e_above_hull"] == 0
+        assert not znse2_entry.data["molecule"]
+        assert np.isclose(znse2_entry.data["energy_per_atom"], -3.080017)
+        assert np.isclose(znse2_entry.data["energy"], -3.080017 * 12)
+
     def test_init_full_phase_diagram(self):
         cp = chemical_potentials.CompetingPhases(
             "ZrO2", e_above_hull=0.03, api_key=self.api_key, full_phase_diagram=True
@@ -600,7 +621,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.metals[0].data["band_gap"] == 0
         assert not self.cp.nonmetals[0].data["molecule"]
         # this shouldn't exist - don't need to convergence test for molecules
-        assert not Path("competing_phases/O2_EaH_0").is_dir()
+        assert not Path("competing_phases/O2_EaH_0.0").is_dir()
 
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
@@ -628,7 +649,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.molecules[0].data["molecule"]
         assert not self.cp.nonmetals[0].data["molecule"]
 
-        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
+        path1 = "competing_phases/ZrO2_EaH_0.0/vasp_std/"
         assert Path(path1).is_dir()
         with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -643,7 +664,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        path2 = "competing_phases/O2_EaH_0/vasp_std"
+        path2 = "competing_phases/O2_EaH_0.0/vasp_std"
         assert Path(path2).is_dir()
         with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()

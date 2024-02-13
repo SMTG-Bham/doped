@@ -22,13 +22,12 @@ from pymatgen.analysis.defects.generators import (
     VacancyGenerator,
     VoronoiInterstitialGenerator,
 )
-from pymatgen.analysis.defects.supercells import get_sc_fromstruct
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.transformations.advanced_transformations import _proj
+from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -41,21 +40,7 @@ from doped.core import (
     _guess_and_set_struct_oxi_states,
     doped_defect_from_pmg_defect,
 )
-from doped.utils.wyckoff import (
-    _custom_round,
-    _frac_coords_sort_func,
-    _get_equiv_frac_coords_in_primitive,
-    _get_sga,
-    _get_supercell_matrix_and_possibly_rotate_prim,
-    _get_symm_dataset_of_struc_with_all_equiv_sites,
-    _round_floats,
-    _vectorized_custom_round,
-    get_BCS_conventional_structure,
-    get_conv_cell_site,
-    get_primitive_structure,
-    get_wyckoff,
-    get_wyckoff_label_and_equiv_coord_list,
-)
+from doped.utils import parsing, supercells, symmetry
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -105,9 +90,7 @@ def get_defect_entry_from_defect(
 
     # Dummy species (used to keep track of the defect coords in the supercell)
     # Find its fractional coordinates & remove it from the supercell
-    dummy_site = [
-        site for site in defect_entry_structure if site.species.elements[0].symbol == dummy_species.symbol
-    ][0]
+    dummy_site = [site for site in defect_entry_structure if site.specie.symbol == dummy_species.symbol][0]
     sc_defect_frac_coords = dummy_site.frac_coords
     defect_entry_structure.remove(dummy_site)
 
@@ -168,16 +151,8 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     if isinstance(defect_entry_or_defect, (DefectEntry, thermo.DefectEntry)):
         defect = defect_entry_or_defect.defect
         # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
-        defect_supercell_site = (
-            defect_entry_or_defect.defect_supercell_site
-            if hasattr(defect_entry_or_defect, "defect_supercell_site")
-            else PeriodicSite(
-                "X",
-                defect_entry_or_defect.sc_defect_frac_coords,
-                defect_entry_or_defect.sc_entry.structure.lattice,
-            )
-        )
-        defect_supercell = defect_entry_or_defect.sc_entry.structure
+        defect_supercell_site = parsing._get_defect_supercell_site(defect_entry_or_defect)
+        defect_supercell = parsing._get_defect_supercell(defect_entry_or_defect)
 
     elif isinstance(defect_entry_or_defect, (Defect, core.Defect)):
         if isinstance(defect_entry_or_defect, core.Defect):
@@ -218,7 +193,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (_custom_round(x[0]), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0]), element_list.index(x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -232,7 +207,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
 
     min_distance, closest_site = site_distances[n - 1]
 
-    return f"{closest_site}{_custom_round(min_distance, 2):.2f}"
+    return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
 
 def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, symprec=0.01):
@@ -255,68 +230,9 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
     Returns:
         str: Defect name.
     """
-    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
-    )
-    spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
-    if spglib_point_group_symbol is not None:
-        point_group_symbol = spglib_point_group_symbol
-    else:  # symm_ops approach failed, just use diagonal defect supercell approach:
-        defect_diagonal_supercell = defect.get_supercell_structure(
-            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species="X",
-        )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
-        # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = herm2sch(sga.get_point_group_symbol())
+    point_group_symbol = symmetry.point_symmetry_from_defect(defect, symm_ops=symm_ops, symprec=symprec)
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
-
-
-def _check_unrelaxed_defect_symmetry_determination(
-    defect_entry: DefectEntry,
-    symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
-    verbose: bool = False,
-):
-    if defect_entry.defect_supercell_site is None:
-        raise AttributeError(
-            "`defect_entry.defect_supercell_site` not defined! Needed to check defect supercell "
-            "periodicity (for symmetry determination)"
-        )
-    unrelaxed_defect_structure = defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
-    if unrelaxed_defect_structure is not None:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords,
-            unrelaxed_defect_structure,
-            symm_ops=symm_ops,
-            symprec=symprec,
-        )
-        unrelaxed_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
-
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_entry.defect_supercell_site.frac_coords,
-            defect_entry.bulk_supercell,
-            symm_ops=symm_ops,
-            symprec=symprec,
-        )
-        bulk_spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
-
-        if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
-            if verbose:
-                warnings.warn(
-                    "`unrelaxed` is set to False (i.e. get _relaxed_ defect symmetry), but doped has "
-                    "detected that the supercell is a non-scalar matrix expansion which is breaking the "
-                    "cell periodicity, likely preventing the correct point group symmetry from being "
-                    "determined. You should probably set unrelaxed=True to instead get the "
-                    "unrelaxed/initial point group symmetry (and manually or otherwise determine the "
-                    "relaxed point symmetry if desired."
-                )
-            return False
-
-        return True
-
-    return False  # return False if symmetry couldn't be checked
 
 
 def get_defect_name_from_entry(
@@ -324,14 +240,14 @@ def get_defect_name_from_entry(
     element_list: Optional[list] = None,
     symm_ops: Optional[list] = None,
     symprec: Optional[float] = None,
-    unrelaxed: bool = False,
+    relaxed: bool = True,
 ):
     r"""
     Get the doped/SnB defect name from a DefectEntry object.
 
-    Note: If unrelaxed=False (default), then this tries to use the
+    Note: If relaxed = True (default), then this tries to use the
     defect_entry.defect_supercell to determine the site symmetry. This will
-    thus give the _relaxed_ defect point symmetry if this is a DefectEntry
+    thus give the `relaxed` defect point symmetry if this is a DefectEntry
     created from parsed defect calculations. However, it should be noted
     that this is not guaranteed to work in all cases; namely for non-diagonal
     supercell expansions, or sometimes for non-scalar supercell expansion
@@ -339,135 +255,47 @@ def get_defect_name_from_entry(
     which can mess up the periodicity of the cell. doped tries to automatically
     check if this is the case, and will warn you if so.
 
-    This can also be checked by using this function on your doped _generated_ defects:
+    This can also be checked by using this function on your doped `generated` defects:
 
-    from doped.generation import get_defect_name_from_entry
-    for defect_name, defect_entry in defect_gen.items():
-        print(defect_name, get_defect_name_from_entry(defect_entry, unrelaxed=True),
-              get_defect_name_from_entry(defect_entry), "\n")
+    .. code-block:: python
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on your
-    parsed _relaxed_ DefectEntry objects should correctly determine the final relaxed
+    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
     defect symmetry (and closest site info) - otherwise periodicity-breaking prevents this.
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object.
+        defect_entry (DefectEntry): ``DefectEntry`` object.
         element_list (list):
             Sorted list of elements in the host structure, so that
             closest_site_info returns deterministic results (in case two
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure, to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the defect_entry.bulk_supercell
+            structure (if relaxed=False) or defect_entry.defect_supercell (if
+            relaxed=True), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
             0.2 for relaxed (to account for residual structural noise). You may
             want to adjust for your system (e.g. if there are very slight
             octahedral distortions etc).
-        unrelaxed (bool):
-            If True, determines the site symmetry using the defect site _in the
-            unrelaxed bulk supercell_, otherwise uses the defect supercell to
-            determine the site symmetry (i.e. try determine the point symmetry
-            of a relaxed defect in the defect supercell). Default is False.
+        relaxed (bool):
+            If False, determines the site symmetry using the defect site `in the
+            unrelaxed bulk supercell`, otherwise tries to determine the point
+            symmetry of the relaxed defect in the defect supercell).
+            Default is True.
 
     Returns:
         str: Defect name.
     """
-    supercell = defect_entry.bulk_supercell if unrelaxed else defect_entry.defect_supercell
-    if symprec is None:
-        symprec = 0.01 if unrelaxed else 0.2  # relaxed structures likely have structural noise
-        # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very
-        # slight distortions present in the unrelaxed material).
-
-    # For unrelaxed=False, often only works for relaxed defect structures if it is a scalar matrix
-    # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
-    # Sometimes works even if not a scalar matrix for _low-symmetry_ systems (counter-intuitively),
-    # because then the breakdown in periodicity affects the defect site symmetry less. This can be
-    # checked by seeing if the site symmetry of the defect site in the unrelaxed structure is correctly
-    # guessed (in which case the supercell site symmetry is not messing up the symmetry detection),
-    # as shown in the docstrings. Here we test using the 'unrelaxed_defect_structure' in the DefectEntry
-    # calculation_metadata if present, which, if it gives the same result as unrelaxed=True, means that
-    # for this defect at least, there is no periodicity-breaking which is affecting the symmetry
-    # determination.
-    if not unrelaxed:
-        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata.get(
-            "unrelaxed_defect_structure"
-        ):
-            _matching = _check_unrelaxed_defect_symmetry_determination(
-                defect_entry, symm_ops=symm_ops, symprec=symprec, verbose=True
-            )
-        else:
-            warnings.warn(
-                "`unrelaxed` was set to False (i.e. get _relaxed_ defect symmetry), "
-                "but the `calculation_metadata` attribute is not set for `DefectEntry`, suggesting that "
-                "this DefectEntry was not parsed from calculations using doped. This means doped cannot "
-                "automatically check if the supercell shape is breaking the cell periodicity here or not "
-                "(see `get_defect_name_from_entry` docstring) - the point symmetry groups may not be "
-                "correct here!"
-            )
-
-    # TODO: Implement this as a function (to get symmetry and corresponding degeneracy) and show example
-    # in tutorials, but not automated because requires a bit of user sanity
-
-    _failed = False
-    if defect_entry.defect_supercell_site is not None:
-        try:
-            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                defect_entry.defect_supercell_site.frac_coords,
-                supercell,
-                symm_ops=symm_ops,
-                symprec=symprec,
-            )
-        except AttributeError:
-            _failed = True
-
-    if defect_entry.defect_supercell_site is None or _failed:
-        # possibly pymatgen DefectEntry object without defect_supercell_site set
-        if not unrelaxed:
-            warnings.warn(
-                "Symmetry determination failed with the standard approach (likely due to this being a "
-                "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
-                "group symmetry cannot be reliably determined."
-            )
-
-        return get_defect_name_from_defect(
-            defect_entry.defect,
-            element_list=element_list,
-            symm_ops=symm_ops,
-            symprec=symprec,
-        )
-
-    if unrelaxed:
-        # site_symmetry_symbols[-1] works better for unrelaxed defects (as sometimes with the equivalent
-        # sites population it can change the overall point group symbol (but site symmetry symbol is
-        # still correct))
-        spglib_point_group_symbol = herm2sch(symm_dataset["site_symmetry_symbols"][-1])
-
-    else:
-        # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
-        # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
-        # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
-        # possibility with the equivalent sites, as when unrelaxed=True)
-        spglib_point_group_symbol = herm2sch(symm_dataset["pointgroup"])
-
-    if spglib_point_group_symbol is not None:
-        point_group_symbol = spglib_point_group_symbol
-    else:  # symm_ops approach failed, just use diagonal defect supercell approach:
-        if not unrelaxed:
-            raise RuntimeError(
-                "Site symmetry could not be determined using the defect supercell, and so the relaxed "
-                "site symmetry cannot be determined (set unrelaxed=True to obtain the unrelaxed site "
-                "symmetry)."
-            )
-
-        defect_diagonal_supercell = defect_entry.defect.get_supercell_structure(
-            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species="X",
-        )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
-        # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-        sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
-        point_group_symbol = herm2sch(sga.get_point_group_symbol())
+    point_group_symbol = symmetry.point_symmetry_from_defect_entry(
+        defect_entry, symm_ops=symm_ops, symprec=symprec, relaxed=relaxed
+    )
 
     return (
         f"{defect_entry.defect.name}_{point_group_symbol}"
@@ -511,31 +339,33 @@ def _get_neutral_defect_entry(
     ) = conventional_structure
 
     try:
-        wyckoff_label, conv_cell_sites = get_wyckoff(
-            get_conv_cell_site(neutral_defect_entry).frac_coords,
+        wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
+            symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
             conventional_structure,
             symm_ops,
             equiv_sites=True,
         )
         conv_cell_coord_list = [
-            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.to_unit_cell().frac_coords), 1))
+            symmetry._vectorized_custom_round(
+                np.mod(symmetry._vectorized_custom_round(site.to_unit_cell().frac_coords), 1)
+            )
             for site in conv_cell_sites
         ]
 
     except Exception as e:  # (slightly) less efficient algebraic matching:
         try:
-            wyckoff_label, conv_cell_coord_list = get_wyckoff_label_and_equiv_coord_list(
+            wyckoff_label, conv_cell_coord_list = symmetry.get_wyckoff_label_and_equiv_coord_list(
                 defect_entry=neutral_defect_entry,
                 wyckoff_dict=wyckoff_label_dict,
             )
-            conv_cell_coord_list = _vectorized_custom_round(
-                np.mod(_vectorized_custom_round(conv_cell_coord_list), 1)
+            conv_cell_coord_list = symmetry._vectorized_custom_round(
+                np.mod(symmetry._vectorized_custom_round(conv_cell_coord_list), 1)
             ).tolist()
         except Exception as e2:
             raise e2 from e
 
-    # sort array with _frac_coords_sort_func:
-    conv_cell_coord_list.sort(key=_frac_coords_sort_func)
+    # sort array with symmetry._frac_coords_sort_func:
+    conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
     neutral_defect_entry.conv_cell_frac_coords = (
@@ -697,38 +527,12 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
     return defect_naming_dict
 
 
-def herm2sch(herm_symbol):
-    """
-    Convert from Hermann-Mauguin to Schoenflies.
-    """
-    herm_symbol = herm_symbol.replace(".", "")
-    schoenflies = _HERM2SCH.get(herm_symbol, None)
-    if schoenflies is None:
-        # try rearranging, symbols in spglib can be rearranged vs _HERM2SCH dict
-        # get _HERM2SCH key that has the same characters as herm_symbol
-        # (i.e. same characters, but possibly in a different order)
-        from collections import Counter
-
-        def find_matching_key(input_str, input_dict):
-            input_str_counter = Counter(input_str)
-            for key in input_dict:
-                if Counter(key) == input_str_counter:
-                    return key
-            return None
-
-        herm_key = find_matching_key(herm_symbol, _HERM2SCH)
-        if herm_key is not None:
-            schoenflies = _HERM2SCH[herm_key]
-
-    return schoenflies
-
-
 def get_oxi_probabilities(element_symbol: str) -> dict:
     """
     Get a dictionary of oxidation states and their probabilities for an
     element.
 
-    Tries to get the probabilities from the `pymatgen` tabulated ICSD oxidation
+    Tries to get the probabilities from the ``pymatgen`` tabulated ICSD oxidation
     state probabilities, and if not available, uses the common oxidation states
     of the element.
 
@@ -740,24 +544,26 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
     """
     comp_obj = Composition(element_symbol)
     comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
-    oxi_probabilities = {
+    if oxi_probabilities := {
         k.oxi_state: v
         for k, v in comp_obj.oxi_prob.items()
         if k.element.symbol == element_symbol and k.oxi_state != 0
-    }
-    if oxi_probabilities:  # not empty
-        return {k: round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()}
+    }:  # not empty
+        return {
+            int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
+        }
 
     element_obj = Element(element_symbol)
     if element_obj.common_oxidation_states:
         return {
-            k: 1 / len(element_obj.common_oxidation_states) for k in element_obj.common_oxidation_states
+            int(k): 1 / len(element_obj.common_oxidation_states)
+            for k in element_obj.common_oxidation_states
         }  # known common oxidation states
 
     # no known _common_ oxidation state, make guess and warn user
     if element_obj.oxidation_states:
         oxi_states = {
-            k: 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
+            int(k): 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
         }  # known oxidation states
     else:
         oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
@@ -818,10 +624,10 @@ def _charge_state_probability(
 
     charge_state_guessing_log = {
         "input_parameters": {
-            "charge_state": charge_state,
-            "oxi_state": defect_el_oxi_state,
+            "charge_state": int(charge_state),
+            "oxi_state": int(defect_el_oxi_state),
             "oxi_probability": defect_el_oxi_probability,
-            "max_host_oxi_magnitude": max_host_oxi_magnitude,
+            "max_host_oxi_magnitude": int(max_host_oxi_magnitude),
         },
         "probability_factors": {
             "oxi_probability": defect_el_oxi_probability,
@@ -885,9 +691,9 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
             keys and their probabilities as values.
     """
     return {
-        k: prob
+        int(k): prob
         for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
-        if prob > 0.01  # at least 1% occurrence
+        if prob > 0.001  # at least 0.1% occurrence
     }
 
 
@@ -898,8 +704,7 @@ def _get_charge_states(
     return_log: bool = False,
 ) -> Dict:
     return {
-        oxi
-        - orig_oxi: _charge_state_probability(
+        int(oxi - orig_oxi): _charge_state_probability(
             oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude, return_log=return_log
         )
         for oxi, oxi_prob in possible_oxi_states.items()
@@ -944,7 +749,7 @@ def guess_defect_charge_states(
             charge_state_guessing_log = [
                 {
                     "input_parameters": {
-                        "charge_state": charge_state,
+                        "charge_state": int(charge_state),
                     },
                     "probability_factors": {"oxi_probability": 1},
                     "probability": 1,
@@ -958,9 +763,9 @@ def guess_defect_charge_states(
         return vacancy_charge_states
 
     possible_oxi_states = _get_possible_oxi_states(defect)
-    max_host_oxi_magnitude = max(abs(site.specie.oxi_state) for site in defect.structure)
+    max_host_oxi_magnitude = int(max(abs(site.specie.oxi_state) for site in defect.structure))
     if defect.defect_type == core.DefectType.Substitution:
-        orig_oxi = defect.structure[defect.defect_site_index].specie.oxi_state
+        orig_oxi = int(defect.structure[defect.defect_site_index].specie.oxi_state)
     else:  # interstitial
         orig_oxi = 0
     possible_charge_states = _get_charge_states(
@@ -1066,6 +871,161 @@ def guess_defect_charge_states(
     return guessed_charge_states
 
 
+def get_ideal_supercell_matrix(
+    structure: Structure,
+    min_image_distance: float = 10.0,
+    min_atoms: int = 50,
+    force_cubic: bool = False,
+    force_diagonal: bool = False,
+    ideal_threshold: float = 0.1,
+    pbar: Optional[tqdm] = None,
+) -> Union[np.ndarray, None]:
+    """
+    Determine the ideal supercell matrix for a given structure, based on the
+    minimum image distance, minimum number of atoms and ``ideal_threshold``
+    for further expanding if a diagonal expansion of the primitive/conventional
+    cell is possible.
+
+    The ideal supercell is the smallest possible supercell which has
+    a minimum image distance (i.e. minimum distance between periodic
+    images of atoms/sites in a lattice) greater than
+    ``min_image_distance`` (default = 10 Å - which is a typical threshold
+    value used in DFT defect supercell calculations) and a number of atoms
+    greater than ``min_atoms`` (default = 50). Once these criteria have
+    been reached, ``doped`` will then continue searching up to supercell
+    sizes (numbers of atoms) ``1 + ideal_threshold`` times larger
+    (rounded up) to see if they return a diagonal expansion of the
+    primitive/conventional cell (which can make later visualisation and
+    analysis much easier) - if so, this larger supercell will be returned.
+
+    This search for the ideal supercell transformation matrix is performed using
+    the ``find_ideal_supercell`` function from ``doped.utils.supercells`` (see
+    its docstring for more details), which efficiently scans over possible
+    supercell matrices and identifies that with the minimum image distance and
+    most cubic-like supercell shape. The advantage of this over that in
+    ``pymatgen-analysis-defects`` is that it avoids the ``find_optimal_cell_shape``
+    function from ``ASE`` (which currently does not work for rotated matrices,
+    is inefficient, and optimises based on cubic-like shape rather than minimum
+    image distance), giving greatly reduced supercell sizes for a given minimum
+    image distance.
+
+    If ``force_cubic`` or ``force_diagonal`` are ``True``, then the
+    ``CubicSupercellTransformation`` from ``pymatgen`` is used to identify any
+    simple near-cubic supercell transformations which satisfy the minimum image
+    distance and atom number criteria.
+
+    Args:
+        structure (Structure):
+            Primitive unit cell structure to generate supercell for.
+        min_image_distance (float):
+            Minimum image distance in Å of the supercell (i.e. minimum
+            distance between periodic images of atoms/sites in the lattice).
+            (Default = 10.0)
+        min_atoms (int):
+            Minimum number of atoms allowed in the supercell.
+            (Default = 50)
+        force_cubic (bool):
+            Enforce usage of ``CubicSupercellTransformation`` from
+            ``pymatgen`` for supercell generation.
+            (Default = False)
+        force_diagonal (bool):
+            If True, return a transformation with a diagonal
+            transformation matrix.
+            (Default = False)
+        ideal_threshold (float):
+            Threshold for increasing supercell size (beyond that which satisfies
+            ``min_image_distance`` and `min_atoms``) to achieve an ideal
+            supercell matrix (i.e. a diagonal expansion of the primitive or
+            conventional cell). Supercells up to ``1 + perfect_cell_threshold``
+            times larger (rounded up) are trialled, and will instead be
+            returned if they yield an ideal transformation matrix.
+            (Default = 0.1; i.e. 10% larger than the minimum size)
+        pbar (tqdm):
+            tqdm progress bar object to update (for internal ``doped``
+            usage). Default is None.
+
+    Returns:
+        Ideal supercell matrix (np.ndarray) or None if no suitable
+        supercell could be found.
+    """
+    if force_cubic or force_diagonal:
+        cst = CubicSupercellTransformation(
+            min_atoms=min_atoms,
+            min_length=min_image_distance,
+            force_diagonal=force_diagonal,
+        )
+
+        try:
+            cst.apply_transformation(structure)
+            return cst.transformation_matrix
+
+        except Exception:  # cubic supercell generation failed, used doped algorithm
+            print("Could not find a suitable cubic supercell within the limits: ")
+            print(f"min_atoms = {min_atoms}, min_image_distance = {min_image_distance}")
+            print("Attempting doped supercell generation algorithm...")
+
+    # get min (hypothetical) target_size from min_atoms and min_image_distance:
+    min_target_size_from_atoms = int(np.ceil(min_atoms / len(structure)))
+    # most efficient min_dist from volume is FCC with min_dist = lattice vector lengths = 2**(1/6) times
+    # the effective cubic length (i.e. cube root of the volume), so use this to get min target_size:
+    min_target_size_from_min_dist = int(
+        np.ceil((min_image_distance / (2 ** (1 / 6))) ** 3 / structure.volume)
+    )
+    target_size = max(min_target_size_from_atoms, min_target_size_from_min_dist)
+    optimal_P, best_min_dist = supercells.find_ideal_supercell(
+        structure.lattice.matrix,
+        target_size=target_size,
+        return_min_dist=True,
+    )
+
+    while best_min_dist < min_image_distance:
+        target_size += 1
+        if pbar is not None:
+            pbar.set_description(
+                f"Best min distance: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
+            )
+        optimal_P, best_min_dist = supercells.find_ideal_supercell(
+            structure.lattice.matrix,
+            target_size=target_size,
+            return_min_dist=True,
+        )
+
+    # check if supercell matrix is ideal (diagonal expansion of primitive or conventional cells), otherwise
+    # extend search by threshold amount:
+    if round(supercells._min_sum_off_diagonals(structure, optimal_P)) != 0:
+        max_target_size = int(np.ceil(target_size * (1 + ideal_threshold)))
+        for alt_target_size in range(target_size + 1, max_target_size + 1):
+            if pbar is not None:
+                pbar.set_description(
+                    f"Best min distance: {best_min_dist:.2f} Å, trialling size = {alt_target_size} unit "
+                    f"cells..."
+                )
+            alt_optimal_P, alt_best_min_dist = supercells.find_ideal_supercell(
+                structure.lattice.matrix,
+                target_size=alt_target_size,
+                return_min_dist=True,
+            )
+            if (
+                round(supercells._min_sum_off_diagonals(structure, alt_optimal_P)) == 0
+                and alt_best_min_dist > min_image_distance
+            ):
+                optimal_P = alt_optimal_P
+                best_min_dist = alt_best_min_dist
+                target_size = alt_target_size
+
+    if pbar is not None:
+        pbar.set_description(
+            f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+        )
+
+    supercell = structure * optimal_P
+    if np.sum(supercell.cart_coords < 0) / np.sum(supercell.cart_coords > 0) > 1:
+        # if supercell Cartesian coordinates are mostly negative, return negative of optimal_P
+        return optimal_P * -1
+
+    return optimal_P
+
+
 class DefectsGenerator(MSONable):
     """
     Class for generating doped DefectEntry objects.
@@ -1086,33 +1046,39 @@ class DefectsGenerator(MSONable):
         """
         Generates doped DefectEntry objects for defects in the input host
         structure. By default, generates all intrinsic defects, but extrinsic
-        defects (impurities) can also be created using the `extrinsic`
+        defects (impurities) can also be created using the ``extrinsic``
         argument.
 
         Interstitial sites are generated using Voronoi tessellation by default (found
         to be the most reliable), which can be controlled using the
-        `interstitial_gen_kwargs` argument (passed as keyword arguments to the
-        `VoronoiInterstitialGenerator` class). Alternatively, a list of interstitial
+        ``interstitial_gen_kwargs`` argument (passed as keyword arguments to the
+        ``VoronoiInterstitialGenerator`` class). Alternatively, a list of interstitial
         sites (or single interstitial site) can be manually specified using the
-        `interstitial_coords` argument.
+        ``interstitial_coords`` argument.
 
         By default, supercells are generated for each defect using the doped
-        `get_supercell_structure()` method, with default settings of
-        `min_length = 10` (minimum supercell length of 10 Å) and `min_atoms = 50`
-        (minimum 50 atoms in supercell). If a different supercell is desired, this
-        can be controlled by specifying keyword arguments with `supercell_gen_kwargs`,
-        which are passed to `get_supercell_structure()` (e.g. for a minimum supercell
-        length of 15 Å, use: `supercell_gen_kwargs = {'min_length': 15}`).
-        Alternatively if `generate_supercell = False`, then no supercell is generated
+        ``get_ideal_supercell_matrix()`` function (see docstring), with default settings
+        of ``min_image_distance = 10`` (minimum distance between periodic images of 10 Å),
+        ``min_atoms = 50`` (minimum 50 atoms in the supercell) and ``ideal_threshold = 0.1``
+        (allow up to 10% larger supercell if it is a diagonal expansion of the primitive
+        or conventional cell). This uses a custom algorithm in ``doped`` to efficiently
+        search over possible supercell transformations and identify that with the minimum
+        number of atoms (hence computational cost) that satisfies the minimum image distance,
+        number of atoms and ``ideal_threshold`` constraints. These settings can be controlled
+        by specifying keyword arguments with ``supercell_gen_kwargs``, which are passed to
+        ``get_ideal_supercell_matrix()`` (e.g. for a minimum image distance of 15 Å with at
+        least 100 atoms, use:
+        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``).
+        Alternatively if ``generate_supercell = False``, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
 
         The algorithm for determining defect entry names is to use the pymatgen defect
-        name (e.g. v_Cd, Cd_Te etc.) for vacancies/antisites/substitutions, unless
+        name (e.g. ``v_Cd``, ``Cd_Te`` etc.) for vacancies/antisites/substitutions, unless
         there are multiple inequivalent sites for the defect, in which case the point
-        group of the defect site is appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if
+        group of the defect site is appended (e.g. ``v_Cd_Td``, ``Cd_Te_Td`` etc.), and if
         this is still not unique, then element identity and distance to the nearest
-        neighbour of the defect site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83
+        neighbour of the defect site is appended (e.g. ``v_Cd_Td_Te2.83``, ``Cd_Te_Td_Cd2.83``
         etc.). For interstitials, the same naming scheme is used, but the point group
         is always appended to the pymatgen defect name.
 
@@ -1122,11 +1088,11 @@ class DefectsGenerator(MSONable):
         'charged' the host is), with large (absolute) charge states, low probability
         oxidation states and/or greater charge/oxidation state magnitudes than that of
         the host being disfavoured. This can be controlled using the
-        `probability_threshold` (default = 0.0075) or `padding` (default = 1) keys in
-        the `charge_state_gen_kwargs` parameter, which are passed to the
-        `_charge_state_probability()` function. The input and computed values used to
+        ``probability_threshold`` (default = 0.0075) or ``padding`` (default = 1) keys in
+        the ``charge_state_gen_kwargs`` parameter, which are passed to the
+        ``_charge_state_probability()`` function. The input and computed values used to
         guess charge state probabilities are provided in the
-        `DefectEntry.charge_state_guessing_log` attributes. See docs for examples of
+        ``DefectEntry.charge_state_guessing_log`` attributes. See docs for examples of
         modifying the generated charge states.
 
         Args:
@@ -1154,23 +1120,28 @@ class DefectsGenerator(MSONable):
                 equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):
                 Whether to generate a supercell for the output defect entries
-                (using pymatgen's `CubicSupercellTransformation` and ASE's
-                `find_optimal_cell_shape()` functions) or not. If False, then the
-                input structure is used as the defect & bulk supercell.
+                (using the custom algorithm in ``doped`` which efficiently searches over
+                possible supercell transformations and identifies that with the minimum
+                number of atoms (hence computational cost) that satisfies the minimum
+                image distance, number of atoms and ``ideal_threshold`` constraints
+                - which can be controlled with ``supercell_gen_kwargs``).
+                If False, then the input structure is used as the defect & bulk supercell.
+                (Note this may give a slightly different (but fully equivalent) set of coordinates).
             charge_state_gen_kwargs (Dict):
-                Keyword arguments to be passed to the `_charge_state_probability`
-                function (such as `probability_threshold` (default = 0.0075, used for
-                substitutions and interstitials) and `padding` (default = 1, used for
+                Keyword arguments to be passed to the ``_charge_state_probability``
+                function (such as ``probability_threshold`` (default = 0.0075, used for
+                substitutions and interstitials) and ``padding`` (default = 1, used for
                 vacancies)) to control defect charge state generation.
             supercell_gen_kwargs (Dict):
-                Keyword arguments to be passed to the `get_sc_fromstruct` function
-                in `pymatgen.analysis.defects.supercells` (such as `min_atoms`
-                (default = 50), `max_atoms` (default = 500), `min_length` (default
-                = 10), and `force_diagonal` (default = False)).
+                Keyword arguments to be passed to the ``get_ideal_supercell_matrix``
+                function (such as ``min_image_distance`` (default = 10), ``min_atoms``
+                (default = 50), ``ideal_threshold`` (default = 0.1), ``force_cubic``
+                - which enforces a (near-)cubic supercell output (default = False),
+                or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (Dict, bool):
-                Keyword arguments to be passed to the `VoronoiInterstitialGenerator`
-                class (such as `clustering_tol`, `stol`, `min_dist` etc), or to
-                `InterstitialGenerator` if `interstitial_coords` is specified.
+                Keyword arguments to be passed to the ``VoronoiInterstitialGenerator``
+                class (such as ``clustering_tol``, ``stol``, ``min_dist`` etc), or to
+                ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
                 If set to False, interstitial generation will be skipped entirely.
             target_frac_coords (List):
                 Defects are placed at the closest equivalent site to these fractional
@@ -1195,7 +1166,7 @@ class DefectsGenerator(MSONable):
                 host according to the Bilbao Crystallographic Server (BCS) definition,
                 used to determine defect site Wyckoff labels and multiplicities.
 
-            `DefectsGenerator` input parameters are also set as attributes.
+            ``DefectsGenerator`` input parameters are also set as attributes.
         """
         self.defects: Dict[str, List[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
@@ -1204,9 +1175,9 @@ class DefectsGenerator(MSONable):
         if interstitial_coords is not None:
             # if a single list or array, convert to list of lists
             self.interstitial_coords = (
-                [interstitial_coords]
-                if not isinstance(interstitial_coords[0], (list, tuple, np.ndarray))
-                else interstitial_coords  # ensure list of lists
+                interstitial_coords
+                if isinstance(interstitial_coords[0], (list, tuple, np.ndarray))
+                else [interstitial_coords]  # ensure list of lists
             )
         else:
             self.interstitial_coords = []
@@ -1221,6 +1192,7 @@ class DefectsGenerator(MSONable):
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
+        specified_min_image_distance = self.supercell_gen_kwargs.get("min_image_distance", 10)
 
         if len(self.structure) == 1 and not self.generate_supercell:
             # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
@@ -1239,115 +1211,101 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = _get_sga(self.structure)
+            sga = symmetry._get_sga(self.structure)
 
-            prim_struct = get_primitive_structure(sga)
+            prim_struct = symmetry.get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
-                primitive_structure = Structure.from_dict(_round_floats(prim_struct.as_dict()))
+                primitive_structure = Structure.from_dict(symmetry._round_floats(prim_struct.as_dict()))
 
             else:  # primitive cell is the same as input structure, use input structure to avoid rotations
                 # wrap to unit cell:
                 primitive_structure = Structure.from_sites(
                     [site.to_unit_cell() for site in self.structure]
                 )
-                primitive_structure = Structure.from_dict(_round_floats(primitive_structure.as_dict()))
+                primitive_structure = Structure.from_dict(
+                    symmetry._round_floats(primitive_structure.as_dict())
+                )
 
             pbar.update(5)  # 5% of progress bar
 
-            # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
-            # same supercell is used for each defect and bulk calculation
-            pbar.set_description("Generating simulation supercell")
-            pmg_supercell_matrix = get_sc_fromstruct(
-                primitive_structure,
-                min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different to current
-                # pymatgen default (80)
-                max_atoms=self.supercell_gen_kwargs.get(
-                    "max_atoms", 500
-                ),  # different to current pymatgen default (240)
-                min_length=self.supercell_gen_kwargs.get(
-                    "min_length", 10
-                ),  # same as current pymatgen default
-                force_diagonal=self.supercell_gen_kwargs.get(
-                    "force_diagonal", False
-                ),  # same as current pymatgen default
-            )
+            # check if input structure is already greater than ``min_image_distance`` Å in each direction:
+            input_min_image_distance = supercells.get_min_image_distance(self.structure)
 
-            # check if input structure is already >10 Å in each direction:
-            a = self.structure.lattice.matrix[0]
-            b = self.structure.lattice.matrix[1]
-            c = self.structure.lattice.matrix[2]
+            if self.generate_supercell:
+                # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
+                # same supercell is used for each defect and bulk calculation
+                pbar.set_description("Generating simulation supercell")
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
+                    supercell_matrix = get_ideal_supercell_matrix(
+                        primitive_structure,
+                        min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different from current
+                        # pymatgen-analysis-defects default `min_atoms` ( = 80)
+                        min_image_distance=specified_min_image_distance,  # same as current
+                        # pymatgen-analysis-defects default `min_length` ( = 10)
+                        ideal_threshold=self.supercell_gen_kwargs.get("ideal_threshold", 0.1),
+                        force_cubic=self.supercell_gen_kwargs.get("force_cubic", False),
+                        force_diagonal=self.supercell_gen_kwargs.get("force_diagonal", False),
+                        pbar=pbar,
+                    )
 
-            length_vecs = np.array(
-                [
-                    c - _proj(c, a),  # a-c plane
-                    a - _proj(a, c),
-                    b - _proj(b, a),  # b-a plane
-                    a - _proj(a, b),
-                    c - _proj(c, b),  # b-c plane
-                    b - _proj(b, c),
-                ]
-            )
-
-            if np.min(np.linalg.norm(length_vecs, axis=1)) >= self.supercell_gen_kwargs.get(
-                "min_length", 10
+            if input_min_image_distance >= specified_min_image_distance and (
+                not self.generate_supercell
+                or self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
             ):
-                # input structure is >10 Å in each direction
-                if (
-                    not self.generate_supercell
-                    or self.structure.num_sites <= (primitive_structure * pmg_supercell_matrix).num_sites
-                ):
-                    # input structure has fewer or same number of atoms as pmg supercell or
-                    # generate_supercell=False, so use input structure:
-                    (
-                        self.primitive_structure,
-                        self.supercell_matrix,
-                    ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
-                else:
-                    self.primitive_structure = primitive_structure
-                    self.supercell_matrix = pmg_supercell_matrix
+                # input structure is greater than ``min_image_distance`` Å in each direction, and
+                # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
+                # doped supercell, so use input structure:
+                (
+                    self.primitive_structure,
+                    self.supercell_matrix,
+                ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
+                    primitive_structure, self.structure
+                )
 
-            elif not self.generate_supercell:
+            elif not self.generate_supercell and input_min_image_distance < 10:
                 # input structure is <10 Å in at least one direction, and generate_supercell=False,
                 # so use input structure but warn user:
                 warnings.warn(
                     f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
-                    f"{np.min(np.linalg.norm(length_vecs, axis=1)):.2f} Å, which is usually too "
+                    f"{input_min_image_distance:.2f} Å, which is usually too "
                     f"small for accurate defect calculations, but generate_supercell = False, so "
                     f"using input structure as defect & bulk supercells. Caution advised!"
                 )
                 (
                     self.primitive_structure,
                     self.supercell_matrix,
-                ) = _get_supercell_matrix_and_possibly_rotate_prim(primitive_structure, self.structure)
+                ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
+                    primitive_structure, self.structure
+                )
 
             else:
                 self.primitive_structure = primitive_structure
-                self.supercell_matrix = pmg_supercell_matrix
+                self.supercell_matrix = supercell_matrix
 
             self.bulk_supercell = (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
-            # check that generated supercell is >10 Å in each direction:
-            if (
-                np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1))
-                < self.supercell_gen_kwargs.get("min_length", 10)
-                and self.generate_supercell
-            ):
-                warnings.warn(
-                    f"\nAuto-generated supercell is <10 Å in at least one direction (minimum image "
-                    f"distance = "
-                    f"{np.min(np.linalg.norm(self.bulk_supercell.lattice.matrix, axis=1)):.2f} Å, "
-                    f"which is usually too small for accurate defect calculations. You can try increasing "
-                    f"max_atoms (default = 500), or manually identifying a suitable supercell matrix "
-                    f"(which can then be specified with the `supercell_matrix` argument)."
+            self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
+
+            # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
+            if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
+                raise ValueError(
+                    f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
+                    f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
+                    f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
+                    f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
+                    f"to find an appropriate supercell - otherwise please report this to the developers!"
                 )
 
-            _bulk_oxi_states: Union[
+            self._bulk_oxi_states: Union[
                 bool, Dict
             ] = True  # to check if pymatgen can guess the bulk oxidation states
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
                 isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
             ):
-                _bulk_oxi_states = {el.symbol: el.oxi_state for el in self.structure.composition.elements}
+                self._bulk_oxi_states = {
+                    el.symbol: el.oxi_state for el in self.structure.composition.elements
+                }
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
                 queue: Queue = Queue()
@@ -1371,7 +1329,7 @@ class DefectsGenerator(MSONable):
                     # otherwise revert to all Defect oxi states being set to 0
 
                     if guess_oxi_process.is_alive():
-                        _bulk_oxi_states = False  # couldn't guess oxi states, so set to False
+                        self._bulk_oxi_states = False  # couldn't guess oxi states, so set to False
                         warnings.warn(
                             "\nOxidation states could not be guessed for the input structure. This is "
                             "required for charge state guessing, so defects will still be generated but "
@@ -1384,9 +1342,9 @@ class DefectsGenerator(MSONable):
                         guess_oxi_process.terminate()
                         guess_oxi_process.join()
 
-                if _bulk_oxi_states is not False:
+                if self._bulk_oxi_states is not False:
                     self.primitive_structure = queue.get()
-                    _bulk_oxi_states = {
+                    self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
 
@@ -1400,7 +1358,8 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, oxi_state=0
             )  # set oxi_state using doped functions; more robust and efficient
             self.defects["vacancies"] = [
-                Vacancy._from_pmg_defect(vac, bulk_oxi_states=_bulk_oxi_states) for vac in vac_generator
+                Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states)
+                for vac in vac_generator
             ]
             pbar.update(5)  # 20% of progress bar
 
@@ -1409,7 +1368,7 @@ class DefectsGenerator(MSONable):
             antisite_generator_obj = AntiSiteGenerator()
             as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
             self.defects["substitutions"] = [
-                Substitution._from_pmg_defect(anti, bulk_oxi_states=_bulk_oxi_states)
+                Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
                 for anti in as_generator
             ]
             pbar.update(5)  # 25% of progress bar
@@ -1460,7 +1419,7 @@ class DefectsGenerator(MSONable):
                     self.primitive_structure, substitution=substitutions, oxi_state=0
                 )
                 sub_defects = [
-                    Substitution._from_pmg_defect(sub, bulk_oxi_states=_bulk_oxi_states)
+                    Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
                     for sub in sub_generator
                 ]
                 if "substitutions" in self.defects:
@@ -1477,12 +1436,12 @@ class DefectsGenerator(MSONable):
                 pbar.set_description("Generating interstitials")
                 if self.interstitial_coords:
                     # map interstitial coords to primitive structure, and get multiplicities
-                    sga = _get_sga(self.structure)
+                    sga = symmetry._get_sga(self.structure)
                     symm_ops = sga.get_symmetry_operations(cartesian=False)
                     self.prim_interstitial_coords = []
 
                     for interstitial_frac_coords in self.interstitial_coords:
-                        prim_inter_coords, equiv_coords = _get_equiv_frac_coords_in_primitive(
+                        prim_inter_coords, equiv_coords = symmetry._get_equiv_frac_coords_in_primitive(
                             interstitial_frac_coords,
                             self.structure,
                             self.primitive_structure,
@@ -1565,7 +1524,7 @@ class DefectsGenerator(MSONable):
 
                         # take the site with the lower multiplicity (higher symmetry). If multiplicities
                         # equal, then take site with larger distance to host atoms (then most ideal site
-                        # according to _frac_coords_sort_func if also equal):
+                        # according to symmetry._frac_coords_sort_func if also equal):
                         output_sites_mul_and_equiv_fpos.append(
                             min(
                                 [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
@@ -1583,9 +1542,10 @@ class DefectsGenerator(MSONable):
                                         )
                                     ),
                                     # return the minimum _frac_coords_sort_func for all equiv fpos:
-                                    *_frac_coords_sort_func(
+                                    *symmetry._frac_coords_sort_func(
                                         sorted(
-                                            cand_site_mul_and_equiv_fpos[2], key=_frac_coords_sort_func
+                                            cand_site_mul_and_equiv_fpos[2],
+                                            key=symmetry._frac_coords_sort_func,
                                         )[0]
                                     ),
                                 ),
@@ -1594,8 +1554,8 @@ class DefectsGenerator(MSONable):
 
                     sorted_sites_mul_and_equiv_fpos = []
                     for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
-                        # take site with equiv_fpos sorted by _frac_coords_sort_func:
-                        sorted_equiv_fpos = sorted(equiv_fpos, key=_frac_coords_sort_func)
+                        # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
+                        sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
                         ideal_cand_site = sorted_equiv_fpos[0]
                         sorted_sites_mul_and_equiv_fpos.append(
                             (ideal_cand_site, multiplicity, sorted_equiv_fpos)
@@ -1614,7 +1574,7 @@ class DefectsGenerator(MSONable):
                     )
                     self.defects["interstitials"].extend(
                         [
-                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=_bulk_oxi_states)
+                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
                             for inter in inter_generator
                         ]
                     )
@@ -1646,11 +1606,11 @@ class DefectsGenerator(MSONable):
                 self.conventional_structure,
                 self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict,
-            ) = get_BCS_conventional_structure(
+            ) = symmetry.get_BCS_conventional_structure(
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
-            sga = _get_sga(self.conventional_structure)
+            sga = symmetry._get_sga(self.conventional_structure)
             symm_ops = sga.get_symmetry_operations(cartesian=False)
 
             # process defects into defect entries:
@@ -1689,7 +1649,7 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating DefectEntry objects")
             # sort defect_entry_list by _frac_coords_sort_func applied to the conv_cell_frac_coords,
             # in order for naming and defect generation output info to be deterministic
-            defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+            defect_entry_list.sort(key=lambda x: symmetry._frac_coords_sort_func(x.conv_cell_frac_coords))
 
             # redefine defects dict with DefectEntry.defect objects (as attributes have been updated in
             # _get_neutral_defect_entry):
@@ -1713,7 +1673,7 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            prim_sga = _get_sga(self.primitive_structure)
+            prim_sga = symmetry._get_sga(self.primitive_structure)
             prim_symm_ops = prim_sga.get_symmetry_operations(cartesian=False)
             named_defect_dict = name_defect_entries(
                 defect_entry_list, element_list=self._element_list, symm_ops=prim_symm_ops
@@ -1726,7 +1686,7 @@ class DefectsGenerator(MSONable):
                 # warnings from tqdm
 
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                if _bulk_oxi_states is not False:
+                if self._bulk_oxi_states is not False:
                     charge_state_guessing_output = guess_defect_charge_states(
                         neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
                     )
@@ -1857,9 +1817,9 @@ class DefectsGenerator(MSONable):
         return info_string
 
     def add_charge_states(self, defect_entry_name: str, charge_states: list):
-        """
-        Add additional `DefectEntry`s with the specified charge states to
-        `self.defect_entries`.
+        r"""
+        Add additional ``DefectEntry``\s with the specified charge states to
+        ``self.defect_entries``.
 
         Args:
             defect_entry_name (str):
@@ -1883,9 +1843,9 @@ class DefectsGenerator(MSONable):
         self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def remove_charge_states(self, defect_entry_name: str, charge_states: list):
-        """
-        Remove `DefectEntry`s with the specified charge states from
-        `self.defect_entries`.
+        r"""
+        Remove ``DefectEntry``\s with the specified charge states from
+        ``self.defect_entries``.
 
         Args:
             defect_entry_name (str):
@@ -2207,7 +2167,7 @@ def _first_and_second_element(defect_name):
 def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     """
     Sort defect entries for deterministic behaviour (for output and when
-    reloading DefectsGenerator objects, and with DefectPhaseDiagram entries
+    reloading DefectsGenerator objects, and with DefectThermodynamics entries
     (particularly for deterministic plotting behaviour)).
 
     Sorts defect entries by defect type (vacancies, substitutions,
@@ -2251,35 +2211,32 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     except ValueError as value_err:
         # possibly defect entries with names not in doped format, try sorting without using name:
         try:
+
+            def _defect_entry_sorting_func(defect_entry):
+                unrelaxed_defect_name_w_charge = defect_entry.calculation_metadata.get(
+                    "full_unrelaxed_defect_name"
+                )
+                if unrelaxed_defect_name_w_charge is not None:
+                    name_from_defect = unrelaxed_defect_name_w_charge.rsplit("_", 1)[0]  # without charge
+                else:
+                    name_from_defect = get_defect_name_from_defect(
+                        defect_entry.defect,
+                        element_list=element_list,
+                        symm_ops=symm_ops,
+                    )
+                return (
+                    defect_entry.defect.defect_type.value,
+                    element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
+                    element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
+                    defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    name_from_defect,  # doped name without charge
+                    defect_entry.charge_state,  # charge state
+                )
+
             return dict(
                 sorted(
                     defect_entries_dict.items(),
-                    key=lambda s: (
-                        s[1].defect.defect_type.value,
-                        element_list.index(
-                            _first_and_second_element(
-                                get_defect_name_from_defect(
-                                    s[1].defect,
-                                    element_list=element_list,
-                                    symm_ops=symm_ops,
-                                )
-                            )[0]
-                        ),
-                        element_list.index(
-                            _first_and_second_element(
-                                get_defect_name_from_defect(
-                                    s[1].defect,
-                                    element_list=element_list,
-                                    symm_ops=symm_ops,
-                                )
-                            )[1]
-                        ),
-                        # name without charge:
-                        get_defect_name_from_defect(
-                            s[1].defect, element_list=element_list, symm_ops=symm_ops
-                        ),
-                        s[1].charge_state,  # charge state
-                    ),
+                    key=lambda s: _defect_entry_sorting_func(s[1]),  # sort by defect entry object
                 )
             )
         except ValueError:
@@ -2293,7 +2250,7 @@ def _sort_defects(defects_dict, element_list=None):
 
     Sorts defects by defect type (vacancies, substitutions, interstitials),
     then by order of appearance of elements in the composition, then
-    alphabetically, then according to _frac_coords_sort_func.
+    alphabetically, then according to symmetry._frac_coords_sort_func.
     """
     if element_list is None:
         all_elements = []
@@ -2319,7 +2276,7 @@ def _sort_defects(defects_dict, element_list=None):
                 element_list.index(_first_and_second_element(d.name)[0]),
                 element_list.index(_first_and_second_element(d.name)[1]),
                 d.name,  # bare name without charge
-                _frac_coords_sort_func(d.conv_cell_frac_coords),
+                symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
             ),
         )
         for defect_type, defect_list in defects_dict.items()
@@ -2339,47 +2296,3 @@ def _get_interstitial_candidate_sites(args):
     """
     interstitial_generator, structure = args
     return [*interstitial_generator._get_candidate_sites(structure)]
-
-
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
-_PTG_IDS = [
-    ("C1", "1", 1),
-    ("Ci", "-1", 2),
-    ("C2", "2", 3),
-    ("Cs", "m", 6),
-    ("C2h", "2/m", 10),
-    ("D2", "222", 16),
-    ("C2v", "mm2", 25),
-    ("D2h", "mmm", 47),
-    ("C4", "4", 75),
-    ("S4", "-4", 81),
-    ("C4h", "4/m", 83),
-    ("D4", "422", 89),
-    ("C4v", "4mm", 99),
-    ("D2d", "-42m", 111),
-    ("D4h", "4/mmm", 123),
-    ("C3", "3", 143),
-    ("C3i", "-3", 147),
-    ("D3", "32", 149),
-    ("C3v", "3m", 156),
-    ("D3d", "-3m", 162),
-    ("C6", "6", 168),
-    ("C3h", "-6", 174),
-    ("C6h", "6/m", 175),
-    ("D6", "622", 177),
-    ("C6v", "6mm", 183),
-    ("D3h", "-6m2", 189),
-    ("D6h", "6/mmm", 191),
-    ("T", "23", 195),
-    ("Th", "m-3", 200),
-    ("O", "432", 207),
-    ("Td", "-43m", 215),
-    ("Oh", "m-3m", 221),
-]
-
-_SCH2HERM = {t[0]: t[1] for t in _PTG_IDS}
-_HERM2SCH = {t[1]: t[0] for t in _PTG_IDS}
-_SPGID2SCH = {t[2]: t[0] for t in _PTG_IDS}
-_SCH2SPGID = {t[0]: t[2] for t in _PTG_IDS}
-
-sch_symbols = list(_SCH2HERM.keys())
