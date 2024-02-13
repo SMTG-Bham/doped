@@ -12,6 +12,7 @@ tutorials:
    YT_defects_tutorial
    generation_tutorial
    parsing_tutorial
+   thermodynamics_tutorial
    chemical_potentials_tutorial
    GGA_workflow_tutorial
    plotting_customisation_tutorial
