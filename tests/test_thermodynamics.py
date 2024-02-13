@@ -1455,6 +1455,18 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(i, row)
             assert list(sym_degen_df.iloc[i]) == row
 
+        # delete symmetry info to force re-parsing, to test symmetry/degeneracy functions
+        thermo_wout_symm_meta = deepcopy(cdte_defect_thermo)
+        for defect_entry in thermo_wout_symm_meta.defect_entries:
+            for key in list(defect_entry.calculation_metadata.keys()):
+                if "symmetry" in key or "degeneracy" in key:
+                    del defect_entry.calculation_metadata[key]
+
+        sym_degen_df = thermo_wout_symm_meta.get_symmetries_and_degeneracies()
+        for i, row in enumerate(cdte_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
             os.path.join(self.module_path, "../examples/CdTe_thermo_wout_meta.json")
