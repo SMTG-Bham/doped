@@ -1,4 +1,4 @@
-# May want to change NCORE, KPAR, AEXX, ENCUT, NUPDOWN, ISPIN, POTIM = Typical variable parameters
+# May want to change NCORE, KPAR, AEXX, ENCUT, IBRION, LREAL, NUPDOWN, ISPIN = Typical variable parameters
 AEXX = 0.25
 ALGO = All
 EDIFF = 1e-05
@@ -22,7 +22,7 @@ LREAL = Auto
 LVHAR = False
 NCORE = 10
 NEDOS = 2000
-NELECT = 583.0
+NELECT = 493.0
 NKRED = 2
 NSW = 200
 NUPDOWN = 1
