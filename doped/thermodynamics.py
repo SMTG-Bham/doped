@@ -19,6 +19,7 @@ from matplotlib import colors
 from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
+from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
 from pymatgen.io.vasp.outputs import Vasprun
 from scipy.optimize import brentq
@@ -78,6 +79,39 @@ def _parse_facet(chempots: Dict, facet: Optional[str] = None):
         elif "poor" in facet:
             facet = get_X_poor_facet(facet.split("-")[0], chempots)
 
+    return facet
+
+
+def get_rich_poor_facet_dict(chempots: Dict) -> Dict:
+    """
+    Get a dictionary of {"X-rich": facet, "X-poor": facet...} for each element
+    X in the chempots phase diagram.
+
+    Args:
+        chempots (dict): The chempots dict, in the doped format.
+    """
+    if (
+        "facets" not in chempots
+        or "User Chemical Potentials" in chempots["facets"]
+        or "No User Chemical Potentials" in chempots["facets"]
+    ):
+        raise ValueError(
+            "The supplied chempots are not in the doped format (i.e. with `facets` in the "
+            "chempots dict), and so the X-rich/poor facets cannot be determined!"
+        )
+
+    comps = {comp for key in chempots["facets"] for comp in key.split("-")}
+    elts = {element.symbol for comp in comps for element in Composition(comp).elements}
+    facet_dict = {f"{elt}-rich": get_X_rich_facet(elt, chempots) for elt in elts}
+    facet_dict.update({f"{elt}-poor": get_X_poor_facet(elt, chempots) for elt in elts})
+    return facet_dict
+
+
+def _get_facet_name_from_dict(facet, facet_rich_poor_dict, bracket=False):
+    if facet_rich_poor_dict and facet in facet_rich_poor_dict.values():
+        # get first key with matching value:
+        x_rich_poor = list(facet_rich_poor_dict.keys())[list(facet_rich_poor_dict.values()).index(facet)]
+        return f"{x_rich_poor} ({facet})" if bracket else x_rich_poor
     return facet
 
 
@@ -1811,7 +1845,7 @@ class DefectThermodynamics(MSONable):
                         facet,
                         entry.name,
                         -self.get_formation_energy(
-                            entry, chempots=chempots, el_refs=el_refs, fermi_level=0
+                            entry, chempots=chempots, facet=facet, el_refs=el_refs, fermi_level=0
                         )
                         / entry.charge_state,
                     )
@@ -1823,7 +1857,7 @@ class DefectThermodynamics(MSONable):
                         facet,
                         entry.name,
                         -self.get_formation_energy(
-                            entry, chempots=chempots, el_refs=el_refs, fermi_level=0
+                            entry, chempots=chempots, facet=facet, el_refs=el_refs, fermi_level=0
                         )
                         / entry.charge_state,
                     )
@@ -1861,20 +1895,29 @@ class DefectThermodynamics(MSONable):
                 "(unphysical)!"
             )
 
+        try:
+            facet_dict = get_rich_poor_facet_dict(chempots)
+        except ValueError:
+            facet_dict = {}
+
         return pd.DataFrame(
             [
                 [
-                    limiting_donor_intercept_row["facet"],
+                    _get_facet_name_from_dict(
+                        limiting_donor_intercept_row["facet"], facet_dict, bracket=True
+                    ),
                     limiting_donor_intercept_row["name"],
                     round(limiting_donor_intercept_row["intercept"], 3),
                 ],
                 [
-                    limiting_acceptor_intercept_row["facet"],
+                    _get_facet_name_from_dict(
+                        limiting_acceptor_intercept_row["facet"], facet_dict, bracket=True
+                    ),
                     limiting_acceptor_intercept_row["name"],
                     round(limiting_acceptor_intercept_row["intercept"], 3),
                 ],
             ],
-            columns=["Facet", "Compensating Defect", "Dopability Limit"],
+            columns=["Facet", "Compensating Defect", "Dopability Limit (eV from VBM/CBM)"],
             index=["p-type", "n-type"],
         )
 
@@ -1967,6 +2010,7 @@ class DefectThermodynamics(MSONable):
                         self.get_formation_energy(
                             entry,
                             chempots=chempots,
+                            facet=facet,
                             el_refs=el_refs,
                             fermi_level=0,
                         ),
@@ -1981,6 +2025,7 @@ class DefectThermodynamics(MSONable):
                         self.get_formation_energy(
                             entry,
                             chempots=chempots,
+                            facet=facet,
                             el_refs=el_refs,
                             fermi_level=self.band_gap,  # type: ignore[arg-type]
                         ),
@@ -1999,6 +2044,11 @@ class DefectThermodynamics(MSONable):
             cbm_acceptor_intercepts, columns=["facet", "name", "intercept"]
         )
 
+        try:
+            facet_dict = get_rich_poor_facet_dict(chempots)
+        except ValueError:
+            facet_dict = {}
+
         # get the most p/n-type limit, by getting the facet with the maximum min-intercept, where
         # min-intercept is the min intercept for that facet (i.e. the compensating intercept)
         limiting_intercept_rows = []
@@ -2009,7 +2059,7 @@ class DefectThermodynamics(MSONable):
             limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
             limiting_intercept_rows.append(
                 [
-                    limiting_intercept_row["facet"],
+                    _get_facet_name_from_dict(limiting_intercept_row["facet"], facet_dict, bracket=True),
                     limiting_intercept_row["name"],
                     round(limiting_intercept_row["intercept"], 3),
                 ]
@@ -2017,7 +2067,7 @@ class DefectThermodynamics(MSONable):
 
         return pd.DataFrame(
             limiting_intercept_rows,
-            columns=["Facet", "Compensating Defect", "Doping Window"],
+            columns=["Facet", "Compensating Defect", "Doping Window (eV at VBM/CBM)"],
             index=["p-type", "n-type"],
         )
 

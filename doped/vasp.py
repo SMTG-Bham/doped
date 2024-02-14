@@ -1246,7 +1246,7 @@ class DefectRelaxSet(MSONable):
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
                 ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
-                (default: True)
+                (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1718,7 +1718,8 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    unperturbed_poscar=unperturbed_poscar,
+                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar if
+                    # vasp_gam explicitly set
                     **kwargs,
                 )
 
@@ -2062,9 +2063,10 @@ class DefectsSet(MSONable):
 
         By default, ``POSCAR`` files are not generated for the ``vasp_(nkred_)std``
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
-        be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
-        or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        be taken from ``vasp_gam`` ``ShakeNBreak`` calculations (via
+        ``snb-groundstate``), some other structure-searching approach or, if not
+        following the recommended structure-searching workflow, from the
+        ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
         effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
         should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
