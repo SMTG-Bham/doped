@@ -40,6 +40,7 @@
 - Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
+  - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
   - Barebones tutorial workflow, as suggested by Alex G. 
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.
