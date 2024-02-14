@@ -10,7 +10,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tqdm import tqdm
 
-from doped.utils.symmetry import _get_sga
+from doped.utils.symmetry import _get_sga, get_clean_structure
 
 
 def get_min_image_distance(structure: Structure) -> float:
@@ -275,14 +275,14 @@ def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.nda
 
 def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     """
-    Sorting function to apply on an iterable of transformation matrices,.
+    Sorting function to apply on an iterable of transformation matrices.
 
-    where matrices are sorted by:
+    Matrices are sorted by:
 
     - minimum ASE style cubic-like metric
       (using the fixed, efficient doped version)
-    - minimum absolute sum of elements
     - matrix symmetry (around diagonal)
+    - minimum absolute sum of elements
     - minimum absolute sum of off-diagonal elements
     - minimum number of negative elements
     - minimum largest (absolute) element
@@ -366,7 +366,7 @@ def _get_candidate_P_arrays(
         target_metric = np.eye(3)  # SC by default
 
     # Normalize cell metric to reduce computation time during looping
-    norm = (target_size * np.linalg.det(cell) / np.linalg.det(target_metric)) ** (-1.0 / 3)
+    norm = (target_size * abs(np.linalg.det(cell)) / np.linalg.det(target_metric)) ** (-1.0 / 3)
     norm_cell = norm * cell
 
     if verbose:
@@ -475,6 +475,7 @@ def find_ideal_supercell(
     cell: np.ndarray,
     target_size: int,
     limit: int = 2,
+    clean: bool = True,
     return_min_dist: bool = False,
     verbose: bool = False,
 ) -> Union[np.ndarray, tuple]:
@@ -513,6 +514,11 @@ def find_ideal_supercell(
             within +/-``limit`` of the ideal P matrix elements (rounded to the
             nearest integer).
             (Default = 2)
+        clean (bool):
+            Whether to return the supercell matrix which gives the 'cleanest'
+            supercell (according to `_lattice_matrix_sorting_func`; most
+            symmetric, with mostly positive diagonals and c >= b >= a).
+            (Default = True)
         return_min_dist (bool):
             Whether to return the minimum image distance (in Å) as a second
             return value.
@@ -608,10 +614,25 @@ def find_ideal_supercell(
     sc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3)
     fcc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3)
 
-    if sc_min_dist >= fcc_min_dist:
-        return (sc_optimal_P, sc_min_dist) if return_min_dist else sc_optimal_P
+    sc_fcc_P_and_min_dists = [
+        (sc_optimal_P, sc_min_dist),
+        (fcc_optimal_P, fcc_min_dist),
+    ]
+    sc_fcc_P_and_min_dists.sort(
+        key=lambda x: (-x[1], _P_matrix_sorting_func(x[0], cell))
+    )  # sort by max min dist, then by sorting func
 
-    return (fcc_optimal_P, fcc_min_dist) if return_min_dist else fcc_optimal_P
+    optimal_P, min_dist = sc_fcc_P_and_min_dists[0]
+
+    if clean:
+        supercell = Structure(Lattice(cell), ["H"], [[0, 0, 0]]) * optimal_P
+        clean_supercell, T = get_clean_structure(supercell, return_T=True)  # T maps orig to clean_super
+        # T*orig = clean -> orig = T^-1*clean
+        # optimal_P was: P*cell = orig -> T*P*cell = clean -> P' = T*P
+
+        optimal_P = np.matmul(T, optimal_P)
+
+    return (optimal_P, min_dist) if return_min_dist else optimal_P
 
 
 def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) -> dict:
