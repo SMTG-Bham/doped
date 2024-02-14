@@ -93,7 +93,7 @@ def get_rich_poor_facet_dict(chempots: Dict) -> Dict:
     if (
         "facets" not in chempots
         or "User Chemical Potentials" in chempots["facets"]
-        or ("User Chemical Potentials") in chempots["facets"]
+        or "No User Chemical Potentials" in chempots["facets"]
     ):
         raise ValueError(
             "The supplied chempots are not in the doped format (i.e. with `facets` in the "
@@ -111,9 +111,7 @@ def _get_facet_name_from_dict(facet, facet_rich_poor_dict, bracket=False):
     if facet_rich_poor_dict and facet in facet_rich_poor_dict.values():
         # get first key with matching value:
         x_rich_poor = list(facet_rich_poor_dict.keys())[list(facet_rich_poor_dict.values()).index(facet)]
-        if bracket:
-            return f"{x_rich_poor} ({facet})"
-        return x_rich_poor
+        return f"{x_rich_poor} ({facet})" if bracket else x_rich_poor
     return facet
 
 
