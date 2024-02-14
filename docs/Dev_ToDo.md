@@ -31,6 +31,7 @@
 
 ## Housekeeping
 - Tutorials general structure clean-up
+- Clean up repo, removing old unnecessary git blobs
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
 - Code tidy up:
   - Test coverage?
