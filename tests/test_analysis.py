@@ -704,7 +704,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])
         assert not w  # no warnings
 
-        return v2o5_thermo.plot(facet="VO2-V2O5")
+        return v2o5_thermo.plot(facet="V2O5-O2")
 
 
 class DopedParsingTestCase(unittest.TestCase):

@@ -522,7 +522,11 @@ class DefectDictSetTest(unittest.TestCase):
 
         if kwargs.get("unperturbed_poscar", True):
             written_poscar = Poscar.from_file(f"{output_path}/POSCAR")
-            assert str(written_poscar) == str(dds.poscar)  # POSCAR __eq__ fails for equal structures
+            # `get_defect_name_from_entry(relaxed=True)` causes `Defect` initialisation which adds oxi
+            # states to `structure` (`defect_entry.bulk_supercell` in this case), which is used in our
+            # YTOS defect gen tests (to test periodicity breaking warning), so remove these for comparison:
+            written_poscar.structure.remove_oxidation_states()
+            dds.structure.remove_oxidation_states()
             assert written_poscar.structure == dds.structure
             # no duplicates:
             assert len(written_poscar.site_symbols) == len(set(written_poscar.site_symbols))
@@ -827,16 +831,26 @@ class DefectsSetTest(unittest.TestCase):
         single_defect_dir=False,
         bulk=True,
     ):
-        def _check_single_vasp_dir(
-            data_dir=None,
-            generated_dir=".",
-            folder="",
-            vasp_type="vasp_gam",
-            check_poscar=True,
-            check_potcar_spec=False,
-            check_incar=True,
-        ):
-            # print(f"{generated_dir}/{folder}")  # to help debug if tests fail
+        if data_dir is None:
+            data_dir = self.CdTe_data_dir
+
+        if check_incar is None:
+            check_incar = _potcars_available()
+
+        if single_defect_dir:
+            folders = [
+                "",
+            ]
+
+        else:
+            folders = [
+                folder
+                for folder in os.listdir(data_dir)
+                if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder.lower() or bulk)
+            ]
+
+        for folder in folders:
+            print(f"{generated_dir}/{folder}")  # for debugging
             assert os.path.exists(f"{generated_dir}/{folder}")
             assert os.path.exists(f"{generated_dir}/{folder}/{vasp_type}")
 
@@ -872,36 +886,6 @@ class DefectsSetTest(unittest.TestCase):
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
             assert test_kpoints.as_dict() == kpoints.as_dict()
-
-        if data_dir is None:
-            data_dir = self.CdTe_data_dir
-
-        if check_incar is None:
-            check_incar = _potcars_available()
-
-        if single_defect_dir:
-            _check_single_vasp_dir(
-                data_dir=data_dir,
-                generated_dir=generated_dir,
-                folder="",
-                vasp_type=vasp_type,
-                check_poscar=check_poscar,
-                check_potcar_spec=check_potcar_spec,
-                check_incar=check_incar,
-            )
-
-        else:
-            for folder in os.listdir(data_dir):
-                if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder.lower() or bulk):
-                    _check_single_vasp_dir(
-                        data_dir=data_dir,
-                        generated_dir=generated_dir,
-                        folder=folder,
-                        vasp_type=vasp_type,
-                        check_poscar=check_poscar,
-                        check_potcar_spec=check_potcar_spec,
-                        check_incar=check_incar,
-                    )
 
     def _general_defects_set_check(self, defects_set, **kwargs):
         # TODO: Use function above!
@@ -1055,7 +1039,8 @@ class DefectsSetTest(unittest.TestCase):
 
                 for subfolder in ["vasp_std", "vasp_nkred_std", "vasp_ncl"]:
                     kpoints = Kpoints.from_file(f"{folder}/{subfolder}/KPOINTS")
-                    assert kpoints.kpts == [[3, 3, 3]]
+                    assert kpoints.kpts == [[4, 4, 4]]  # 4x4x4 with 54-atom 3x3x3 prim supercell,
+                    # 3x3x3 with 64-atom 2x2x2 conv supercell
 
     def test_write_files_single_defect_entry(self):
         single_defect_entry = self.CdTe_defect_gen["Cd_i_C3v_+2"]

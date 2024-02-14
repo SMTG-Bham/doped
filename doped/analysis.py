@@ -973,7 +973,7 @@ class DefectsParser:
         if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
             defect_entry.name
             for defect_entry in entries_to_rename
-            if defect_entry.name in list(self.defect_dict.values())
+            if defect_entry.name in self.defect_dict
         ]:
             raise ValueError(
                 f"Some defect entries have the same name, due to mixing of doped-named and unnamed "

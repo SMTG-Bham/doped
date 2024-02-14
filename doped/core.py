@@ -1071,6 +1071,8 @@ class Defect(core.Defect):
             The defect supercell structure. If ``return_sites`` is True, also returns
             the defect supercell site and list of equivalent supercell sites.
         """
+        from doped.utils.symmetry import _round_floats
+
         if sc_mat is None:
             if min_length is not None:
                 min_image_distance = min_length
@@ -1145,6 +1147,11 @@ class Defect(core.Defect):
             sc_defect_struct.insert(len(self.structure * sc_mat), dummy_species, sc_site.frac_coords)
 
         sorted_sc_defect_struct = sc_defect_struct.get_sorted_structure()  # ensure proper sorting
+        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
+        sorted_sc_defect_struct = Structure.from_sites(  # ensure to_unit_cell()
+            [site.to_unit_cell() for site in sorted_sc_defect_struct]
+        )
+        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
 
         return (
             (
