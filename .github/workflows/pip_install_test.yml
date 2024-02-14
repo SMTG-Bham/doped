@@ -5,7 +5,7 @@ on:
 
   workflow_run:
     workflows: ["Release and publish"]
-    branches: [master]
+    branches: [main]
     types:
       - completed  # only test when new release has been deployed to PyPI
 
