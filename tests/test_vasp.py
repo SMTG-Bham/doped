@@ -548,6 +548,8 @@ class DefectRelaxSetTest(unittest.TestCase):
 
     def tearDown(self):
         self.dds_test.tearDown()  # use tearDown from DefectDictSetTest
+        if_present_rm("test_dir")
+        if_present_rm("CdTe_bulk")
 
     def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
         dds_test_list = [
@@ -694,8 +696,92 @@ class DefectRelaxSetTest(unittest.TestCase):
             self._general_defect_relax_set_check(custom_drs)
             _check_drs_defect_entry_attribute_transfer(custom_drs, defect_entry)
 
-            # TODO: Test file writing, default folder naming
-            # TODO: Explicitly check some poscar comments? For DS, DRS and DDS
+    def test_vasp_gam_folder_writing(self):
+        """
+        Test DefectRelaxSet write_all() methods; writing/not writing vasp_gam
+        POSCARs.
+        """
+        for defect_gen_name in [
+            "CdTe_defect_gen",
+            "ytos_defect_gen",
+            "lmno_defect_gen",
+            "cu_defect_gen",
+        ]:
+            print(f"Testing: {defect_gen_name}")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+            defect_entry = random.choice(list(defect_gen.values()))
+            print(f"Testing DefectRelaxSet with: {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry)
+            drs.write_all("test_dir")
+
+            assert os.path.exists("test_dir")
+            assert not os.path.exists("test_dir/vasp_gam")
+            assert not os.path.exists("test_dir/vasp_gam/POSCAR")
+            assert not os.path.exists("test_dir/vasp_std/POSCAR")
+            assert os.path.exists("test_dir/vasp_std/INCAR")
+            if_present_rm("test_dir")
+
+            drs = DefectRelaxSet(defect_entry)
+            drs.write_all("test_dir", vasp_gam=True)
+
+            assert os.path.exists("test_dir")
+            assert os.path.exists("test_dir/vasp_gam")
+            assert os.path.exists("test_dir/vasp_gam/POSCAR")
+            assert not os.path.exists("test_dir/vasp_std/POSCAR")
+            assert os.path.exists("test_dir/vasp_std/INCAR")
+            if_present_rm("test_dir")
+
+            drs = DefectRelaxSet(defect_entry)
+            drs.write_all("test_dir", vasp_gam=True, unperturbed_poscar=True)
+
+            assert os.path.exists("test_dir")
+            assert os.path.exists("test_dir/vasp_gam")
+            assert os.path.exists("test_dir/vasp_gam/POSCAR")
+            assert os.path.exists("test_dir/vasp_std/POSCAR")
+            assert os.path.exists("test_dir/vasp_std/INCAR")
+            if_present_rm("test_dir")
+
+    def test_poscar_comments(self):
+        drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"])
+        drs.write_all("test_dir", unperturbed_poscar=True)
+        poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
+        assert poscar.comment == "Cd_i_C3v ~[0.5417,0.5417,0.5417] 0"
+
+        poscar = Poscar.from_file("test_dir/vasp_nkred_std/POSCAR")
+        assert poscar.comment == "Cd_i_C3v ~[0.5417,0.5417,0.5417] 0"
+
+        poscar = Poscar.from_file("test_dir/vasp_ncl/POSCAR")
+        assert poscar.comment == "Cd_i_C3v ~[0.5417,0.5417,0.5417] 0"
+
+        assert not os.path.exists("test_dir/CdTe_bulk")
+        drs.write_all("test_dir", bulk=True)
+        assert not os.path.exists("test_dir/CdTe_bulk")
+
+        poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        assert poscar.comment == "Cd27 Te27 - Bulk"
+
+        drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"], poscar_comment="Test pop")
+        drs.write_all("test_dir", unperturbed_poscar=True)
+        poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
+        assert poscar.comment == "Test pop"
+
+        drs = DefectRelaxSet(self.CdTe_defect_gen["v_Cd_-2"])
+        drs.write_all("test_dir", unperturbed_poscar=True)
+        poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
+        assert poscar.comment == "v_Cd ~[0.3333,0.3333,0.3333] -2"
+
+        poscar = Poscar.from_file("test_dir/vasp_nkred_std/POSCAR")
+        assert poscar.comment == "v_Cd ~[0.3333,0.3333,0.3333] -2"
+
+        poscar = Poscar.from_file("test_dir/vasp_ncl/POSCAR")
+        assert poscar.comment == "v_Cd ~[0.3333,0.3333,0.3333] -2"
+
+        assert not os.path.exists("test_dir/CdTe_bulk")
+        drs.write_all("test_dir", bulk=True)
+        assert not os.path.exists("test_dir/CdTe_bulk")
+
+        poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        assert poscar.comment == "Cd27 Te27 - Bulk"
 
     def test_default_kpoints_soc_handling(self):
         """
@@ -888,7 +974,7 @@ class DefectsSetTest(unittest.TestCase):
             assert test_kpoints.as_dict() == kpoints.as_dict()
 
     def _general_defects_set_check(self, defects_set, **kwargs):
-        # TODO: Use function above!
+        # TODO: Use function above here
         for defect_relax_set in defects_set.defect_sets.values():
             dds_test_list = [
                 defect_relax_set.vasp_gam,
@@ -1010,8 +1096,6 @@ class DefectsSetTest(unittest.TestCase):
                 defect_relax_set.bulk_vasp_ncl,
             ]:
                 assert defect_dict_set.kpoints.kpts == [[2, 2, 2]]
-
-            # TODO: Add more tests here once DefectRelaxSet tests written
 
         # test custom POTCAR and KPOINTS choices (INCAR already tested): also tests dictionary input to
         # DefectsSet

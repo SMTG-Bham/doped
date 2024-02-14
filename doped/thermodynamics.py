@@ -2805,9 +2805,6 @@ class DefectThermodynamics(MSONable):
 
         return symmetry_df.reset_index(drop=True)
 
-    # TODO: Show example of this in tutorials (also noting the default behaviour of `doped` in guessing
-    #  this, and trying to warn if it doesn't work)
-
     def __repr__(self):
         """
         Returns a string representation of the DefectThermodynamics object.
