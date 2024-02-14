@@ -927,7 +927,7 @@ class DefectsParser:
 
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
-        entries_to_rename = [  # TODO: Add test for this:
+        entries_to_rename = [
             defect_entry
             for defect_entry in parsed_defect_entries
             if len(
@@ -1687,7 +1687,6 @@ class DefectParser:
                 bulk_site_point_group=bulk_site_point_group,
                 defect_type=defect.defect_type,
             )
-        # TODO: Show these properties in tutorials
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
