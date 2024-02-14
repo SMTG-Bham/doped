@@ -283,6 +283,11 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Se_S_0": "Se$_{S}^{0}$",
             "Si_S_0": "Si$_{S}^{0}$",
             "S_Si_0": "S$_{Si}^{0}$",
+            "inter_8_O_-1": "O$_i^{-1}$",
+            "inter_14_O_0": "O$_i^{0}$",
+            "inter_14_O_+2": "O$_i^{+2}$",
+            "inter_14_Th_+2": "Th$_i^{+2}$",
+            "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -355,6 +360,11 @@ class DefectPlottingTestCase(unittest.TestCase):
             "v_Cd_C3v_Cd2.71_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Cd2.71}}^{-1}$",
             "v_Cd_C3v_Te2.83Cd4.25_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Te2.83Cd4.25}}^{-1}$",
             "v_Cd_C3v_Te2.83Cd4.62_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Te2.83Cd4.62}}^{-1}$",
+            "inter_8_O_-1": "O$_{i_{8}}^{-1}$",
+            "inter_14_O_0": "O$_{i_{14}}^{0}$",
+            "inter_14_O_+2": "O$_{i_{14}}^{+2}$",
+            "inter_14_Th_+2": "Th$_{i_{14}}^{+2}$",
+            "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
         }
         for (
             defect_species,

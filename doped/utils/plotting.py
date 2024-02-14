@@ -261,7 +261,9 @@ def _format_defect_name(
     # check if name is doped format, having site info as point group symbol (and more) after 2nd "_":
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
-        if point_group_symbol in sch_symbols:  # recognised point group symbol?
+        if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
+            i not in defect_species.lower() for i in ["int", "vac", "sub", "as"]
+        ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
             formatted_point_group_symbol = (
@@ -490,7 +492,7 @@ def _format_defect_name(
     two_character_pairs_in_name = [
         trimmed_pre_charge_name[i : i + 2]  # trimmed_pre_charge_name name for finding elements,
         # pre_charge_name for matching defect format
-        for i in range(0, len(trimmed_pre_charge_name), 1)
+        for i in range(len(trimmed_pre_charge_name))
         if len(trimmed_pre_charge_name[i : i + 2]) == 2
     ]
     possible_two_character_elements = [
