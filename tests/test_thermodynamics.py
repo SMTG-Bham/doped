@@ -324,16 +324,19 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert "so dopability limits cannot be calculated." in str(exc.exception)
 
         else:
-            assert isinstance(defect_thermo.get_doping_windows(), pd.DataFrame)
-            assert isinstance(defect_thermo.get_dopability_limits(), pd.DataFrame)
+            with warnings.catch_warnings(record=True) as w:
+                assert isinstance(defect_thermo.get_doping_windows(), pd.DataFrame)
+                assert isinstance(defect_thermo.get_dopability_limits(), pd.DataFrame)
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w
             if "V2O5" in defect_thermo.bulk_formula:
                 for df in [defect_thermo.get_doping_windows(), defect_thermo.get_dopability_limits()]:
                     assert set(df.columns).issubset(
                         {
                             "Compensating Defect",
-                            "Dopability Limit",
+                            "Dopability Limit (eV from VBM/CBM)",
                             "Facet",
-                            "Doping Window",
+                            "Doping Window (eV at VBM/CBM)",
                         }
                     )
                     assert set(df.index) == {"n-type", "p-type"}
@@ -1469,7 +1472,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
-            os.path.join(self.module_path, "../examples/CdTe_thermo_wout_meta.json")
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json")
         )
         # random defect_entry:
         for _ in range(10):
@@ -1543,7 +1546,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         cls.defect_thermo.chempots = cls.CdTe_chempots
 
         cls.fermi_dos = loadfn(
-            os.path.join(cls.module_path, "data/CdTe_prim_k181818_NKRED_2_fermi_dos.json")
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_fermi_dos.json")
         )
         cls.anneal_temperatures = np.arange(200, 1401, 50)
 
