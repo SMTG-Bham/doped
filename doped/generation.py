@@ -2181,7 +2181,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     Sorts defect entries by defect type (vacancies, substitutions,
     interstitials), then by order of appearance of elements in the composition,
     then alphabetically, then (for defect entries of the same type) sort by
-    charge state.
+    charge state (from positive to negative).
     """
     if element_list is None:
         host_element_list = None
@@ -2212,7 +2212,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     element_list.index(_first_and_second_element(s[0])[0]),
                     element_list.index(_first_and_second_element(s[0])[1]),
                     s[0].rsplit("_", 1)[0],  # name without charge
-                    s[1].charge_state,  # charge state
+                    -s[1].charge_state,  # charge state
                 ),
             )
         )
@@ -2238,7 +2238,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
-                    defect_entry.charge_state,  # charge state
+                    -defect_entry.charge_state,  # charge state
                 )
 
             return dict(

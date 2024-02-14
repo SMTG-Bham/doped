@@ -398,7 +398,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         with self.assertRaises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(facet="Te-rich")
         assert (
-            "You have specified an X-rich/poor facet, but no `chempots` have been supplied, "
+            "You have specified a chemical potential facet, but no `chempots` have been supplied, "
             "so `facet` cannot be used here!"
         ) in str(exc.exception)
 
@@ -406,9 +406,9 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         with self.assertRaises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, facet="Te-rich")
         assert (
-            "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped "
-            "format (i.e. with `facets` in the chempots dict), and instead correspond to just a single "
-            "phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
+            "You have specified a chemical potential facet, but the supplied chempots are not in the "
+            "doped format (i.e. with `facets` in the chempots dict), and instead correspond to just a "
+            "single phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
         ) in str(exc.exception)
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")

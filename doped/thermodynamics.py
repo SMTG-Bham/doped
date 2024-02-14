@@ -61,7 +61,7 @@ def _raise_facet_with_user_chempots_error(no_chempots=True):
         else "no `chempots` have been supplied"
     )
     raise ValueError(
-        f"You have specified an X-rich/poor facet, but {problem}, so `facet` cannot be used here!"
+        f"You have specified a chemical potential facet, but {problem}, so `facet` cannot be used here!"
     )
 
 
@@ -1621,8 +1621,6 @@ class DefectThermodynamics(MSONable):
             h_conc,
             _get_constrained_total_q(eq_fermi_level, return_conc_df=True),
         )
-        # TODO: Test all these functions against py-sc-fermi obvs (rough tests indicate all working as
-        #  expected), CdTe easy test case
 
     def get_formation_energy(
         self,

@@ -1525,6 +1525,26 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     )
                     assert np.isclose(new_conc, orig_conc * 21)
 
+    @custom_mpl_image_compare(filename="CdTe_duplicate_entry_names.png")
+    def test_handling_duplicate_entry_names(self):
+        """
+        Test renaming behaviour when defect entries with the same names are
+        provided.
+        """
+        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json"))
+        num_entries = len(defect_dict)
+        for defect_entry in defect_dict.values():
+            if "Cd_i" in defect_entry.name:
+                defect_entry.name = f"Cd_i_{defect_entry.charge_state}"
+            if "Te_i" in defect_entry.name:
+                defect_entry.name = f"Te_i_{defect_entry.charge_state}"
+
+        defect_thermo = DefectThermodynamics(defect_dict)
+        assert len(defect_thermo.defect_entries) == num_entries
+        print([entry.name for entry in defect_thermo.defect_entries])
+
+        return defect_thermo.plot(self.CdTe_chempots, facet="Cd-rich")
+
 
 def belas_linear_fit(T):  #
     """
