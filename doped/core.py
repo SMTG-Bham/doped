@@ -5,6 +5,7 @@ Core functions and classes for defects in doped.
 
 import collections
 import contextlib
+import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
@@ -16,12 +17,24 @@ from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.stats import sem
 
-from doped.utils.displacements import _plot_site_displacements
-from doped.utils.phs import get_phs_and_eigenvalue
+
+_orientational_degeneracy_warning = (
+    "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
+    "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
+    "point group symmetries (and thus orientational degeneracies) from being automatically "
+    "determined.\n"
+    "This will not affect defect formation energies / transition levels, but is important for "
+    "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
+    "doi.org/10.1039/D3CS00432E).\n"
+    "You can manually check (and edit) the computed defect/bulk point symmetries and "
+    "corresponding orientational degeneracy factors by inspecting/editing the "
+    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
+    "degeneracy_factors['orientational degeneracy'] attributes."
+)
 
 
 @dataclass
@@ -106,7 +119,7 @@ class DefectEntry(thermo.DefectEntry):
     corrections: Dict[str, float] = field(default_factory=dict)
     corrections_metadata: Dict[str, Any] = field(default_factory=dict)
     sc_defect_frac_coords: Optional[Tuple[float, float, float]] = None
-    bulk_entry: Optional[ComputedStructureEntry] = None
+    bulk_entry: Optional[ComputedEntry] = None
     entry_id: Optional[str] = None
 
     # doped attributes:
@@ -247,6 +260,7 @@ class DefectEntry(thermo.DefectEntry):
         axis=None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
+        style_file: Optional[str] = None,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -298,6 +312,10 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
+            style_file (str):
+                Path to a ``.mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style
+                (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
                 pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
@@ -327,6 +345,7 @@ class DefectEntry(thermo.DefectEntry):
             plot=plot,
             filename=filename,
             axis=axis,
+            style_file=style_file,
             **kwargs,
         )
         correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
@@ -343,6 +362,7 @@ class DefectEntry(thermo.DefectEntry):
                 for i in [0, 1, 2]
             ]
         ) * abs(self.charge_state)
+        self.corrections_metadata.update({"freysoldt_charge_correction_error": correction_error})
 
         return self._check_correction_error_and_return_output(
             fnv_correction_output,
@@ -363,6 +383,7 @@ class DefectEntry(thermo.DefectEntry):
         filename: Optional[str] = None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
+        style_file: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -426,6 +447,10 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance (float):
                 If the estimated error in the charge correction is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
+            style_file (str):
+                Path to a ``.mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style
+                (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
                 pydefect.corrections.efnv_correction.ExtendedFnvCorrection
@@ -455,6 +480,7 @@ class DefectEntry(thermo.DefectEntry):
             bulk_outcar=bulk_outcar,
             plot=plot,
             filename=filename,
+            style_file=style_file,
             **kwargs,
         )
         correction = efnv_correction_output if not plot and filename is None else efnv_correction_output[0]
@@ -470,6 +496,7 @@ class DefectEntry(thermo.DefectEntry):
 
         # correction energy error can be estimated from standard error of the mean:
         correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
             correction_error,
@@ -491,6 +518,8 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             pydefect BandEdgeStates object
         """
+        from doped.utils.phs import get_phs_and_eigenvalue
+
         if self.calculation_metadata.get("phs_data") is None:
             raise ValueError(
                 "No PHS data loaded for defect_entry. Please parse with load_phs_data = True "
@@ -510,37 +539,55 @@ class DefectEntry(thermo.DefectEntry):
         self,
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
+        el_refs: Optional[dict] = None,
         vbm: Optional[float] = None,
         fermi_level: float = 0,
     ) -> float:
-        """
+        r"""
         Compute the formation energy for the DefectEntry at a given chemical
         potential limit and fermi_level.
 
         Args:
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
-                formation energy. This can have the doped form of:
-                {"facets": [{'facet': [chempot_dict]}]}
-                (the format generated by doped's chemical potential parsing functions
-                (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using ``facet``.
-                Alternatively, can be a dictionary of **DFT**/absolute chemical
-                potentials (not formal chemical potentials!), in the format:
-                {element symbol: chemical potential}.
-                If None (default), sets all chemical potentials to 0 (inaccurate
-                formation energies!)
-            facet (str):
-                The phase diagram facet (chemical potential limit) to use for
-                calculating the formation energy. Can be:
+                formation energy. This can have the form of:
+                ``{"facets": [{'facet': [chempot_dict]}]}`` (the format generated by
+                ``doped``\'s chemical potential parsing functions (see tutorials))
+                and specific facets (chemical potential limits) can then be chosen
+                using ``facet``.
 
-                - "X-rich"/"X-poor" where X is an element in the system, in which
-                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
-                - A key in the (self.)chempots["facets"] dictionary, if the chempots
-                  dict is in the doped format (see chemical potentials tutorial).
+                Alternatively this can be a dictionary of chemical potentials for a
+                single facet (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                If None (default), sets all chemical potentials to zero.
+                (Default: None)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to for which to
+                calculate the formation energy. Can be either:
+
                 - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
-                  limit in the doped chempots dict.
+                  limit in the ``chempots`` dict.
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["facets"]`` dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+                (Default: None)
             vbm (float):
                 VBM eigenvalue in the bulk supercell, to use as Fermi level reference
                 point for calculating formation energy. If None (default), will use
@@ -555,7 +602,7 @@ class DefectEntry(thermo.DefectEntry):
         if chempots is None:
             _no_chempots_warning("Formation energies (and concentrations)")
 
-        dft_chempots = _get_dft_chempots(chempots, facet)
+        dft_chempots = _get_dft_chempots(chempots, el_refs, facet)
         chempot_correction = self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
 
@@ -563,7 +610,7 @@ class DefectEntry(thermo.DefectEntry):
             formation_energy += self.charge_state * (vbm + fermi_level)
         elif "vbm" in self.calculation_metadata:
             formation_energy += self.charge_state * (self.calculation_metadata["vbm"] + fermi_level)
-        else:
+        elif self.charge_state != 0:  # fine if charge state is zero
             warnings.warn(
                 "VBM eigenvalue was not set, and is not present in DefectEntry.calculation_metadata. "
                 "Formation energy will be inaccurate!"
@@ -575,12 +622,13 @@ class DefectEntry(thermo.DefectEntry):
         self,
         chempots: Optional[dict] = None,
         facet: Optional[str] = None,
+        el_refs: Optional[dict] = None,
         temperature: float = 300,
         fermi_level: float = 0,
         vbm: Optional[float] = None,
         per_site: bool = False,
     ) -> float:
-        """
+        r"""
         Compute the `equilibrium` concentration (in cm^-3) for the DefectEntry
         at a given chemical potential limit, fermi_level and temperature,
         assuming the dilute limit approximation.
@@ -603,27 +651,44 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
-                formation energy (and thus concentration). This can have the doped form of:
-                {"facets": [{'facet': [chempot_dict]}]}
-                (the format generated by doped's chemical potential parsing functions
-                (see tutorials)) and specific facets (chemical potential limits) can
-                then be chosen using ``facet``.
-                Alternatively, can be a dictionary of **DFT**/absolute chemical
-                potentials (not formal chemical potentials!), in the format:
-                {element symbol: chemical potential}.
-                If None (default), sets all chemical potentials to 0 (inaccurate
-                formation energies and concentrations!)
-            facet (str):
-                The phase diagram facet (chemical potential limit) to use for
-                calculating the formation energy and thus concentration. Can be:
+                formation energy (and thus concentration). This can have the form of:
+                ``{"facets": [{'facet': [chempot_dict]}]}`` (the format generated by
+                ``doped``\'s chemical potential parsing functions (see tutorials))
+                and specific facets (chemical potential limits) can then be chosen
+                using ``facet``.
 
-                - "X-rich"/"X-poor" where X is an element in the system, in which
-                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
-                - A key in the (self.)chempots["facets"] dictionary, if the chempots
-                  dict is in the doped format (see chemical potentials tutorial).
+                Alternatively this can be a dictionary of chemical potentials for a
+                single facet (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                If None (default), sets all chemical potentials to 0 (inaccurate
+                formation energies and concentrations!). (Default: None)
+            facet (str):
+                The phase diagram facet (chemical potential limit) to for which to
+                calculate the formation energy and thus concentration. Can be either:
+
                 - None (default), if ``chempots`` corresponds to a single chemical
                   potential limit - otherwise will use the first chemical potential
-                  limit in the doped chempots dict.
+                  limit in the ``chempots`` dict.
+                - "X-rich"/"X-poor" where X is an element in the system, in which
+                  case the most X-rich/poor facet will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["facets"]`` dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+                (Default: None)
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium concentration.
             vbm (float):
@@ -668,8 +733,11 @@ class DefectEntry(thermo.DefectEntry):
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
             )
 
+        if self.calculation_metadata.get("periodicity_breaking_supercell", False):
+            warnings.warn(_orientational_degeneracy_warning)
+
         formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
-            chempots=chempots, facet=facet, vbm=vbm, fermi_level=fermi_level
+            chempots=chempots, facet=facet, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
         )
         from scipy.constants import value as constants_value
 
@@ -690,19 +758,24 @@ class DefectEntry(thermo.DefectEntry):
         """
         Returns a string representation of the DefectEntry object.
         """
-        if self.bulk_entry is not None:
-            formula = self.bulk_entry.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
+        from doped.utils.parsing import _get_bulk_supercell
+
+        bulk_supercell = _get_bulk_supercell(self)
+        if bulk_supercell is not None:
+            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         else:
             formula = self.defect.structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
-            f"{self.defect.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"{self.defect.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
     def __eq__(self, other):
@@ -732,6 +805,8 @@ class DefectEntry(thermo.DefectEntry):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
+        from doped.utils.displacements import _plot_site_displacements
+
         return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
@@ -747,13 +822,13 @@ def _no_chempots_warning(property="Formation energies (and concentrations)"):
     )
 
 
-def _get_dft_chempots(chempots, facet):
+def _get_dft_chempots(chempots, el_refs, facet):
     """
     Parse the DFT chempots from the input chempots and facet.
     """
     from doped.thermodynamics import _parse_chempots, _parse_facet
 
-    chempots, _el_refs = _parse_chempots(chempots)
+    chempots, _el_refs = _parse_chempots(chempots, el_refs)
     if chempots is not None:
         facet = _parse_facet(chempots, facet)
         if facet is None:
@@ -949,26 +1024,32 @@ class Defect(core.Defect):
     def get_supercell_structure(
         self,
         sc_mat: Optional[np.ndarray] = None,
-        min_atoms: int = 50,  # different to current pymatgen default (80)
-        min_image_distance: float = 10.0,  # same as current pymatgen default
-        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
-        force_diagonal: bool = False,  # same as current pymatgen default
-        dummy_species: Optional[str] = None,
         target_frac_coords: Optional[np.ndarray] = None,
         return_sites: bool = False,
+        min_image_distance: float = 10.0,  # same as current pymatgen default
+        min_atoms: int = 50,  # different to current pymatgen default (80)
+        force_cubic: bool = False,
+        force_diagonal: bool = False,  # same as current pymatgen default
+        ideal_threshold: float = 0.1,
+        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
+        dummy_species: Optional[str] = None,
     ) -> Structure:
         """
-        Generate the supercell for a defect.
+        Generate the simulation supercell for a defect.
 
-        Redefined from the parent class to allow the use of target_frac_coords
+        Redefined from the parent class to allow the use of ``target_frac_coords``
         to place the defect at the closest equivalent site to the target
         fractional coordinates in the supercell, while keeping the supercell
         fixed (to avoid any issues with defect parsing).
         Also returns information about equivalent defect sites in the supercell.
 
+        If ``sc_mat`` is None, then the supercell is generated automatically
+        using the ``doped`` algorithm described in the ``get_ideal_supercell_matrix``
+        function docstring in ``doped.generation``.
+
         Args:
             sc_mat (3x3 matrix):
-                Transformation matrix of self.structure to create the supercell.
+                Transformation matrix of ``self.structure`` to create the supercell.
                 If None, then automatically computed using ``get_ideal_supercell_matrix``
                 from ``doped.generation``.
             target_frac_coords (3x1 matrix):
@@ -979,22 +1060,41 @@ class Defect(core.Defect):
                 site and list of equivalent supercell sites.
             dummy_species (str):
                 Dummy species to highlight the defect position (for visualizing vacancies).
-            min_atoms (int):
-                Minimum number of atoms allowed in the generated supercell (if sc_mat is None).
             min_image_distance (float):
-                Minimum image distance in Å of the supercell (i.e. minimum distance between
-                periodic images of atoms/sites in the lattice).
+                Minimum image distance in Å of the generated supercell (i.e. minimum
+                distance between periodic images of atoms/sites in the lattice),
+                if ``sc_mat`` is None.
                 (Default = 10.0)
+            min_atoms (int):
+                Minimum number of atoms allowed in the generated supercell, if ``sc_mat``
+                is None.
+                (Default = 50)
+            force_cubic (bool):
+                Enforce usage of ``CubicSupercellTransformation`` from
+                ``pymatgen`` for supercell generation (if ``sc_mat`` is None).
+                (Default = False)
+            force_diagonal (bool):
+                If True, return a transformation with a diagonal
+                transformation matrix (if ``sc_mat`` is None).
+                (Default = False)
+            ideal_threshold (float):
+                Threshold for increasing supercell size (beyond that which satisfies
+                ``min_image_distance`` and `min_atoms``) to achieve an ideal
+                supercell matrix (i.e. a diagonal expansion of the primitive or
+                conventional cell). Supercells up to ``1 + perfect_cell_threshold``
+                times larger (rounded up) are trialled, and will instead be
+                returned if they yield an ideal transformation matrix (if ``sc_mat``
+                is None).
+                (Default = 0.1; i.e. 10% larger than the minimum size)
             min_length (float):
-                Same as min_image_distance (kept for compatibility).
-            force_diagonal:
-                If True, generate a supercell with a diagonal transformation matrix
-                (if sc_mat is None).
+                Same as ``min_image_distance`` (kept for compatibility).
 
         Returns:
-            The defect supercell structure. If return_sites is True, also returns
+            The defect supercell structure. If ``return_sites`` is True, also returns
             the defect supercell site and list of equivalent supercell sites.
         """
+        from doped.utils.symmetry import _round_floats
+
         if sc_mat is None:
             if min_length is not None:
                 min_image_distance = min_length
@@ -1003,8 +1103,10 @@ class Defect(core.Defect):
 
             sc_mat = get_ideal_supercell_matrix(
                 self.structure,
-                min_atoms=min_atoms,
                 min_image_distance=min_image_distance,
+                min_atoms=min_atoms,
+                ideal_threshold=ideal_threshold,
+                force_cubic=force_cubic,
                 force_diagonal=force_diagonal,
             )
 
@@ -1067,6 +1169,11 @@ class Defect(core.Defect):
             sc_defect_struct.insert(len(self.structure * sc_mat), dummy_species, sc_site.frac_coords)
 
         sorted_sc_defect_struct = sc_defect_struct.get_sorted_structure()  # ensure proper sorting
+        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
+        sorted_sc_defect_struct = Structure.from_sites(  # ensure to_unit_cell()
+            [site.to_unit_cell() for site in sorted_sc_defect_struct]
+        )
+        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
 
         return (
             (

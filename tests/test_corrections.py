@@ -258,6 +258,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         Test eFNV correction plotting, with an adjusted sampling region.
         """
         mpl.pyplot.clf()
+        orig_corr_error = self.F_O_1_entry.corrections_metadata.get("kumagai_charge_correction_error", 0)
         corr, fig = get_kumagai_correction(
             self.F_O_1_entry, dielectric=self.ytos_dielectric, defect_region_radius=7.5, plot=True
         )
@@ -265,6 +266,9 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(self.F_O_1_entry.corrections.values()), 0.12691248591191384
         )  # correction not applied to DefectEntry when using get_kumagai_correction directly
+        assert np.isclose(
+            orig_corr_error, self.F_O_1_entry.corrections_metadata["kumagai_charge_correction_error"]
+        )  # correction error unchanged as correction not applied
         return fig
 
     @pytest.mark.mpl_image_compare(
@@ -297,6 +301,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         parameter.
         """
         mpl.pyplot.clf()
+        orig_corr_error = self.F_O_1_entry.corrections_metadata.get("kumagai_charge_correction_error", 0)
         corr, fig = get_kumagai_correction(
             self.F_O_1_entry,
             dielectric=self.ytos_dielectric,
@@ -309,6 +314,9 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(self.F_O_1_entry.corrections.values()), 0.12691248591191384
         )  # correction not applied to DefectEntry when using get_kumagai_correction directly
+        assert np.isclose(
+            orig_corr_error, self.F_O_1_entry.corrections_metadata["kumagai_charge_correction_error"]
+        )  # correction error unchanged as correction not applied
 
         # F substitution is site number 109, so whether or not it's excluded gives same figure and result
         corr, fig = self.F_O_1_entry.get_kumagai_correction(  # test as DefectEntry method this time

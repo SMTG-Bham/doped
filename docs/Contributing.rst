@@ -16,7 +16,7 @@ workflow to do so.
 Tests
 -------
 
-Unit tests are in the `tests <https://github.com/SMTG-Bham/doped/tree/master/tests>`_ directory
-and can be run from the top directory using ``pytest``. Automatic testing is run on the master and
-develop branches using `Github Actions <https://github.com/SMTG-Bham/doped/actions>`_. Please
+Unit tests are in the `tests <https://github.com/SMTG-Bham/doped/tree/main/tests>`_ directory
+and can be run from the top directory using ``pytest``. Automatic testing is run on the ``main``
+and ``develop`` branches using `Github Actions <https://github.com/SMTG-Bham/doped/actions>`_. Please
 run tests and add new tests for any new features whenever submitting pull requests.
