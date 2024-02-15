@@ -195,6 +195,59 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :width: 320px
     :align: right
 
+Perturbed Host States
+--------------------------------------
+
+Defects which have hydrogenlike donor and acceptor states are known as perturbed host states (PHS).
+These states typically have wavefunctions distributed over many unit cells, requiring exceptionally
+large supercells to properly capture their physics (`an example  <https://www.nature.com/articles/s41524-020-00448-7>`_).
+Current corrections schemes can not account for errors obtained when calculating the transition energies of PHS,
+and therefore it is recommended to denote that the defect is a PHS and their transition energy is located near
+the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
+<https://doi.org/10.1021/acs.chemmater.1c00075>`_.
+
+In doped we employ the methodolgy of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
+identify potential PHS through an interface with ``pydefect``.
+
+By including the optional tag ``load_phs_data`` when using the (single) ``DefectParser`` class
+to parse an individual defect, and in combination with ``defect_entry.get_perturbed_host_state()`` PHS
+can be automatically identified. It is however recommended to manually check the charge density
+of the defect state to confirm the identification.
+
+In the example below the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
+determined to be a PHS. This was additionally confirmed by perform calculations in larger supercells and plotting
+the charge density.
+
+.. code-block:: python
+
+    bulk = "Cu2SiSe3/bulk/vasp_std"
+    defect = "Cu2SiSe3/v_Cu_0/vasp_std/"
+
+    defect = DefectParser.from_paths(defect,bulk,dielectric,skip_corrections=True,load_phs_data=True).defect_entry
+    phs = defect.get_perturbed_host_state(save_plot=False)
+    #print information about the defect state
+    print(phs)
+
+     -- band-edge states info
+     Spin-up
+          Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
+     VBM  347    3.539   0.91     1.00        0.03     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+     CBM  348    5.139   0.87     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    vbm has acceptor phs: False (0.000 vs. 0.2)
+    cbm has donor phs: False (0.000 vs. 0.2)
+    ---
+    Localized Orbital(s)
+    Index  Energy  P-ratio  Occupation  Orbitals
+
+    Spin-down
+         Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
+    VBM  347    3.677   0.92     0.00        0.02     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+    CBM  348    5.142   0.87     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    vbm has acceptor phs: True (1.000 vs. 0.2)
+    cbm has donor phs: False (0.000 vs. 0.2)
+    ---
+    Localized Orbital(s)
+    Index  Energy  P-ratio  Occupation  Orbitals
 
 .. note::
 
