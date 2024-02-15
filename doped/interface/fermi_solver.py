@@ -16,6 +16,7 @@ from doped.utils.parsing import get_neutral_nelect_from_vasprun
 try:
     from py_sc_fermi.defect_system import DefectSystem
     from py_sc_fermi.defect_species import DefectSpecies
+    from py_sc_fermi.defect_charge_state import DefectChargeState
     from py_sc_fermi.dos import DOS
 except ImportError:
     warn("py-sc-fermi not installed, will only be able to use doped backend")
@@ -44,7 +45,12 @@ class FermiSolver(MSONable):
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr
 
-    def equilibrium_solve(self, chempots: dict[str, float], temperature: float) -> None:
+    def equilibrium_solve(
+        self,
+        chempots: dict[str, float],
+        temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
+    ) -> None:
         """not implemented in the base class, implemented in the derived class"""
         raise NotImplementedError(
             """This method is implemented in the derived class, 
@@ -52,13 +58,45 @@ class FermiSolver(MSONable):
         )
 
     def pseudo_equilibrium_solve(
-        self, chempots: dict[str, float], quenched_temperature: float, annealing_temperature: float
+        self,
+        chempots: dict[str, float],
+        quenched_temperature: float,
+        annealing_temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
     ) -> None:
         """not implemented in the base class, implemented in the derived class"""
         raise NotImplementedError(
             """This method is implemented in the derived class, 
             use FermiSolverDoped or FermiSolverPyScFermi instead."""
         )
+
+    def scan_dopant_concentration(
+        self,
+        chempots: dict[str, float],
+        temperature: float,
+        dopant_concentration_range: List[float],
+        processes: int = 1,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Scan over a range of dopant concentrations to calculate the defect concentrations
+        under thermodynamic equilibrium given a set of elemental chemical potentials.
+
+        Args:
+            chempots (dict): chemical potentials to solve
+            temperature (float): temperature to solve at
+            dopant_concentration_range (List): range of dopant concentrations to solve over
+            processes (int): number of processes to use for parallel processing
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
+            and the self consistent Fermi energy
+        """
+
+        all_data = Parallel(n_jobs=processes)(
+            delayed(self.equilibrium_solve)(chempots, temperature, dopant_concentration, **kwargs)
+            for dopant_concentration in dopant_concentration_range
+        )
+        return pd.concat(all_data)
 
     def scan_temperature(
         self, chempots: dict[str, float], temperature_range: List[float], processes: int = 1, **kwargs
@@ -391,8 +429,11 @@ class FermiSolverPyScFermi(FermiSolver):
         self.volume = vr.final_structure.volume
         self.multiplicity_scaling = multiplicity_scaling
 
-    def _generate_defect_system(
-        self, temperature: float, chemical_potentials: dict[str, float]
+    def generate_defect_system(
+        self,
+        temperature: float,
+        chemical_potentials: dict[str, float],
+        effective_dopant_concentration: Optional[float] = None,
     ) -> DefectSystem:
         """
         Generates a DefectSystem object from the DefectPhaseDiagram and a set
@@ -401,6 +442,7 @@ class FermiSolverPyScFermi(FermiSolver):
         Args:
             temperature (float): Temperature in K.
             chemical_potentials (dict): Chemical potentials for the elements.
+            effective_dopant_concentration (float): The effective dopant concentration.
 
         Returns:
             DefectSystem: The initialized DefectSystem.
@@ -425,6 +467,26 @@ class FermiSolverPyScFermi(FermiSolver):
 
         all_defect_species = [DefectSpecies.from_dict(v) for k, v in defect_species.items()]
 
+        if effective_dopant_concentration is not None:
+            if effective_dopant_concentration > 0:
+                charge = 1
+                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+                dopant = DefectChargeState(
+                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
+                )
+                all_defect_species.append(
+                    DefectSpecies(name="Dopant", charge_states={charge: dopant}, nsites=1)
+                )
+            elif effective_dopant_concentration < 0:
+                charge = -1
+                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+                dopant = DefectChargeState(
+                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
+                )
+                all_defect_species.append(
+                    DefectSpecies(name="Dopant", charge_states={charge: dopant}, nsites=1)
+                )
+
         return DefectSystem(
             defect_species=all_defect_species,
             dos=self.bulk_dos,
@@ -433,25 +495,12 @@ class FermiSolverPyScFermi(FermiSolver):
             convergence_tolerance=1e-20,
         )
 
-    def defect_system_from_chemical_potentials(
-        self, chemical_potentials: dict[str, float], temperature: float = 300.0
-    ) -> DefectSystem:
-        """
-        Generates a DefectSystem object from a set of chemical potentials.
-
-        Args:
-            chemical_potentials (dict): Chemical potentials for the elements.
-            temperature (float): Temperature in K.
-
-        Returns:
-            DefectSystem: The initialized DefectSystem.
-        """
-        defect_system = self._generate_defect_system(
-            temperature=temperature, chemical_potentials=chemical_potentials
-        )
-        return defect_system
-
-    def equilibrium_solve(self, chempots: dict[str, float], temperature: float) -> pd.DataFrame:
+    def equilibrium_solve(
+        self,
+        chempots: dict[str, float],
+        temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
+    ) -> pd.DataFrame:
         """
         Solve for the defect concentrations at a given temperature and chemical potentials.
 
@@ -463,20 +512,24 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
             and the self consistent Fermi energy
         """
-        defect_system = self.defect_system_from_chemical_potentials(
-            chemical_potentials=chempots, temperature=temperature
+        defect_system = self.generate_defect_system(
+            chemical_potentials=chempots,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
         conc_dict = defect_system.concentration_dict()
         data = []
 
         for k, v in conc_dict.items():
-            if k not in ["Fermi Energy", "n0", "p0"]:
+            if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
                 row = {
                     "Temperature": defect_system.temperature,
                     "Fermi Level": conc_dict["Fermi Energy"],
                     "Holes (cm^-3)": conc_dict["p0"],
                     "Electrons (cm^-3)": conc_dict["n0"],
                 }
+                if "Dopant" in conc_dict:
+                    row.update({"Dopant (cm^-3)": conc_dict["Dopant"]})
                 row.update({"Defect": k, "Concentration (cm^-3)": v})
                 data.append(row)
 
@@ -560,7 +613,7 @@ class FermiSolverPyScFermi(FermiSolver):
         """
 
         # Calculate concentrations at initial temperature
-        defect_system = self.defect_system_from_chemical_potentials(
+        defect_system = self.generate_defect_system(
             chemical_potentials=chemical_potentials, temperature=annealing_temperature
         )
         initial_conc_dict = defect_system.concentration_dict()
