@@ -1706,7 +1706,7 @@ class CompetingPhasesAnalyzer:
         if splits == 1:
             string += "\\begin{tabular}{ccc}\n"
             string += "\\hline\n"
-            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\ \\hline \n"
+            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
             for i in formation_energy_data:
                 kpoints = i["kpoints"].split("x")
                 fe = i["formation_energy"]

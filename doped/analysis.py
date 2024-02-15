@@ -10,6 +10,7 @@ import contextlib
 import inspect
 import os
 import warnings
+from importlib.metadata import version
 from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Union
 
@@ -45,6 +46,7 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
+from doped.utils.phs import get_band_edge_info
 from doped.utils.plotting import _format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
@@ -1405,6 +1407,7 @@ class DefectParser:
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         bulk_band_gap_path: Optional[str] = None,
+        load_phs_data: bool = False,
         **kwargs,
     ):
         """
@@ -1450,6 +1453,11 @@ class DefectParser:
                 correct (eigen)values.
                 If None, will calculate "gap"/"vbm" using the outputs at:
                 DefectParser.defect_entry.calculation_metadata["bulk_path"]
+            load_phs_data (bool):
+                Automatically determines the band edge states of the defect to determine
+                if the defect is a PHS. Also returns single-particle levels and their
+                occupation. cite: https://doi.org/10.1103/PhysRevMaterials.5.123803
+                Default = False.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -1478,7 +1486,6 @@ class DefectParser:
             )
         bulk_vr = get_vasprun(bulk_vr_path)
         bulk_supercell = bulk_vr.final_structure.copy()
-
         # add defect simple properties
         (
             defect_vr_path,
@@ -1746,6 +1753,33 @@ class DefectParser:
                         f"energy diagram then this warning can usually be ignored, but if it is, "
                         f"you should double-check your calculations and parsed results!"
                     )
+
+        if load_phs_data:
+            v_vise = version("vise")
+            if v_vise <= "0.8.1" and defect_vr.parameters.get("LNONCOLLINEAR") is True:
+                raise TypeError(
+                    f"You have version {v_vise} of the package `vise`,"
+                    f" which does not allowing the parsing of non-collinear calculations."
+                    f" You can install the updated version of `vise` from the GitHub repo for this"
+                    f" functionality."
+                )
+
+            bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
+                "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
+            )
+            bulk_outcar_phs = get_outcar(bulk_outcar_path)
+            bulk_vr_phs = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
+            defect_vr_phs = get_vasprun(defect_vr_path, parse_projected_eigen=True)
+
+            band_orb, vbm_info, cbm_info = get_band_edge_info(
+                dp, bulk_vr_phs, bulk_outcar_phs, defect_vr_phs
+            )
+
+            defect_entry.calculation_metadata["phs_data"] = {
+                "band_orb": band_orb,
+                "vbm_info": vbm_info,
+                "cbm_info": cbm_info,
+            }
 
         return dp
 
