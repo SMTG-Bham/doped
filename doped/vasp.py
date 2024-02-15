@@ -111,6 +111,30 @@ def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
     return Potcar(list(potcar_symbols), functional=potcar_functional)
 
 
+class DopedKpoints(Kpoints):
+    """
+    Custom implementation of ``Kpoints`` to handle encoding
+    errors that can happen on some old HPCs/Linux systems.
+
+    If an encoding error occurs upon file writing, then changes Γ to
+    Gamma and Å to Angstrom in the ``KPOINTS`` comment.
+    """
+
+    def __repr__(self):
+        """
+        Returns a string representation of the Kpoints object, with encoding
+        error handling.
+        """
+        try:
+            with open("/dev/null", "w") as f:
+                f.write(self.comment)  # breaks if encoding error will occur, so we rewrite
+            return super().__repr__()
+
+        except UnicodeEncodeError:
+            self.comment = self.comment.replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
+            return super().__repr__()
+
+
 class DefectDictSet(DictSet):
     def __init__(
         self,
@@ -296,6 +320,7 @@ class DefectDictSet(DictSet):
         Return kpoints object with comment.
         """
         pmg_kpoints = super().kpoints
+        doped_kpoints = DopedKpoints.from_dict(pmg_kpoints.as_dict())
         kpt_density = self.config_dict.get("KPOINTS", {}).get("reciprocal_density", False)
         if (
             isinstance(self.user_kpoints_settings, dict)
@@ -303,27 +328,15 @@ class DefectDictSet(DictSet):
         ):
             kpt_density = self.user_kpoints_settings.get("reciprocal_density", False)
 
-        if kpt_density and all(i not in pmg_kpoints.comment for i in ["doped", "ShakeNBreak"]):
+        if kpt_density and all(i not in doped_kpoints.comment for i in ["doped", "ShakeNBreak"]):
             with contextlib.suppress(Exception):
-                assert np.prod(pmg_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
-                pmg_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
+                assert np.prod(doped_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
+                doped_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
-        elif all(i not in pmg_kpoints.comment for i in ["doped", "ShakeNBreak"]):
-            pmg_kpoints.comment = "KPOINTS from doped"
+        elif all(i not in doped_kpoints.comment for i in ["doped", "ShakeNBreak"]):
+            doped_kpoints.comment = "KPOINTS from doped"
 
-        return pmg_kpoints
-
-    def _recode_kpoints(self):
-        """
-        Reformat the kpoints comment, as there is a rare encoding error that
-        can happen on some old HPCs, so change Γ to Gamma and Å to Angstrom in
-        KPOINTS comment.
-        """
-        kpoints_settings = self.kpoints.as_dict()
-        kpoints_settings["comment"] = (
-            kpoints_settings["comment"].replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
-        )
-        self.user_kpoints_settings = Kpoints.from_dict(kpoints_settings)
+        return doped_kpoints
 
     def _check_user_potcars(self, unperturbed_poscar: bool = False, snb: bool = False) -> bool:
         """
@@ -404,15 +417,6 @@ class DefectDictSet(DictSet):
                     potcar_spec=potcar_spec,
                     zip_output=zip_output,
                 )
-            except UnicodeEncodeError:  # likely KPOINTS comment encoding issue
-                self._recode_kpoints()
-                super().write_input(
-                    output_path,
-                    make_dir_if_not_present=make_dir_if_not_present,
-                    include_cif=include_cif,
-                    potcar_spec=potcar_spec,
-                    zip_output=zip_output,
-                )
             except ValueError as e:
                 if str(e).startswith("NELECT") and potcar_spec:
                     with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
@@ -436,11 +440,7 @@ class DefectDictSet(DictSet):
                 else:
                     self.potcar.write_file(f"{output_path}/POTCAR")
 
-            try:
-                self.kpoints.write_file(f"{output_path}/KPOINTS")
-            except UnicodeEncodeError:
-                self._recode_kpoints()
-                self.kpoints.write_file(f"{output_path}/KPOINTS")
+            self.kpoints.write_file(f"{output_path}/KPOINTS")
 
             if unperturbed_poscar:
                 self.poscar.write_file(f"{output_path}/POSCAR")
