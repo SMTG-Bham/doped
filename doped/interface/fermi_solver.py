@@ -102,9 +102,6 @@ class FermiSolver(MSONable):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
               and the self consistent Fermi energy
         """
-
-        all_data = []
-
         quenching_temperatures = list(quenching_temperatures)
         annealing_temperatures = list(annealing_temperatures)
 
@@ -166,27 +163,15 @@ class FermiSolver(MSONable):
             chem_pot_end (dict): Dictionary of ending chemical potentials.
             n_points (int): Number of points in the linear interpolation
             temperature (float): temperature for final the Fermi level solver
-            anneal_temperature (float): if set, this will carry out a preliminary
-              high temperature fermi-energy solution, and fix the defect concentrations
-              to the high temperature values before recalculating at lower T
-            fix_defect_species (bool): if annealing temperature is set, this sets
-              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
-              to their high temperature values, or whether the DefectChargeStates
-              are fixed. If in doubt, leave as default value.
-            exceptions (List): if annealing_temperature is set, this lists the
-              defects to be excluded from the high-temperature concentration fixing
-              this may be important in systems with highly mobile defects that are
-              not expected to be "frozen-in"
-            file name (str): if set, will save a csv file containing results to
-              `file_name`
-            cpus (int): set to >1 to calculate defect concentrations in parallel
-            suppress_warnings (bool): if set to True, will suppress warnings from
-                py-sc-fermi
+            annealing_temperatures (float or List): annealing temperatures to solve over
+            quenching_temperatures (float or List): quenching temperatures to solve over
+            processes (int): number of processes to use for parallel processing
 
         Returns:
             pd.DataFrame: DataFrame containing concentrations at different
             chemical potentials in long format.
         """
+
         interpolated_chem_pots, interpolation = self._get_interpolated_chempots(
             chem_pot_start, chem_pot_end, n_points
         )
@@ -201,6 +186,11 @@ class FermiSolver(MSONable):
             return concentrations
 
         elif annealing_temperatures is not None and quenching_temperatures is not None:
+            if not isinstance(annealing_temperatures, list):
+                annealing_temperatures = [annealing_temperatures]
+            if not isinstance(quenching_temperatures, list):
+                quenching_temperatures = [quenching_temperatures]
+
             concentrations = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
                     chem_pot, quench_temperature, anneal_temperature
@@ -216,7 +206,9 @@ class FermiSolver(MSONable):
         else:
             raise ValueError("You must specify both annealing and quenching temperatures, or neither.")
 
-    def _get_interpolated_chempots(self, start: dict[str, float], end: dict[str, float], n_points: float):
+    def _get_interpolated_chempots(
+        self, start: dict[str, float], end: dict[str, float], n_points: float
+    ) -> tuple[list[dict], np.ndarray]:
         """Linearly interpolates between two dictionaries of chemical potentials
         and returns a List of dictionaries of the interpolated chemical potentials.
 
@@ -357,10 +349,24 @@ class FermiSolverDoped(FermiSolver):
         for column, value in new_columns.items():
             concentrations[column] = value
 
-        excluded_columns = ["Defect", "Charge", "Charge State Population"]
+        concentrations.drop(
+            columns=[
+                "Charge",
+                "Charge State Population",
+                "Concentration (cm^-3)",
+                "Formation Energy (eV)",
+            ],
+            inplace=True,
+        )
+        concentrations.drop_duplicates(inplace=True)
+        excluded_columns = ["Defect"]
         for column in concentrations.columns.difference(excluded_columns):
             concentrations[column] = concentrations[column].astype(float)
 
+        concentrations.rename(
+            columns={"Total Concentration (cm^-3)": "Concentration (cm^-3)"}, inplace=True
+        )
+        concentrations.set_index("Defect", inplace=True, drop=True)
         return concentrations
 
 
@@ -375,12 +381,15 @@ class FermiSolverPyScFermi(FermiSolver):
         bulk_dos_vr (str): The path to the vasprun.xml file containing the bulk DOS.
     """
 
-    def __init__(self, defect_thermodynamics: DefectThermodynamics, bulk_dos_vr: str):
+    def __init__(
+        self, defect_thermodynamics: DefectThermodynamics, bulk_dos_vr: str, multiplicity_scaling=1.0
+    ):
         """initialize the FermiSolverPyScFermi object"""
         super().__init__(defect_thermodynamics, bulk_dos_vr)
         vr = Vasprun(self.bulk_dos)
-        self.bulk_dos = DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"] * 32)
+        self.bulk_dos = DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
+        self.multiplicity_scaling = multiplicity_scaling
 
     def _generate_defect_system(
         self, temperature: float, chemical_potentials: dict[str, float]
@@ -402,7 +411,7 @@ class FermiSolverPyScFermi(FermiSolver):
 
         for entry in entries:
             label, charge = _get_label_and_charge(entry.name)
-            defect_species[label]["nsites"] = entry.defect.multiplicity
+            defect_species[label]["nsites"] = entry.defect.multiplicity / self.multiplicity_scaling
 
             formation_energy = self.defect_thermodynamics.get_formation_energy(
                 entry, chempots=chemical_potentials, fermi_level=0
@@ -452,37 +461,28 @@ class FermiSolverPyScFermi(FermiSolver):
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
-              and the self consistent Fermi energy
+            and the self consistent Fermi energy
         """
         defect_system = self.defect_system_from_chemical_potentials(
             chemical_potentials=chempots, temperature=temperature
         )
         conc_dict = defect_system.concentration_dict()
+        data = []
 
-        concentration_data = []
-        fermi_level_data = []
+        for k, v in conc_dict.items():
+            if k not in ["Fermi Energy", "n0", "p0"]:
+                row = {
+                    "Temperature": defect_system.temperature,
+                    "Fermi Level": conc_dict["Fermi Energy"],
+                    "Holes (cm^-3)": conc_dict["p0"],
+                    "Electrons (cm^-3)": conc_dict["n0"],
+                }
+                row.update({"Defect": k, "Concentration (cm^-3)": v})
+                data.append(row)
 
-        for name, value in conc_dict.items():
-            if name != "Fermi Energy":
-                concentration_data.append(
-                    {
-                        "Defect": name,
-                        "Concentration (cm^-3)": value,
-                        "Temperature": defect_system.temperature,
-                    }
-                )
-            else:
-                fermi_level_data.append(
-                    {
-                        "Fermi Level": value,
-                        "Temperature": defect_system.temperature,
-                    }
-                )
-
-        concentration_df = pd.DataFrame(concentration_data)
-        fermi_level_df = pd.DataFrame(fermi_level_data)
-
-        return pd.merge(concentration_df, fermi_level_df, on=["Temperature"])
+        df = pd.DataFrame(data)
+        df.set_index("Defect", inplace=True, drop=True)
+        return df
 
     def pseudo_equilibrium_solve(
         self, chempots: dict[str, float], quenched_temperature: float, annealing_temperature: float
@@ -507,30 +507,22 @@ class FermiSolverPyScFermi(FermiSolver):
         )
         conc_dict = defect_system.concentration_dict()
 
-        concentration_data = []
-        fermi_level_data = []
+        data = []
+        for k, v in conc_dict.items():
+            if k not in ["Fermi Energy", "n0", "p0"]:
+                row = {
+                    "Annealing Temperature": annealing_temperature,
+                    "Quenched Temperature": quenched_temperature,
+                    "Fermi Level": conc_dict["Fermi Energy"],
+                    "Holes (cm^-3)": conc_dict["p0"],
+                    "Electrons (cm^-3)": conc_dict["n0"],
+                }
+                row.update({"Defect": k, "Concentration (cm^-3)": v})
+                data.append(row)
 
-        for name, value in conc_dict.items():
-            if name != "Fermi Energy":
-                concentration_data.append(
-                    {
-                        "Defect": name,
-                        "Concentration (cm^-3)": value,
-                        "Anneal Temperature": annealing_temperature,
-                    }
-                )
-            else:
-                fermi_level_data.append(
-                    {
-                        "Fermi Level": value,
-                        "Anneal Temperature": annealing_temperature,
-                    }
-                )
-
-        concentration_df = pd.DataFrame(concentration_data)
-        fermi_level_df = pd.DataFrame(fermi_level_data)
-
-        return pd.merge(concentration_df, fermi_level_df, on=["Anneal Temperature"])
+        df = pd.DataFrame(data)
+        df.set_index("Defect", inplace=True, drop=True)
+        return df
 
     def generate_annealed_defect_system(
         self,
@@ -582,7 +574,6 @@ class FermiSolverPyScFermi(FermiSolver):
         decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
         additional_data = {}
         for k, v in decomposed_conc_dict.items():
-            print(k, v)
             if k not in all_exceptions:
                 for k1, v1 in v.items():
                     additional_data.update({k + "_" + str(k1): v1})
