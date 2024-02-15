@@ -388,7 +388,119 @@ def _struc_sorting_func(struct):
     )
 
 
-def get_primitive_structure(sga, ignored_species: Optional[list] = None):
+def _lattice_matrix_sorting_func(lattice_matrix: np.ndarray) -> tuple:
+    """
+    Sorting function to apply on an iterable of lattice matrices.
+
+    Matrices are sorted by:
+
+    - matrix symmetry (around diagonal)
+    - maximum sum of diagonal elements.
+    - minimum number of negative elements
+    - maximum number of x, y, z that are equal
+    - a, b, c magnitudes (favouring c >= b >= a)
+
+    Args:
+        lattice_matrix (np.ndarray): Lattice matrix to sort.
+
+    Returns:
+        tuple: Tuple of sorting criteria values
+    """
+    symmetric = np.allclose(lattice_matrix, lattice_matrix.T)
+    num_negs = np.sum(lattice_matrix < 0)
+    diag_sum = np.sum(np.diag(lattice_matrix))
+    flat_matrix = lattice_matrix.flatten()
+    num_equals = sum(
+        flat_matrix[i] == flat_matrix[j]
+        for i in range(len(flat_matrix))
+        for j in range(i, len(flat_matrix))
+    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
+    a, b, c = np.linalg.norm(lattice_matrix, axis=1)
+
+    return (
+        not symmetric,
+        -diag_sum,
+        num_negs,
+        -num_equals,
+        -c,
+        -b,
+        -a,
+    )
+
+
+def get_clean_structure(structure: Structure, return_T: bool = False):
+    """
+    Get a 'clean' version of the input `structure` by searching over equivalent
+    Niggli reduced cells, and finding the most optimal according to
+    `_lattice_matrix_sorting_func` (most symmetric, with mostly positive
+    diagonals and c >= b >= a), with a positive determinant (required to avoid
+    VASP bug for negative determinant cells).
+
+    Args:
+        structure (Structure): Structure object.
+        return_T (bool): Whether to return the transformation matrix.
+            (Default = False)
+    """
+    reduced_lattice = structure.lattice
+    if np.linalg.det(reduced_lattice.matrix) < 0:
+        reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+    possible_lattice_matrices = [
+        reduced_lattice.matrix,
+    ]
+
+    for i in range(4):
+        reduced_lattice = reduced_lattice.get_niggli_reduced_lattice()
+        if np.linalg.det(reduced_lattice.matrix) < 0:
+            reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+
+        # want to maximise the number of non-negative diagonals, and also have a positive determinant
+        # can multiply two rows by -1 to get a positive determinant:
+        possible_lattice_matrices.append(reduced_lattice.matrix)
+        for i in range(3):
+            for j in range(i + 1, 3):
+                new_lattice_matrix = reduced_lattice.matrix.copy()
+                new_lattice_matrix[i] = new_lattice_matrix[i] * -1  # flake8: noqa: PLW2901
+                new_lattice_matrix[j] = new_lattice_matrix[j] * -1
+                possible_lattice_matrices.append(new_lattice_matrix)
+
+    possible_lattice_matrices.sort(key=_lattice_matrix_sorting_func)
+    new_lattice = possible_lattice_matrices[0]
+
+    new_structure = Structure(
+        new_lattice,
+        structure.species_and_occu,
+        structure.cart_coords,  # type: ignore
+        coords_are_cartesian=True,
+        to_unit_cell=True,
+        site_properties=structure.site_properties,
+        labels=structure.labels,
+        charge=structure._charge,
+    )
+    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
+    new_structure = Structure.from_sites([site.to_unit_cell() for site in new_structure])
+    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
+
+    if return_T:
+        (
+            poss_rotated_structure,
+            transformation_matrix,
+        ) = _get_supercell_matrix_and_possibly_rotate_prim(structure, new_structure)
+
+        # structure shouldn't be rotated, and should be integer
+        if not np.allclose(
+            poss_rotated_structure.lattice.matrix, structure.lattice.matrix
+        ) or not np.allclose(transformation_matrix, np.rint(transformation_matrix)):
+            raise ValueError(
+                "Clean/reduced structure could not be found! If you are seeing this bug, "
+                "please notify the `doped` developers"
+            )
+
+        return (new_structure, np.rint(transformation_matrix))
+
+    return new_structure
+
+
+def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: bool = True):
     """
     Get a consistent/deterministic primitive structure from a
     SpacegroupAnalyzer object.
@@ -423,7 +535,9 @@ def get_primitive_structure(sga, ignored_species: Optional[list] = None):
         key=lambda i: _struc_sorting_func(pruned_possible_prim_structs[i]),
     )
 
-    return Structure.from_dict(_round_floats(possible_prim_structs[sorted_indices[0]].as_dict()))
+    prim_struct = Structure.from_dict(_round_floats(possible_prim_structs[sorted_indices[0]].as_dict()))
+
+    return get_clean_structure(prim_struct) if clean else prim_struct
 
 
 def get_spglib_conv_structure(sga):
@@ -513,13 +627,17 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
 
     if return_wyckoff_dict:
         return (
-            swap_axes(conventional_structure, lattice_vec_swap_array),
+            Structure.from_sites(
+                [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
+            ),
             lattice_vec_swap_array,
             wyckoff_label_dict,
         )
 
     return (
-        swap_axes(conventional_structure, lattice_vec_swap_array),
+        Structure.from_sites(
+            [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
+        ),
         lattice_vec_swap_array,
     )
 

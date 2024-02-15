@@ -141,6 +141,32 @@ def _calc_site_displacements(
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
+
+    # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
+    element_list = [
+        el.symbol for el in defect_entry.defect.structure.composition.elements
+    ]  # host elements
+    element_list += sorted(
+        [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+            el.symbol
+            for el in defect_entry.defect.defect_structure.composition.elements
+            if el.symbol not in element_list
+        ]
+    )
+
+    # Combine the lists into a list of tuples, then sort, then unpack:
+    combined = list(zip(*disp_dict.values()))
+    combined.sort(
+        key=lambda x: (element_list.index(x[1]), x[4], x[0])
+    )  # Sort by species, then distance, then index
+    (
+        disp_dict["Index (defect)"],
+        disp_dict["Species"],
+        disp_dict["Species_with_index"],
+        disp_dict["Abs. displacement"],
+        disp_dict["Distance to defect"],
+    ) = zip(*combined)
+
     return disp_dict
 
 
@@ -217,11 +243,23 @@ def _plot_site_displacements(
             xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
         )
     else:
+        element_list = [
+            el.symbol for el in defect_entry.defect.structure.composition.elements
+        ]  # host elements
+        element_list += sorted(
+            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ]
+        )
+
         style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         with plt.style.context(style_file):
             # Color by species
             unique_species = list(set(disp_dict["Species"]))
+            unique_species.sort(key=lambda x: element_list.index(x))
             colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
                 dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
             )

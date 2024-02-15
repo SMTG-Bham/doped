@@ -49,11 +49,11 @@ def get_vasprun(vasprun_path, **kwargs):
     )  # `message` only needs to match start of message
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
             f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
-        ) from None
+        ) from exc
     return vasprun
 
 

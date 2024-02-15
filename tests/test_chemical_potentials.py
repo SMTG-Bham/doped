@@ -621,7 +621,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.metals[0].data["band_gap"] == 0
         assert not self.cp.nonmetals[0].data["molecule"]
         # this shouldn't exist - don't need to convergence test for molecules
-        assert not Path("competing_phases/O2_EaH_0").is_dir()
+        assert not Path("competing_phases/O2_EaH_0.0").is_dir()
 
         # test if it writes out the files correctly
         path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
@@ -649,7 +649,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.molecules[0].data["molecule"]
         assert not self.cp.nonmetals[0].data["molecule"]
 
-        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
+        path1 = "competing_phases/ZrO2_EaH_0.0/vasp_std/"
         assert Path(path1).is_dir()
         with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -664,7 +664,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        path2 = "competing_phases/O2_EaH_0/vasp_std"
+        path2 = "competing_phases/O2_EaH_0.0/vasp_std"
         assert Path(path2).is_dir()
         with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()

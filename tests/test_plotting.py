@@ -12,10 +12,11 @@ import unittest
 import warnings
 
 import matplotlib as mpl
-import pytest
 from monty.serialization import loadfn
+from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
 
 from doped import analysis
+from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -32,11 +33,6 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
-
-
 class DefectPlottingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
@@ -47,65 +43,38 @@ class DefectPlottingTestCase(unittest.TestCase):
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
         self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json")
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
-        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, facets=["CdTe-Te"])
+        return self.CdTe_thermo.plot(self.CdTe_chempots, facet="CdTe-Te")
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot_listed_colormap.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_listed_colormap.png")
     def test_plot_CdTe_custom_listed_colormap(self):
         from matplotlib.colors import ListedColormap
 
         cmap = ListedColormap(["#D4447E", "#E9A66C", "#507BAA", "#5FABA2", "#63666A"])
-        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, colormap=cmap)[1]
+        return self.CdTe_thermo.plot(self.CdTe_chempots, colormap=cmap)[1]
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot_viridis.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_viridis.png")
     def test_plot_CdTe_custom_str_colormap(self):
-        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots, colormap="viridis")[1]
+        return self.CdTe_thermo.plot(self.CdTe_chempots, colormap="viridis")[1]
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe_multiple_figs(self):
         # when facets not specified, plots all of them (second should be Te-rich here)
-        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots)[1]
+        return self.CdTe_thermo.plot(self.CdTe_chempots)[1]
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot_Cd_rich.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
         # when facets not specified, plots all of them (first should be Cd-rich here)
-        return plotting.formation_energy_plot(self.CdTe_thermo, self.CdTe_chempots)[0]
+        return self.CdTe_thermo.plot(self.CdTe_chempots)[0]
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="YTOS_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_plot_YTOS(self):
         with warnings.catch_warnings(record=True) as w:
-            plot = plotting.formation_energy_plot(self.YTOS_thermo)  # no chempots
+            plot = self.YTOS_thermo.plot()  # no chempots
+        print([str(warn.message) for warn in w])  # for debugging
+        assert len(w) == 2
+        assert any("All formation energies for" in str(warn.message) for warn in w)
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
 
@@ -397,15 +366,10 @@ class DefectPlottingTestCase(unittest.TestCase):
             )
             assert formatted_name == expected_name
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="neutral_v_O_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_plot_neutral_v_O_V2O5(self):
         """
-        Test FNV correction plotting.
+        Test plotting V2O5 defects, FNV correction.
         """
         dielectric = [4.186, 19.33, 17.49]
         bulk_path = f"{data_dir}/V2O5/V2O5_bulk"
@@ -415,5 +379,157 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect: analysis.defect_entry_from_paths(f"{data_dir}/V2O5/{defect}", bulk_path, dielectric)
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
-        thermo = analysis.thermo_from_defect_dict(defect_dict)
-        return plotting.formation_energy_plot(thermo, chempots, facets=["VO2-V2O5"])
+        thermo = DefectThermodynamics(list(defect_dict.values()))
+        return thermo.plot(chempots, facet="V2O5-O2")
+
+
+class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
+    def test_plot_facet_no_chempots_error(self):
+        with self.assertRaises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(facet="Te-rich")
+        assert (
+            "You have specified an X-rich/poor facet, but no `chempots` have been supplied, "
+            "so `facet` cannot be used here!"
+        ) in str(exc.exception)
+
+    def test_plot_facet_user_chempots_error(self):
+        with self.assertRaises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, facet="Te-rich")
+        assert (
+            "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped "
+            "format (i.e. with `facets` in the chempots dict), and instead correspond to just a single "
+            "phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
+        ) in str(exc.exception)
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
+    def test_default_CdTe_plot_no_chempots(self):
+        with warnings.catch_warnings(record=True) as w:
+            plot = self.CdTe_defect_thermo.plot()
+        print([str(warn.message) for warn in w])  # for debugging
+        assert len(w) == 2
+        assert any("All formation energies for" in str(warn.message) for warn in w)
+        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+        return plot
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
+    def test_default_CdTe_plot(self):
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
+    def test_default_CdTe_plot_explicit_facet(self):
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        return self.CdTe_defect_thermo.plot(facet="CdTe-Te")
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
+    def test_default_CdTe_plot_specified_chempots(self):
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots(self):
+        return self.CdTe_defect_thermo.plot(
+            chempots={"Cd": -1.25, "Te": 0}, el_refs=self.CdTe_chempots["elemental_refs"]
+        )
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots_at_init(self):
+        defect_thermo = DefectThermodynamics(
+            list(self.CdTe_defect_dict.values()),
+            chempots={"Cd": -1.25, "Te": 0},
+            el_refs=self.CdTe_chempots["elemental_refs"],
+        )
+        return defect_thermo.plot()
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots_1by1(self):
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        return self.CdTe_defect_thermo.plot()
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots_1by1_other(self):
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        return self.CdTe_defect_thermo.plot()
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots_1by1_other2(self):
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        return self.CdTe_defect_thermo.plot(chempots={"Cd": -1.25, "Te": 0})
+
+    @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
+    def test_default_CdTe_plot_manual_chempots_1by1_other3(self):
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        return self.CdTe_defect_thermo.plot(el_refs=self.CdTe_chempots["elemental_refs"])
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
+    def test_default_CdTe_plot_edited_el_refs(self):
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
+    def test_default_CdTe_plot_edited_el_refs_other(self):
+        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
+        self.CdTe_defect_thermo.chempots = self.CdTe_chempots
+        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
+    def test_default_CdTe_plot_Cd_rich(self):
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Cd-rich")
+
+    @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
+    def test_V2O5_O_rich_plot(self):
+        return self.V2O5_defect_thermo.plot(facet="O-rich")
+
+    @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
+    def test_V2O5_O_rich_plot_reduced_dist_tol(self):
+        self.V2O5_defect_thermo.dist_tol = 1e-4
+        # still two neutral vacancies merged as their site is the exact same
+        return self.V2O5_defect_thermo.plot(facet="O-rich")
+
+    @custom_mpl_image_compare(filename="neutral_v_O_plot_all_entries.png")
+    def test_V2O5_O_rich_all_entries_plot(self):
+        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries=True)
+
+    @custom_mpl_image_compare(filename="neutral_v_O_plot_faded.png")
+    def test_V2O5_O_rich_faded_plot(self):
+        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries="faded")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
+    def test_CdTe_LZ_all_defects_plot(self):
+        lz_cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+        )
+        CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
+        return CdTe_LZ_thermo_wout_meta.plot(facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
+    def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
+        # Matches SK Thesis Fig 6.1b
+        lz_cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+        )
+        lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
+        lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
+
+        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
+    def test_CdTe_FNV_all_defects_plot_default_old_names(self):
+        # Tests naming handling when old/unrecognised defect names are used
+        cdte_defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json"))
+        cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
+        with warnings.catch_warnings(record=True) as w:
+            plot = cdte_defect_thermo.plot()
+        print([str(warn.message) for warn in w])  # for debugging
+        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+        assert any(
+            "All formation energies for as_1_Te_on_Cd are below zero across the entire band gap range. "
+            "This is typically unphysical (see docs), and likely due to mis-specification of chemical "
+            "potentials (see docstrings and/or tutorials)." in str(warn.message)
+            for warn in w
+        )
+        assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
+        assert len(w) == 3
+        return plot
