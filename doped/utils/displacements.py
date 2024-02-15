@@ -10,6 +10,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.util.coord import pbc_diff
 
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
+    _get_defect_supercell_site,
+)
+
 try:
     import plotly.express as px
     from plotly.graph_objects import Scatter
@@ -36,25 +43,28 @@ def _calc_site_displacements(
         """
         Returns structures for bulk and defect supercells with the same number
         of sites and species, to be used for site matching. If Vacancy, adds
-        (unrelaxed) site to defect structure. If Interstitial, adds unrelaxed
-        site to bulk structure. If Substitution, replaces defect site in bulk
-        structure.
+        (unrelaxed) site to defect structure. If Interstitial, adds relaxed
+        site to bulk structure. If Substitution, replaces (unrelaxed) defect
+        site in bulk structure.
 
         Returns tuple of (bulk_sc_with_defect, defect_sc_with_defect).
         """
+        # TODO: Code from `check_atom_mapping_far_from_defect` might be more efficient and robust for this,
+        #  should check.
         defect_type = defect_entry.defect.defect_type.name
-        bulk_sc_with_defect = defect_entry.bulk_supercell.copy()
+        bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
         # Check position of relaxed defect has been parsed (it's an optional arg)
-        if defect_entry.sc_defect_frac_coords is None:
+        sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
+        if sc_defect_frac_coords is None:
             raise ValueError(
-                "The relaxed defect position (DefectEntry.sc_defect_frac_coords) "
-                "has not been parsed. "
-                "Please use DefectParser to parse relaxed defect positions "
-                "before calculating site displacements."
+                "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
+                "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
+                "calculating site displacements."
             )
+
+        defect_sc_with_defect = _get_defect_supercell(defect_entry).copy()
         if defect_type == "Vacancy":
             # Add Vacancy atom to defect structure
-            defect_sc_with_defect = defect_entry.sc_entry.structure.copy()
             defect_sc_with_defect.append(
                 defect_entry.defect.site.specie,
                 defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
@@ -64,18 +74,17 @@ def _calc_site_displacements(
             # If Interstitial, add interstitial site to bulk structure
             bulk_sc_with_defect.append(
                 defect_entry.defect.site.specie,
-                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
+                defect_entry.defect.site.frac_coords,  # _relaxed_ defect site for interstitials
                 coords_are_cartesian=False,
             )
-            defect_sc_with_defect = defect_entry.sc_entry.structure.copy()
-            # Ensure last site of defect structure is defect site. Needed
-            # to then calculate site distances to defect
+            # Ensure last site of defect structure is defect site. Needed to then calculate site
+            # distances to defect
             if not np.allclose(
                 defect_sc_with_defect[-1].frac_coords,
-                defect_entry.sc_defect_frac_coords,  # _relaxed_ defect site
+                sc_defect_frac_coords,  # _relaxed_ defect site
             ):
                 # Get index of defect site in defect structure
-                defect_site_index = defect_sc_with_defect.index(defect_entry.defect_supercell_site)
+                defect_site_index = defect_sc_with_defect.index(_get_defect_supercell_site(defect_entry))
                 # Swap defect site with last site
                 defect_site = defect_sc_with_defect.pop(defect_site_index)
                 defect_sc_with_defect.append(
@@ -91,10 +100,9 @@ def _calc_site_displacements(
                 defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
                 coords_are_cartesian=False,
             )
-            defect_sc_with_defect = defect_entry.defect_supercell.copy()
             # Move defect site to last position of defect supercell
             site_index_defect_sc = defect_sc_with_defect.index(
-                defect_entry.defect_supercell_site  # _relaxed_ defect site
+                _get_defect_supercell_site(defect_entry)  # _relaxed_ defect site
             )
             defect_site = defect_sc_with_defect.pop(site_index_defect_sc)
             defect_sc_with_defect.append(
@@ -133,6 +141,32 @@ def _calc_site_displacements(
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
+
+    # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
+    element_list = [
+        el.symbol for el in defect_entry.defect.structure.composition.elements
+    ]  # host elements
+    element_list += sorted(
+        [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+            el.symbol
+            for el in defect_entry.defect.defect_structure.composition.elements
+            if el.symbol not in element_list
+        ]
+    )
+
+    # Combine the lists into a list of tuples, then sort, then unpack:
+    combined = list(zip(*disp_dict.values()))
+    combined.sort(
+        key=lambda x: (element_list.index(x[1]), x[4], x[0])
+    )  # Sort by species, then distance, then index
+    (
+        disp_dict["Index (defect)"],
+        disp_dict["Species"],
+        disp_dict["Species_with_index"],
+        disp_dict["Abs. displacement"],
+        disp_dict["Distance to defect"],
+    ) = zip(*combined)
+
     return disp_dict
 
 
@@ -209,11 +243,23 @@ def _plot_site_displacements(
             xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
         )
     else:
+        element_list = [
+            el.symbol for el in defect_entry.defect.structure.composition.elements
+        ]  # host elements
+        element_list += sorted(
+            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ]
+        )
+
         style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         with plt.style.context(style_file):
             # Color by species
             unique_species = list(set(disp_dict["Species"]))
+            unique_species.sort(key=lambda x: element_list.index(x))
             colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
                 dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
             )

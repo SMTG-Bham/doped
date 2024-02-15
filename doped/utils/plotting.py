@@ -13,7 +13,7 @@ from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, ticker
+from matplotlib import colormaps, colors, ticker
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
@@ -49,15 +49,11 @@ def _chempot_warning(dft_chempots):
 
 
 def _get_plot_setup(colormap, xy):
+    if colormap is None:  # future updated colour handling (based on defect type etc) should remove
+        # the need for this!
+        colormap = "Dark2" if len(xy) <= 8 else "tab20"
     cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
     colors = cmap(np.linspace(0, 1, len(xy)))
-    if colormap == "Dark2" and len(xy) > 8:  # TODO: Auto change to tab10 or tab20, update warning and
-        # test
-        warnings.warn(
-            f"The chosen colormap is Dark2, which only has 8 colours, yet you have {len(xy)} "
-            f"defect species (so some defects will have the same line colour). Recommended to "
-            f"change/set colormap to 'tab10' or 'tab20' (10 and 20 colours each)."
-        )
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -76,9 +72,9 @@ def _plot_formation_energy_lines(
     ax,
     styled_linewidth,
     styled_markersize,
-    alpha=1.0,
+    **kwargs,
 ):
-    defect_names_for_legend = []
+    names_for_legend = []
     for cnt, def_name in enumerate(xy.keys()):  # plot formation energy lines
         ax.plot(
             xy[def_name][0],
@@ -87,11 +83,11 @@ def _plot_formation_energy_lines(
             markeredgecolor=colors[cnt],
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
-            alpha=alpha,
+            **kwargs,
         )
-        defect_names_for_legend.append(def_name)
+        names_for_legend.append(def_name)
 
-    return defect_names_for_legend
+    return names_for_legend
 
 
 def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
@@ -104,6 +100,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
         interpolation="bicubic",
         rasterized=True,
         aspect="auto",
+        zorder=0,
     )
 
     ax.imshow(
@@ -115,6 +112,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
         interpolation="bicubic",
         rasterized=True,
         aspect="auto",
+        zorder=0,
     )
 
     ax.set_xlim(xlim)
@@ -263,7 +261,9 @@ def _format_defect_name(
     # check if name is doped format, having site info as point group symbol (and more) after 2nd "_":
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
-        if point_group_symbol in sch_symbols:  # recognised point group symbol?
+        if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
+            i not in defect_species.lower() for i in ["int", "vac", "sub", "as"]
+        ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
             formatted_point_group_symbol = (
@@ -492,7 +492,7 @@ def _format_defect_name(
     two_character_pairs_in_name = [
         trimmed_pre_charge_name[i : i + 2]  # trimmed_pre_charge_name name for finding elements,
         # pre_charge_name for matching defect format
-        for i in range(0, len(trimmed_pre_charge_name), 1)
+        for i in range(len(trimmed_pre_charge_name))
         if len(trimmed_pre_charge_name[i : i + 2]) == 2
     ]
     possible_two_character_elements = [
@@ -631,6 +631,40 @@ def _get_legends_txt(for_legend, all_entries=False):
     return legends_txt
 
 
+def _rename_key_and_dicts(
+    key: str,
+    output_dicts: list,
+) -> tuple[str, list]:
+    """
+    Given an input key, renames the key if it already exists in the
+    ``output_dicts`` dictionaries (to ``key``_a, ``key``_b, ``key``_c etc),
+    renames the corresponding keys in the dictionaries, and returns the
+    renamed key and updated dictionaries.
+    """
+    output_dict = output_dicts[0]
+    if key in output_dict or any(
+        f"{key}_{chr(96 + i)}" in output_dict for i in range(1, 27)
+    ):  # defects with same name, rename to prevent overwriting:
+        # append "a,b,c.." for different defect species with the same name
+        i = 3
+
+        if key in output_dict:  # first repeat, direct match, rename previous entry
+            for single_output_dict in output_dicts:
+                val = single_output_dict.pop(key)
+                single_output_dict[f"{key}_{chr(96 + 1)}"] = val  # a
+
+            key = f"{key}_{chr(96 + 2)}"  # b
+
+        else:
+            key = f"{key}_{chr(96 + i)}"  # c
+
+        while key in output_dict:
+            i += 1
+            key = f"{key}_{chr(96 + i)}"  # d, e, f etc
+
+    return key, output_dicts
+
+
 def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     xy, all_lines_xy = {}, {}  # dict of {defect_name: [[x_vals],[y_vals]]}
     y_range_vals, all_entries_y_range_vals = (
@@ -640,22 +674,32 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
     ymin = 0
 
-    for defect_entry in defect_thermodynamics.defect_entries:
-        defect_entry_name = defect_entry.name  # all_lines name includes charge state
-        all_lines_xy[defect_entry_name] = [[], []]
-        for x_extrem in [lower_cap, upper_cap]:
-            all_lines_xy[defect_entry_name][0].append(x_extrem)
-            all_lines_xy[defect_entry_name][1].append(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_extrem
-                )
+    for defect_entry_list in defect_thermodynamics.all_entries.values():
+        for defect_entry in defect_entry_list:
+            # all_lines name includes charge state:
+            defect_name_w_charge, [
+                all_lines_xy,
+            ] = _rename_key_and_dicts(  # in case entries with the
+                # same name
+                defect_entry.name,
+                [
+                    all_lines_xy,
+                ],
             )
-            all_entries_y_range_vals.extend(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_window
+            all_lines_xy[defect_name_w_charge] = [[], []]
+            for x_extrem in [lower_cap, upper_cap]:
+                all_lines_xy[defect_name_w_charge][0].append(x_extrem)
+                all_lines_xy[defect_name_w_charge][1].append(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+                    )
                 )
-                for x_window in xlim
-            )
+                all_entries_y_range_vals.extend(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_window
+                    )
+                    for x_window in xlim
+                )
 
     for def_name, def_tl in defect_thermodynamics.transition_level_map.items():
         xy[def_name] = [[], []]
@@ -702,17 +746,23 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             xy[def_name][1].append(form_en)
             y_range_vals.append(fe_right)
 
-        else:  # no transition level -> only one stable charge state, add all_lines_xy and extend
-            # y_range_vals; means this is only a 1-pump (chmp) loop
-            def_name_w_charge = [i for i in all_lines_xy if i.startswith(f"{def_name}_")][0]
-            xy[def_name] = all_lines_xy[def_name_w_charge]  # get xy from all_lines_xy, using name w/charge
+        else:  # no transition level -> only one stable charge state, add to xy and extend y_range_vals;
+            # means this is only a 1-pump (chmp) loop
             defect_entry = defect_thermodynamics.stable_entries[def_name][0]
-            y_range_vals.extend(
-                defect_thermodynamics.get_formation_energy(
-                    defect_entry, chempots=dft_chempots, fermi_level=x_window
+            xy[def_name] = [[], []]
+            for x_extrem in [lower_cap, upper_cap]:
+                xy[def_name][0].append(x_extrem)
+                xy[def_name][1].append(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_extrem
+                    )
                 )
-                for x_window in xlim
-            )
+                y_range_vals.extend(
+                    defect_thermodynamics.get_formation_energy(
+                        defect_entry, chempots=dft_chempots, fermi_level=x_window
+                    )
+                    for x_window in xlim
+                )
 
         # if xy corresponds to a line below 0 for all x in (0, band_gap), warn!
         yvals = _get_in_gap_yvals(xy[def_name][0], xy[def_name][1], (0, defect_thermodynamics.band_gap))
@@ -720,15 +770,15 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             warnings.warn(
                 f"All formation energies for {def_name} are below zero across the "
                 f"entire band gap range. This is typically unphysical (see docs), and likely due to "
-                f"mis-specification of chemical potentials (see docstrings and/or tutorials). "
+                f"mis-specification of chemical potentials (see docstrings and/or tutorials)."
             )
-            ymin = min(ymin, *yvals)  # TODO: Test this
+            ymin = min(ymin, *yvals)
 
     return (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin
 
 
 def _get_ylim_from_y_range_vals(y_range_vals, ymin=0, auto_labels=False):
-    window = max(y_range_vals) - min(y_range_vals)
+    window = max(y_range_vals) - min(*y_range_vals, ymin)
     spacer = 0.1 * window
     ylim = (ymin, max(y_range_vals) + spacer)
     if auto_labels:  # need to manually set xlim or ylim if labels cross axes!!
@@ -753,7 +803,7 @@ def _TLD_plot(
     ylim=None,
     fermi_level=None,
     title=None,
-    colormap="Dark2",
+    colormap: Optional[Union[str, colors.Colormap]] = None,
     auto_labels=False,
     filename=None,
 ):
@@ -800,14 +850,15 @@ def _TLD_plot(
         styled_markersize=styled_markersize,
     )
 
-    if all_entries == "faded":  # Redo `for` loop so grey 'all_lines_xy' not included in legend
-        _legend = _plot_formation_energy_lines(
+    if all_entries == "faded":  # plot after, so legend line colours are correct
+        _legend = _plot_formation_energy_lines(  # grey 'all_lines_xy' not included in legend
             all_lines_xy,
             colors=[(0.8, 0.8, 0.8)] * len(all_lines_xy),
             ax=ax,
             styled_linewidth=styled_linewidth,
             styled_markersize=styled_markersize,
             alpha=0.5,
+            zorder=0.5,  # plot behind other lines, but above band edges
         )
 
     for cnt, def_name in enumerate(xy.keys()):  # plot transition levels
@@ -861,7 +912,7 @@ def _TLD_plot(
             [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
             if all_entries is True
             else defect_names_for_legend,
-            all_entries=all_entries,
+            all_entries=all_entries is True,
         ),
         loc=2,
         bbox_to_anchor=(1, 1),

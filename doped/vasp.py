@@ -3,9 +3,12 @@ Code to generate VASP defect calculation input files.
 """
 import contextlib
 import copy
+import inspect
 import os
 import warnings
-from multiprocessing import Pool, cpu_count
+from functools import lru_cache
+from multiprocessing import cpu_count
+from multiprocessing.pool import Pool
 from typing import Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
@@ -25,6 +28,11 @@ from doped.generation import (
     _custom_formatwarning,
     get_defect_name_from_entry,
     name_defect_entries,
+)
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_bulk_site_coords,
 )
 from doped.utils.symmetry import _frac_coords_sort_func
 
@@ -82,20 +90,25 @@ def _test_potcar_functional_choice(
     if symbols is None:
         symbols = ["Mg"]
     try:
-        test_potcar = Potcar(symbols, functional=potcar_functional)
+        test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
     except OSError as e:
         # try other functional choices:
         if potcar_functional.startswith("PBE"):
             for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
                 with contextlib.suppress(OSError):
                     potcar_functional = pbe_potcar_string
-                    test_potcar = Potcar(symbols, functional=potcar_functional)
+                    test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
                     break
 
         if test_potcar is None:
             raise e
 
     return potcar_functional
+
+
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
+    return Potcar(list(potcar_symbols), functional=potcar_functional)
 
 
 class DefectDictSet(DictSet):
@@ -238,7 +251,7 @@ class DefectDictSet(DictSet):
                 f"this up). As this is a neutral supercell, the INCAR file will be written without this "
                 f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
                 f"unphysical solutions, and POTCARs are also needed to set the charge state (i.e. "
-                f"NELECT) of charged defect supercells. Got error:\n{e}"
+                f"NELECT) of charged defect supercells. Got error:\n{e!r}"
             )
 
         if "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
@@ -259,7 +272,9 @@ class DefectDictSet(DictSet):
             self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
                 self.user_potcar_functional, self.potcar_symbols
             )
-        return super(self.__class__, self).potcar
+
+        # use our own POTCAR generation function to expedite generation and writing
+        return _get_potcar(tuple(self.potcar_symbols), self.user_potcar_functional)
 
     @property
     def poscar(self) -> Poscar:
@@ -436,9 +451,12 @@ class DefectDictSet(DictSet):
         """
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectDictSet with supercell composition {self.structure.composition}."
-            f"Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -629,21 +647,16 @@ class DefectRelaxSet(MSONable):
             self.bulk_supercell = None
 
         elif isinstance(self.defect_entry, DefectEntry):
-            self.defect_supercell = (
-                self.defect_entry.defect_supercell or self.defect_entry.sc_entry.structure
-            )
-            if self.defect_entry.bulk_supercell is not None:
-                self.bulk_supercell = self.defect_entry.bulk_supercell
-            elif self.defect_entry.bulk_entry is not None:
-                self.bulk_supercell = self.defect_entry.bulk_entry.structure
-            else:
+            self.defect_supercell = _get_defect_supercell(self.defect_entry)
+            self.bulk_supercell = _get_bulk_supercell(self.defect_entry)
+            if self.bulk_supercell is None:
                 raise ValueError(
                     "Bulk supercell must be defined in DefectEntry object attributes. Both "
                     "DefectEntry.bulk_supercell and DefectEntry.bulk_entry are None!"
                 )
 
             # get POSCAR comment:
-            sc_frac_coords = self.defect_entry.sc_defect_frac_coords
+            sc_frac_coords = _get_defect_supercell_bulk_site_coords(self.defect_entry)
             if sc_frac_coords is None:
                 raise ValueError(
                     "Fractional coordinates of defect in the supercell must be defined in "
@@ -1233,7 +1246,7 @@ class DefectRelaxSet(MSONable):
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
                 ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
-                (default: True)
+                (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1705,7 +1718,8 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    unperturbed_poscar=unperturbed_poscar,
+                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar if
+                    # vasp_gam explicitly set
                     **kwargs,
                 )
 
@@ -1740,9 +1754,13 @@ class DefectRelaxSet(MSONable):
         formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
-            f"{self.defect_entry.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"{self.defect_entry.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 
@@ -1866,10 +1884,9 @@ class DefectsSet(MSONable):
                 # use defect supercell rather than defect.defect_structure because could be e.g. a
                 # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
                 # (Z>=31) one
-                if defect_entry.defect_supercell is not None:
-                    return defect_entry.defect_supercell.atomic_numbers
-                if defect_entry.sc_entry.structure is not None:
-                    return defect_entry.sc_entry.structure.atomic_numbers
+                defect_supercell = _get_defect_supercell(defect_entry)
+                if defect_supercell is not None:
+                    return defect_supercell.atomic_numbers
 
                 raise ValueError(
                     "Defect supercell needs to be defined in the DefectEntry attributes, but both "
@@ -2046,9 +2063,10 @@ class DefectsSet(MSONable):
 
         By default, ``POSCAR`` files are not generated for the ``vasp_(nkred_)std``
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
-        be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
-        or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        be taken from ``vasp_gam`` ``ShakeNBreak`` calculations (via
+        ``snb-groundstate``), some other structure-searching approach or, if not
+        following the recommended structure-searching workflow, from the
+        ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
         effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
         should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
@@ -2122,7 +2140,8 @@ class DefectsSet(MSONable):
                 (Default: False)
             processes (int):
                 Number of processes to use for multiprocessing for file writing.
-                If not set, defaults to one less than the number of CPUs available.
+                If not specified (default), then is dynamically set to the optimal
+                value for the number of folders to write. (Default: None)
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
@@ -2141,13 +2160,20 @@ class DefectsSet(MSONable):
             )
             for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
         ]
-        with Pool(processes=processes or cpu_count() - 1) as pool:
-            for _ in tqdm(
-                pool.imap(self._write_defect, args_list),
-                total=len(args_list),
-                desc="Generating and writing input files",
-            ):
-                pass
+        if processes is None:  # best setting for number of processes, from testing
+            processes = min(round(len(args_list) / 30), cpu_count() - 1)
+
+        if processes > 1:
+            with Pool(processes=processes or cpu_count() - 1) as pool:
+                for _ in tqdm(
+                    pool.imap(self._write_defect, args_list),
+                    total=len(args_list),
+                    desc="Generating and writing input files",
+                ):
+                    pass
+        else:
+            for args in tqdm(args_list, desc="Generating and writing input files"):
+                self._write_defect(args)
 
         dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
 
@@ -2160,10 +2186,13 @@ class DefectsSet(MSONable):
         ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
-            f"defect entries in self.defect_entries. Available attributes:\n{attrs}\n\nAvailable "
-            f"methods:\n{methods}"
+            f"defect entries in self.defect_entries. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 

@@ -9,18 +9,14 @@ from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
-from pymatgen.core import Structure
+from pymatgen.analysis.defects.core import DefectType
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.utils.symmetry import (
-    _get_all_equiv_sites,
-    group_order_from_schoenflies,
-    point_symmetry_from_defect_entry,
-)
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -53,11 +49,11 @@ def get_vasprun(vasprun_path, **kwargs):
     )  # `message` only needs to match start of message
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
             f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
-        ) from None
+        ) from exc
     return vasprun
 
 
@@ -93,8 +89,8 @@ def get_outcar(outcar_path):
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
     """
-    Search for all files with filenames matching ``output_file``, case-
-    insensitive.
+    Search for all files with filenames matching ``output_file``,
+    case-insensitive.
 
     Returns (output file path, Multiple?) where Multiple is True if multiple
     matching files are found.
@@ -444,9 +440,12 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
                 searched_structure="bulk",
             )
             far_from_defect_disps[site.specie.symbol].append(
-                site.distance_and_image_from_frac_coords(
-                    bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
-                )[0]
+                round(
+                    site.distance_and_image_from_frac_coords(
+                        bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
+                    )[0],
+                    2,
+                )
             )
 
     if far_from_defect_large_disps := {
@@ -456,8 +455,8 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>0.5 Å) in the defect supercell. This likely indicates a mismatch "
             f"between the bulk and defect supercell definitions or an unconverged supercell size, "
-            f"both of which will likely cause errors in parsing. The mean displacement of the "
-            f"following species, at sites far from the determined defect position, is >0.5 Å: "
+            f"both of which could cause errors in parsing. The mean displacement of the following "
+            f"species, at sites far from the determined defect position, is >0.5 Å: "
             f"{list(far_from_defect_large_disps.keys())}, with displacements (Å): "
             f"{far_from_defect_large_disps}"
         )
@@ -470,6 +469,15 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
 
     The template structure may have a different species ordering to the
     ``input_structure``.
+
+    NOTE: This assumes that both structures have the same lattice definitions
+    (i.e. that they match, and aren't rigidly translated/rotated with respect
+    to each other), which is mostly the case unless we have a mismatching
+    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
+    warning should be thrown anyway during parsing). Currently this function
+    is only used for analysing site displacements in the ``displacements`` module
+    so this is fine (user will already have been warned at this point if there is a
+    possible mismatch).
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
@@ -521,6 +529,14 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     potentials for the eFNV Kumagai correction, though no longer used for this
     purpose. If threshold is set to a low value, it will raise a warning if
     there is a large site displacement detected.
+
+    NOTE: This assumes that both structures have the same lattice definitions
+    (i.e. that they match, and aren't rigidly translated/rotated with respect
+    to each other), which is mostly the case unless we have a mismatching
+    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
+    warning should be thrown anyway during parsing). Currently this function
+    is no longer used, but if it is reintroduced at any point, this point should
+    be noted!
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
@@ -545,6 +561,9 @@ def _compare_potcar_symbols(
     """
     Check all POTCAR symbols in the bulk are the same in the defect
     calculation.
+
+    Returns True if the symbols match, otherwise returns a list of the symbols
+    for the bulk and defect calculations.
     """
     for symbol in bulk_potcar_symbols:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
@@ -557,7 +576,7 @@ def _compare_potcar_symbols(
                 f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
                 f"The same POTCAR settings should be used for all calculations for accurate results!"
             )
-            return False
+            return [bulk_potcar_symbols, defect_potcar_symbols]
     return True
 
 
@@ -565,6 +584,9 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
+
+    Returns True if the KPOINTS match, otherwise returns a list of the KPOINTS
+    for the bulk and defect calculations.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
@@ -578,9 +600,10 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
             f"\n{sorted_bulk_kpoints}\n"
             f"and in the {defect_name} calculation:"
             f"\n{sorted_defect_kpoints}\n"
-            f"The same KPOINTS settings should be used for all final calculations for accurate results!"
+            f"In general, the same KPOINTS settings should be used for all final calculations for "
+            f"accurate results!"
         )
-        return False
+        return [sorted_bulk_kpoints, sorted_defect_kpoints]
 
     return True
 
@@ -594,6 +617,9 @@ def _compare_incar_tags(
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
+
+    Returns True if no mismatching tags are found, otherwise returns a list of
+    the mismatching tags.
     """
     if fatal_incar_mismatch_tags is None:
         fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
@@ -644,10 +670,10 @@ def _compare_incar_tags(
             f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
             f"calculation)):"
             f"\n{mismatch_list}\n"
-            f"The same INCAR settings should be used in all final calculations for these tags which can "
-            f"affect energies!"
+            f"In general, the same INCAR settings should be used in all final calculations for these tags "
+            f"which can affect energies!"
         )
-        return False
+        return mismatch_list
     return True
 
 
@@ -741,20 +767,22 @@ def get_interstitial_site_and_orientational_degeneracy(
         combined site and orientational degeneracy of the interstitial defect
         entry (int).
     """
+    from doped.utils.symmetry import _get_all_equiv_sites
+
     if interstitial_defect_entry.bulk_entry is None:
         raise ValueError(
             "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
             "degeneracies! (i.e. must be a parsed DefectEntry)"
         )
     equiv_sites = _get_all_equiv_sites(
-        interstitial_defect_entry.sc_defect_frac_coords,
-        interstitial_defect_entry.bulk_entry.structure,
+        _get_defect_supercell_bulk_site_coords(interstitial_defect_entry),
+        _get_bulk_supercell(interstitial_defect_entry),
     )
     equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
     defect_supercell_sites_of_same_species_array = np.array(
         [
             site.frac_coords
-            for site in interstitial_defect_entry.sc_entry.structure
+            for site in _get_defect_supercell(interstitial_defect_entry)
             if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
         ]
     )
@@ -762,7 +790,7 @@ def get_interstitial_site_and_orientational_degeneracy(
     distance_matrix = np.linalg.norm(
         np.dot(
             pbc_diff(defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array),
-            interstitial_defect_entry.bulk_entry.structure.lattice.matrix,
+            _get_bulk_supercell(interstitial_defect_entry).lattice.matrix,
         ),
         axis=-1,
     )
@@ -773,28 +801,36 @@ def get_interstitial_site_and_orientational_degeneracy(
 def get_orientational_degeneracy(
     defect_entry: Optional[DefectEntry] = None,
     relaxed_point_group: Optional[str] = None,
-    unrelaxed_point_group: Optional[str] = None,
+    bulk_site_point_group: Optional[str] = None,
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
     symprec: float = 0.2,
+    defect_type: Optional[Union[DefectType, str]] = None,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
-    by supplying either the DefectEntry object or the relaxed and unrelaxed
-    point group symbols (e.g. "Td", "C3v" etc).
+    by supplying either the DefectEntry object or the bulk-site & relaxed
+    defect point group symbols (e.g. "Td", "C3v" etc).
 
     If a DefectEntry is supplied (and the point group symbols are not),
-    This is computed by determining the `relaxed` point symmetry and the
-    original/unrelaxed defect site symmetry, and then getting the ratio of
+    this is computed by determining the `relaxed` defect point symmetry and the
+    (unrelaxed) bulk site symmetry, and then getting the ratio of
     their point group orders (equivalent to the ratio of partition
     functions or number of symmetry operations (i.e. degeneracy)).
+
+    For interstitials, the bulk site symmetry corresponds to the
+    point symmetry of the interstitial site with `no relaxation
+    of the host structure`, while for vacancies/substitutions it is
+    simply the symmetry of their corresponding bulk site.
+    This corresponds to the point symmetry of ``DefectEntry.defect``,
+    or ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
 
     Note: This tries to use the defect_entry.defect_supercell to determine
     the `relaxed` site symmetry. However, it should be noted that this is not
     guaranteed to work in all cases; namely for non-diagonal supercell
     expansions, or sometimes for non-scalar supercell expansion matrices
     (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
-    which can mess up the periodicity of the cell. doped tries to automatically
+    which can mess up the periodicity of the cell. ``doped`` tries to automatically
     check if this is the case, and will warn you if so.
 
     This can also be checked by using this function on your doped `generated` defects:
@@ -812,12 +848,18 @@ def get_orientational_degeneracy(
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
-    determine the relaxed and unrelaxed point symmetries and/or orientational degeneracy
-    from visualising the structures (e.g. using VESTA)(can use
-    ``get_orientational_degeneracy`` to obtain the corresponding orientational degeneracy
-    factor for given initial/relaxed point symmetries) and setting the corresponding
-    values in the calculation_metadata['relaxed point symmetry']/['unrelaxed point
-    symmetry'] and/or degeneracy_factors['orientational degeneracy'] attributes.
+    determine the relaxed defect and bulk-site point symmetries, and/or orientational
+    degeneracy, from visualising the structures (e.g. using VESTA)(can use
+    ``get_orientational_degeneracy`` to obtain the corresponding orientational
+    degeneracy factor for given defect/bulk-site point symmetries) and setting the
+    corresponding values in the
+    ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
+    ``degeneracy_factors['orientational degeneracy']`` attributes.
+    Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
+    or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
+    which for vacancies/substitutions is the symmetry of the corresponding bulk site,
+    while for interstitials it is the point symmetry of the `final relaxed` interstitial
+    site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
     and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
     doi.org/10.1039/D3CS00432E).
@@ -827,32 +869,41 @@ def get_orientational_degeneracy(
         relaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
             of the `relaxed` defect structure, if already calculated / manually
             determined. Default is None (automatically calculated by doped).
-        unrelaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
-            of the non-relaxed (initial) defect site, if already calculated /
-            manually determined. This should match the site symmetry label from
-            ``doped`` when generating the defect. Default is None (automatically
-            calculated by doped).
+        bulk_site_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
+            of the defect site in the bulk, if already calculated / manually
+            determined. For vacancies/substitutions, this should match the site
+            symmetry label from ``doped`` when generating the defect, while for
+            interstitials it should be the point symmetry of the `final relaxed`
+            interstitial site, when placed in the bulk structure.
+            Default is None (automatically calculated by doped).
         bulk_symm_ops (list):
             List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the `relaxed` point symmetry), to
+            structure (used in determining the `unrelaxed` bulk site symmetry), to
             avoid re-calculating. Default is None (recalculates).
         defect_symm_ops (list):
             List of symmetry operations of the defect_entry.defect_supercell
-            structure (used in determining the `unrelaxed` point symmetry), to
+            structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.2, which is larger than
             that used for only unrelaxed structures in doped (0.01), to account for
             residual structural noise in relaxed supercells. You may want to adjust
             for your system (e.g. if there are very slight octahedral distortions etc).
+        defect_type (DefectType or str):
+            The type of defect (e.g. Vacancy/"vacancy", Substitution/"substitution",
+            Interstitial/"interstitial") to check if the output orientational
+            degeneracy is reasonable (i.e. can only be less than 1 for interstitials).
+            Default is None (no check).
 
     Returns:
         float: orientational degeneracy factor for the defect.
     """
+    from doped.utils.symmetry import group_order_from_schoenflies, point_symmetry_from_defect_entry
+
     if defect_entry is None:
-        if relaxed_point_group is None or unrelaxed_point_group is None:
+        if relaxed_point_group is None or bulk_site_point_group is None:
             raise ValueError(
-                "Either the DefectEntry or both relaxed and unrelaxed point group symbols must be "
+                "Either the DefectEntry or both defect and bulk site point group symbols must be "
                 "provided for doped to determine the orientational degeneracy! "
             )
 
@@ -861,6 +912,9 @@ def get_orientational_degeneracy(
             "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
             "(i.e. must be a parsed DefectEntry)"
         )
+
+    else:
+        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
@@ -871,23 +925,117 @@ def get_orientational_degeneracy(
             relaxed=True,  # relaxed
         )
 
-    if unrelaxed_point_group is None:
-        unrelaxed_point_group = point_symmetry_from_defect_entry(
+    if bulk_site_point_group is None:
+        bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,  # type: ignore
             symm_ops=bulk_symm_ops,  # bulk not defect symm_ops
             symprec=symprec,  # same symprec as relaxed_point_group for consistency
             relaxed=False,  # unrelaxed
         )
 
-    # TODO: Implement this in point symmetry function:
-    # bulk_site = defect_entry.calculation_metadata["bulk_site"]
-    # bulk_index = defect_entry.bulk_entry.structure.index(bulk_site)
-    #
-    # symm_dataset = _get_sga(
-    #     defect_entry.bulk_entry.structure, symprec=0.1 * symprec
-    # ).get_symmetry_dataset()
-    # bulk_site_symm_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][bulk_index])
+    # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
+    # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
+    # if orientational_degeneracy < 1 and not (
+    #     defect_type == DefectType.Interstitial
+    #     or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
+    # ):
+    #     raise ValueError(
+    #         f"From the input/determined point symmetries, an orientational degeneracy factor of "
+    #         f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable "
+    #         f"for vacancies/substitutions, indicating an error in the symmetry determination!"
+    #     )
 
-    return group_order_from_schoenflies(unrelaxed_point_group) / group_order_from_schoenflies(
+    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
         relaxed_point_group
     )
+
+
+def _get_bulk_supercell(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
+        return defect_entry.bulk_supercell
+
+    if (
+        hasattr(defect_entry, "bulk_entry")
+        and defect_entry.bulk_entry
+        and hasattr(defect_entry.bulk_entry, "structure")
+        and defect_entry.bulk_entry.structure
+    ):
+        return defect_entry.bulk_entry.structure
+
+    return None
+
+
+def _get_defect_supercell(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "defect_supercell") and defect_entry.defect_supercell:
+        return defect_entry.defect_supercell
+
+    if (
+        hasattr(defect_entry, "sc_entry")
+        and defect_entry.sc_entry
+        and hasattr(defect_entry.sc_entry, "structure")
+        and defect_entry.sc_entry.structure
+    ):
+        return defect_entry.sc_entry.structure
+
+    return None
+
+
+def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
+    if (
+        hasattr(defect_entry, "calculation_metadata")
+        and defect_entry.calculation_metadata
+        and "unrelaxed_defect_structure" in defect_entry.calculation_metadata
+    ):
+        return defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+
+    bulk_supercell = _get_bulk_supercell(defect_entry)
+
+    if bulk_supercell is not None:
+        from doped.analysis import defect_from_structures
+
+        (
+            _defect,
+            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            _defect_site_index,
+            _bulk_site_index,
+            _guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_supercell,
+            _get_defect_supercell(defect_entry),
+            return_all_info=True,
+        )
+        return unrelaxed_defect_structure
+
+    return None
+
+
+def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=True):
+    sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
+    site = None
+
+    if not relaxed and hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
+        site = defect_entry.calculation_metadata.get("bulk_site")
+    if sc_defect_frac_coords is None and site is None:
+        site = _get_defect_supercell_site(defect_entry)
+    if site is not None:
+        sc_defect_frac_coords = site.frac_coords
+
+    return sc_defect_frac_coords
+
+
+def _get_defect_supercell_site(defect_entry: DefectEntry):
+    if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
+        return defect_entry.defect_supercell_site
+
+    if defect_entry.sc_defect_frac_coords is not None:
+        return PeriodicSite(
+            defect_entry.defect.site.species,
+            defect_entry.sc_defect_frac_coords,
+            _get_defect_supercell(defect_entry).lattice,
+        )
+
+    return None

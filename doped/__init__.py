@@ -54,15 +54,20 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", category=BadInputSetWarning)
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
     warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
-    warnings.filterwarnings(
-        "ignore", message="POTCAR data with symbol"
-    )  # Ignore POTCAR warnings because Pymatgen incorrectly detecting POTCAR types
 
     # Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
     warnings.filterwarnings("ignore", message="Hybrid functionals only support")
 
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
+
+    warnings.filterwarnings("ignore", message="get_vasp_input")  # deprecation warning introduced
+    # in pymatgen>2024.1.6, fixed in our PR: https://github.com/materialsproject/pymatgen/pull/3601
+    # (now merged) -- delete later if pymatgen requirement is updated beyond this
+
+    # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
+    # otherwise) for the bulk):
+    warnings.filterwarnings("ignore", message="Not all sites have property")
 
 
 _ignore_pmg_warnings()
