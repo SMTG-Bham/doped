@@ -97,6 +97,46 @@ class FermiSolver(MSONable):
             for dopant_concentration in dopant_concentration_range
         )
         return pd.concat(all_data)
+    
+    def scan_dopant_concentration_with_anneal_and_quench(
+        self,
+        chempots: dict[str, float],
+        quenching_temperatures: Union[float, List[float]],
+        annealing_temperatures: Union[float, List[float]],
+        dopant_concentration_range: List[float],
+        processes: int = 1,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Scan over a range of dopant concentrations, quenching and annealing temperatures to calculate the defect concentrations
+        under pseudo equilibrium given a set of elemental chemical potentials.
+
+        Args:
+            chempots (dict): chemical potentials to solve
+            quenching_temperatures (float or List): quenching temperatures to solve over
+            annealing_temperatures (float or List): annealing temperatures to solve over
+            dopant_concentration_range (List): range of dopant concentrations to solve over
+            processes (int): number of processes to use for parallel processing
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
+              and the self consistent Fermi energy
+        """
+        quenching_temperatures = list(quenching_temperatures)
+        annealing_temperatures = list(annealing_temperatures)
+
+        all_data = Parallel(n_jobs=processes)(
+            delayed(self.pseudo_equilibrium_solve)(
+                chempots,
+                quenched_temperature=quenched_temperature,
+                annealing_temperature=anneal_temperature,
+                effective_dopant_concentration=dopant_concentration,
+                **kwargs,
+            )
+            for quenched_temperature, anneal_temperature, dopant_concentration in product(
+                quenching_temperatures, annealing_temperatures, dopant_concentration_range
+            )
+        )
+        return pd.concat(all_data)
 
     def scan_temperature(
         self, chempots: dict[str, float], temperature_range: List[float], processes: int = 1, **kwargs
@@ -405,6 +445,7 @@ class FermiSolverDoped(FermiSolver):
             columns={"Total Concentration (cm^-3)": "Concentration (cm^-3)"}, inplace=True
         )
         concentrations.set_index("Defect", inplace=True, drop=True)
+
         return concentrations
 
 
@@ -428,6 +469,28 @@ class FermiSolverPyScFermi(FermiSolver):
         self.bulk_dos = DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
         self.multiplicity_scaling = multiplicity_scaling
+
+    def _generate_dopant(self, effective_dopant_concentration: float) -> DefectSpecies:
+        """Generate a dopant defect charge state object.
+
+        Args:
+            effective_dopant_concentration (float): The effective dopant concentration.
+        
+        Returns:
+            DefectChargeState: The initialized DefectChargeState.
+        """
+
+        if effective_dopant_concentration is not None:
+            if effective_dopant_concentration > 0:
+                charge = 1
+                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+            elif effective_dopant_concentration < 0:
+                charge = -1
+                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+        dopant = DefectChargeState(
+                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
+                )
+        return DefectSpecies(nsites = 1, charge_states = {charge: dopant}, name="Dopant")
 
     def generate_defect_system(
         self,
@@ -466,26 +529,9 @@ class FermiSolverPyScFermi(FermiSolver):
             }
 
         all_defect_species = [DefectSpecies.from_dict(v) for k, v in defect_species.items()]
-
         if effective_dopant_concentration is not None:
-            if effective_dopant_concentration > 0:
-                charge = 1
-                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
-                dopant = DefectChargeState(
-                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
-                )
-                all_defect_species.append(
-                    DefectSpecies(name="Dopant", charge_states={charge: dopant}, nsites=1)
-                )
-            elif effective_dopant_concentration < 0:
-                charge = -1
-                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
-                dopant = DefectChargeState(
-                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
-                )
-                all_defect_species.append(
-                    DefectSpecies(name="Dopant", charge_states={charge: dopant}, nsites=1)
-                )
+            dopant = self._generate_dopant(effective_dopant_concentration)
+            all_defect_species.append(dopant)
 
         return DefectSystem(
             defect_species=all_defect_species,
@@ -538,7 +584,11 @@ class FermiSolverPyScFermi(FermiSolver):
         return df
 
     def pseudo_equilibrium_solve(
-        self, chempots: dict[str, float], quenched_temperature: float, annealing_temperature: float
+        self, chempots: dict[str, float], 
+        quenched_temperature: float, 
+        annealing_temperature: float, 
+        effective_dopant_concentration: Optional[float] = None, 
+        **kwargs
     ):
         """
         Solve for the defect concentrations at a given quenching and annealing temperature
@@ -557,6 +607,8 @@ class FermiSolverPyScFermi(FermiSolver):
             chemical_potentials=chempots,
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            **kwargs
         )
         conc_dict = defect_system.concentration_dict()
 
@@ -571,6 +623,9 @@ class FermiSolverPyScFermi(FermiSolver):
                     "Electrons (cm^-3)": conc_dict["n0"],
                 }
                 row.update({"Defect": k, "Concentration (cm^-3)": v})
+                if "Dopant" in conc_dict:
+                    row.update({"Dopant (cm^-3)": conc_dict["Dopant"]})
+                row.update({"Defect": k, "Concentration (cm^-3)": v})
                 data.append(row)
 
         df = pd.DataFrame(data)
@@ -583,6 +638,7 @@ class FermiSolverPyScFermi(FermiSolver):
         quenched_temperature,
         annealing_temperature,
         fix_defect_species=True,
+        effective_dopant_concentration=None,
         exceptions=[],
     ) -> DefectSystem:
         """generate a py-sc-fermi DefectSystem object that has defect concentrations
@@ -646,6 +702,10 @@ class FermiSolverPyScFermi(FermiSolver):
                     key = f"{defect_species.name}_{int(k)}"
                     if key in List(fixed_concs.keys()):
                         v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
+
+        if effective_dopant_concentration is not None:
+            dopant = self._generate_dopant(effective_dopant_concentration)
+            defect_system.defect_species.append(dopant)
 
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
