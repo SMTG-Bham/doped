@@ -275,7 +275,7 @@ class CompetingPhases:
     # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
     #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
+    # on the MP - warn user (i.e. check your stuff) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
     # and generate from there)
     # E.g. from pycdt chemical_potentials:
@@ -559,13 +559,20 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                kname = (
+                    "k"
+                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                )
                 fname = (
                     f"competing_phases/{e.name}_EaH"
                     f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 )  # TODO: competing_phases folder name should be an optional parameter
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
                 #  out for cases where rounding can give same name (e.g. Te!)
+                # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
+                #  efficient by just editing the kpoints in each loop (not reinitialising) and adding
+                #  the POTCAR hashing function used in doped.vasp
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -589,7 +596,11 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                kname = (
+                    "k"
+                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                )
                 fname = (
                     f"competing_phases/{e.name}_EaH_"
                     f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
