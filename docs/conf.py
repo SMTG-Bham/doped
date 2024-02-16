@@ -25,7 +25,7 @@ copyright = '2023, Seán R. Kavanagh'
 author = 'Seán R. Kavanagh'
 
 # The full version, including alpha/beta/rc tags
-release = '2.2.0'
+release = '2.3.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -103,7 +103,7 @@ html_context = {
     "display_github": True, # Integrate GitHub
     "github_user": "SMTG-Bham", # Username
     "github_repo": "doped", # Repo name
-    "github_version": "master", # Version
+    "github_version": "main", # Version
     "conf_py_path": "/docs/", # Path in the checkout to the docs root
 }
 

@@ -146,11 +146,13 @@ def _calc_site_displacements(
         "Species_with_index": [],
         "Abs. displacement": [],
         "Distance to defect": [],
+        "Displacement wrt defect": [],
+        "Displacement projected along vector": [],
     }  # type: dict
-    if relative_to_defect:
-        disp_dict["Displacement wrt defect"] = []
-    if vector_to_project_on:
-        disp_dict["Displacement projected along vector"] = []
+    # if relative_to_defect:
+    #     disp_dict["Displacement wrt defect"] = []
+    # if vector_to_project_on:
+    #     disp_dict["Displacement projected along vector"] = []
     for i, site in enumerate(defect_sc_with_site):
         # print(i, site.specie, site.frac_coords)
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
@@ -186,6 +188,34 @@ def _calc_site_displacements(
                 )
             proj = np.dot(disp, vector_to_project_on / norm)
             disp_dict["Displacement projected along vector"].append(proj)
+
+    # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
+    element_list = [
+        el.symbol for el in defect_entry.defect.structure.composition.elements
+    ]  # host elements
+    element_list += sorted(
+        [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+            el.symbol
+            for el in defect_entry.defect.defect_structure.composition.elements
+            if el.symbol not in element_list
+        ]
+    )
+
+    # Combine the lists into a list of tuples, then sort, then unpack:
+    combined = list(zip(*disp_dict.values()))
+    combined.sort(
+        key=lambda x: (element_list.index(x[1]), x[4], x[0])
+    )  # Sort by species, then distance, then index
+    (
+        disp_dict["Index (defect)"],
+        disp_dict["Species"],
+        disp_dict["Species_with_index"],
+        disp_dict["Abs. displacement"],
+        disp_dict["Distance to defect"],
+        disp_dict["Displacement wrt defect"],
+        disp_dict["Displacement projected along vector"],
+    ) = zip(*combined)
+
     # Store in DefectEntry.calculation_metadata
     # For vacancies, before storing displacements data, remove the last site
     # (defect site) as not present in input defect supercell
@@ -367,11 +397,23 @@ def _plot_site_displacements(
                 xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
             )
     else:
+        element_list = [
+            el.symbol for el in defect_entry.defect.structure.composition.elements
+        ]  # host elements
+        element_list += sorted(
+            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+                el.symbol
+                for el in defect_entry.defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ]
+        )
+
         style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         with plt.style.context(style_file):
             # Color by species
             unique_species = list(set(disp_dict["Species"]))
+            unique_species.sort(key=lambda x: element_list.index(x))
             colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
                 dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
             )

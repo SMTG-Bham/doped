@@ -49,11 +49,11 @@ def get_vasprun(vasprun_path, **kwargs):
     )  # `message` only needs to match start of message
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
             f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
-        ) from None
+        ) from exc
     return vasprun
 
 
@@ -914,7 +914,7 @@ def get_orientational_degeneracy(
         )
 
     else:
-        defect_type = defect_entry.defect.defect_type
+        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
@@ -933,21 +933,21 @@ def get_orientational_degeneracy(
             relaxed=False,  # unrelaxed
         )
 
-    orientational_degeneracy = group_order_from_schoenflies(
-        bulk_site_point_group
-    ) / group_order_from_schoenflies(relaxed_point_group)
+    # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
+    # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
+    # if orientational_degeneracy < 1 and not (
+    #     defect_type == DefectType.Interstitial
+    #     or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
+    # ):
+    #     raise ValueError(
+    #         f"From the input/determined point symmetries, an orientational degeneracy factor of "
+    #         f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable "
+    #         f"for vacancies/substitutions, indicating an error in the symmetry determination!"
+    #     )
 
-    if orientational_degeneracy < 1 and not (
-        defect_type == DefectType.Interstitial
-        or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
-    ):
-        raise ValueError(
-            f"From the input/determined point symmetries, an orientational degeneracy factor of "
-            f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable for "
-            f"vacancies/substitutions, indicating an error in the symmetry determination!"
-        )
-
-    return orientational_degeneracy
+    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
+        relaxed_point_group
+    )
 
 
 def _get_bulk_supercell(defect_entry: DefectEntry):

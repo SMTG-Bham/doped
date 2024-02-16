@@ -193,7 +193,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (symmetry._custom_round(x[0]), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0], 2), element_list.index(x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -1018,11 +1018,6 @@ def get_ideal_supercell_matrix(
             f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
         )
 
-    supercell = structure * optimal_P
-    if np.sum(supercell.cart_coords < 0) / np.sum(supercell.cart_coords > 0) > 1:
-        # if supercell Cartesian coordinates are mostly negative, return negative of optimal_P
-        return optimal_P * -1
-
     return optimal_P
 
 
@@ -1249,13 +1244,24 @@ class DefectsGenerator(MSONable):
                         pbar=pbar,
                     )
 
-            if input_min_image_distance >= specified_min_image_distance and (
-                not self.generate_supercell
-                or self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
+            if not self.generate_supercell or (
+                input_min_image_distance >= specified_min_image_distance
+                and self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
             ):
-                # input structure is greater than ``min_image_distance`` Å in each direction, and
+                if input_min_image_distance < 10:
+                    # input structure is <10 Å in at least one direction, and generate_supercell=False,
+                    # so use input structure but warn user:
+                    warnings.warn(
+                        f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
+                        f"{input_min_image_distance:.2f} Å, which is usually too "
+                        f"small for accurate defect calculations, but generate_supercell = False, so "
+                        f"using input structure as defect & bulk supercells. Caution advised!"
+                    )
+
+                # else input structure is greater than ``min_image_distance`` Å in each direction, and
                 # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
                 # doped supercell, so use input structure:
+
                 (
                     self.primitive_structure,
                     self.supercell_matrix,
@@ -1263,27 +1269,29 @@ class DefectsGenerator(MSONable):
                     primitive_structure, self.structure
                 )
 
-            elif not self.generate_supercell and input_min_image_distance < 10:
-                # input structure is <10 Å in at least one direction, and generate_supercell=False,
-                # so use input structure but warn user:
-                warnings.warn(
-                    f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
-                    f"{input_min_image_distance:.2f} Å, which is usually too "
-                    f"small for accurate defect calculations, but generate_supercell = False, so "
-                    f"using input structure as defect & bulk supercells. Caution advised!"
-                )
-                (
-                    self.primitive_structure,
-                    self.supercell_matrix,
-                ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
-                    primitive_structure, self.structure
-                )
+                self.primitive_structure, self._T = symmetry.get_clean_structure(
+                    self.primitive_structure, return_T=True
+                )  # T maps orig prim struct to new prim struct; T*orig = new -> orig = T^-1*new
+                # supercell matrix P was: P*orig = super -> P*T^-1*new = super -> P' = P*T^-1
+
+                self.supercell_matrix = np.matmul(self.supercell_matrix, np.linalg.inv(self._T))
 
             else:
                 self.primitive_structure = primitive_structure
                 self.supercell_matrix = supercell_matrix
 
-            self.bulk_supercell = (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
+            self.primitive_structure = Structure.from_sites(
+                [site.to_unit_cell() for site in self.primitive_structure]
+            )
+            self.bulk_supercell = Structure.from_sites(
+                [
+                    site.to_unit_cell()
+                    for site in (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
+                ]
+            )
+            self.bulk_supercell = Structure.from_dict(
+                symmetry._round_floats(self.bulk_supercell.as_dict())
+            )
             self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
 
             # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
@@ -2173,7 +2181,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     Sorts defect entries by defect type (vacancies, substitutions,
     interstitials), then by order of appearance of elements in the composition,
     then alphabetically, then (for defect entries of the same type) sort by
-    charge state.
+    charge state (from positive to negative).
     """
     if element_list is None:
         host_element_list = None
@@ -2204,7 +2212,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     element_list.index(_first_and_second_element(s[0])[0]),
                     element_list.index(_first_and_second_element(s[0])[1]),
                     s[0].rsplit("_", 1)[0],  # name without charge
-                    s[1].charge_state,  # charge state
+                    -s[1].charge_state,  # charge state
                 ),
             )
         )
@@ -2228,9 +2236,9 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     defect_entry.defect.defect_type.value,
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
                     element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
-                    # name without charge:
-                    name_from_defect,
-                    defect_entry.charge_state,  # charge state
+                    defect_entry.name.rsplit("_", 1)[0],  # name without charge
+                    name_from_defect,  # doped name without charge
+                    -defect_entry.charge_state,  # charge state
                 )
 
             return dict(
