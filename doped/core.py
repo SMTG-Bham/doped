@@ -766,6 +766,8 @@ class DefectEntry(thermo.DefectEntry):
     def plot_site_displacements(
         self,
         separated_by_direction: Optional[bool] = True,
+        relative_to_defect: Optional[bool] = False,
+        vector_to_project_on: Optional[list] = None,
         use_plotly: Optional[bool] = False,
         mpl_style_file: Optional[str] = "",
     ):
@@ -777,6 +779,14 @@ class DefectEntry(thermo.DefectEntry):
             separated_by_direction (bool):
                 Whether to plot the site displacements separated by the
                 x, y and z directions (True) or all together (False).
+            relative_to_defect (bool): Whether to plot the signed displacements
+                along the line from the defect site to that atom. Negative values
+                indicate the atom moves towards the defect (compressive strain),
+                positive values indicate the atom moves away from the defect
+                (tensile strain). Uses the *relaxed* defect position as reference.
+            vector_to_project_on: Direction to project the site displacements along
+                (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
+                in the cartesian basis x, y, z).
             use_plotly (bool):
                 Whether to use plotly (True) or matplotlib (False).
             mpl_style_file (str):
@@ -788,6 +798,8 @@ class DefectEntry(thermo.DefectEntry):
         return _plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
+            relative_to_defect=relative_to_defect,
+            vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,
             style_file=mpl_style_file,
         )

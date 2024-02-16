@@ -103,13 +103,6 @@ def _calc_site_displacements(
             ):
                 # Get index of defect site in defect structure
                 defect_site_index = defect_sc_with_defect.index(_get_defect_supercell_site(defect_entry))
-                # Swap defect site with last site
-                # defect_site = defect_sc_with_defect.pop(defect_site_index)
-                # defect_sc_with_defect.append(
-                #     defect_site.specie,
-                #     defect_site.frac_coords,
-                #     coords_are_cartesian=False,
-                # )
             else:
                 defect_site_index = len(defect_sc_with_defect) - 1
         elif defect_type == "Substitution":
@@ -125,12 +118,6 @@ def _calc_site_displacements(
             defect_site_index = defect_sc_with_defect.index(
                 _get_defect_supercell_site(defect_entry)  # _relaxed_ defect site
             )
-            # defect_site = defect_sc_with_defect.pop(defect_site_index)
-            # defect_sc_with_defect.append(
-            #     defect_site.specie,
-            #     defect_site.frac_coords,
-            #     coords_are_cartesian=False,
-            # )
         else:
             raise ValueError(f"Defect type {defect_type} not supported")
         return bulk_sc_with_defect, defect_sc_with_defect, defect_site_index
@@ -146,13 +133,11 @@ def _calc_site_displacements(
         "Species_with_index": [],
         "Abs. displacement": [],
         "Distance to defect": [],
-        "Displacement wrt defect": [],
-        "Displacement projected along vector": [],
     }  # type: dict
-    # if relative_to_defect:
-    #     disp_dict["Displacement wrt defect"] = []
-    # if vector_to_project_on:
-    #     disp_dict["Displacement projected along vector"] = []
+    if relative_to_defect:
+        disp_dict["Displacement wrt defect"] = []
+    if vector_to_project_on is not None:
+        disp_dict["Displacement projected along vector"] = []
     for i, site in enumerate(defect_sc_with_site):
         # print(i, site.specie, site.frac_coords)
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
@@ -170,16 +155,16 @@ def _calc_site_displacements(
         disp_dict["Species"].append(site.specie.name)
         if relative_to_defect:
             # Find vector from defect to site
-            vector_to_project_on = np.array(
-                defect_sc_with_site[defect_site_index].frac_coords - site.frac_coords
+            vector_defect_to_site = np.array(
+                site.frac_coords - defect_sc_with_site[defect_site_index].frac_coords
             )
-            norm = np.linalg.norm(vector_to_project_on)
+            norm = np.linalg.norm(vector_defect_to_site)
             if norm == 0:  # If defect site and site are the same
                 disp_dict["Displacement wrt defect"].append(0)
             else:
-                proj = np.dot(disp, vector_to_project_on / norm)
+                proj = np.dot(disp, vector_defect_to_site / norm)
                 disp_dict["Displacement wrt defect"].append(proj)
-        if vector_to_project_on:
+        if vector_to_project_on is not None:
             # Normalize vector to project on
             norm = np.linalg.norm(vector_to_project_on)
             if norm == 0:
@@ -200,21 +185,47 @@ def _calc_site_displacements(
             if el.symbol not in element_list
         ]
     )
-
     # Combine the lists into a list of tuples, then sort, then unpack:
     combined = list(zip(*disp_dict.values()))
     combined.sort(
         key=lambda x: (element_list.index(x[1]), x[4], x[0])
     )  # Sort by species, then distance, then index
-    (
-        disp_dict["Index (defect)"],
-        disp_dict["Species"],
-        disp_dict["Species_with_index"],
-        disp_dict["Abs. displacement"],
-        disp_dict["Distance to defect"],
-        disp_dict["Displacement wrt defect"],
-        disp_dict["Displacement projected along vector"],
-    ) = zip(*combined)
+    if relative_to_defect and vector_to_project_on is not None:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Abs. displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement wrt defect"],
+            disp_dict["Displacement projected along vector"],
+        ) = zip(*combined)
+    if relative_to_defect and vector_to_project_on is None:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Abs. displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement wrt defect"],
+        ) = zip(*combined)
+    elif vector_to_project_on is not None and not relative_to_defect:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Abs. displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement projected along vector"],
+        ) = zip(*combined)
+    else:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Abs. displacement"],
+            disp_dict["Distance to defect"],
+        ) = zip(*combined)
 
     # Store in DefectEntry.calculation_metadata
     # For vacancies, before storing displacements data, remove the last site
@@ -252,7 +263,7 @@ def _plot_site_displacements(
             along the line from the defect site to that atom. Negative values
             indicate the atom moves towards the defect (compressive strain),
             positive values indicate the atom moves away from the defect
-            (tensile strain).
+            (tensile strain). Uses the *relaxed* defect position as reference.
         vector_to_project_on: Direction to project the site displacements along
             (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
             in the cartesian basis x, y, z).
@@ -294,10 +305,13 @@ def _plot_site_displacements(
             edgecolor="none",
         )
         ax.set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
-        ax.set_ylabel("Displacement towards defect ($\\AA$)", fontsize=styled_font_size)
+        ax.set_ylabel(ylabel, fontsize=styled_font_size)
         # Add legend with species manually
         patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
         ax.legend(handles=patches)
+        if relative_to_defect:
+            # Add horizontal line at 0
+            ax.axhline(0, color="grey", alpha=0.3, linestyle="--")
         return fig
 
     def _plotly_plot_total_disp(
@@ -330,8 +344,22 @@ def _plot_site_displacements(
         fig.update_layout(xaxis_title="Distance to defect (\u212B)", yaxis_title=f"{ylabel} (\u212B)")
         return fig
 
+    # Check user didn't set both relative_to_defect and vector_to_project_on
+    if (
+        separated_by_direction
+        and (relative_to_defect or vector_to_project_on is not None)
+        or (relative_to_defect and vector_to_project_on is not None)
+    ):
+        raise ValueError(
+            "Cannot separate by direction and also plot relative displacements"
+            " or displacements projected along a vector. Please only set one"
+            " of these three options."
+        )
+
     disp_dict = _calc_site_displacements(
         defect_entry=defect_entry,
+        relative_to_defect=relative_to_defect,
+        vector_to_project_on=vector_to_project_on,
     )
     if use_plotly and not plotly_installed:
         warnings.warn("Plotly not installed, using matplotlib instead")
@@ -341,7 +369,7 @@ def _plot_site_displacements(
         if relative_to_defect:
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement wrt defect",
-                ylabel="Displacement towards defect",  # Angstrom symbol added in function
+                ylabel="Displacement wrt defect",  # Angstrom symbol added in function
                 disp_dict=disp_dict,
             )
         elif vector_to_project_on:
@@ -425,7 +453,7 @@ def _plot_site_displacements(
             if relative_to_defect:
                 return _mpl_plot_total_disp(
                     disp_type_key="Displacement wrt defect",
-                    ylabel="Displacement towards defect ($\\AA$)",
+                    ylabel="Displacement wrt defect ($\\AA$)",
                     disp_dict=disp_dict,
                     color_dict=color_dict,
                     styled_fig_size=styled_fig_size,
