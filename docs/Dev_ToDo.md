@@ -110,3 +110,4 @@
 - AgSbTe2 VASP IO tests
 - Add tip in SnB docs to specify `--folder vasp_std` when using `snb-groundstate` to write output groundstate structure to `doped` `vasp_std` folder.
 - Add sanity check warning with `DefectsGenerator`, if input structure symmetry is `P1` – you sure about this??
+- Add spin degeneracy auto determination to get symmetries/degeneracies later (if hasn't been parsed with current code for some reason e.g. Kanta...). Should implement this for all degeneracy factors whenever concentration methods used?

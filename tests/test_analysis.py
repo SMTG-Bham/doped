@@ -71,6 +71,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
 
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
+        self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -80,6 +81,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json"))
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json"))
         if_present_rm("V2O5_test")
+        if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -687,7 +689,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w  # no warnings
         assert len(dp.defect_dict) == 5  # now 5 defects, all still included
-        assert not w  # no warnings
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
@@ -696,6 +697,54 @@ class DefectsParsingTestCase(unittest.TestCase):
         print(thermo.get_symmetries_and_degeneracies())
 
         return thermo.plot(facet="V2O5-O2")
+
+    @custom_mpl_image_compare(filename="SrTiO3_v_O.png")
+    def test_SrTiO3_diff_ISYM_bulk_defect(self):
+        """
+        Test parsing SrTiO3 defect calculations, where a different ISYM was
+        used for the bulk (= 3) compared to the defect (= 0) calculations.
+
+        Previously this failed because the bulk/defect kpoints could not be
+        properly compared.
+        """
+        # test previous parsing approach first:
+        with warnings.catch_warnings(record=True) as w:
+            _single_dp = DefectParser.from_paths(
+                defect_path=f"{self.SrTiO3_DATA_DIR}/vac_O_2/vasp_std",
+                bulk_path=f"{self.SrTiO3_DATA_DIR}/bulk_sp333",
+                dielectric=6.33,
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "There are mismatching INCAR tags",
+                "[('LASPH', False, True)]",
+            ]
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.SrTiO3_DATA_DIR, dielectric=6.33)  # wrong dielectric from Kanta
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "There are mismatching INCAR tags",
+                "vac_O_0: [('LASPH', False, True)]",
+                "vac_O_1: [('LASPH', False, True)]",
+                "vac_O_2: [('LASPH', False, True)]",
+            ]
+        )
+
+        assert len(dp.defect_dict) == 3
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+
+        print(thermo.get_symmetries_and_degeneracies())
+
+        return thermo.plot()
 
 
 class DopedParsingTestCase(unittest.TestCase):
