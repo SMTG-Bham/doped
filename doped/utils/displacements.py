@@ -231,8 +231,8 @@ def _calc_site_displacements(
     # For vacancies, before storing displacements data, remove the last site
     # (defect site) as not present in input defect supercell
     # But leave it in disp_dict as clearer to include in the displacement plot?
-    disp_list = deepcopy(disp_dict["Abs. displacement"])
-    distance_list = deepcopy(disp_dict["Distance to defect"])
+    disp_list = list(deepcopy(disp_dict["Abs. displacement"]))
+    distance_list = list(deepcopy(disp_dict["Distance to defect"]))
     if defect_entry.defect.defect_type.name == "Vacancy":
         disp_list.pop(defect_site_index)
         distance_list.pop(defect_site_index)
@@ -309,7 +309,7 @@ def _plot_site_displacements(
         # Add legend with species manually
         patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
         ax.legend(handles=patches)
-        if relative_to_defect:
+        if disp_type_key in ("Displacement wrt defect", "Displacement projected along vector"):
             # Add horizontal line at 0
             ax.axhline(0, color="grey", alpha=0.3, linestyle="--")
         return fig
@@ -353,7 +353,9 @@ def _plot_site_displacements(
         raise ValueError(
             "Cannot separate by direction and also plot relative displacements"
             " or displacements projected along a vector. Please only set one"
-            " of these three options."
+            " of these three options (e.g. to plot displacements relative to defect,"
+            " rerun with relative_to_defect=True, separated_by_direction=False"
+            " and vector_to_project_on=None)"
         )
 
     disp_dict = _calc_site_displacements(
@@ -375,7 +377,7 @@ def _plot_site_displacements(
         elif vector_to_project_on:
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement projected along vector",
-                ylabel=f"Displacement along vector {tuple(vector_to_project_on)}",
+                ylabel=f"Disp. along vector {tuple(vector_to_project_on)}",
                 disp_dict=disp_dict,
             )
         elif not separated_by_direction:  # total displacement
@@ -462,7 +464,7 @@ def _plot_site_displacements(
             if vector_to_project_on:
                 return _mpl_plot_total_disp(
                     disp_type_key="Displacement projected along vector",
-                    ylabel=f"Displacement along vector {tuple(vector_to_project_on)} ($\\AA$)",
+                    ylabel=f"Disp. along vector {tuple(vector_to_project_on)} ($\\AA$)",
                     disp_dict=disp_dict,
                     color_dict=color_dict,
                     styled_fig_size=styled_fig_size,
