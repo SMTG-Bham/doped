@@ -69,5 +69,8 @@ def _ignore_pmg_warnings():
     # otherwise) for the bulk):
     warnings.filterwarnings("ignore", message="Not all sites have property")
 
+    # ignore warning about structure charge that appears when getting Vasprun.as_dict():
+    warnings.filterwarnings("ignore", message="Structure charge")
+
 
 _ignore_pmg_warnings()
