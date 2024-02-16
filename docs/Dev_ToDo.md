@@ -30,6 +30,8 @@
   Brouwer diagrams; show examples of these in docs using `py-sc-fermi` interface tools. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
 
 ## Housekeeping
+- Tutorials general structure clean-up
+- Clean up repo, removing old unnecessary git blobs
 - Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
 - Code tidy up:
   - Test coverage?
@@ -38,6 +40,7 @@
 - Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
+  - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
   - Barebones tutorial workflow, as suggested by Alex G. 
   - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
   - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.

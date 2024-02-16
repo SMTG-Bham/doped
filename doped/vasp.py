@@ -3,6 +3,7 @@ Code to generate VASP defect calculation input files.
 """
 import contextlib
 import copy
+import inspect
 import os
 import warnings
 from functools import lru_cache
@@ -450,9 +451,12 @@ class DefectDictSet(DictSet):
         """
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectDictSet with supercell composition {self.structure.composition}."
-            f"Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -1242,7 +1246,7 @@ class DefectRelaxSet(MSONable):
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
                 ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
-                (default: True)
+                (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1714,7 +1718,8 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    unperturbed_poscar=unperturbed_poscar,
+                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar if
+                    # vasp_gam explicitly set
                     **kwargs,
                 )
 
@@ -1749,9 +1754,13 @@ class DefectRelaxSet(MSONable):
         formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
-            f"{self.defect_entry.name}. Available attributes:\n{attrs}\n\nAvailable methods:\n{methods}"
+            f"{self.defect_entry.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 
@@ -2054,9 +2063,10 @@ class DefectsSet(MSONable):
 
         By default, ``POSCAR`` files are not generated for the ``vasp_(nkred_)std``
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
-        be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
-        or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        be taken from ``vasp_gam`` ``ShakeNBreak`` calculations (via
+        ``snb-groundstate``), some other structure-searching approach or, if not
+        following the recommended structure-searching workflow, from the
+        ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
         effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
         should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
@@ -2176,10 +2186,13 @@ class DefectsSet(MSONable):
         ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        properties = {
+            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
+        }
         return (
             f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
-            f"defect entries in self.defect_entries. Available attributes:\n{attrs}\n\nAvailable "
-            f"methods:\n{methods}"
+            f"defect entries in self.defect_entries. Available attributes:\n{attrs | properties}\n\n"
+            f"Available methods:\n{methods}"
         )
 
 

@@ -12,10 +12,9 @@ from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
-import pytest
 from monty.serialization import dumpfn, loadfn
-from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.structure import Structure
+from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
     DefectParser,
@@ -29,14 +28,10 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
-    get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
 )
 
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
@@ -52,9 +47,6 @@ def if_present_rm(path):
 
 
 # TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
-# TODO: When adding full parsing tests (e.g. with full CdTe thermo or similar), add quick loop-over test of
-#  the symmetry determination functions -> Use saved CdTe defect dict, and apply get_name function to
-#  these defect entries
 
 
 class DefectsParsingTestCase(unittest.TestCase):
@@ -87,6 +79,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json"))
         if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json"))
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json"))
+        if_present_rm("V2O5_test")
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -281,12 +274,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert CdTe_dp.defect_dict["Te_Cd_+1"].calculation_metadata["bulk_site_index"] == 7
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="CdTe_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe(self):
         with warnings.catch_warnings(record=True) as w:
             default_dp = DefectsParser(
@@ -422,8 +410,15 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # correction warning
 
+        assert any(
+            "Defects: ['v_Cd_-2', 'v_Cd_-1'] each encountered the same warning:" in str(warn.message)
+            for warn in w
+        ) or any(
+            "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:" in str(warn.message)
+            for warn in w
+        )
+
         for i in [
-            "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
             "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
             "_anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk folder.",
             "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
@@ -434,14 +429,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
             f"subfolders)",
         ]:
-            print(i)
             assert any(i in str(warn.message) for warn in w)
 
         assert any(
             all(
                 i in str(warn.message)
                 for i in [
-                    "Defects: ['v_Cd_-1', 'v_Cd_-2'] each encountered the same warning:",
                     "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
                     "compute the _anisotropic_ Kumagai eFNV charge correction) are missing from the "
                     "defect or bulk folder.",
@@ -484,12 +477,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             ]
         )  # correction errors warnings
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="YTOS_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_DefectsParser_YTOS_default_bulk(self):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -506,12 +494,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="YTOS_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_DefectsParser_YTOS_explicit_bulk(self):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -538,12 +521,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"as expected (see `DefectsParser` docstring)." in str(exc.exception)
         )
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="O_Se_example_defects_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="O_Se_example_defects_plot.png")
     def test_extrinsic_Sb2Se3(self):
         with self.assertRaises(ValueError) as exc:
             DefectsParser(
@@ -592,12 +570,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -611,12 +584,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             in str(warning.message)
             for warning in w
         )  # collated warning
-        assert not any(
-            "Estimated error in the Kumagai (eFNV) charge correction for defect" in str(warning.message)
+        assert all(
+            "Estimated error in the Kumagai (eFNV) charge correction for defect"
+            not in str(warning.message)
             for warning in w
-        )  # no individual level warning
+        )  # no individual-level warning
         # Sb2Si2Te6 supercell breaks periodicity, but we don't throw warning when just parsing defects
-        assert not any("The defect supercell has been detected" in str(warning.message) for warning in w)
+        assert all("The defect supercell has been detected" not in str(warning.message) for warning in w)
 
         self._check_DefectsParser(dp)
 
@@ -673,12 +647,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="neutral_v_O_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_FNV(self):
         # only three inequivalent neutral V_O present
         with warnings.catch_warnings(record=True) as w:
@@ -702,7 +671,31 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])
         assert not w  # no warnings
 
-        return v2o5_thermo.plot(facet="VO2-V2O5")
+        return v2o5_thermo.plot(facet="V2O5-O2")
+
+    @custom_mpl_image_compare(filename="merged_renamed_v_O_plot.png")
+    def test_V2O5_same_named_defects(self):
+        shutil.copytree(self.V2O5_DATA_DIR, "V2O5_test")
+        shutil.copytree("V2O5_test/v_O_1", "V2O5_test/unrecognised_4")
+        shutil.copytree("V2O5_test/v_O_1", "V2O5_test/unrecognised_5")
+        for i in os.listdir("V2O5_test"):
+            if os.path.isdir(f"V2O5_test/{i}") and i.startswith("v_O"):
+                shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
+
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser("V2O5_test", dielectric=[4.186, 19.33, 17.49])
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w  # no warnings
+        assert len(dp.defect_dict) == 5  # now 5 defects, all still included
+        assert not w  # no warnings
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+        v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
+        thermo.chempots = v2o5_chempots
+
+        print(thermo.get_symmetries_and_degeneracies())
+
+        return thermo.plot(facet="V2O5-O2")
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -1977,27 +1970,29 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
 
-    def test_orientational_degeneracy_error(self):
-        # note most usages of get_orientational_degeneracy are tested (indirectly) via the
-        # DefectsParser/DefectThermodynamics tests
-        for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
-            print(defect_type)  # for debugging
-            with self.assertRaises(ValueError) as exc:
-                get_orientational_degeneracy(
-                    relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
-                )
-            assert (
-                "From the input/determined point symmetries, an orientational degeneracy factor of 0.25 "
-                "is predicted, which is less than 1, which is not reasonable for vacancies/substitutions, "
-                "indicating an error in the symmetry determination!"
-            ) in str(exc.exception)
-
-        for defect_type in ["interstitial", DefectType.Interstitial]:
-            print(defect_type)  # for debugging
-            orientational_degeneracy = get_orientational_degeneracy(
-                relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
-            )
-            assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
+    # no longer warned because actually can have orientational degeneracy < 1 for non-trivial defects
+    # like split-vacancies, antisite swaps, split-interstitials etc
+    # def test_orientational_degeneracy_error(self):
+    #     # note most usages of get_orientational_degeneracy are tested (indirectly) via the
+    #     # DefectsParser/DefectThermodynamics tests
+    #     for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
+    #         print(defect_type)  # for debugging
+    #         with self.assertRaises(ValueError) as exc:
+    #             get_orientational_degeneracy(
+    #                 relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+    #             )
+    #         assert (
+    #             "From the input/determined point symmetries, an orientational degeneracy factor of 0.25 "
+    #             "is predicted, which is less than 1, which is not reasonable for "
+    #             "vacancies/substitutions, indicating an error in the symmetry determination!"
+    #         ) in str(exc.exception)
+    #
+    #     for defect_type in ["interstitial", DefectType.Interstitial]:
+    #         print(defect_type)  # for debugging
+    #         orientational_degeneracy = get_orientational_degeneracy(
+    #             relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
+    #         )
+    #         assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
