@@ -1,6 +1,27 @@
 Change Log
 ==========
 
+v.2.3.0
+----------
+- ``DefectsThermodynamics`` class has been added to replace and greatly expand the functionality of the
+  ``DefectPhaseDiagram`` object. See tutorials for functionality and usage (plotting, Fermi level /
+  concentration analysis, dopability, transition levels (with/out metastable etc).
+- Overhaul supercell generation as discussed, now optimises directly off minimum periodic image distance
+  (thanks to efficient optimisation algorithm) with some prudent constraints. Significantly reduces
+  supercell sizes required in most cases.
+- Overhaul defect grouping as discussed, to use the distance between equivalent defect sites (with this
+  controllable via the `dist_tol` parameter).
+- Add point symmetry and orientational/spin degeneracy parsing, automatically included in thermodynamics
+  analysis (and customisable by user).
+- Many efficiency improvements (particularly in defect & input file generation, and symmetry functions).
+- Check and warning for large defect displacements far from defect site.
+- Site displacement (local strain) plotting by @ireaml 🙌
+- Auto determination of X-poor/rich facets.
+- More control over site selection for eFNV correction.
+- Clean, grouped parsing warnings for ``DefectsParser`` (in case many warnings...)
+- ``__repr__`` methods for all `doped` classes for informative outputs.
+- Tests and tutorials updates.
+
 v.2.2.0
 ----------
 - Added ``DefectsParser`` class for parsing defect calculations:
