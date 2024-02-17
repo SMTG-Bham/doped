@@ -44,7 +44,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             (0, [0.0572041, 0.00036486, -0.01794981]),
             (15, [0.11715445, -0.03659073, 0.01312027]),
         ]:
-            np.allclose(disp_dict["Abs. displacement"][i], np.array(disp))
+            np.allclose(disp_dict["Displacement"][i], np.array(disp))
         # Check distance
         for i, dist in [
             (0, 0.0),
@@ -101,7 +101,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             (0, [0.00820645, 0.00821417, -0.00815738]),
             (15, [-0.00639524, 0.00639969, -0.01407927]),
         ]:
-            np.allclose(disp_dict["Abs. displacement"][i], np.array(disp))
+            np.allclose(disp_dict["Displacement"][i], np.array(disp))
         # Interstitial:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/Int_Te_3_1_defect_entry.json")
         disp_dict = _calc_site_displacements(defect_entry)
@@ -109,7 +109,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             (0, [-0.03931121, 0.01800569, 0.04547194]),
             (15, [-0.04850126, -0.01378455, 0.05439607]),
         ]:
-            np.allclose(disp_dict["Abs. displacement"][i], np.array(disp))
+            np.allclose(disp_dict["Displacement"][i], np.array(disp))
 
     def test_plot_site_displacements_error(self):
         # Check ValueError raised if user sets both separated_by_direction and vector_to_project_on
