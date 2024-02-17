@@ -131,7 +131,7 @@ def _calc_site_displacements(
         "Index (defect)": [],
         "Species": [],
         "Species_with_index": [],
-        "Abs. displacement": [],
+        "Displacement": [],
         "Distance to defect": [],
     }  # type: dict
     if relative_to_defect:
@@ -151,7 +151,7 @@ def _calc_site_displacements(
         distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
         # print(i, displacement, np.linalg.norm(abs_disp), "Distance:", distance)
         disp_dict["Index (defect)"].append(i)
-        disp_dict["Abs. displacement"].append(disp)
+        disp_dict["Displacement"].append(disp)
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
@@ -200,7 +200,7 @@ def _calc_site_displacements(
             disp_dict["Index (defect)"],
             disp_dict["Species"],
             disp_dict["Species_with_index"],
-            disp_dict["Abs. displacement"],
+            disp_dict["Displacement"],
             disp_dict["Distance to defect"],
             disp_dict["Displacement wrt defect"],
             disp_dict["Displacement projected along vector"],
@@ -211,7 +211,7 @@ def _calc_site_displacements(
             disp_dict["Index (defect)"],
             disp_dict["Species"],
             disp_dict["Species_with_index"],
-            disp_dict["Abs. displacement"],
+            disp_dict["Displacement"],
             disp_dict["Distance to defect"],
             disp_dict["Displacement wrt defect"],
         ) = zip(*combined)
@@ -220,7 +220,7 @@ def _calc_site_displacements(
             disp_dict["Index (defect)"],
             disp_dict["Species"],
             disp_dict["Species_with_index"],
-            disp_dict["Abs. displacement"],
+            disp_dict["Displacement"],
             disp_dict["Distance to defect"],
             disp_dict["Displacement projected along vector"],
             disp_dict["Displacement perpendicular to vector"],
@@ -230,7 +230,7 @@ def _calc_site_displacements(
             disp_dict["Index (defect)"],
             disp_dict["Species"],
             disp_dict["Species_with_index"],
-            disp_dict["Abs. displacement"],
+            disp_dict["Displacement"],
             disp_dict["Distance to defect"],
         ) = zip(*combined)
 
@@ -238,7 +238,7 @@ def _calc_site_displacements(
     # For vacancies, before storing displacements data, remove the last site
     # (defect site) as not present in input defect supercell
     # But leave it in disp_dict as clearer to include in the displacement plot?
-    disp_list = list(deepcopy(disp_dict["Abs. displacement"]))
+    disp_list = list(deepcopy(disp_dict["Displacement"]))
     distance_list = list(deepcopy(disp_dict["Distance to defect"]))
     if defect_entry.defect.defect_type.name == "Vacancy":
         disp_list.pop(defect_site_index)
@@ -294,14 +294,14 @@ def _plot_site_displacements(
         Function to plot absolute/total displacement.
 
         Depending on the disp_type_key specified, will plot either the
-        normalised displacement (disp_type_key="Abs. displacement"), the
+        normalised displacement (disp_type_key="Displacement"), the
         displacement wrt the defect (disp_type_key="Displacement wrt defect"),
         or the displacmeent projected along a specified direction (
         disp_type_key="Displacement projected along vector").
         """
         fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
-        if disp_type_key == "Abs. displacement":
-            y_data = [np.linalg.norm(i) for i in disp_dict["Abs. displacement"]]
+        if disp_type_key == "Displacement":
+            y_data = [np.linalg.norm(i) for i in disp_dict["Displacement"]]
         else:
             y_data = disp_dict[disp_type_key]
         ax.scatter(
@@ -326,8 +326,8 @@ def _plot_site_displacements(
         ylabel,
         disp_dict,
     ):
-        if disp_type_key == "Abs. displacement":
-            y_data = [np.linalg.norm(i) for i in disp_dict["Abs. displacement"]]
+        if disp_type_key == "Displacement":
+            y_data = [np.linalg.norm(i) for i in disp_dict["Displacement"]]
         else:
             y_data = disp_dict[disp_type_key]
         fig = px.scatter(
@@ -389,7 +389,7 @@ def _plot_site_displacements(
             )
         elif not separated_by_direction:  # total displacement
             fig = _plotly_plot_total_disp(
-                disp_type_key="Abs. displacement",
+                disp_type_key="Displacement",
                 ylabel="Absolute displacement",
                 disp_dict=disp_dict,
             )
@@ -403,7 +403,7 @@ def _plot_site_displacements(
                 fig.add_trace(
                     Scatter(
                         x=disp_dict["Distance to defect"],
-                        y=[abs(i[dir_index]) for i in disp_dict["Abs. displacement"]],
+                        y=[abs(i[dir_index]) for i in disp_dict["Displacement"]],
                         hovertemplate=hovertemplate.replace("{z", "{text"),
                         text=disp_dict["Species_with_index"],
                         marker={"color": [color_dict[i] for i in disp_dict["Species"]]},
@@ -502,7 +502,7 @@ def _plot_site_displacements(
                 return fig
             if not separated_by_direction:
                 return _mpl_plot_total_disp(
-                    disp_type_key="Abs. displacement",
+                    disp_type_key="Displacement",
                     ylabel="Absolute displacement ($\\AA$)",
                     disp_dict=disp_dict,
                     color_dict=color_dict,
@@ -520,7 +520,7 @@ def _plot_site_displacements(
             for index, i in enumerate(["x", "y", "z"]):
                 ax[index].scatter(
                     disp_dict["Distance to defect"],
-                    [abs(j[index]) for j in disp_dict["Abs. displacement"]],
+                    [abs(j[index]) for j in disp_dict["Displacement"]],
                     c=[color_dict[i] for i in disp_dict["Species"]],
                     alpha=0.4,
                     edgecolor="none",
