@@ -23,6 +23,7 @@ from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
     DefectsSet,
+    DopedKpoints,
     _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
@@ -517,7 +518,8 @@ class DefectDictSetTest(unittest.TestCase):
             assert comment == self.doped_std_kpoint_comment
 
         for k in written_kpoints.as_dict():
-            if k not in ["comment", "usershift"]:  # user shift can be tuple or list and causes failure
+            if k not in ["comment", "usershift", "@module", "@class"]:
+                # user shift can be tuple or list and causes failure, and we use DopedKpoints not Kpoints
                 assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
 
         if kwargs.get("unperturbed_poscar", True):
@@ -595,8 +597,18 @@ class DefectRelaxSetTest(unittest.TestCase):
                 child_dds.user_potcar_functional[:3]
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
-            if isinstance(child_dds.user_kpoints_settings, Kpoints):
+            if isinstance(child_dds.user_kpoints_settings, (DopedKpoints, Kpoints)):
                 assert (
+                    child_dds.user_kpoints_settings.as_dict()
+                    == DopedKpoints()
+                    .from_dict(
+                        {
+                            "comment": "Γ-only KPOINTS from doped",
+                            "generation_style": "Gamma",
+                        }
+                    )
+                    .as_dict()
+                ) or (
                     child_dds.user_kpoints_settings.as_dict()
                     == Kpoints()
                     .from_dict(
@@ -969,6 +981,10 @@ class DefectsSetTest(unittest.TestCase):
                     if "Se" in folder:
                         assert contents[2] in ["Se", "Se\n"]
 
+            with open(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS") as f:
+                print(f.read())  # for debugging
+            with open(f"{data_dir}/{folder}/{vasp_type}/KPOINTS") as f:
+                print(f.read())  # for debugging
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
             assert test_kpoints.as_dict() == kpoints.as_dict()
