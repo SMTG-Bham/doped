@@ -138,11 +138,13 @@ def _calc_site_displacements(
         disp_dict["Displacement wrt defect"] = []
     if vector_to_project_on is not None:
         disp_dict["Displacement projected along vector"] = []
+        disp_dict["Displacement perpendicular to vector"] = []
     for i, site in enumerate(defect_sc_with_site):
         # print(i, site.specie, site.frac_coords)
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
         bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
         # Calculate displacement (need to account for pbc!)
+        # First final point, then initial point
         frac_disp = pbc_diff(site.frac_coords, bulk_site.frac_coords)  # in fractional coords
         disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
         # Distance to defect site (last site in defect sc)
@@ -154,9 +156,9 @@ def _calc_site_displacements(
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
         if relative_to_defect:
-            # Find vector from defect to site
-            vector_defect_to_site = np.array(
-                site.frac_coords - defect_sc_with_site[defect_site_index].frac_coords
+            # Find vector from defect to site, accounting for periodic boundary conditions
+            vector_defect_to_site = pbc_diff(
+                site.frac_coords, defect_sc_with_site[defect_site_index].frac_coords
             )
             norm = np.linalg.norm(vector_defect_to_site)
             if norm == 0:  # If defect site and site are the same
@@ -172,7 +174,10 @@ def _calc_site_displacements(
                     "Norm of vector to project on is zero! Choose a non-zero vector to project on."
                 )
             proj = np.dot(disp, vector_to_project_on / norm)
+            angle = np.arccos(proj / np.linalg.norm(disp))
+            rejection = np.linalg.norm(disp) * np.sin(angle)
             disp_dict["Displacement projected along vector"].append(proj)
+            disp_dict["Displacement perpendicular to vector"].append(rejection)
 
     # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
     element_list = [
@@ -199,6 +204,7 @@ def _calc_site_displacements(
             disp_dict["Distance to defect"],
             disp_dict["Displacement wrt defect"],
             disp_dict["Displacement projected along vector"],
+            disp_dict["Displacement perpendicular to vector"],
         ) = zip(*combined)
     if relative_to_defect and vector_to_project_on is None:
         (
@@ -217,6 +223,7 @@ def _calc_site_displacements(
             disp_dict["Abs. displacement"],
             disp_dict["Distance to defect"],
             disp_dict["Displacement projected along vector"],
+            disp_dict["Displacement perpendicular to vector"],
         ) = zip(*combined)
     else:
         (
@@ -462,14 +469,37 @@ def _plot_site_displacements(
                     styled_font_size=styled_font_size,
                 )
             if vector_to_project_on:
-                return _mpl_plot_total_disp(
-                    disp_type_key="Displacement projected along vector",
-                    ylabel=f"Disp. along vector {tuple(vector_to_project_on)} ($\\AA$)",
-                    disp_dict=disp_dict,
-                    color_dict=color_dict,
-                    styled_fig_size=styled_fig_size,
-                    styled_font_size=styled_font_size,
+                fig, ax = plt.subplots(
+                    1,
+                    2,
+                    sharey=True,
+                    sharex=True,
+                    figsize=(1.5 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (9.5, 4),
                 )
+                for index, i, title in zip(
+                    [0, 1],
+                    ["Displacement projected along vector", "Displacement perpendicular to vector"],
+                    [
+                        f"Parallel {tuple(vector_to_project_on)}",
+                        f"Perpendicular {tuple(vector_to_project_on)}",
+                    ],
+                ):
+                    ax[index].scatter(
+                        disp_dict["Distance to defect"],
+                        disp_dict[i],
+                        c=[color_dict[i] for i in disp_dict["Species"]],
+                        alpha=0.4,
+                        edgecolor="none",
+                    )
+                    ax[index].axhline(0, color="grey", alpha=0.3, linestyle="--")
+                    # Title with direction
+                    ax[index].set_title(f"{title}", fontsize=styled_font_size)
+                ax[0].set_ylabel("Displacements ($\\AA$)", fontsize=styled_font_size)
+                ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
+                # Add legend with species manually
+                patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
+                ax[0].legend(handles=patches)
+                return fig
             if not separated_by_direction:
                 return _mpl_plot_total_disp(
                     disp_type_key="Abs. displacement",

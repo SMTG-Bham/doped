@@ -8,7 +8,6 @@ import unittest
 
 import matplotlib as mpl
 import numpy as np
-from monty.serialization import loadfn
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
 from doped import core
@@ -33,16 +32,12 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CdTe_thermo = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_thermo.json")
-        self.CdTe_chempots = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_chempots.json")
-        self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json")
 
     def test_calc_site_displacements(self):
         """
         Test _calc_site_displacements() function.
         """
-        # Vacancy:
+        # Neutral Cd vacancy:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json")
         disp_dict = _calc_site_displacements(defect_entry)
         for i, disp in [
@@ -55,7 +50,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             (0, 0.0),
             (15, 6.543643778883931),
         ]:
-            self.assertAlmostEqual(disp_dict["Distance to defect"][i], dist)
+            assert np.isclose(disp_dict["Distance to defect"][i], dist)
         # Test displacements added to defect_entry:
         disp_dict_metadata = defect_entry.calculation_metadata["site_displacements"]
         for i, disp in [
@@ -64,21 +59,41 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         ]:
             np.allclose(disp_dict_metadata["displacements"][i], np.array(disp))
         # Test displacement of vacancy removed before adding to calculation_metadata
-        self.assertAlmostEqual(len(disp_dict_metadata["distances"]), 63)  # Cd Vacancy so 63 sites
+        assert len(disp_dict_metadata["distances"]) == 63  # Cd Vacancy so 63 sites
         # Test relative displacements from defect
         disp_dict = _calc_site_displacements(defect_entry, relative_to_defect=True)
         for i, disp in [
             (0, 0.0),
             (1, -0.1165912674943227),
         ]:
-            self.assertAlmostEqual(disp_dict["Displacement wrt defect"][i], disp)
-        # Test projection of displacements
-        disp_dict = _calc_site_displacements(defect_entry, vector_to_project_on=[0, 0, 1])
-        for i, disp in [
-            (0, 0.0),
-            (1, 0.16132988074127988),
+            assert np.isclose(disp_dict["Displacement wrt defect"][i], disp)
+        # Test projection along Te dimer direction (1,1,0)
+        disp_dict = _calc_site_displacements(defect_entry, vector_to_project_on=[1, 1, 0])
+        for i, dist, disp in [
+            (32, 2.177851642, 0.980779911),  # index, distance, displacement
+            (33, 2.234858368, -0.892888144),
         ]:
-            self.assertAlmostEqual(disp_dict["Displacement projected along vector"][i], disp)
+            assert np.isclose(disp_dict["Displacement projected along vector"][i], disp)
+            assert np.isclose(disp_dict["Distance to defect"][i], dist)
+        # Test projection along (-1,-1,-1) for V_Cd^-1
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json")
+        disp_dict = _calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
+        indexes = (32, 33, 34, 35)  # Defect NNs
+        distances = (2.5850237041739614, 2.5867590623267396, 2.5867621810347914, 3.0464198655727284)
+        disp_parallel = (0.10857369429255698, 0.10824441910793342, 0.10824525022932621, 0.2130514712472405)
+        disp_perpendicular = (
+            0.22517568241969493,
+            0.22345433515763177,
+            0.22345075557153446,
+            0.0002337424502264542,
+        )
+        for index, dist, disp_paral, disp_perp in zip(
+            indexes, distances, disp_parallel, disp_perpendicular
+        ):
+            assert np.isclose(disp_dict["Distance to defect"][index], dist)
+            assert np.isclose(disp_dict["Displacement projected along vector"][index], disp_paral)
+            assert np.isclose(disp_dict["Displacement perpendicular to vector"][index], disp_perp)
+
         # Substitution:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/Te_Cd_+1_defect_entry.json")
         disp_dict = _calc_site_displacements(defect_entry)
