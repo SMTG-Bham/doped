@@ -2028,6 +2028,8 @@ class DefectParser:
             "bulk_actual_kpoints": self.bulk_vr.actual_kpoints,
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
+            "defect_vasprun_dict": self.defect_vr.as_dict(),
+            "bulk_vasprun_dict": self.bulk_vr.as_dict(),
         }
 
         self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = _compare_incar_tags(
@@ -2037,7 +2039,10 @@ class DefectParser:
             run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
         )
         self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = _compare_kpoints(
-            run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"]
+            run_metadata["bulk_actual_kpoints"],
+            run_metadata["defect_actual_kpoints"],
+            run_metadata["bulk_kpoints"],
+            run_metadata["defect_kpoints"],
         )
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})

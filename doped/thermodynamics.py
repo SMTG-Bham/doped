@@ -869,7 +869,10 @@ class DefectThermodynamics(MSONable):
                     run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
                 )
                 _compare_kpoints(
-                    run_metadata["bulk_actual_kpoints"], run_metadata["defect_actual_kpoints"]
+                    run_metadata["bulk_actual_kpoints"],
+                    run_metadata["defect_actual_kpoints"],
+                    run_metadata["bulk_kpoints"],
+                    run_metadata["defect_kpoints"],
                 )
 
                 # compare bulk and reference bulk:
@@ -885,7 +888,9 @@ class DefectThermodynamics(MSONable):
                 )
                 _compare_kpoints(
                     reference_run_metadata["bulk_actual_kpoints"],
-                    run_metadata["bulk_actual_kpoints"],
+                    run_metadata["defect_actual_kpoints"],
+                    reference_run_metadata["bulk_kpoints"],
+                    run_metadata["defect_kpoints"],
                     defect_name=f"other bulk (for {reference_defect_entry.name})",
                 )
 
@@ -2946,6 +2951,8 @@ def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
         scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
 
     # now shift all energies rigidly, so we've shifted symmetrically around the original gap (eigenvalues)
+    # ensure 'energies' is array (should be if function used correctly, not if band gap change is zero...):
+    scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"])
     scissored_dos_dict["energies"] -= delta_gap / 2
     scissored_dos_dict["efermi"] -= delta_gap / 2
 

@@ -580,7 +580,14 @@ def _compare_potcar_symbols(
     return True
 
 
-def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk", defect_name="defect"):
+def _compare_kpoints(
+    bulk_actual_kpoints,
+    defect_actual_kpoints,
+    bulk_kpoints=None,
+    defect_kpoints=None,
+    bulk_name="bulk",
+    defect_name="defect",
+):
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
@@ -592,7 +599,14 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
 
-    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+    actual_kpoints_eq = len(sorted_bulk_kpoints) == len(sorted_defect_kpoints) and np.allclose(
+        sorted_bulk_kpoints, sorted_defect_kpoints
+    )
+    # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
+    # input kpoints, which we assume is fine:
+    kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
+
+    if not (actual_kpoints_eq or kpoints_eq):
         warnings.warn(
             f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
             f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
