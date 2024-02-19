@@ -2953,8 +2953,8 @@ def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
     # now shift all energies rigidly, so we've shifted symmetrically around the original gap (eigenvalues)
     # ensure 'energies' is array (should be if function used correctly, not if band gap change is zero...):
     scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"])
-    scissored_dos_dict["energies"] -= delta_gap / 2
-    scissored_dos_dict["efermi"] -= delta_gap / 2
+    scissored_dos_dict["energies"] -= np.float64(delta_gap / 2)
+    scissored_dos_dict["efermi"] -= np.float64(delta_gap / 2)
 
     if verbose:
         print(f"Orig gap: {dos.get_gap(tol=tol)}, new gap:{dos.get_gap(tol=tol) + delta_gap}")

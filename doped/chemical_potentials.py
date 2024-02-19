@@ -343,6 +343,8 @@ class CompetingPhases:
         # entries for the same composition, warn the user (that if the groundstate phase at low/room
         # temp is well-known, then likely best to prune to that) and direct to relevant section on the
         # docs discussing this
+        # - Could have two optional EaH tolerances, a tight one (0.02 eV/atom?) that applies to all,
+        # and a looser one (0.1 eV/atom?) that applies to phases with ICSD IDs?
 
         # all data collected from materials project
         self.data = [  # can see available fields with MPRester.*.available_fields on new API
@@ -480,8 +482,8 @@ class CompetingPhases:
     #  account for the ordering switch from 1..9 to 10 etc
     def convergence_setup(
         self,
-        kpoints_metals=(40, 120, 5),
-        kpoints_nonmetals=(5, 80, 5),
+        kpoints_metals=(40, 1000, 5),
+        kpoints_nonmetals=(5, 120, 5),
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
@@ -569,7 +571,9 @@ class CompetingPhases:
                     f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
                 )  # TODO: competing_phases folder name should be an optional parameter
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
-                #  out for cases where rounding can give same name (e.g. Te!)
+                #  out for cases where rounding can give same name (e.g. Te!) - should use
+                #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
+                #  rare cases of overwriting
                 # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
                 #  efficient by just editing the kpoints in each loop (not reinitialising) and adding
                 #  the POTCAR hashing function used in doped.vasp
@@ -577,13 +581,11 @@ class CompetingPhases:
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            # change the ismear and sigma for metals
-            uis["ISMEAR"] = -5
-            uis["SIGMA"] = 0.2
+            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
+            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
+                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
@@ -610,8 +612,8 @@ class CompetingPhases:
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
         self,
-        kpoints_metals=95,
-        kpoints_nonmetals=45,
+        kpoints_metals=200,
+        kpoints_nonmetals=64,  # MPRelaxSet default
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
@@ -697,13 +699,11 @@ class CompetingPhases:
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            # change the ismear and sigma for metals
-            uis["ISMEAR"] = 1
-            uis["SIGMA"] = 0.2
+            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
+            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
+                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
