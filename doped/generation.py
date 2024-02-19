@@ -64,6 +64,16 @@ def _custom_formatwarning(
 warnings.formatwarning = _custom_formatwarning
 
 
+def _list_index_or_val(lst, item, val=100):
+    """
+    Returns the index of the item in the lst, or val if not found.
+    """
+    try:
+        return lst.index(item)
+    except ValueError:
+        return val
+
+
 def get_defect_entry_from_defect(
     defect: Defect,
     defect_supercell: Structure,
@@ -193,7 +203,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (symmetry._custom_round(x[0], 2), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -2209,8 +2219,8 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                 defect_entries_dict.items(),
                 key=lambda s: (
                     s[1].defect.defect_type.value,
-                    element_list.index(_first_and_second_element(s[0])[0]),
-                    element_list.index(_first_and_second_element(s[0])[1]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[0]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[1]),
                     s[0].rsplit("_", 1)[0],  # name without charge
                     -s[1].charge_state,  # charge state
                 ),
@@ -2234,8 +2244,12 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     )
                 return (
                     defect_entry.defect.defect_type.value,
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[0]
+                    ),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[1]
+                    ),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
                     -defect_entry.charge_state,  # charge state
@@ -2281,8 +2295,8 @@ def _sort_defects(defects_dict, element_list=None):
         defect_type: sorted(
             defect_list,
             key=lambda d: (
-                element_list.index(_first_and_second_element(d.name)[0]),
-                element_list.index(_first_and_second_element(d.name)[1]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[0]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[1]),
                 d.name,  # bare name without charge
                 symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
             ),

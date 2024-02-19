@@ -33,6 +33,8 @@
 - Dielectric/kpoint-sampling weighted supercell generation? (essentially just a vectorised cost function implemented in the generation loop). Would natively optimise e.g. layered materials quite well.
 
 ## Chemical Potentials
+- Overhaul chemical potentials code, dealing with all `TODO`s in that module. 
+  - Particularly: About the current extrinsic chempot algorithm: "SK: I don't think this is right. Here it's just getting the extrinsic chempots at the intrinsic chempot limits, but actually it should be recalculating the chempot limits with the extrinsic competing phases, then reducing _these_ facets down to those with only one extrinsic competing phase bordering".
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, and compare with old code from `vasp.py` (to ensure all functionality present).
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
 - Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
