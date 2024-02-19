@@ -287,6 +287,10 @@ class CompetingPhases:
     # analyze_GGA_chempots code for example.
     # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
+    # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
+    #  efficient by just editing the kpoints in each loop (not reinitialising) for the convergence test
+    #  generation, and using the POTCAR hashing function from `doped.vasp`. Also should dynamically set
+    #  KPAR based on the (default) number of KPOINTS for each material
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
@@ -478,8 +482,6 @@ class CompetingPhases:
     # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
-    # TODO: Currently doesn't exactly match vaspup2.0 naming convention which means it doesn't
-    #  account for the ordering switch from 1..9 to 10 etc
     def convergence_setup(
         self,
         kpoints_metals=(40, 1000, 5),
@@ -574,9 +576,6 @@ class CompetingPhases:
                 #  out for cases where rounding can give same name (e.g. Te!) - should use
                 #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
                 #  rare cases of overwriting
-                # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
-                #  efficient by just editing the kpoints in each loop (not reinitialising) and adding
-                #  the POTCAR hashing function used in doped.vasp
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1532,12 +1531,8 @@ class CompetingPhasesAnalyzer:
             #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
             # 3. find the most negative mu_dopant which then becomes the new
             #    canonical chemical potential for that dopant species and the
-            #    competing phase is the 'limiting phase' right?
-            # 4. update the chemical potential limits table to reflect this?
-            # TODO: I don't think this is right. Here it's just getting the extrinsic chempots at
-            #  the intrinsic chempot limits, but actually it should be recalculating the chempot
-            #  limits with the extrinsic competing phases, then reducing _these_ facets down to
-            #  those with only one extrinsic competing phase bordering
+            #    competing phase is the 'limiting phase' right
+            # 4. update the chemical potential limits table to reflect this
 
             # reverse engineer chem lims for extrinsic
             df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
@@ -1550,8 +1545,7 @@ class CompetingPhasesAnalyzer:
 
             for i, d in enumerate(df4):
                 key = list(self._intrinsic_chempots["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
-                print(f"key: {key}")  # TODO: Remove any unnecessary print statements when this
-                # has been fixed
+                # print(f"key: {key}")  # debugging
                 new_vals = list(self._intrinsic_chempots["facets_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
                 cl2["facets_wrt_el_refs"][key] = new_vals

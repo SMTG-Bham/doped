@@ -32,6 +32,7 @@ from doped.core import Defect, DefectEntry
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.supercells import get_min_image_distance
 from doped.utils.symmetry import get_BCS_conventional_structure, swap_axes
+from doped.vasp import DefectsSet
 
 
 def if_present_rm(path):
@@ -647,6 +648,8 @@ Te_i_C3i_Te2.81  [-2,-1,0,+1,+2,+3,+4]        [0.000,0.000,0.000]  3a
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.liga5o8 = Structure.from_file(f"{self.data_dir}/LiGa5O8_CONTCAR")
+
+        self.conv_si = Structure.from_file(f"{self.data_dir}/Si_MP_conv_POSCAR")
 
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
@@ -3245,3 +3248,17 @@ v_Te         [-2,-1,0,+1,+2]        [0.335,0.003,0.073]  18f
 
         assert len(liga5o8_defect_gen.bulk_supercell) == 112
         assert np.isclose(liga5o8_defect_gen.min_image_distance, 11.6165, atol=0.01)
+
+    def test_Si_D_extrinsic(self):
+        """
+        Test initialising DefectsGenerator with "D" (deuterium) as an extrinsic
+        species.
+
+        Previously failed as "D" gets renamed to "H" by `pymatgen` under the
+        hood, and so wasn't present in `element_list`.
+        """
+        Si_defect_gen, output = self._generate_and_test_no_warnings(self.conv_si, extrinsic="D")
+        self._general_defect_gen_check(Si_defect_gen)
+
+        # test DefectsSet initialisation also fine:
+        DefectsSet(Si_defect_gen)
