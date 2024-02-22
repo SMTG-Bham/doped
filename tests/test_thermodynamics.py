@@ -664,6 +664,41 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             row[1] = int(row[1])
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
+    def test_get_symmetries_degeneracies_MgO(self):
+        MgO_thermo = loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json")
+        sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies()
+        # print(sym_degen_df)
+        assert sym_degen_df.shape == (5, 8)
+        assert list(sym_degen_df.columns) == [
+            "Defect",
+            "q",
+            "Site_Symm",
+            "Defect_Symm",
+            "g_Orient",
+            "g_Spin",
+            "g_Total",
+            "Mult",
+        ]
+        # hardcoded tests to ensure ordering is consistent (by defect type according to
+        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # as would appear on a TL diagram)
+        mgo_sym_degen_lists = [
+            ["Mg_O", "+4", "Oh", "C2v", 12.0, 1, 12.0, 1.0],
+            ["Mg_O", "+3", "Oh", "C3v", 8.0, 2, 16.0, 1.0],
+            ["Mg_O", "+2", "Oh", "C3v", 8.0, 1, 8.0, 1.0],
+            ["Mg_O", "+1", "Oh", "Cs", 24.0, 2, 48.0, 1.0],
+            ["Mg_O", "0", "Oh", "Cs", 24.0, 1, 24.0, 1.0],
+        ]
+        for i, row in enumerate(mgo_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
+        non_formatted_sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies(skip_formatting=True)
+        # print(non_formatted_sym_degen_df)  # for debugging
+        for i, row in enumerate(mgo_sym_degen_lists):
+            row[1] = int(row[1])
+            assert list(non_formatted_sym_degen_df.iloc[i]) == row
+
     def _check_form_en_df_total(self, form_en_df):
         """
         Check the sum of formation energy terms equals the total formation
