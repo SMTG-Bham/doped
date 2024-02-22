@@ -1,5 +1,5 @@
 ---
-title: 'doped: Calculating defects in solids with DFT'
+title: 'doped: Python toolkit for robust and repeatable charged defect supercell calculations'
 tags:
   - Python
   - materials modelling
@@ -35,6 +35,7 @@ authors:
     affiliation: 4
   - name: Bonan Zhu
     orcid: 0000-0001-5601-6130
+    affiliation: 2
   - name: Katarina Brlec
     orcid: 0000-0003-1485-1888
     affiliation: 2
@@ -59,8 +60,8 @@ bibliography: paper.bib
 
 # Summary
 
-Defects are a universal feature of crystalline materials, dictating the key properties and performance of many functional materials. 
-Given their crucial importance yet inherent difficulty in experimental measurement, computational methods are widely used to predict defect behaviour at the atomic level and the resultant impact on macroscopic properties.
+Defects are a universal feature of crystalline solids, dictating the key properties and performance of many functional materials. 
+Given their crucial importance yet inherent difficulty in experimental measurement, computational methods (such as DFT and ML/classical force-fields) are widely used to predict defect behaviour at the atomic level and the resultant impact on macroscopic properties.
 Here we report ``doped``, a Python package for the generation, pre-/post-processing and analysis of defect supercell calculations. 
 ``doped`` has been built to implement the defect simulation workflow in an efficient, user-friendly yet powerful and fully-flexible manner, with the goal of providing a robust general-purpose platform for conducting reproducible calculations of solid-state defect properties.
 
@@ -80,7 +81,7 @@ Moreover, there are growing efforts to perform high-throughput investigations of
 
 [//]: # (By expediting the defect simulation workflow and providing efficient analysis tools, ``doped`` aims to... facilitate the investigation of defects in solids, and to enable the efficient and reproducible calculation of solid-state defect properties.)
 
-Given this importance of defect simulations and the complexity of the workflow, a number of software packages have been developed with the goal of managing pre- and post-processing of defect calculations, including work from @Kumagai2021, @Broberg2018, @Shen2024, @neilson_defap_2022, @Arrigoni2021, @Goyal2017, @Huang2022 and @naik_coffee_2018.[^1]
+Given this importance of defect simulations and the complexity of the workflow, a number of software packages have been developed with the goal of managing pre- and post-processing of defect calculations, including work on the `HADES`/`METADISE` codes from the 1970s,[@parker_hades_2004] to more recent work from @Kumagai2021, @Broberg2018, @Shen2024, @neilson_defap_2022, @Arrigoni2021, @Goyal2017, @Huang2022, @pean_presentation_2017 and @naik_coffee_2018.[^1]
 While each of these codes have their strengths, they do not include the full suite of functionality provided by `doped` – some of which is discussed below – nor adopt the same focus on user-friendliness (along with sanity-checking warnings & error catching) and efficiency with full flexibility and wide-ranging functionality, targeting expert-level users and newcomers to the field alike.
 
 [^1]: Some of these packages are no longer maintained, not compatible with high-throughput architectures, and/or are closed-source/commercial packages.
@@ -97,7 +98,7 @@ While each of these codes have their strengths, they do not include the full sui
 The design philosophy of `doped` has been to implement the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner, combining reasonable defaults with full user control for each parameter in the workflow.
 The core functionality and recommended usage of `doped` is demonstrated in the [tutorials](https://doped.readthedocs.io/en/latest/Tutorials.html) on the [documentation website](https://doped.readthedocs.io/en/latest/).
 
-![**a.** Average minimum periodic image distance, normalised by the ideal image distance at that volume (i.e. for a perfect FCC cell), versus the number of primitive unit cells, for the supercell generation algorithms of `doped`, `ASE` and `pymatgen`. **b.** Average performance of charge state guessing routines from `pyCDT`, `pymatgen-analysis-defects`, `defectivator` and `doped`, in terms of false positives and false negatives. Note that the `pyCDT` false _negatives_ are underestimated as the majority of this test set used the guessed charge state ranges from `pyCDT`. Example **(c)** eFNV correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** carrier concentration heatmap plots from `doped`. Data and code to reproduce these plots is provided in the [`docs/JOSS`](https://github.com/SMTG-Bham/doped/blob/main/docs/JOSS) subfolder of the `doped` GitHub repository. \label{fig1}](doped_JOSS_figure.png)
+![**a.** Average minimum periodic image distance, normalised by the ideal image distance at that volume (i.e. for a perfect FCC cell), versus the number of primitive unit cells, for the supercell generation algorithms of `doped`, `ASE` and `pymatgen`. **b.** Average performance of charge state guessing routines from `pyCDT`, `pymatgen-analysis-defects`, `defectivator` and `doped`, in terms of false positives and false negatives. Asterisk indicates that the `pyCDT` false _negatives_ are underestimated as the majority of this test set used the guessed charge state ranges from `pyCDT`. "Ox." = oxidation & "prob." = probabilities. Example **(c)** eFNV correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. Data and code to reproduce these plots is provided in the [`docs/JOSS`](https://github.com/SMTG-Bham/doped/blob/main/docs/JOSS) subfolder of the `doped` GitHub repository. \label{fig1}](doped_JOSS_figure.png)
 
 Beyond the core functionality of defect generation, calculation setup and parsing, some key features of `doped` include:
 
@@ -142,7 +143,7 @@ Some additional features of `doped` include directional-dependent site displacem
 
 **Tables with `doped` outputs?**
 
-The defect generation and thermodynamic analysis components of `doped` are agnostic to the underlying first-principles software used for the supercell calculations.
+The defect generation and thermodynamic analysis components of `doped` are agnostic to the underlying software used for the defect supercell calculations.
 Direct calculation I/O is fully-supported for `VASP`, while input defect structure files can be generated for several widely-used DFT codes, including `FHI-aims`, `CP2K`, `Quantum Espresso` and `CASTEP` via the `pymatgen` `Structure` object. Full support for calculation I/O with other DFT codes may be added in the future if there is sufficient demand.
 Moreover, `doped` is built to be readily compatible with other computational toolkits for advanced defect characterisation, such as `ShakeNBreak` for defect structure-searching, `py-sc-fermi` for advanced thermodynamic analysis under complex constraints [@squires_py-sc-fermi_2023], `easyunfold` for analysing defect/dopant-induced electronic structure changes [@zhu_easyunfold_2024] or `CarrierCapture.jl`/`nonrad` for non-radiative recombination calculations [@kim_carriercapturejl_2020; @turiansky_nonrad_2021]. 
 
@@ -159,8 +160,9 @@ S.R.K thanks Dr. Christoph Freysoldt and Prof. Yu Kumagai for useful discussions
 The initial development of `doped` was inspired by the `pyCDT` package from @Broberg2018, while the original colour scheme for defect formation energy plots was inspired by work from Drs. Adam J. Jackson and Alex M. Ganose.
 `doped` makes extensive use of Python objects from the widely-used `pymatgen` [@ong_python_2013] package (such as structure representations and VASP I/O handling), as well as crystal symmetry functions from `spglib` [@togo_textttspglib_2018].
 
-S.R.K. acknowledges the EPSRC Centre for Doctoral Training in the Advanced
-Characterisation of Materials (CDTACM)(EP/S023259/1) for funding a PhD studentship. DOS acknowledges
+S.R.K. and A.N. acknowledge the EPSRC Centre for Doctoral Training in the Advanced
+Characterisation of Materials (CDTACM)(EP/S023259/1) for funding PhD studentships. DOS acknowledges
 support from the EPSRC (EP/N01572X/1) and from the European Research Council, ERC (Grant No. 758345).
+The PRAETORIAN project was funded by UK Research and Innovation (UKRI) under the UK government’s Horizon Europe funding guarantee (EP/Y019504/1). This work used the ARCHER2 UK National Supercomputing Service (https://www.archer2.ac.uk), via our membership of the UK’s HEC Materials Chemistry Consortium, which is funded by the EPSRC (EP/L000202, EP/R029431 and EP/T022213), the UK Materials and Molecular Modelling (MMM) Hub (Young EP/T022213).
 
 # References
