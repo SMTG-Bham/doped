@@ -154,7 +154,7 @@ Moreover, `doped` is built to be readily compatible with other computational too
 
 # Acknowledgements
 
-`doped` has benefited from feature requests and feedback from many members of the Walsh and Scanlon research groups, including (but not limited to) Xinwei Wang, Sabrine Hachmioune, Savya Aggarwal, Daniel Sykes, Chris Savory, Zhenzhu Li, Jiayi Cen, Lavan Ganeshkumar, Ke Li, Kieran Spooner, Luisa Herring-Rodriguez and Chris Savory.
+`doped` has benefited from feature requests and feedback from many members of the Walsh and Scanlon research groups, including (but not limited to) Xinwei Wang, Sabrine Hachmioune, Savya Aggarwal, Daniel Sykes, Chris Savory, Jiayi Cen, Lavan Ganeshkumar, Ke Li, Kieran Spooner and Luisa Herring-Rodriguez.
 S.R.K thanks Dr. Christoph Freysoldt and Prof. Yu Kumagai for useful discussions regarding the implementation of image charge corrections.
 
 The initial development of `doped` was inspired by the `pyCDT` package from @Broberg2018, while the original colour scheme for defect formation energy plots was inspired by work from Drs. Adam J. Jackson and Alex M. Ganose.
