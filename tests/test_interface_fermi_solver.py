@@ -2,8 +2,13 @@ import unittest
 
 from monty.serialization import loadfn
 
-from doped.interface.fermi_solver import _get_label_and_charge, FermiSolver
+from doped.interface.fermi_solver import _get_label_and_charge, FermiSolver, FermiSolverDoped
+
+import unittest
+from unittest.mock import Mock, patch
+import pandas as pd
 from doped.thermodynamics import DefectThermodynamics
+from pymatgen.io.vasp import Vasprun
 
 
 def test_get_label_and_charge(self):
@@ -92,6 +97,5 @@ class TestFermiSolver(unittest.TestCase):
                 quenching_temperatures=quenching_temperatures,
             )
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
