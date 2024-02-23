@@ -4,7 +4,10 @@ from itertools import product
 from copy import deepcopy
 import numpy as np
 from joblib import Parallel, delayed
+from typing import Dict, Any
 
+from scipy.spatial import ConvexHull, Delaunay
+from scipy.interpolate import griddata
 import pandas as pd
 from monty.json import MSONable
 from pymatgen.electronic_structure.dos import FermiDos
@@ -97,7 +100,7 @@ class FermiSolver(MSONable):
             for dopant_concentration in dopant_concentration_range
         )
         return pd.concat(all_data)
-    
+
     def scan_dopant_concentration_with_anneal_and_quench(
         self,
         chempots: dict[str, float],
@@ -283,6 +286,63 @@ class FermiSolver(MSONable):
 
         else:
             raise ValueError("You must specify both annealing and quenching temperatures, or neither.")
+
+    def grid_scan(
+        self,
+        chemical_potentials: dict,
+        dependent_variable: str,
+        n_points: int,
+        temperature: float = 300.0,
+        processes: int = 1,
+        annealing_temperatures: Optional[Union[float, List]] = None,
+        quenching_temperatures: Optional[Union[float, List]] = None,
+    ):
+        """
+        Generates a grid within the convex hull of the vertices and interpolates
+        the dependent variable values.
+
+        Args:
+        chemical_potentials (dict): A dictionary containing chemical potential information.
+        dependent_variable (str): The name of the column in vertices representing the dependent variable.
+        n_points (int): The number of points to generate along each axis of the grid.
+
+        Returns:
+        pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
+                    interpolated dependent variable values.
+        """
+
+        grid = ChemicalPotentialGrid(chemical_potentials)
+        grid_df = grid.get_grid(dependent_variable, n_points)
+
+        if annealing_temperatures is None and quenching_temperatures is None:
+              
+            concentrations = Parallel(n_jobs=processes)(
+                delayed(self._solve_and_append_chemical_potentials)(row.to_dict(), temperature)
+                for _, row in grid_df.iterrows()
+            )
+            concentrations = pd.concat(concentrations)
+            return concentrations
+        
+        elif annealing_temperatures is not None and quenching_temperatures is not None:
+            if not isinstance(annealing_temperatures, list):
+                annealing_temperatures = [annealing_temperatures]
+            if not isinstance(quenching_temperatures, list):
+                quenching_temperatures = [quenching_temperatures]
+
+            concentrations = Parallel(n_jobs=processes)(
+                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                    row.to_dict(), quench_temperature, anneal_temperature
+                )
+                for quench_temperature, anneal_temperature, row in product(
+                    quenching_temperatures, annealing_temperatures, grid_df.iterrows()
+                )
+            )
+            concentrations = pd.concat(concentrations)
+            return concentrations
+        
+        else:
+            raise ValueError("You must specify both annealing and quenching temperatures, or neither.")
+        
 
     def _get_interpolated_chempots(
         self, start: dict[str, float], end: dict[str, float], n_points: float
@@ -475,7 +535,7 @@ class FermiSolverPyScFermi(FermiSolver):
 
         Args:
             effective_dopant_concentration (float): The effective dopant concentration.
-        
+
         Returns:
             DefectChargeState: The initialized DefectChargeState.
         """
@@ -488,9 +548,9 @@ class FermiSolverPyScFermi(FermiSolver):
                 charge = -1
                 effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
         dopant = DefectChargeState(
-                    charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
-                )
-        return DefectSpecies(nsites = 1, charge_states = {charge: dopant}, name="Dopant")
+            charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
+        )
+        return DefectSpecies(nsites=1, charge_states={charge: dopant}, name="Dopant")
 
     def generate_defect_system(
         self,
@@ -584,11 +644,12 @@ class FermiSolverPyScFermi(FermiSolver):
         return df
 
     def pseudo_equilibrium_solve(
-        self, chempots: dict[str, float], 
-        quenched_temperature: float, 
-        annealing_temperature: float, 
-        effective_dopant_concentration: Optional[float] = None, 
-        **kwargs
+        self,
+        chempots: dict[str, float],
+        quenched_temperature: float,
+        annealing_temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
+        **kwargs,
     ):
         """
         Solve for the defect concentrations at a given quenching and annealing temperature
@@ -608,7 +669,7 @@ class FermiSolverPyScFermi(FermiSolver):
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
-            **kwargs
+            **kwargs,
         )
         conc_dict = defect_system.concentration_dict()
 
@@ -710,3 +771,68 @@ class FermiSolverPyScFermi(FermiSolver):
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
         return target_system
+
+
+class ChemicalPotentialGrid:
+    """
+    A class to represent a grid of chemical potentials and to perform
+    operations such as generating a grid within the convex hull of given vertices.
+    """
+
+    def __init__(self, chemical_potentials: Dict[str, Any]) -> None:
+        """
+        Initializes the ChemicalPotentialGrid with chemical potential data.
+
+        Parameters:
+        chemical_potentials (Dict[str, Any]): A dictionary containing chemical
+                                               potential information.
+        """
+        self.chemical_potentials = chemical_potentials
+        self.vertices = pd.DataFrame.from_dict(chemical_potentials["facets"], orient="index")
+
+    def get_grid(self, dependent_variable: str, n_points: int = 100) -> pd.DataFrame:
+        """
+        Generates a grid within the convex hull of the vertices and interpolates
+        the dependent variable values.
+
+        Parameters:
+        dependent_variable (str): The name of the column in vertices representing the dependent variable.
+        n_points (int): The number of points to generate along each axis of the grid.
+
+        Returns:
+        pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
+                    interpolated dependent variable values.
+        """
+        # Exclude the dependent variable from the vertices
+        independent_vars = self.vertices.drop(columns=dependent_variable)
+        dependent_var = self.vertices[dependent_variable].values
+
+        # Generate the complex number for grid spacing
+        complex_num = complex(0, n_points)
+
+        # Get the convex hull of the vertices
+        hull = ConvexHull(independent_vars.values)
+
+        # Create a dense grid that covers the entire range of the vertices
+        x_min, y_min = independent_vars.min(axis=0)
+        x_max, y_max = independent_vars.max(axis=0)
+        grid_x, grid_y = np.mgrid[x_min:x_max:complex_num, y_min:y_max:complex_num]
+        grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
+
+        # Delaunay triangulation to get points inside the hull
+        delaunay = Delaunay(hull.points[hull.vertices])
+        inside_hull = delaunay.find_simplex(grid_points) >= 0
+        points_inside = grid_points[inside_hull]
+
+        # Interpolate the values to get the dependent chemical potential
+        values_inside = griddata(independent_vars.values, dependent_var, points_inside, method="linear")
+
+        # Combine points with their corresponding interpolated values
+        grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
+
+        # Convert to DataFrame and set column names
+        grid_df = pd.DataFrame(
+            grid_with_values, columns=list(independent_vars.columns) + [dependent_variable]
+        )
+
+        return grid_df
