@@ -92,9 +92,11 @@ While each of these codes have their strengths, they do not include the full sui
 
 [//]: # (- DASP isn't open access and they're trying to commercialise)
 
+![Schematic workflow of a computational defect investigation using `doped`. \label{fig_workflow}](doped_JOSS_workflow_figure.png)
+
 # doped
 
-`doped` is a full Python software for the generation, pre-/post-processing and analysis of defect supercell calculations.
+`doped` is a full Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, as depicted in \autoref{fig_workflow}.
 The design philosophy of `doped` has been to implement the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner, combining reasonable defaults with full user control for each parameter in the workflow.
 The core functionality and recommended usage of `doped` is demonstrated in the [tutorials](https://doped.readthedocs.io/en/latest/Tutorials.html) on the [documentation website](https://doped.readthedocs.io/en/latest/).
 
