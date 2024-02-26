@@ -48,25 +48,14 @@ class FermiSolver(MSONable):
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr
 
-    def equilibrium_solve(
-        self,
-        chempots: dict[str, float],
-        temperature: float,
-        effective_dopant_concentration: Optional[float] = None,
-    ) -> None:
+    def equilibrium_solve(self) -> None:
         """not implemented in the base class, implemented in the derived class"""
         raise NotImplementedError(
             """This method is implemented in the derived class, 
             use FermiSolverDoped or FermiSolverPyScFermi instead."""
         )
 
-    def pseudo_equilibrium_solve(
-        self,
-        chempots: dict[str, float],
-        quenched_temperature: float,
-        annealing_temperature: float,
-        effective_dopant_concentration: Optional[float] = None,
-    ) -> None:
+    def pseudo_equilibrium_solve(self) -> None:
         """not implemented in the base class, implemented in the derived class"""
         raise NotImplementedError(
             """This method is implemented in the derived class, 
@@ -79,165 +68,154 @@ class FermiSolver(MSONable):
         temperature_range: Union[float, List[float]],
         annealing_temperature_range: Optional[Union[float, List[float]]] = None,
         quenching_temperature_range: Optional[Union[float, List[float]]] = None,
-        effective_dopant_concentration: float = None,
-        exceptions: Optional[List] = None,
         processes: int = 1,
+        **kwargs,
     ) -> pd.DataFrame:
-        
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
                     chempots=chempots,
                     quenched_temperature=quench_temp,
                     annealing_temperature=anneal_temp,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
+                    **kwargs,
                 )
                 for quench_temp, anneal_temp in product(
                     quenching_temperature_range, annealing_temperature_range
                 )
             )
             return pd.concat(all_data)
-        
+
         elif annealing_temperature_range is None and quenching_temperature_range is None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
+                    chempots=chempots, temperature=temperature, **kwargs
                 )
                 for temperature in temperature_range
             )
             return pd.concat(all_data)
-        
+
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
-        
-    def scan_chemical_potentials(self, chempots: list[dict[str, float]], 
-                                 temperature: float, 
-                                 annealing_temperature: float, 
-                                 quenching_temperature: float, 
-                                 effective_dopant_concentration: Optional[float], 
-                                 exceptions: list,
-                                 processes: 1) -> pd.DataFrame:
-        
 
+    def scan_chemical_potentials(
+        self,
+        chempots: list[dict[str, float]],
+        temperature: float,
+        annealing_temperature: float,
+        quenching_temperature: float,
+        processes: 1,
+        **kwargs,
+    ) -> pd.DataFrame:
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
                     chempots=chempots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
+                    **kwargs,
                 )
             )
             return pd.concat(all_data)
-        
+
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
+                    chempots=chempots, temperature=temperature, **kwargs
                 )
             )
             return pd.concat(all_data)
-        
+
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
-
 
     def scan_dopant_concentration(
         self,
         chempots: dict[str, float],
-        temperature: float,
         effective_dopant_concentration_range: Union[float, List[float]],
+        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        exceptions: Optional[List] = None,
         processes: int = 1,
+        **kwargs,
     ) -> pd.DataFrame:
-        
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                delayed(self._add_effective_dopant_concentration_and_solve_pseudo)(
                     chempots=chempots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
-                )
-            for effective_dopant_concentration in effective_dopant_concentration_range)
-            return pd.concat(all_data)
-        
-        elif annealing_temperature is None and quenching_temperature is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    exceptions=exceptions,
+                    **kwargs,
                 )
                 for effective_dopant_concentration in effective_dopant_concentration_range
             )
             return pd.concat(all_data)
-        
+
+        elif annealing_temperature is None and quenching_temperature is None:
+            all_data = Parallel(n_jobs=processes)(
+                delayed(self._add_effective_dopant_concentration_and_solve)(
+                    chempots=chempots,
+                    temperature=temperature,
+                    effective_dopant_concentration=effective_dopant_concentration,
+                    **kwargs,
+                )
+                for effective_dopant_concentration in effective_dopant_concentration_range
+            )
+            return pd.concat(all_data)
+
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
-        
+
     def interpolate_chemical_potentials(
         self,
         chem_pot_start: dict,
         chem_pot_end: dict,
         n_points: int,
-        temperature = 300.0,
-        annealing_temperature: Optional[float] = None, 
+        temperature=300.0,
+        annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        effective_dopant_concentration: Optional[float] = None,
-        exceptions: Optional[List] = None,
         processes: int = 1,
+        **kwargs,
     ) -> pd.DataFrame:
-        
         interpolated_chem_pots = self._get_interpolated_chempots(chem_pot_start, chem_pot_end, n_points)
-        
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
                     chempots=chem_pots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
-                    # effective_dopant_concentration=effective_dopant_concentration,
-                    # exceptions=exceptions,
+                    **kwargs,
                 )
-            for chem_pots in interpolated_chem_pots)
+                for chem_pots in interpolated_chem_pots
+            )
             return pd.concat(all_data)
-        
+
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials)(
-                    chempots=chem_pots,
-                    temperature=temperature,
-                    # effective_dopant_concentration=effective_dopant_concentration,
-                    # exceptions=exceptions,
+                    chempots=chem_pots, temperature=temperature, **kwargs
                 )
-            for chem_pots in interpolated_chem_pots)
+                for chem_pots in interpolated_chem_pots
+            )
             return pd.concat(all_data)
-        
+
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
-        
-    def _get_interpolated_chempots(self, chem_pot_start, chem_pot_end, n_points):
+
+    def _get_interpolated_chempots(
+        self,
+        chem_pot_start,
+        chem_pot_end,
+        n_points,
+    ):
         """
         Generate a set of interpolated chemical potentials between two points.
 
@@ -253,10 +231,11 @@ class FermiSolver(MSONable):
         for i in range(n_points):
             chem_pots = {}
             for key in chem_pot_start:
-                chem_pots[key] = chem_pot_start[key] + (chem_pot_end[key] - chem_pot_start[key]) * i / (n_points - 1)
+                chem_pots[key] = chem_pot_start[key] + (chem_pot_end[key] - chem_pot_start[key]) * i / (
+                    n_points - 1
+                )
             interpolated_chem_pots.append(chem_pots)
         return interpolated_chem_pots
-
 
     def _solve_and_append_chemical_potentials(
         self, chempots: dict[str, float], temperature: float, **kwargs
@@ -271,18 +250,100 @@ class FermiSolver(MSONable):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
               and the self consistent Fermi energy
         """
-        df = self.equilibrium_solve(chempots, temperature)
+        df = self.equilibrium_solve(chempots, temperature, **kwargs)
         for key, value in chempots.items():
             df[key] = value
         return df
 
     def _solve_and_append_chemical_potentials_pseudo(
-        self, chempots, quenched_temperature, annealing_temperature
+        self, chempots, quenched_temperature, annealing_temperature, **kwargs
     ):
-        df = self.pseudo_equilibrium_solve(chempots, quenched_temperature, annealing_temperature)
+        df = self.pseudo_equilibrium_solve(chempots, quenched_temperature, annealing_temperature, **kwargs)
         for key, value in chempots.items():
             df[key] = value
         return df
+
+    def _add_effective_dopant_concentration_and_solve(
+        self,
+        chempots,
+        temperature,
+        **kwargs,
+    ):
+        if "effective_dopant_concentration" not in kwargs:
+            raise ValueError("You must specify the effective dopant concentration.")
+        df = self._solve_and_append_chemical_potentials(
+            chempots=chempots, temperature=temperature, **kwargs
+        )
+        df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
+        return df
+
+    def _add_effective_dopant_concentration_and_solve_pseudo(
+        self,
+        chempots,
+        quenched_temperature,
+        annealing_temperature,
+        **kwargs,
+    ):
+        if "effective_dopant_concentration" not in kwargs:
+            raise ValueError("You must specify the effective dopant concentration.")
+        df = self._solve_and_append_chemical_potentials_pseudo(
+            chempots=chempots,
+            quenched_temperature=quenched_temperature,
+            annealing_temperature=annealing_temperature,
+            **kwargs,
+        )
+        df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
+        return df
+
+    def scan_chemical_potential_grid(
+        self,
+        chemical_potentials,
+        dependent_variable,
+        n_points=10,
+        temperature=300,
+        annealing_temperature=None,
+        quenching_temperature=None,
+        processes=1,
+        **kwargs,
+    ):
+        """given a doped-formatted chemical potential dictionary, generate a ChemicalPotentialGrid
+        object and return the Fermi energy solutions at the grid points
+
+        Args:
+            chemical_potentials (dict): chemical potentials to scan
+            dependent_variable (str): the dependent variable to scan
+            n_points (int): number of points to scan
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
+        """
+        grid = ChemicalPotentialGrid(chemical_potentials).get_grid(dependent_variable, n_points)
+      
+        if annealing_temperature is not None and quenching_temperature is not None:
+            all_data = Parallel(n_jobs=processes)(
+                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                    chempots=chempots[1].to_dict(),
+                    quenched_temperature=quenching_temperature,
+                    annealing_temperature=annealing_temperature,
+                    **kwargs,
+                )
+                for chempots in grid.iterrows()
+            )
+            return pd.concat(all_data)
+
+        elif annealing_temperature is None and quenching_temperature is None:
+            all_data = Parallel(n_jobs=processes)(
+                delayed(self._solve_and_append_chemical_potentials)(
+                    chempots=chempots[1].to_dict(), temperature=temperature, **kwargs
+                )
+                for chempots in grid.iterrows()
+            )
+            return pd.concat(all_data)
+
+        else:
+            raise ValueError(
+                "You must specify both annealing and quenching temperature, or just temperature."
+            )
 
 
 class FermiSolverDoped(FermiSolver):
@@ -519,7 +580,7 @@ class FermiSolverPyScFermi(FermiSolver):
         self,
         chempots: dict[str, float],
         temperature: float,
-        effective_dopant_concentration: Optional[float] = None,
+        **kwargs,
     ) -> pd.DataFrame:
         """
         Solve for the defect concentrations at a given temperature and chemical potentials.
@@ -535,7 +596,7 @@ class FermiSolverPyScFermi(FermiSolver):
         defect_system = self.generate_defect_system(
             chemical_potentials=chempots,
             temperature=temperature,
-            effective_dopant_concentration=effective_dopant_concentration,
+            **kwargs,
         )
         conc_dict = defect_system.concentration_dict()
         data = []
@@ -562,7 +623,6 @@ class FermiSolverPyScFermi(FermiSolver):
         chempots: dict[str, float],
         quenched_temperature: float,
         annealing_temperature: float,
-        effective_dopant_concentration: Optional[float] = None,
         **kwargs,
     ):
         """
@@ -582,7 +642,6 @@ class FermiSolverPyScFermi(FermiSolver):
             chemical_potentials=chempots,
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
-            effective_dopant_concentration=effective_dopant_concentration,
             **kwargs,
         )
         conc_dict = defect_system.concentration_dict()
