@@ -317,8 +317,10 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
         """
-        grid = ChemicalPotentialGrid(chemical_potentials).get_grid(dependent_variable, n_points)
-      
+        grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials).get_grid(
+            dependent_variable, n_points
+        )
+
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
@@ -344,6 +346,90 @@ class FermiSolver(MSONable):
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+
+    def min_max_X(
+        self,
+        chemical_potentials,
+        dependent_chempot,
+        target,
+        min_or_max,
+        tolerance=0.01,
+        n_points=10,
+        temperature=300,
+        annealing_temperature=None,
+        quenching_temperature=None,
+        processes=1,
+        **kwargs,
+    ):
+        """given a doped-formatted chemical potential dictionary, search in chemical potential space
+        for the chemical potentials that minimize or maximize the target variable, e.g. electron concentration
+        by iterating over a grid of chemical potentials and then "zooming in" on the chemical pontential that
+        minimizes or maximizes the target variable until the target value no longer changes by more than the tolerance
+        """
+
+        starting_grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials)
+        current_vertices = starting_grid.vertices
+        chemical_potentials_labels = list(current_vertices.columns)
+        previous_value = None
+
+        while True:
+            # Solve and append chemical potentials
+            if annealing_temperature is not None and quenching_temperature is not None:
+                all_data = Parallel(n_jobs=processes)(
+                    delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                        chempots=chempots[1].to_dict(),
+                        quenched_temperature=quenching_temperature,
+                        annealing_temperature=annealing_temperature,
+                        **kwargs,
+                    )
+                    for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
+                )
+                df = pd.concat(all_data)
+
+            elif annealing_temperature is None and quenching_temperature is None:
+                all_data = Parallel(n_jobs=processes)(
+                    delayed(self._solve_and_append_chemical_potentials)(
+                        chempots=chempots[1].to_dict(), temperature=temperature, **kwargs
+                    )
+                    for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
+                )
+                df = pd.concat(all_data)
+
+            else:
+                raise ValueError(
+                    "You must specify both annealing and quenching temperature, or just temperature."
+                )
+
+            # Find chemical potentials value where target is lowest or highest
+            if min_or_max == "min":
+                target_chem_pot = df[df[target] == df[target].min()][chemical_potentials_labels]
+                target_dataframe = df[df[target] == df[target].min()]
+            elif min_or_max == "max":
+                target_chem_pot = df[df[target] == df[target].max()][chemical_potentials_labels]
+                target_dataframe = df[df[target] == df[target].max()]
+
+            # Check if the change in the target value is less than the tolerance
+            current_value = df[target].min() if min_or_max == "min" else df[target].max()
+            if (
+                previous_value is not None
+                and abs((current_value - previous_value) / previous_value) < tolerance
+            ):
+                break
+            previous_value = current_value
+            target_chem_pot = target_chem_pot.drop_duplicates(ignore_index=True)
+
+            new_vertices = []
+            for row in target_chem_pot.iterrows():
+                row = row[1]
+                # get midpoint between current vertices and target_chem_pot
+                new_vertex = (current_vertices + row) / 2
+                new_vertices.append(new_vertex)
+
+            # Generate a new grid around the target_chem_pot that does not go outside the bounds of the starting grid
+            new_vertices_df = pd.DataFrame(new_vertices[0], columns=chemical_potentials_labels)
+            starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
+
+        return target_dataframe
 
 
 class FermiSolverDoped(FermiSolver):
@@ -760,8 +846,7 @@ class ChemicalPotentialGrid:
         chemical_potentials (Dict[str, Any]): A dictionary containing chemical
                                                potential information.
         """
-        self.chemical_potentials = chemical_potentials
-        self.vertices = pd.DataFrame.from_dict(chemical_potentials["facets"], orient="index")
+        self.vertices = pd.DataFrame.from_dict(chemical_potentials, orient="index")
 
     def get_grid(self, dependent_variable: str, n_points: int = 100) -> pd.DataFrame:
         """
@@ -776,9 +861,42 @@ class ChemicalPotentialGrid:
         pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
                     interpolated dependent variable values.
         """
+        grid = self.grid_from_dataframe(self.vertices, dependent_variable, n_points)
+        return grid
+
+    @classmethod
+    def from_chemical_potentials(cls, chemical_potentials: Dict[str, Any]) -> "ChemicalPotentialGrid":
+        """
+        Initializes the ChemicalPotentialGrid with chemical potential data.
+
+        Parameters:
+        chemical_potentials (Dict[str, Any]): A dictionary containing chemical
+                                               potential information.
+
+        Returns:
+        ChemicalPotentialGrid: The initialized ChemicalPotentialGrid.
+        """
+        return cls(chemical_potentials["facets"])
+
+    @staticmethod
+    def grid_from_dataframe(
+        mu_dataframe: pd.DataFrame, dependent_variable: str, n_points: int = 100
+    ) -> pd.DataFrame:
+        """
+        Generates a grid within the convex hull of the vertices and interpolates
+        the dependent variable values.
+
+        Parameters:
+        dependent_variable (str): The name of the column in vertices representing the dependent variable.
+        n_points (int): The number of points to generate along each axis of the grid.
+
+        Returns:
+        pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
+                    interpolated dependent variable values.
+        """
         # Exclude the dependent variable from the vertices
-        independent_vars = self.vertices.drop(columns=dependent_variable)
-        dependent_var = self.vertices[dependent_variable].values
+        independent_vars = mu_dataframe.drop(columns=dependent_variable)
+        dependent_var = mu_dataframe[dependent_variable].values
 
         # Generate the complex number for grid spacing
         complex_num = complex(0, n_points)
