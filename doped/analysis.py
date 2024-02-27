@@ -45,7 +45,7 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
-from doped.utils.plotting import _format_defect_name
+from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
     _get_all_equiv_sites,
@@ -135,7 +135,7 @@ def check_and_set_defect_entry_name(
     )
 
     with contextlib.suppress(Exception):  # check if defect name is recognised
-        formatted_defect_name = _format_defect_name(
+        formatted_defect_name = format_defect_name(
             defect_name_w_charge_state, include_site_info_in_name=True
         )  # tries without site_info if with site_info fails
 

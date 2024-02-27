@@ -80,125 +80,125 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     def test_format_defect_name(self):
         """
-        Test _format_defect_name() function.
+        Test format_defect_name() function.
         """
         # test standard behaviour
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test interstitial case with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test interstitial case with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test lowercase interstitial with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test lowercase interstitial with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test uppercase vacancy (pymatgen default name) with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test uppercase vacancy (pymatgen default name) with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test substitution with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Ni$_{Li}^{0}$"
 
         # test substitution with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Ni$_{Li_{1}}^{0}$"
 
         # test substitution with site number excluded, current doped format, two-letter subbed element
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1",
             include_site_info_in_name=False,
         )
         assert formatted_name == "P$_{Na}^{-1}$"
 
         # test substitution with site number included, current doped format, two-letter subbed element
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1 ",
             include_site_info_in_name=True,
         )
         assert formatted_name == "P$_{Na_{1}}^{-1}$"
 
         # test substitution with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Na$_{P}^{0}$"
 
         # test substitution with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Na$_{P_{2}}^{0}$"
 
         # test interstitial with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "P$_i^{0}$"
 
         # test interstitial with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "P$_{i_{12}}^{0}$"
 
         # test vacancy with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{P}^{-2}$"
 
         # test vacancy with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
             include_site_info_in_name=True,
         )
@@ -211,19 +211,18 @@ class DefectPlottingTestCase(unittest.TestCase):
                 "Problem reading defect name vac_1_Cd_a, should end with charge state after "
                 "underscore (e.g. vac_1_Cd_0)"
             )
-            plotting._format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
+            plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
             assert wrong_charge_error in e.exception
 
         self.assertRaises(
             TypeError,
-            plotting._format_defect_name,
+            plotting.format_defect_name,
             defect_species=2,
             include_site_info_in_name=True,
         )
         # check invalid defect type returns None
         assert (
-            plotting._format_defect_name(defect_species="kk_Cd_1_0", include_site_info_in_name=True)
-            is None
+            plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info_in_name=True) is None
         )
 
         defect_species_name_dict = {
@@ -291,7 +290,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
-            formatted_name = plotting._format_defect_name(
+            formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
                 include_site_info_in_name=False,
             )
@@ -370,7 +369,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             defect_species,
             expected_name,
         ) in defect_species_w_site_info_name_dict.items():
-            formatted_name = plotting._format_defect_name(
+            formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
                 include_site_info_in_name=True,
             )
