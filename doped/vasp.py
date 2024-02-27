@@ -36,15 +36,6 @@ from doped.utils.parsing import (
 )
 from doped.utils.symmetry import _frac_coords_sort_func
 
-# TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
-#  KPOINTS settings etc)
-# TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons to
-#  written folders as well (but off by default)
-# TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
-#  to `.defect_sets` etc?
-# TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
-#  and the structures don't match (otherwise overwrite)
-
 _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
 
@@ -2230,3 +2221,13 @@ class DefectsSet(MSONable):
             f"defect entries in self.defect_entries. Available attributes:\n{attrs | properties}\n\n"
             f"Available methods:\n{methods}"
         )
+
+
+# TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
+#  KPOINTS settings etc)
+# TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons to
+#  written folders as well (but off by default)
+# TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
+#  to `.defect_sets` etc?
+# TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
+#  and the structures don't match (otherwise overwrite)
