@@ -567,7 +567,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
-            **kwargs: Additional kwargs to pass to DefectDictSet().
+            **kwargs: Additional kwargs to pass to ``DefectDictSet()``.
 
         Attributes:
             vasp_gam (DefectDictSet):
@@ -1804,6 +1804,10 @@ class DefectsSet(MSONable):
         where ``DefectDictSet`` is an extension of ``pymatgen``'s ``DictSet`` class for
         defect calculations, with ``incar``, ``poscar``, ``kpoints`` and ``potcar``
         attributes for the corresponding VASP defect calculations (see docstring).
+        Also creates the corresponding ``bulk_vasp_...`` attributes for singlepoint
+        (static) energy calculations of the bulk (pristine, defect-free) supercell.
+        This needs to be calculated once with the same settings as the final defect
+        calculations, for the later calculation of defect formation energies.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` settings, and
@@ -1849,7 +1853,7 @@ class DefectsSet(MSONable):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 ``doped/VASP_setsPotcarSet.yaml`` for the default ``POTCAR`` set.
-            **kwargs: Additional kwargs to pass to DictSet().
+            **kwargs: Additional kwargs to pass to each ``DefectRelaxSet()``.
 
         Attributes:
             defect_sets (Dict):
@@ -1857,6 +1861,27 @@ class DefectsSet(MSONable):
             defect_entries (Dict):
                 Dictionary of {defect_species: DefectEntry} for the input defect
                 species, for which to generate VASP input files.
+            bulk_vasp_gam (DefectDictSet):
+                DefectDictSet for a `bulk` Γ-point-only singlepoint (static)
+                supercell calculation. Often not used, as the bulk supercell only
+                needs to be calculated once with the same settings as the final
+                defect calculations, which may be with ``vasp_std`` or ``vasp_ncl``.
+            bulk_vasp_nkred_std (DefectDictSet):
+                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                calculation (i.e. with a non-Γ-only kpoint mesh) and ``NKRED(X,Y,Z)``
+                INCAR tag(s) to downsample kpoints for the HF exchange part of the
+                hybrid DFT calculation. Not generated for GGA calculations (if
+                ``LHFCALC`` is set to ``False`` in user_incar_settings) or if only Gamma
+                kpoint sampling is required.
+            bulk_vasp_std (DefectDictSet):
+                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                calculation with a non-Γ-only kpoint mesh, not using ``NKRED``. Not
+                generated if only Gamma kpoint sampling is required.
+            bulk_vasp_ncl (DefectDictSet):
+                DefectDictSet for singlepoint (static) energy calculation of the `bulk`
+                supercell with SOC included. Generated if ``soc=True``. If ``soc`` is not
+                set, then by default is only generated for systems with a max atomic
+                number (Z) >= 31 (i.e. further down the periodic table than Zn).
             json_obj (Union[Dict, DefectsGenerator]):
                 Either the DefectsGenerator object if input ``defect_entries`` is a
                 ``DefectsGenerator`` object, otherwise the ``defect_entries`` dictionary,
@@ -1914,6 +1939,18 @@ class DefectsSet(MSONable):
                 user_potcar_settings=self.user_potcar_settings,
                 **self.kwargs,
             )
+
+        # set bulk vasp attributes:
+        if not self.defect_sets:
+            raise ValueError(
+                "No `DefectRelaxSet` objects created, indicating problems with the `DefectsSet` "
+                "input/creation!"
+            )
+        defect_relax_set = list(self.defect_sets.values())[-1]
+        self.bulk_vasp_gam = defect_relax_set.bulk_vasp_gam
+        self.bulk_vasp_nkred_std = defect_relax_set.bulk_vasp_nkred_std
+        self.bulk_vasp_std = defect_relax_set.bulk_vasp_std
+        self.bulk_vasp_ncl = defect_relax_set.bulk_vasp_ncl
 
     def _format_defect_entries_input(
         self,
@@ -2074,13 +2111,12 @@ class DefectsSet(MSONable):
 
         Input files for the singlepoint (static) bulk supercell reference
         calculation are also written to "{formula}_bulk/{subfolder}" if ``bulk``
-        is True (default), where ``subfolder`` corresponds to the final (highest
+        is ``True`` (default), where ``subfolder`` corresponds to the final (highest
         accuracy) VASP calculation in the workflow (i.e. ``vasp_ncl`` if
         ``self.soc=True``, otherwise ``vasp_std`` or ``vasp_gam`` if only Γ-point
         reciprocal space sampling is required). If ``bulk = "all"``, then the
-        input files for all VASP calculations in the workflow are written to
-        the bulk supercell folder, or if ``bulk = False``, then no bulk folder
-        is created.
+        input files for all VASP calculations (gam/std/ncl) are written to the bulk
+        supercell folder, or if ``bulk = False``, then no bulk folder is created.
 
         The ``DefectEntry`` objects are also written to ``json`` files in the defect
         folders, as well as ``self.defect_entries`` (``self.json_obj``) in the top
@@ -2155,7 +2191,7 @@ class DefectsSet(MSONable):
                 output_path,
                 unperturbed_poscar,
                 vasp_gam,
-                bulk if i == 0 else False,  # only write bulk folder(s) for first defect
+                bulk if i == len(self.defect_sets) - 1 else False,  # write bulk folder(s) for last defect
                 kwargs,
             )
             for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
