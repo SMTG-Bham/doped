@@ -239,7 +239,7 @@ class DefectDictSet(DictSet):
         incar_obj = super(self.__class__, self).incar
 
         try:
-            incar_obj["NELECT"] = self.nelect - self.charge_state
+            incar_obj["NELECT"] = self.nelect
             if incar_obj["NELECT"] % 2 != 0:  # odd number of electrons
                 incar_obj["NUPDOWN"] = 1
             else:
@@ -329,6 +329,19 @@ class DefectDictSet(DictSet):
 
         return doped_kpoints
 
+    @property
+    def nelect(self):
+        """
+        Number of electrons (``NELECT``) for the given structure and
+        charge state.
+
+        This is equal to the sum of valence electrons (ZVAL) of the
+        ``POTCAR``s for each atom in the structure (supercell), minus
+        the charge state.
+        """
+        neutral_nelect = super().nelect
+        return neutral_nelect - self.charge_state
+
     def _check_user_potcars(self, unperturbed_poscar: bool = False, snb: bool = False) -> bool:
         """
         Check and warn the user if POTCARs are not set up with pymatgen.
@@ -371,8 +384,8 @@ class DefectDictSet(DictSet):
         snb: bool = False,
     ):
         """
-        Writes out all input to a directory. Refactored slightly from pymatgen
-        DictSet.write_input() to allow checking of user POTCAR setup.
+        Writes out all input to a directory. Refactored slightly from ``pymatgen``
+        ``DictSet.write_input()`` to allow checking of user ``POTCAR`` setup.
 
         Args:
             output_path (str): Directory to output the VASP input files.
@@ -446,7 +459,7 @@ class DefectDictSet(DictSet):
             name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
         }
         return (
-            f"doped DefectDictSet with supercell composition {self.structure.composition}."
+            f"doped DefectDictSet with supercell composition {self.structure.composition}. "
             f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
         )
 
@@ -1190,7 +1203,7 @@ class DefectRelaxSet(MSONable):
         self,
         defect_dir: Optional[str] = None,
         subfolder: Optional[str] = "vasp_gam",
-        unperturbed_poscar: bool = False,
+        unperturbed_poscar: bool = True,
         bulk: bool = False,
         **kwargs,
     ):
@@ -1200,7 +1213,7 @@ class DefectRelaxSet(MSONable):
         recommended workflow is to perform ``vasp_gam`` calculations using
         ``ShakeNBreak`` for defect structure-searching and initial relaxations,
         but should be used if the final, converged `k`-point mesh is Γ-point-
-        only. If bulk is True, the input files for a singlepoint calculation of
+        only. If ``bulk`` is True, the input files for a singlepoint calculation of
         the bulk supercell are also written to "{formula}_bulk/{subfolder}".
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
@@ -1231,13 +1244,13 @@ class DefectRelaxSet(MSONable):
                 ``None`` will write the ``vasp_gam`` input files directly to the
                 ``<defect_dir>`` folder, with no subfolders created.
             unperturbed_poscar (bool):
-                If True, write the unperturbed defect POSCAR to the generated
-                folder as well. Typically not recommended for use, as the
-                recommended workflow is to initially perform ``vasp_gam``
+                If True (default), write the unperturbed defect POSCAR to the
+                generated folder as well. Typically not recommended for use, as
+                the recommended workflow is to initially perform ``vasp_gam``
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
                 ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
-                (default: False)
+                (default: True)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1709,8 +1722,8 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar if
-                    # vasp_gam explicitly set
+                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar only if
+                    # `vasp_gam` explicitly set to True
                     **kwargs,
                 )
 
