@@ -20,3 +20,9 @@ Unit tests are in the `tests <https://github.com/SMTG-Bham/doped/tree/main/tests
 and can be run from the top directory using ``pytest``. Automatic testing is run on the ``main``
 and ``develop`` branches using `Github Actions <https://github.com/SMTG-Bham/doped/actions>`_. Please
 run tests and add new tests for any new features whenever submitting pull requests.
+
+.. NOTE::
+    If you run into any issues using ``doped`` that aren't addressed on the
+    [Troubleshooting](https://doped.readthedocs.io/en/latest/Troubleshooting.html) page, please contact
+    the developers through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or
+    by email.
