@@ -598,27 +598,24 @@ class DefectRelaxSetTest(unittest.TestCase):
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
             if isinstance(child_dds.user_kpoints_settings, (DopedKpoints, Kpoints)):
-                assert (
-                    child_dds.user_kpoints_settings.as_dict()
-                    == DopedKpoints()
+                assert child_dds.user_kpoints_settings.as_dict() in [
+                    DopedKpoints()
                     .from_dict(
                         {
                             "comment": "Γ-only KPOINTS from doped",
                             "generation_style": "Gamma",
                         }
                     )
-                    .as_dict()
-                ) or (
-                    child_dds.user_kpoints_settings.as_dict()
-                    == Kpoints()
+                    .as_dict(),
+                    Kpoints()
                     .from_dict(
                         {
                             "comment": "Γ-only KPOINTS from doped",
                             "generation_style": "Gamma",
                         }
                     )
-                    .as_dict()
-                )
+                    .as_dict(),
+                ]
             else:
                 assert parent_drs.user_kpoints_settings == child_dds.user_kpoints_settings
 
@@ -896,6 +893,9 @@ class DefectsSetTest(unittest.TestCase):
         self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
+        self.drs_test = DefectRelaxSetTest()
+        self.drs_test.setUp()
+
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
 
         # Note this is different to above: (for testing against pre-generated input files with these
@@ -990,41 +990,13 @@ class DefectsSetTest(unittest.TestCase):
             assert test_kpoints.as_dict() == kpoints.as_dict()
 
     def _general_defects_set_check(self, defects_set, **kwargs):
-        # TODO: Use function above here
         for entry_name, defect_relax_set in defects_set.defect_sets.items():
             print(f"Testing {entry_name} DefectRelaxSet")
+            self.drs_test._general_defect_relax_set_check(defect_relax_set, **kwargs)
             # check bulk vasp attributes same as DefectsSet:
             assert defect_relax_set.bulk_vasp_ncl.structure == defects_set.bulk_vasp_ncl.structure
             assert defect_relax_set.bulk_vasp_ncl.incar == defects_set.bulk_vasp_ncl.incar
             assert defect_relax_set.bulk_vasp_ncl.kpoints == defects_set.bulk_vasp_ncl.kpoints
-
-            dds_test_list = [
-                (defect_relax_set.vasp_gam, "vasp_gam"),
-                (defect_relax_set.bulk_vasp_gam, "bulk_vasp_gam"),
-                (defect_relax_set.vasp_std, "vasp_std"),
-                (defect_relax_set.bulk_vasp_std, "bulk_vasp_std"),
-                (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
-                (defect_relax_set.vasp_ncl, "vasp_ncl"),
-                (defect_relax_set.bulk_vasp_ncl, "bulk_vasp_ncl"),
-            ]
-            if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
-                # std INCAR to be more computationally efficient
-                dds_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
-
-            for defect_dict_set, name in dds_test_list:
-                print(f"Testing {name}")
-                try:
-                    self.dds_test._check_dds(
-                        defect_dict_set,
-                        defect_relax_set.defect_supercell,
-                        charge_state=defect_relax_set.charge_state,
-                        **kwargs,
-                    )
-                except AssertionError:  # try bulk structure
-                    print("Defect DefectDictSet test failed, trialling bulk DefectDictSet")
-                    self.dds_test._check_dds(
-                        defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
-                    )
 
     def test_CdTe_files(self):
         if not self.heavy_tests:
