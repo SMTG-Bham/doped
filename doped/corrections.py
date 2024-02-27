@@ -58,7 +58,7 @@ from doped.utils.parsing import (
     get_locpot,
     get_outcar,
 )
-from doped.utils.plotting import _format_defect_name, _get_backend
+from doped.utils.plotting import _get_backend, format_defect_name
 
 warnings.simplefilter("default")
 # `message` only needs to match start of message:
@@ -576,7 +576,7 @@ def get_kumagai_correction(
     _install_custom_font()
 
     spp = SitePotentialMplPlotter.from_efnv_corr(
-        title=f"{_format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
+        title=f"{format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"

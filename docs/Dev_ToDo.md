@@ -105,7 +105,6 @@
 - Refactor all usages of `facet` to `limit`, more intuitive for most users.
 - Update Sb2O5 test in `test_analysis.py`
   - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
-- Make `_format_defect_name()` an open method, is quite useful (and update in `ShakeNBreak` too)
 - `bulk_vasp_xxx` attributes in `DefectRelaxSet` should be passed to `DefectsSet` as well (and then just used in writing?) – do this and test.
 - Plotting lines colour updates.
 - AgSbTe2 VASP IO tests

@@ -147,14 +147,14 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         )
 
 
-def _format_defect_name(
+def format_defect_name(
     defect_species: str,
     include_site_info_in_name: bool,
     wout_charge: bool = False,
 ) -> Optional[str]:
     """
     Format defect name for plot titles. (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$
-    or $Cd_{i_{C3v}}^{0}$. Note this assumes "V_" means vacancy not Vanadium.
+    or $Cd_{i_{C3v}}^{0}$). Note this assumes "V_" means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):
@@ -600,7 +600,7 @@ def _get_legends_txt(for_legend, all_entries=False):
             any(name.startswith(i) for i in ["Int_", "vac_", "as_", "sub_"]) for name in for_legend
         )
         try:
-            defect_name = _format_defect_name(
+            defect_name = format_defect_name(
                 defect_species=defect_entry_name,
                 include_site_info_in_name=include_site_info,
                 wout_charge=not all_entries,  # defect names without charge
