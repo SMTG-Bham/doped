@@ -1,7 +1,7 @@
 .. _troubleshooting:
 
-Troubleshooting
-================
+Troubleshooting & Support
+=========================
 
 ``doped``/``pymatgen`` Errors
 -----------------------------
@@ -115,5 +115,5 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
 
 .. NOTE::
-    If you run into any issues using ``doped``, please contact the developers through the ``GitHub``
-    `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+    If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
+    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
