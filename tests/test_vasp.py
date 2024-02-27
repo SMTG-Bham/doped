@@ -177,6 +177,19 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             assert dds.kpoints.comment in [self.doped_std_kpoint_comment, self.doped_gam_kpoint_comment]
 
+        # test __repr__ info:
+        assert all(
+            i in dds.__repr__()
+            for i in [
+                f"doped DefectDictSet with supercell composition {struct.composition}. "
+                "Available attributes",
+                "nelect",
+                "incar",
+                "Available methods",
+                "write_input",
+            ]
+        )
+
     def _check_potcar_nupdown_dds_warnings(self, w, dds):
         assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
         assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
@@ -650,6 +663,19 @@ class DefectRelaxSetTest(unittest.TestCase):
 
                 _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
 
+        # test __repr__ info:
+        assert all(
+            i in defect_relax_set.__repr__()
+            for i in [
+                "doped DefectRelaxSet for bulk composition",
+                f"and defect entry {defect_relax_set.defect_entry.name}. Available attributes:\n",
+                "vasp_std",
+                "vasp_gam",
+                "Available methods:\n",
+                "write_all",
+            ]
+        )
+
     def test_initialisation_and_writing(self):
         """
         Test the initialisation of DefectRelaxSet for a range of
@@ -667,7 +693,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         # test initialising DefectRelaxSet with our generation-tests materials, and writing files to disk
         defect_gen_test_list = [
             (self.CdTe_defect_gen, "CdTe defect_gen"),
-            (DefectsGenerator(self.sqs_agsbte2), "SQS AgSbTe2 defect_gen"),
+            (DefectsGenerator(self.sqs_agsbte2, generate_supercell=False), "SQS AgSbTe2 defect_gen"),
         ]
         for defect_gen_name in [
             "ytos_defect_gen",
@@ -897,6 +923,9 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test.setUp()
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
+        self.structure_matcher = StructureMatcher(
+            comparator=ElementComparator(), primitive_cell=False
+        )  # ignore oxidation states when comparing structures
 
         # Note this is different to above: (for testing against pre-generated input files with these
         # settings):
@@ -914,7 +943,9 @@ class DefectsSetTest(unittest.TestCase):
                 if_present_rm(file)
 
         for folder in os.listdir():
-            if any(os.path.exists(f"{folder}/vasp_{xxx}") for xxx in ["gam", "std", "ncl"]):
+            if any(os.path.exists(f"{folder}/vasp_{xxx}") for xxx in ["gam", "std", "ncl"]) or (
+                os.path.isdir(folder) and "INCAR" in os.listdir(folder)
+            ):
                 # generated output files
                 if_present_rm(folder)
 
@@ -998,6 +1029,19 @@ class DefectsSetTest(unittest.TestCase):
             assert defect_relax_set.bulk_vasp_ncl.incar == defects_set.bulk_vasp_ncl.incar
             assert defect_relax_set.bulk_vasp_ncl.kpoints == defects_set.bulk_vasp_ncl.kpoints
 
+        assert all(
+            i in defects_set.__repr__()
+            for i in [
+                "doped DefectsSet for bulk composition",
+                f", with {len(defects_set.defect_entries)} defect entries in self.defect_entries. "
+                "Available attributes:\n",
+                "bulk_vasp_gam",
+                "soc",
+                "Available methods:\n",
+                "write_files",
+            ]
+        )
+
     def test_CdTe_files(self):
         if not self.heavy_tests:
             return
@@ -1033,10 +1077,7 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        structure_matcher = StructureMatcher(
-            comparator=ElementComparator(), primitive_cell=False
-        )  # ignore oxidation states
-        assert structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
         # check_generated_vasp_inputs also checks bulk folders
 
         assert os.path.exists("CdTe_defects_generator.json")

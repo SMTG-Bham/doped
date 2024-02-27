@@ -674,8 +674,6 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         defect_gen_from_json = DefectsGenerator.from_json(default_json_filename)
         defect_gen_from_json_loadfn = loadfn(default_json_filename)
 
-        # gen_check(defect_gen_from_json)
-
         # test saving to json again gives same object:
         defect_gen_from_json.to_json("test.json")
         defect_gen_from_json_loadfn.to_json("test_loadfn.json")
@@ -924,6 +922,18 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                             and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
                         ):
                             raise e
+
+        # check __repr__ info:
+        assert all(
+            i in defect_entry.__repr__()
+            for i in [
+                f"doped DefectEntry: {defect_entry.name}, with bulk composition:",
+                f"and defect: {defect_entry.defect.name}. Available attributes:\n",
+                "corrected_energy",
+                "Available methods",
+                "equilibrium_concentration",
+            ]
+        )
 
     def _random_equiv_supercell_sites_check(self, defect_entry):
         print(f"Randomly testing the equivalent supercell sites for {defect_entry.name}...")
@@ -3225,13 +3235,20 @@ v_Te         [+2,+1,0,-1,-2]        [0.335,0.003,0.073]  18f
         In particular, test that defect generation doesn't yield unsorted
         structures.
         """
-        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
-        self._general_defect_gen_check(agsbte2_defect_gen)
-
-        agsbte2_defect_gen, output = self._generate_and_test_no_warnings(
+        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        agsbte2_defect_gen_b, output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2, generate_supercell=False
         )
-        self._general_defect_gen_check(agsbte2_defect_gen)
+        # same output regardless of `generate_supercell` because input supercell satisfies constraints
+        agsbte2_defect_gen_a.generate_supercell = False  # adjust one difference to make equal overall
+        assert json.dumps(agsbte2_defect_gen_a, sort_keys=True, cls=MontyEncoder) == json.dumps(
+            agsbte2_defect_gen_b, sort_keys=True, cls=MontyEncoder
+        )
+        assert np.allclose(
+            agsbte2_defect_gen_a.supercell_matrix,
+            np.array([[3.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        )
+        self._general_defect_gen_check(agsbte2_defect_gen_a)
 
     def test_liga5o8(self):
         """
