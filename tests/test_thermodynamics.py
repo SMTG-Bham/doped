@@ -94,6 +94,8 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.Sb2Si2Te6_defect_dict = deepcopy(self.orig_Sb2Si2Te6_defect_dict)
         self.V2O5_defect_thermo = deepcopy(self.orig_V2O5_defect_thermo)
         self.V2O5_defect_dict = deepcopy(self.orig_V2O5_defect_dict)
+        self.MgO_defect_thermo = deepcopy(self.orig_MgO_defect_thermo)
+        self.MgO_defect_dict = deepcopy(self.orig_MgO_defect_dict)
 
     @classmethod
     def setUpClass(cls):
@@ -117,6 +119,8 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.Sb2Si2Te6_DATA_DIR = os.path.join(cls.EXAMPLE_DIR, "Sb2Si2Te6")
 
         cls.V2O5_DATA_DIR = os.path.join(cls.module_path, "data/V2O5")
+
+        cls.MgO_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "MgO")
 
         cls.orig_CdTe_defect_dict = loadfn(
             os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")
@@ -148,6 +152,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         )
         cls.orig_V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
         cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
+
+        cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json"))
+        cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json"))
+        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "competing_phases/mgo_chempots.json"))
 
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
@@ -190,10 +198,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert defect_thermo.chempots == chempots
         assert defect_thermo.el_refs == el_refs
 
-        # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5 values:
-        assert any(np.isclose(defect_thermo.vbm, i, atol=1e-2) for i in [1.65, 3.26, 4.19, 6.60, 0.90])
+        # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5, MgO values:
         assert any(
-            np.isclose(defect_thermo.band_gap, i, atol=1e-2) for i in [1.5, 0.7, 1.47, 0.44, 2.22]
+            np.isclose(defect_thermo.vbm, i, atol=1e-2) for i in [1.65, 3.26, 4.19, 6.60, 0.90, 3.1293]
+        )
+        assert any(
+            np.isclose(defect_thermo.band_gap, i, atol=1e-2) for i in [1.5, 0.7, 1.47, 0.44, 2.22, 4.7218]
         )  # note YTOS is GGA calcs so band gap underestimated
 
         assert defect_thermo.check_compatibility == check_compatibility
@@ -208,10 +218,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5 values:
         assert any(
             os.path.exists(f"{i}_defect_thermodynamics.json")
-            for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]
+            for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO"]
         )
-        assert defect_thermo.bulk_formula in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]
-        for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5"]:
+        assert defect_thermo.bulk_formula in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO"]
+        for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO"]:
             if_present_rm(f"{i}_defect_thermodynamics.json")
 
         thermo_dict = defect_thermo.as_dict()
@@ -382,6 +392,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.Sb2Se3_defect_dict, "Sb2Se3_defect_dict"),
             (self.Sb2Si2Te6_defect_dict, "Sb2Si2Te6_defect_dict"),
             (self.V2O5_defect_dict, "V2O5_defect_dict"),
+            (self.MgO_defect_dict, "MgO_defect_dict"),
         ]:
             print(f"Checking {name}")
             with warnings.catch_warnings(record=True) as w:
@@ -427,6 +438,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
             (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
             (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
+            (self.MgO_defect_thermo, "MgO_defect_thermo"),
         ]:
             print(f"Checking {name}")
             if "V2O5" in name:
@@ -435,7 +447,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
-
+            elif "MgO" in name:
+                self._check_defect_thermo(
+                    defect_thermo,
+                    chempots=self.MgO_chempots,
+                    el_refs=self.MgO_chempots["elemental_refs"],
+                )
             else:
                 self._check_defect_thermo(defect_thermo)  # default values
 
@@ -661,6 +678,41 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(cdte_sym_degen_lists):
+            row[1] = int(row[1])
+            assert list(non_formatted_sym_degen_df.iloc[i]) == row
+
+    def test_get_symmetries_degeneracies_MgO(self):
+        MgO_thermo = loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json")
+        sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies()
+        # print(sym_degen_df)
+        assert sym_degen_df.shape == (5, 8)
+        assert list(sym_degen_df.columns) == [
+            "Defect",
+            "q",
+            "Site_Symm",
+            "Defect_Symm",
+            "g_Orient",
+            "g_Spin",
+            "g_Total",
+            "Mult",
+        ]
+        # hardcoded tests to ensure ordering is consistent (by defect type according to
+        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # as would appear on a TL diagram)
+        mgo_sym_degen_lists = [
+            ["Mg_O", "+4", "Oh", "C2v", 12.0, 1, 12.0, 1.0],
+            ["Mg_O", "+3", "Oh", "C3v", 8.0, 2, 16.0, 1.0],
+            ["Mg_O", "+2", "Oh", "C3v", 8.0, 1, 8.0, 1.0],
+            ["Mg_O", "+1", "Oh", "Cs", 24.0, 2, 48.0, 1.0],
+            ["Mg_O", "0", "Oh", "Cs", 24.0, 1, 24.0, 1.0],
+        ]
+        for i, row in enumerate(mgo_sym_degen_lists):
+            print(i, row)
+            assert list(sym_degen_df.iloc[i]) == row
+
+        non_formatted_sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies(skip_formatting=True)
+        # print(non_formatted_sym_degen_df)  # for debugging
+        for i, row in enumerate(mgo_sym_degen_lists):
             row[1] = int(row[1])
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
@@ -1828,7 +1880,6 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         return f
 
 
-# TODO: Add GGA MgO tests as well
 # TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
 # TODO: Test check_compatibility
 # TODO: Test how attributes change when reloaded from JSON (e.g.
