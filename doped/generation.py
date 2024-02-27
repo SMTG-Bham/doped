@@ -1073,7 +1073,9 @@ class DefectsGenerator(MSONable):
         by specifying keyword arguments with ``supercell_gen_kwargs``, which are passed to
         ``get_ideal_supercell_matrix()`` (e.g. for a minimum image distance of 15 Å with at
         least 100 atoms, use:
-        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``).
+        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``). If the
+        input structure already satisfies these constraints (for the same number of atoms as
+        the ``doped``-generated supercell), then it will be used.
         Alternatively if ``generate_supercell = False``, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
@@ -1256,7 +1258,9 @@ class DefectsGenerator(MSONable):
 
             if not self.generate_supercell or (
                 input_min_image_distance >= specified_min_image_distance
-                and self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
+                and (primitive_structure * supercell_matrix).num_sites
+                >= self.structure.num_sites
+                >= self.supercell_gen_kwargs.get("min_atoms", 0)
             ):
                 if input_min_image_distance < 10:
                     # input structure is <10 Å in at least one direction, and generate_supercell=False,
