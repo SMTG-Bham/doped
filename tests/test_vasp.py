@@ -90,8 +90,8 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        self.heavy_tests = bool(_potcars_available())  # don't run heavy tests on GH Actions, these are
-        # run locally (too slow without multiprocessing etc)
+        # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
+        self.heavy_tests = bool(_potcars_available())
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
         self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
@@ -991,22 +991,28 @@ class DefectsSetTest(unittest.TestCase):
 
     def _general_defects_set_check(self, defects_set, **kwargs):
         # TODO: Use function above here
-        for defect_relax_set in defects_set.defect_sets.values():
+        for entry_name, defect_relax_set in defects_set.defect_sets.items():
+            print(f"Testing {entry_name} DefectRelaxSet")
+            # check bulk vasp attributes same as DefectsSet:
+            assert defect_relax_set.bulk_vasp_ncl.structure == defects_set.bulk_vasp_ncl.structure
+            assert defect_relax_set.bulk_vasp_ncl.incar == defects_set.bulk_vasp_ncl.incar
+            assert defect_relax_set.bulk_vasp_ncl.kpoints == defects_set.bulk_vasp_ncl.kpoints
+
             dds_test_list = [
-                defect_relax_set.vasp_gam,
-                defect_relax_set.bulk_vasp_gam,
-                defect_relax_set.vasp_std,
-                defect_relax_set.bulk_vasp_std,
-                defect_relax_set.vasp_nkred_std,
-                defect_relax_set.vasp_ncl,
-                defect_relax_set.bulk_vasp_ncl,
+                (defect_relax_set.vasp_gam, "vasp_gam"),
+                (defect_relax_set.bulk_vasp_gam, "bulk_vasp_gam"),
+                (defect_relax_set.vasp_std, "vasp_std"),
+                (defect_relax_set.bulk_vasp_std, "bulk_vasp_std"),
+                (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
+                (defect_relax_set.vasp_ncl, "vasp_ncl"),
+                (defect_relax_set.bulk_vasp_ncl, "bulk_vasp_ncl"),
             ]
             if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
                 # std INCAR to be more computationally efficient
-                dds_test_list.append(defect_relax_set.bulk_vasp_nkred_std)
+                dds_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
 
-            for defect_dict_set in dds_test_list:
-                print(f"Testing {defect_relax_set.defect_entry.name}")
+            for defect_dict_set, name in dds_test_list:
+                print(f"Testing {name}")
                 try:
                     self.dds_test._check_dds(
                         defect_dict_set,
@@ -1015,6 +1021,7 @@ class DefectsSetTest(unittest.TestCase):
                         **kwargs,
                     )
                 except AssertionError:  # try bulk structure
+                    print("Defect DefectDictSet test failed, trialling bulk DefectDictSet")
                     self.dds_test._check_dds(
                         defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
                     )
@@ -1176,6 +1183,12 @@ class DefectsSetTest(unittest.TestCase):
 
         # assert only +2 directory written:
         assert not os.path.exists("Cd_i_C3v_0")
+
+        # check passing of kwargs on to DefectRelaxSet/DefectDictSet:
+        defects_set = DefectsSet(single_defect_entry, poscar_comment="test pop")
+        assert defects_set.defect_sets["Cd_i_C3v_+2"].poscar_comment == "test pop"
+        assert defects_set.defect_sets["Cd_i_C3v_+2"].vasp_gam.poscar_comment == "test pop"
+        assert defects_set.defect_sets["Cd_i_C3v_+2"].vasp_gam.poscar.comment == "test pop"
 
     def test_write_files_ASCII_encoding(self):
         """
