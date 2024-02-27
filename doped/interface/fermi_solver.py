@@ -472,6 +472,12 @@ class FermiSolverDoped(FermiSolver):
             return_concs=True,
         )
         return fermi_level, electrons, holes
+    
+    def scan_dopant_concentration(self) -> pd.DataFrame:
+        raise NotImplementedError(
+            """This method is not implemented in Doped, please use
+              FermiSolverPyScFermi instead."""
+        )
 
     def equilibrium_solve(self, chempots: dict[str, float], temperature: float) -> pd.DataFrame:
         """calculate the defect concentrations under thermodynamic equilibrium
