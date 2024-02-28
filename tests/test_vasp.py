@@ -917,6 +917,51 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert drs.vasp_ncl
             assert drs.bulk_vasp_ncl
 
+    def test_file_folder_overwriting(self):
+        """
+        Test that when writing to a folder with existing files, the files are
+        not deleted if they are not being overwritten.
+
+        i.e. test compatibility with `snb-groundstate -d vasp_nkred_std` being
+        run prior to `write_files()` etc, as recommended in tutorials.
+        """
+        defect_gen_test_list = []
+        for defect_gen_name in [
+            "ytos_defect_gen",
+            "ytos_defect_gen_supercell",
+            "cu_defect_gen",
+            "agcu_defect_gen",
+        ]:
+            defect_gen_test_list.append(
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+            )
+
+        for defect_gen, defect_gen_name in defect_gen_test_list:
+            print(f"Testing: {defect_gen_name}")
+            # randomly choose a defect entry from the defect_gen dict:
+            defect_entry = random.choice(list(defect_gen.values()))
+
+            print(f"Randomly testing {defect_entry.name}")
+            drs = DefectRelaxSet(defect_entry)
+            self._general_defect_relax_set_check(drs)
+            os.mkdir(defect_entry.name)
+            os.mkdir(f"{defect_entry.name}/vasp_nkred_std")
+            os.mkdir(f"{defect_entry.name}/vasp_std")
+            with open(f"{defect_entry.name}/vasp_nkred_std/INCAR", "w") as file:
+                file.write("Test pop amháin")
+            with open(f"{defect_entry.name}/vasp_nkred_std/POSCAR", "w") as file:
+                file.write("Test pop a dó")
+            with open(f"{defect_entry.name}/vasp_std/POSCAR", "w") as file:
+                file.write("Test pop a trí")  # tír gan teanga, tír gan anam
+            drs.write_all()
+
+            with open(f"{defect_entry.name}/vasp_nkred_std/INCAR") as file:
+                assert "Test pop" not in file.read()
+            with open(f"{defect_entry.name}/vasp_nkred_std/POSCAR") as file:
+                assert "Test pop" in file.read()
+            with open(f"{defect_entry.name}/vasp_std/POSCAR") as file:
+                assert "Test pop" in file.read()
+
 
 class DefectsSetTest(unittest.TestCase):
     def setUp(self):
@@ -1523,13 +1568,14 @@ class DefectsSetTest(unittest.TestCase):
         )
 
         drs.write_all("test_pop", unperturbed_poscar=True)
-        for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+        for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
             _check_agsbte2_vasp_folder(
                 f"test_pop/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
             )
             _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
 
         if_present_rm("Ag_Sb_Cs_Te2.90_-2")
+        if_present_rm("AgSbTe2_bulk")
 
         # test behaviour with DefectsSet initialised from DefectEntry list
         ds = DefectsSet([sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"], sqs_defect_gen["Ag_Sb_Cs_Te2.90_0"]])
@@ -1553,7 +1599,7 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
             )
-            _check_reloaded_defect_entry(f"Ag_Sb_Cs_Te2.90_0/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+            _check_reloaded_defect_entry(f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
             _check_agsbte2_vasp_folder(
                 f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
             )
