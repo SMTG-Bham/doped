@@ -560,10 +560,18 @@ class DefectRelaxSetTest(unittest.TestCase):
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
 
+        self.prim_MgO = Structure.from_file(f"{self.example_dir}/MgO/Bulk_relax/CONTCAR")
+
     def tearDown(self):
         self.dds_test.tearDown()  # use tearDown from DefectDictSetTest
         if_present_rm("test_dir")
         if_present_rm("CdTe_bulk")
+
+        for i in os.listdir():
+            if os.path.isdir(i) and any(j in i for j in ["Mg_", "O_", "v_", "MgO"]):
+                if_present_rm(i)
+
+        if_present_rm("MgO_defects_generator.json")
 
     def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
         dds_test_list = [
@@ -961,6 +969,80 @@ class DefectRelaxSetTest(unittest.TestCase):
                 assert "Test pop" in file.read()
             with open(f"{defect_entry.name}/vasp_std/POSCAR") as file:
                 assert "Test pop" in file.read()
+
+    def test_GGA_defect_sets(self):
+        """
+        Test initialising defects sets with `LHFCALC = False` (i.e. semi-local
+        GGA DFT).
+
+        So `vasp_nkred_std` is None (but no warnings unless `write_nkred_std`
+        called etc.)
+        """
+        mgo_defect_gen = DefectsGenerator(self.prim_MgO, supercell_gen_kwargs={"force_cubic": True})
+
+        from pymatgen.io.vasp.inputs import Kpoints
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_set = DefectsSet(
+                mgo_defect_gen,
+                user_incar_settings={
+                    "ENCUT": 450,
+                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "LHFCALC": False,  # Disable Hybrid functional
+                    "NCORE": 8,
+                },
+                user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
+            )
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is None  # SOC = False by default for MgO
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is None
+
+            defect_set.write_files()
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w  # no warnings about LHFCALC / SOC
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_set.defect_sets["Mg_O_+2"].write_nkred_std()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` is None" in str(
+            w[0].message
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_set.defect_sets["Mg_O_+2"].write_ncl()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert (
+            "DefectRelaxSet.soc is False, so `vasp_ncl` is None (i.e. no `vasp_ncl` input files "
+            in str(w[0].message)
+        )
+
+        # test setting SOC = True:
+        with warnings.catch_warnings(record=True) as w:
+            defect_set = DefectsSet(
+                mgo_defect_gen,
+                user_incar_settings={
+                    "ENCUT": 450,
+                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "LHFCALC": False,  # Disable Hybrid functional
+                    "NCORE": 8,
+                },
+                user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
+                soc=True,
+            )
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is not None  # SOC = True now
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is not None
+            defect_set.write_files()
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w  # no warnings about LHFCALC / SOC
+        with warnings.catch_warnings(record=True) as w:
+            defect_set.defect_sets["Mg_O_+2"].write_ncl()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
 
 
 class DefectsSetTest(unittest.TestCase):
