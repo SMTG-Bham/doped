@@ -813,11 +813,6 @@ class DefectRelaxSet(MSONable):
         chemical potential) calculations.
         """
         if self.user_incar_settings.get("LHFCALC", True) is False:  # GGA
-            warnings.warn(
-                "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` (as NKRED "
-                "acts to downsample the Fock exchange potential in _hybrid DFT_ calculations), "
-                "and so `vasp_std` should be used instead."
-            )
             return None
 
         std_defect_set = self.vasp_std
@@ -896,11 +891,6 @@ class DefectRelaxSet(MSONable):
         chemical potential) calculations.
         """
         if not self.soc:
-            warnings.warn(
-                "DefectRelaxSet.soc is False, so vasp_ncl is None (i.e. no `vasp_ncl` input files have "
-                "been generated). If SOC calculations are desired, set soc=True when initializing "
-                "DefectRelaxSet. Otherwise, use vasp_std or vasp_gam instead."
-            )
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
@@ -1147,11 +1137,6 @@ class DefectRelaxSet(MSONable):
             return None
 
         if not self.soc:
-            warnings.warn(
-                "DefectRelaxSet.soc is False, so bulk_vasp_ncl is None (i.e. no `vasp_ncl` input files "
-                "have been generated). If SOC calculations are desired, set soc=True when initializing "
-                "DefectRelaxSet. Otherwise, use bulk_vasp_std or bulk_vasp_gam instead."
-            )
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
@@ -1249,7 +1234,10 @@ class DefectRelaxSet(MSONable):
                 the recommended workflow is to initially perform ``vasp_gam``
                 ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp_std`` relaxations from the 'Groundstate' ``CONTCAR``\s.
+                ``vasp(_nkred)_std`` relaxations from the ground-state structures
+                (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate` (CLI) or
+                ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)).
                 (default: True)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1297,12 +1285,12 @@ class DefectRelaxSet(MSONable):
         generate ``POSCAR`` (input structure) files, as these should be taken
         from the ``CONTCAR``\s of ``vasp_std`` relaxations using ``NKRED(X,Y,Z)``
         (originally from ``ShakeNBreak`` relaxations) if using hybrid DFT, or
-        from ``ShakeNBreak`` calculations (via ``snb-groundstate``) if using GGA,
-        or, if not following the recommended structure-searching workflow, from
-        the ``CONTCAR``\s of ``vasp_gam`` calculations. If unperturbed ``POSCAR``
-        files are desired, set ``unperturbed_poscar=True``. If bulk is True, the
-        input files for a singlepoint calculation of the bulk supercell are
-        also written to "{formula}_bulk/{subfolder}".
+        from ``ShakeNBreak`` calculations (via ``snb-groundstate -d vasp_std``)
+        if using GGA, or, if not following the recommended structure-searching
+        workflow, from the ``CONTCAR``\s of ``vasp_gam`` calculations. If
+        unperturbed ``POSCAR`` files are desired, set ``unperturbed_poscar=True``.
+        If bulk is True, the input files for a singlepoint calculation of the bulk
+        supercell are also written to "{formula}_bulk/{subfolder}".
 
         Returns None and a warning if the input kpoint settings correspond to
         a Γ-only kpoint mesh (in which case ``vasp_gam`` should be used).
@@ -1339,9 +1327,11 @@ class DefectRelaxSet(MSONable):
                 folder as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
                 using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\s (first with NKRED if using hybrid DFT, with the
-                ``write_nkred_std()`` method, then without NKRED).
+                continue the ``vasp(_nkred)_std`` relaxations from the ground-state
+                structures (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate`
+                (CLI) or ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)), first with NKRED if
+                using hybrid DFT, then without NKRED.
                 (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1396,9 +1386,9 @@ class DefectRelaxSet(MSONable):
 
         By default, does not generate ``POSCAR`` (input structure) files, as
         these should be taken from the ``CONTCAR``\s of ``ShakeNBreak`` calculations
-        (via ``snb-groundstate``) or, if not following the recommended
-        structure-searching workflow, from the ``CONTCAR``\s of ``vasp_gam``
-        calculations. If unperturbed ``POSCAR`` files are desired, set
+        (via ``snb-groundstate -d vasp_nkred_std``) or, if not following the
+        recommended structure-searching workflow, from the ``CONTCAR``\s of
+        ``vasp_gam`` calculations. If unperturbed ``POSCAR`` files are desired, set
         ``unperturbed_poscar=True``.
         If bulk is True, the input files for a singlepoint calculation of the
         bulk supercell are also written to "{formula}_bulk/{subfolder}".
@@ -1439,8 +1429,11 @@ class DefectRelaxSet(MSONable):
                 If True, write the unperturbed defect POSCAR to the generated
                 folder as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
-                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate`` ``CONTCAR``\s.
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then continue
+                the ``vasp(_nkred)_std`` relaxations from the ground-state structures
+                (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate` (CLI) or
+                ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)).
                 (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1449,7 +1442,12 @@ class DefectRelaxSet(MSONable):
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
-        if self.vasp_nkred_std is None:  # warns user if vasp_nkred_std is None
+        if self.vasp_nkred_std is None:  # warn user if vasp_nkred_std is None
+            warnings.warn(
+                "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` is None (as "
+                "NKRED acts to downsample the Fock exchange potential in _hybrid DFT_ calculations), "
+                "and so `vasp_std` should be used instead."
+            )
             return
 
         if defect_dir is None:
@@ -1492,8 +1490,8 @@ class DefectRelaxSet(MSONable):
         structure) files, as these should be taken from the ``CONTCAR``\s of
         ``vasp_std`` relaxations (originally from ``ShakeNBreak`` structure-
         searching relaxations), or directly from ``ShakeNBreak`` calculations
-        (via ``snb-groundstate``) if only Γ-point reciprocal space sampling is
-        required. If unperturbed ``POSCAR`` files are desired, set
+        (via ``snb-groundstate -d vasp_ncl``) if only Γ-point reciprocal space
+        sampling is required. If unperturbed ``POSCAR`` files are desired, set
         ``unperturbed_poscar=True``.
 
         If ``DefectRelaxSet.soc`` is False, then this returns None and a warning.
@@ -1534,11 +1532,13 @@ class DefectRelaxSet(MSONable):
                 If True, write the unperturbed defect POSCAR to the generated
                 folder as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
-                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
-                the final ``vasp_ncl`` singlepoint calculations.
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then continue
+                the ``vasp(_nkred)_std`` relaxations from the ground-state structures
+                (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate` (CLI) or
+                ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)), first with NKRED if
+                using hybrid DFT, then without, then use the ``vasp_std`` ``CONTCAR``\s
+                as the input structures for the final ``vasp_ncl`` singlepoint calculations.
                 (default: False)
             bulk (bool):
                 If True, the input files for a singlepoint calculation of the
@@ -1548,6 +1548,11 @@ class DefectRelaxSet(MSONable):
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
         if self.vasp_ncl is None:
+            warnings.warn(
+                "DefectRelaxSet.soc is False, so `vasp_ncl` is None (i.e. no `vasp_ncl` input files "
+                "have been generated). If SOC calculations are desired, set soc=True when initializing "
+                "DefectRelaxSet. Otherwise, use bulk_vasp_std or bulk_vasp_gam instead."
+            )
             return
 
         if defect_dir is None:
@@ -1618,13 +1623,13 @@ class DefectRelaxSet(MSONable):
 
         By default, ``POSCAR`` files are not generated for the ``vasp_(nkred_)std``
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
-        be taken from ``ShakeNBreak`` calculations (via ``snb-groundstate``)
-        or, if not following the recommended structure-searching workflow,
-        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
-        effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
-        should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
-        ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
-        folders, set ``unperturbed_poscar=True``.
+        be taken from ``ShakeNBreak`` calculations (via
+        ``snb-groundstate -d vasp_nkred_std``) or, if not following the recommended
+        structure-searching workflow, from the ``CONTCAR``\s of ``vasp_gam``
+        calculations. If including SOC effects (``self.soc = True``), then the
+        ``vasp_std`` ``CONTCAR``\s should be used as the ``vasp_ncl`` ``POSCAR``\s.
+        If unperturbed ``POSCAR`` files are desired for the ``vasp_(nkred_)std``
+        (and ``vasp_ncl``) folders, set ``unperturbed_poscar=True``.
 
         Input files for the singlepoint (static) bulk supercell reference
         calculation are also written to "{formula}_bulk/{subfolder}" if ``bulk``
@@ -1664,21 +1669,21 @@ class DefectRelaxSet(MSONable):
                 If True, write the unperturbed defect POSCARs to the generated
                 folders as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
-                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
-                the final ``vasp_ncl`` singlepoint calculations.
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then continue
+                the ``vasp(_nkred)_std`` relaxations from the ground-state structures
+                (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate` (CLI) or
+                ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)) first with NKRED if
+                using hybrid DFT, then without, then use the ``vasp_std`` ``CONTCAR``\s
+                as the input structures for the final ``vasp_ncl`` singlepoint
+                calculations.
                 (default: False)
             vasp_gam (bool):
                 If True, write the ``vasp_gam`` input files, with unperturbed defect
                 POSCAR. Not recommended, as the recommended workflow is to initially
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
-                relaxations from the 'Groundstate' ``CONTCAR``\s (first with NKRED if
-                using hybrid DFT, then without), then if including SOC effects, use
-                the ``vasp_std`` ``CONTCAR``\s as the input structures for the final
-                ``vasp_ncl`` singlepoint calculations.
+                relaxations from the SnB ground-state structures.
                 (default: False)
             bulk (bool, str):
                 If True, the input files for a singlepoint calculation of the
@@ -1774,7 +1779,7 @@ class DefectsSet(MSONable):
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
-        user_kpoints_settings: Optional[dict] = None,
+        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
         user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
@@ -2105,9 +2110,9 @@ class DefectsSet(MSONable):
         By default, ``POSCAR`` files are not generated for the ``vasp_(nkred_)std``
         (and ``vasp_ncl`` if ``self.soc`` is True) folders, as these should
         be taken from ``vasp_gam`` ``ShakeNBreak`` calculations (via
-        ``snb-groundstate``), some other structure-searching approach or, if not
-        following the recommended structure-searching workflow, from the
-        ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
+        ``snb-groundstate -d vasp_nkred_std``), some other structure-searching
+        approach or, if not following the recommended structure-searching workflow,
+        from the ``CONTCAR``\s of ``vasp_gam`` calculations. If including SOC
         effects (``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s
         should be used as the ``vasp_ncl`` ``POSCAR``\s. If unperturbed
         ``POSCAR`` files are desired for the ``vasp_(nkred_)std`` (and ``vasp_ncl``)
@@ -2151,21 +2156,21 @@ class DefectsSet(MSONable):
                 If True, write the unperturbed defect POSCARs to the generated
                 folders as well. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure searching
-                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the 'Groundstate'
-                ``CONTCAR``\s (first with NKRED if using hybrid DFT, then without),
-                then use the ``vasp_std`` ``CONTCAR``\s as the input structures for
-                the final ``vasp_ncl`` singlepoint calculations.
+                using ShakeNBreak (https://shakenbreak.readthedocs.io), then continue
+                the ``vasp(_nkred)_std`` relaxations from the ground-state structures
+                (e.g. using ``-d vasp_nkred_std`` with `snb-groundstate` (CLI) or
+                ``groundstate_folder="vasp_nkred_std"`` with
+                ``write_groundstate_structure`` (Python API)) first with NKRED if
+                using hybrid DFT, then without, then use the ``vasp_std`` ``CONTCAR``\s
+                as the input structures for the final ``vasp_ncl`` singlepoint
+                calculations.
                 (default: False)
             vasp_gam (bool):
                 If True, write the ``vasp_gam`` input files, with unperturbed defect
                 POSCARs. Not recommended, as the recommended workflow is to initially
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
-                relaxations from the 'Groundstate' ``CONTCAR``\s (first with NKRED if
-                using hybrid DFT, then without), then if including SOC effects, use
-                the ``vasp_std`` ``CONTCAR``\s as the input structures for the final
-                ``vasp_ncl`` singlepoint calculations.
+                relaxations from the SnB ground-state structures.
                 (default: False)
             bulk (bool, str):
                 If True, the input files for a singlepoint calculation of the
