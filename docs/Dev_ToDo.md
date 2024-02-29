@@ -105,13 +105,10 @@
 - Refactor all usages of `facet` to `limit`, more intuitive for most users.
 - Update Sb2O5 test in `test_analysis.py`
   - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
-- `bulk_vasp_xxx` attributes in `DefectRelaxSet` should be passed to `DefectsSet` as well (and then just used in writing?) – do this and test.
 - Plotting lines colour updates.
-- AgSbTe2 VASP IO tests
-- Add tip in SnB docs to specify `--folder vasp_std` when using `snb-groundstate` to write output groundstate structure to `doped` `vasp_std` folder. (And other SnB to-dos in Group_V_doping notebook)
+- Jupyter lab both notebooks for docstrings! (And other SnB to-dos in Group_V_doping notebook)
 - Add sanity check warning with `DefectsGenerator`, if input structure symmetry is `P1` – you sure about this??
 - Add spin degeneracy auto determination to get symmetries/degeneracies later (if hasn't been parsed with current code for some reason e.g. Kanta...). Should implement this for all degeneracy factors whenever concentration methods used?
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
 - Avoid `invalid value encountered in scalar divide` warning when using `plot_site_displacements(vector_to_project_on...)` and update advanced analysis tutorial. Also note in docs where in `calculation_metadata` this data is stored.
-- Add carrier concentration figure to thermo tutorial.
 - Note in chempot tutorial you may need to increase the kpoints range for certain metals to reach convergence. Also show writing `KPOINTS` files from convergence dict (as in Alkali_Doping notebook) to folders.
