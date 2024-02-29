@@ -155,29 +155,32 @@ def _calc_site_displacements(
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
-        if relative_to_defect:
-            # Find vector from defect to site, accounting for periodic boundary conditions
-            vector_defect_to_site = pbc_diff(
-                site.frac_coords, defect_sc_with_site[defect_site_index].frac_coords
-            )
-            norm = np.linalg.norm(vector_defect_to_site)
-            if norm == 0:  # If defect site and site are the same
-                disp_dict["Displacement wrt defect"].append(0)
-            else:
-                proj = np.dot(disp, vector_defect_to_site / norm)
-                disp_dict["Displacement wrt defect"].append(proj)
-        if vector_to_project_on is not None:
-            # Normalize vector to project on
-            norm = np.linalg.norm(vector_to_project_on)
-            if norm == 0:
-                raise ValueError(
-                    "Norm of vector to project on is zero! Choose a non-zero vector to project on."
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "invalid value encountered in scalar divide")
+            if relative_to_defect:
+                # Find vector from defect to site, accounting for periodic boundary conditions
+                vector_defect_to_site = pbc_diff(
+                    site.frac_coords, defect_sc_with_site[defect_site_index].frac_coords
                 )
-            proj = np.dot(disp, vector_to_project_on / norm)
-            angle = np.arccos(proj / np.linalg.norm(disp))
-            rejection = np.linalg.norm(disp) * np.sin(angle)
-            disp_dict["Displacement projected along vector"].append(proj)
-            disp_dict["Displacement perpendicular to vector"].append(rejection)
+                norm = np.linalg.norm(vector_defect_to_site)
+                if norm == 0:  # If defect site and site are the same
+                    disp_dict["Displacement wrt defect"].append(0)
+                else:
+                    proj = np.dot(disp, vector_defect_to_site / norm)
+                    disp_dict["Displacement wrt defect"].append(proj)
+            if vector_to_project_on is not None:
+                # Normalize vector to project on
+                norm = np.linalg.norm(vector_to_project_on)
+                if norm == 0:
+                    raise ValueError(
+                        "Norm of vector to project on is zero! Choose a non-zero vector to project on."
+                    )
+                proj = np.dot(disp, vector_to_project_on / norm)
+                angle = np.arccos(proj / np.linalg.norm(disp))
+                rejection = np.linalg.norm(disp) * np.sin(angle)
+                disp_dict["Displacement projected along vector"].append(proj)
+                disp_dict["Displacement perpendicular to vector"].append(rejection)
 
     # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
     element_list = [
