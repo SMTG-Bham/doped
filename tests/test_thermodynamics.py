@@ -313,21 +313,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
-        with self.assertRaises(TypeError) as exc:
+        with pytest.raises(TypeError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
         assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.exception)
 
-        with self.assertRaises(TypeError) as exc:
+        with pytest.raises(TypeError) as exc:
             defect_thermo.get_quenched_fermi_level_and_concentrations()
         assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.exception)
 
         if defect_thermo.chempots is None:
-            with self.assertRaises(ValueError) as exc:
+            with pytest.raises(ValueError) as exc:
                 defect_thermo.get_doping_windows()
             assert "No chemical potentials supplied or present" in str(exc.exception)
             assert "so doping windows cannot be calculated." in str(exc.exception)
 
-            with self.assertRaises(ValueError) as exc:
+            with pytest.raises(ValueError) as exc:
                 defect_thermo.get_dopability_limits()
             assert "No chemical potentials supplied or present" in str(exc.exception)
             assert "so dopability limits cannot be calculated." in str(exc.exception)
@@ -847,12 +847,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         def _check_formation_energy_methods(form_en_df_row, thermo_obj, fermi_level):
             defect_name_w_charge_state = f"{form_en_df_row[0]}_{int(form_en_df_row[1])}"
             print(defect_name_w_charge_state)  # for debugging
-            defect_entry = [
+            defect_entry = next(
                 entry
                 for entry in thermo_obj.defect_entries
                 if entry.name.rsplit("_", 1)[0] == defect_name_w_charge_state.rsplit("_", 1)[0]
                 and entry.charge_state == int(defect_name_w_charge_state.rsplit("_", 1)[1])
-            ][0]
+            )
 
             for name, entry in [
                 ("string", defect_name_w_charge_state),
@@ -999,7 +999,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(form_en_df.iloc[i]) == row
             _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap value
 
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.get_formation_energy("v_Cd_3")
         assert "No matching DefectEntry with v_Cd_3 in name found in " in str(exc.exception)
         assert "DefectThermodynamics.defect_entries, which have names:" in str(exc.exception)

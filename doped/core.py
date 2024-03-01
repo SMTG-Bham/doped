@@ -2,14 +2,13 @@
 Core functions and classes for defects in doped.
 """
 
-
 import collections
 import contextlib
 import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -115,27 +114,27 @@ class DefectEntry(thermo.DefectEntry):
     defect: "Defect"
     charge_state: int
     sc_entry: ComputedStructureEntry
-    corrections: Dict[str, float] = field(default_factory=dict)
-    corrections_metadata: Dict[str, Any] = field(default_factory=dict)
-    sc_defect_frac_coords: Optional[Tuple[float, float, float]] = None
+    corrections: dict[str, float] = field(default_factory=dict)
+    corrections_metadata: dict[str, Any] = field(default_factory=dict)
+    sc_defect_frac_coords: Optional[tuple[float, float, float]] = None
     bulk_entry: Optional[ComputedEntry] = None
     entry_id: Optional[str] = None
 
     # doped attributes:
     name: str = ""
-    calculation_metadata: Dict = field(default_factory=dict)
-    degeneracy_factors: Dict = field(default_factory=dict)
+    calculation_metadata: dict = field(default_factory=dict)
+    degeneracy_factors: dict = field(default_factory=dict)
     conventional_structure: Optional[Structure] = None
     conv_cell_frac_coords: Optional[np.ndarray] = None
-    equiv_conv_cell_frac_coords: List[np.ndarray] = field(default_factory=list)
-    _BilbaoCS_conv_cell_vector_mapping: List[int] = field(default_factory=lambda: [0, 1, 2])
+    equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
+    _BilbaoCS_conv_cell_vector_mapping: list[int] = field(default_factory=lambda: [0, 1, 2])
     wyckoff: Optional[str] = None
-    charge_state_guessing_log: Dict = field(default_factory=dict)
+    charge_state_guessing_log: dict = field(default_factory=dict)
     defect_supercell: Optional[Structure] = None
     defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Add `from_structures` method to
     # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
     # codes etc)
-    equivalent_supercell_sites: List[PeriodicSite] = field(default_factory=list)
+    equivalent_supercell_sites: list[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
 
     def __post_init__(self):
@@ -375,7 +374,7 @@ class DefectEntry(thermo.DefectEntry):
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         defect_region_radius: Optional[float] = None,
-        excluded_indices: Optional[List[int]] = None,
+        excluded_indices: Optional[list[int]] = None,
         defect_outcar: Optional[Union[str, Outcar]] = None,
         bulk_outcar: Optional[Union[str, Outcar]] = None,
         plot: bool = False,
@@ -823,7 +822,7 @@ def _get_dft_chempots(chempots, el_refs, limit):
     if chempots is not None:
         limit = _parse_limit(chempots, limit)
         if limit is None:
-            limit = list(chempots["limits"].keys())[0]
+            limit = next(iter(chempots["limits"].keys()))
             if "User" not in limit:
                 warnings.warn(
                     f"No chemical potential limit specified! Using {limit} for computing the "
@@ -888,10 +887,10 @@ class Defect(core.Defect):
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
         oxi_state: Optional[float] = None,
-        equivalent_sites: Optional[List[PeriodicSite]] = None,
+        equivalent_sites: Optional[list[PeriodicSite]] = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
-        user_charges: Optional[List[int]] = None,
+        user_charges: Optional[list[int]] = None,
         **doped_kwargs,
     ):
         """
@@ -927,9 +926,11 @@ class Defect(core.Defect):
             multiplicity=multiplicity,
             oxi_state=0,  # set oxi_state in more efficient and robust way below (crashes for large
             # input structures)
-            equivalent_sites=[site.to_unit_cell() for site in equivalent_sites]
-            if equivalent_sites is not None
-            else None,
+            equivalent_sites=(
+                [site.to_unit_cell() for site in equivalent_sites]
+                if equivalent_sites is not None
+                else None
+            ),
             symprec=symprec,
             angle_tolerance=angle_tolerance,
             user_charges=user_charges,
@@ -942,10 +943,10 @@ class Defect(core.Defect):
 
         self.conventional_structure: Optional[Structure] = doped_kwargs.get("conventional_structure", None)
         self.conv_cell_frac_coords: Optional[np.ndarray] = doped_kwargs.get("conv_cell_frac_coords", None)
-        self.equiv_conv_cell_frac_coords: List[np.ndarray] = doped_kwargs.get(
+        self.equiv_conv_cell_frac_coords: list[np.ndarray] = doped_kwargs.get(
             "equiv_conv_cell_frac_coords", []
         )
-        self._BilbaoCS_conv_cell_vector_mapping: List[int] = doped_kwargs.get(
+        self._BilbaoCS_conv_cell_vector_mapping: list[int] = doped_kwargs.get(
             "_BilbaoCS_conv_cell_vector_mapping", [0, 1, 2]
         )
         self.wyckoff: Optional[str] = doped_kwargs.get("wyckoff", None)
@@ -1003,9 +1004,11 @@ class Defect(core.Defect):
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
             oxi_state=None if bulk_oxi_states else defect.oxi_state,
-            equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
-            if defect.equivalent_sites is not None
-            else None,
+            equivalent_sites=(
+                [site.to_unit_cell() for site in defect.equivalent_sites]
+                if defect.equivalent_sites is not None
+                else None
+            ),
             symprec=defect.symprec,
             angle_tolerance=defect.angle_tolerance,
             user_charges=defect.user_charges,
@@ -1146,7 +1149,7 @@ class Defect(core.Defect):
 
             Same method as Structure.remove_oxidation_states().
             """
-            new_sp: Dict[Element, float] = collections.defaultdict(float)
+            new_sp: dict[Element, float] = collections.defaultdict(float)
             for el, occu in site.species.items():
                 sym = el.symbol
                 new_sp[Element(sym)] += occu

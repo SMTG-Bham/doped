@@ -3,6 +3,7 @@ Functions for setting up and parsing competing phase calculations in order to
 determine and analyse the elemental chemical potentials for defect formation
 energies.
 """
+
 import contextlib
 import copy
 import os
@@ -224,9 +225,7 @@ def _calculate_formation_energies(data: list, elemental: dict):
         by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
     )
     # drop num_atoms_in_fu and num_species
-    formation_energy_df = formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
-
-    return formation_energy_df
+    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom):
@@ -296,9 +295,9 @@ class CompetingPhases:
         Class to generate the input files for competing phases on the phase
         diagram for the host material (determining the chemical potential
         limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by ``e_above_hull``, to determine the relevant competing
-        phases. Diatomic gaseous molecules are generated as molecules-in-a-box
-        as appropriate.
+        range specified by ``e_above_hull``, to determine the relevant
+        competing phases. Diatomic gaseous molecules are generated as
+        molecules-in-a-box as appropriate.
 
         Args:
             composition (str, Composition): Composition of host material
@@ -618,11 +617,12 @@ class CompetingPhases:
         **kwargs,
     ):
         """
-        Generates VASP input files for ``vasp_std`` relaxations of the competing
-        phases, using HSE06 (hybrid DFT) DFT by default. Automatically sets the
-        ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not. Note that any
-        changes to the default ``INCAR``/``POTCAR`` settings should be consistent
-        with those used for the defect supercell calculations.
+        Generates VASP input files for ``vasp_std`` relaxations of the
+        competing phases, using HSE06 (hybrid DFT) DFT by default.
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
 
         Args:
             kpoints_metals (int):
@@ -1182,7 +1182,7 @@ class CompetingPhasesAnalyzer:
 
                 # try to find the file - will always pick the first match for vasprun.xml*
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
-                    vsp = list(Path(p).glob("vasprun.xml*"))[0]
+                    vsp = next(iter(Path(p).glob("vasprun.xml*")))
                     self.vasprun_paths.append(str(vsp))
 
                 else:
@@ -1330,9 +1330,7 @@ class CompetingPhasesAnalyzer:
         ]
         # if all values are None for a certain key, remove that key from all dicts in list:
         keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
-        data = [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
-
-        return data
+        return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
 
     def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
         """
@@ -1832,19 +1830,19 @@ def combine_extrinsic(first, second, extrinsic_species):
         dict.
     """
     keys = ["elemental_refs", "limits", "limits_wrt_el_refs"]
-    if not all(key in first for key in keys):
+    if any(key not in first for key in keys):
         raise KeyError(
             "the first dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if not all(key in second for key in keys):
+    if any(key not in second for key in keys):
         raise KeyError(
             "the second dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if extrinsic_species not in second["elemental_refs"].keys():
+    if extrinsic_species not in second["elemental_refs"]:
         raise ValueError("extrinsic species is not present in the second dictionary")
 
     cpa1 = copy.deepcopy(first)
@@ -1875,11 +1873,8 @@ def combine_extrinsic(first, second, extrinsic_species):
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
 
-    new_dict = {}
-    new_dict = {
+    return {
         "elemental_refs": new_elements,
         "limits": new_limits,
         "limits_wrt_el_refs": new_limits_wrt_el,
     }
-
-    return new_dict

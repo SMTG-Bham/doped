@@ -5,9 +5,10 @@ These tests are templated off those originally written by the PyCDT (
 https://doi.org/10.1016/j.cpc.2018.01.004)
 developers.
 """
+
 import os
 import unittest
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch
 
 import matplotlib as mpl
@@ -151,7 +152,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     ytos_dielectric: list
     CdTe_bulk_data_dir: str
     CdTe_dielectric: np.ndarray
-    v_Cd_dict: Dict[Any, Any]
+    v_Cd_dict: dict[Any, Any]
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 

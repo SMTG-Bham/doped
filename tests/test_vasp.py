@@ -1,6 +1,7 @@
 """
 Tests for the `doped.vasp` module.
 """
+
 import contextlib
 import filecmp
 import json
@@ -12,6 +13,7 @@ import warnings
 from threading import Thread
 
 import numpy as np
+import pytest
 from ase.build import bulk, make_supercell
 from monty.json import MontyEncoder
 from monty.serialization import loadfn
@@ -149,12 +151,12 @@ class DefectDictSetTest(unittest.TestCase):
             }
         else:
             assert not dds.potcars
-            with self.assertRaises(ValueError) as e:
+            with pytest.raises(ValueError) as e:
                 _test_pop = dds.potcar
             assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.exception)
 
             if dds.charge_state != 0:
-                with self.assertRaises(ValueError) as e:
+                with pytest.raises(ValueError) as e:
                     _test_pop = dds.incar
                 assert _check_nelect_nupdown_error(e.exception)
             else:
@@ -264,7 +266,7 @@ class DefectDictSetTest(unittest.TestCase):
             )
         else:
             if kwargs.pop("incar_check", True) and dds.charge_state != 0:  # charged defect INCAR
-                with self.assertRaises(ValueError) as e:
+                with pytest.raises(ValueError) as e:
                     self._general_defect_dict_set_check(  # also tests dds.charge_state
                         dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
                     )
@@ -462,7 +464,7 @@ class DefectDictSetTest(unittest.TestCase):
             and not _potcars_available()
         ):
             # error with charged defect and unperturbed_poscar=False
-            with self.assertRaises(ValueError) as e:
+            with pytest.raises(ValueError) as e:
                 dds.write_input(output_path, **kwargs)
             assert _check_potcar_dir_not_setup_warning_error(dds, e.exception, unperturbed_poscar=False)
             return
@@ -487,7 +489,7 @@ class DefectDictSetTest(unittest.TestCase):
                 dds_incar_without_comments["KPAR"], str
             ):
                 dds_incar_without_comments["KPAR"] = int(dds_incar_without_comments["KPAR"][0])
-            dds_incar_without_comments.pop([k for k in dds.incar if k.startswith("#")][0])
+            dds_incar_without_comments.pop(next(k for k in dds.incar if k.startswith("#")))
             assert written_incar == dds_incar_without_comments
 
             with open(f"{output_path}/INCAR") as f:
@@ -1229,7 +1231,7 @@ class DefectsSetTest(unittest.TestCase):
                         assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         else:
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 defects_set.write_files(
                     potcar_spec=True
                 )  # INCAR ValueError for charged defects if POTCARs not
@@ -1311,7 +1313,7 @@ class DefectsSetTest(unittest.TestCase):
         if _potcars_available():
             defects_set.write_files(potcar_spec=True, vasp_gam=True)  # vasp_gam to test POTCAR.spec
         else:
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 defects_set.write_files(potcar_spec=True, vasp_gam=True)  # INCAR ValueError for charged
                 # defects if POTCARs not available and unperturbed_poscar=False
             defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
@@ -1429,7 +1431,7 @@ class DefectsSetTest(unittest.TestCase):
         if _potcars_available():
             defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
         else:
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 defects_set.write_files(potcar_spec=True)  # INCAR ValueError for charged defects if
                 # POTCARs not available and unperturbed_poscar=False
             defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
@@ -1458,7 +1460,7 @@ class DefectsSetTest(unittest.TestCase):
             if _potcars_available():
                 defects_set.write_files()
             else:
-                with self.assertRaises(ValueError):
+                with pytest.raises(ValueError):
                     defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
                     # available
                 defects_set.write_files(unperturbed_poscar=True)
