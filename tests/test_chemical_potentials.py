@@ -5,6 +5,7 @@ Tests for the `doped.chemical_potentials` module.
 import os
 import shutil
 import unittest
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
+from test_analysis import if_present_rm
 
 from doped import chemical_potentials
 
@@ -44,6 +46,10 @@ class ChemPotsTestCase(unittest.TestCase):
 
         if Path("input.dat").is_file():
             os.remove("input.dat")
+
+        for i in os.listdir(self.path / "ZrO2"):
+            if i.startswith("."):
+                if_present_rm(self.path / "ZrO2" / i)
 
         return super().tearDown()
 
@@ -193,14 +199,40 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(lst_cpa.elemental) == 2
         assert len(lst_cpa.vasprun_paths) == 8
 
-        all_fols = []
-        for p in path.iterdir():
-            if not p.name.startswith("."):
-                pp = p / "relax"
-                all_fols.append(pp)
+        all_fols = [p / "relax" for p in path.iterdir() if not p.name.startswith(".")]
         lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_fols_cpa.from_vaspruns(path=all_fols)
         assert len(lst_fols_cpa.elemental) == 2
+
+    def test_vaspruns_hidden_files(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+
+        with open(f"{path}/._OUTCAR", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/._vasprun.xml", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/._LOCPOT", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/.DS_Store", "w") as f:
+            f.write("test pop")
+
+        with warnings.catch_warnings(record=True) as w:
+            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+
+    def test_vaspruns_none_parsed(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = Path(__file__).parents[1].joinpath("examples/competing_phases")
+
+        with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
+            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert "Failed to parse the following `vasprun.xml` files:\n(files: error)\n" in str(w[0].message)
+        assert "Is a directory" in str(w[0].message)
+        assert "No vasprun files have been parsed," in str(e.value)
 
     def test_cplap_input(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
