@@ -526,7 +526,10 @@ class DefectEntry(thermo.DefectEntry):
             raise ValueError(
                 "No PHS data loaded for defect_entry. Please parse with load_phs_data = True "
             )
-        return get_phs_and_eigenvalue(self, filename, **kwargs)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            return get_phs_and_eigenvalue(self, filename, **kwargs)
 
     def _get_chempot_term(self, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}
