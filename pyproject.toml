@@ -116,5 +116,5 @@ wrap-descriptions = 79
 
 [tool.codespell]
 ignore-words-list = """
-titel,te,bu,aack,unx,nd,efect,vise
+titel,te,bu,aack,unx,nd,efect,vise,Mater,SiSe
 """
