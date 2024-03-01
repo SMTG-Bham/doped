@@ -127,6 +127,10 @@ class DopedKpoints(Kpoints):
 
 
 class DefectDictSet(DictSet):
+    """
+    Extension to pymatgen DictSet object for VASP defect calculations.
+    """
+
     def __init__(
         self,
         structure: Structure,
@@ -139,8 +143,6 @@ class DefectDictSet(DictSet):
         **kwargs,
     ):
         """
-        Extension to pymatgen DictSet object for VASP defect calculations.
-
         Args:
             structure (Structure): pymatgen Structure object of the defect supercell
             charge_state (int): Charge of the defect structure
@@ -477,6 +479,12 @@ def scaled_ediff(natoms: int) -> float:
 
 
 class DefectRelaxSet(MSONable):
+    """
+    An object for generating input files for VASP defect relaxation
+    calculations from pymatgen ``DefectEntry`` (recommended) or ``Structure``
+    objects.
+    """
+
     def __init__(
         self,
         defect_entry: Union[DefectEntry, Structure],
@@ -489,10 +497,6 @@ class DefectRelaxSet(MSONable):
         **kwargs,
     ):
         r"""
-        An object for generating input files for VASP defect relaxation
-        calculations from pymatgen ``DefectEntry`` (recommended) or ``Structure``
-        objects.
-
         The supercell structure and charge state are taken from the ``DefectEntry``
         attributes, or if a ``Structure`` is provided, then from the
         ``defect_supercell`` and ``charge_state`` input parameters.
@@ -1774,6 +1778,11 @@ class DefectRelaxSet(MSONable):
 
 
 class DefectsSet(MSONable):
+    """
+    An object for generating input files for VASP defect calculations from
+    doped/pymatgen ``DefectEntry`` objects.
+    """
+
     def __init__(
         self,
         defect_entries: Union[DefectsGenerator, Dict[str, DefectEntry], List[DefectEntry], DefectEntry],
@@ -1785,8 +1794,6 @@ class DefectsSet(MSONable):
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
         r"""
-        An object for generating input files for VASP defect calculations from
-        doped/pymatgen ``DefectEntry`` objects.
         Creates a dictionary of: {defect_species: DefectRelaxSet}.
 
         DefectRelaxSet has the attributes:
