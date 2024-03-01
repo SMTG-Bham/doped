@@ -724,17 +724,17 @@ class DefectThermodynamics(MSONable):
             interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
-            # Group the intersections and corresponding limits
-            ints_and_limits_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
-            # Only include the limits corresponding to entries, not the boundaries
+            # Group the intersections and corresponding facets
+            ints_and_facets_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
+            # Only include the facets corresponding to entries, not the boundaries
             total_entries = len(sorted_defect_entries)
-            ints_and_limits_filter = filter(
-                lambda int_and_limit: all(np.array(int_and_limit[1]) < total_entries),
-                ints_and_limits_zip,
+            ints_and_facets_filter = filter(
+                lambda int_and_facet: all(np.array(int_and_facet[1]) < total_entries),
+                ints_and_facets_zip,
             )
             # sort based on transition level
-            ints_and_limits_list = sorted(
-                ints_and_limits_filter, key=lambda int_and_limit: int_and_limit[0][0]
+            ints_and_facets_list = sorted(
+                ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
             # take simplest (shortest) possible defect name, with lowest energy, as the name for that group
@@ -752,16 +752,16 @@ class DefectThermodynamics(MSONable):
             )
             transition_level_map, all_entries, stable_entries, defect_charge_map = output_dicts
 
-            if len(ints_and_limits_list) > 0:  # unpack into lists
-                _, limits = zip(*ints_and_limits_list)
+            if len(ints_and_facets_list) > 0:  # unpack into lists
+                _, facets = zip(*ints_and_facets_list)
                 transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
                     intersection[0]: sorted(
-                        [sorted_defect_entries[i].charge_state for i in limit], reverse=True
+                        [sorted_defect_entries[i].charge_state for i in facet], reverse=True
                     )
-                    for intersection, limit in ints_and_limits_list
+                    for intersection, facet in ints_and_facets_list
                 }
                 stable_entries[defect_name_wout_charge] = [
-                    sorted_defect_entries[i] for dual in limits for i in dual
+                    sorted_defect_entries[i] for dual in facets for i in dual
                 ]
                 defect_charge_map[defect_name_wout_charge] = sorted(
                     [entry.charge_state for entry in sorted_defect_entries], reverse=True
@@ -772,7 +772,7 @@ class DefectThermodynamics(MSONable):
                 stable_entries[defect_name_wout_charge] = [sorted_defect_entries[0]]
                 defect_charge_map[defect_name_wout_charge] = [sorted_defect_entries[0].charge_state]
 
-            else:  # if ints_and_limits is empty, then there is likely only one defect...
+            else:  # if ints_and_facets is empty, then there is likely only one defect...
                 # confirm formation energies dominant for one defect over other identical defects
                 name_set = [entry.name for entry in sorted_defect_entries]
                 vb_list = [

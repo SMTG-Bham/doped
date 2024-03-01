@@ -260,8 +260,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(df, pd.DataFrame)
         if chempots is not None:
             assert any(
-                "No limit (chemical potential limit) specified! Using" in str(warn.message)
-                for warn in conc_w
+                "No chemical potential limit specified! Using" in str(warn.message) for warn in conc_w
             )
 
         df_or_list, form_e_output, form_e_w = _run_func_and_capture_stdout_warnings(
@@ -869,7 +868,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     assert len(w) == 2
                     assert "No chemical potentials supplied" in str(w[0].message)
                     assert (
-                        "You have specified a limit (chemical potential limit) but no chemical potentials "
+                        "You have specified a chemical potential limit but no chemical potentials "
                         "(`chempots`) were supplied, so `limit` will be ignored." in str(w[-1].message)
                     )
 
@@ -884,7 +883,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         )
                     assert len(w) == 1
                     assert (
-                        "No limit (chemical potential limit) specified! Using Cd-CdTe for computing "
+                        "No chemical potential limit specified! Using Cd-CdTe for computing "
                         "the formation energy" in str(w[0].message)
                     )
                     limits = ["CdTe-Te", "Te-rich"]
