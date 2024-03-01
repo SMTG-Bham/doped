@@ -6,12 +6,13 @@ alongside substantial modification, in the efforts of making an efficient,
 user-friendly package for managing and analysing defect calculations, with
 publication-quality outputs.
 """
+
 import contextlib
 import inspect
 import os
 import warnings
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 from filelock import FileLock
@@ -107,8 +108,8 @@ def check_and_set_defect_entry_name(
     defect_entry: DefectEntry, possible_defect_name: str = "", bulk_symm_ops: Optional[list] = None
 ) -> None:
     """
-    Check that ``possible_defect_name`` is a recognised format by doped (i.e. in
-    the format "{defect_name}_{optional_site_info}_{charge_state}").
+    Check that ``possible_defect_name`` is a recognised format by doped (i.e.
+    in the format "{defect_name}_{optional_site_info}_{charge_state}").
 
     If the DefectEntry.name attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
@@ -441,11 +442,11 @@ def defect_entry_from_paths(
     **kwargs,
 ):
     """
-    Parse the defect calculation outputs in ``defect_path`` and return the parsed
-    ``DefectEntry`` object. By default, the ``DefectEntry.name`` attribute (later
-    used to label the defects in plots) is set to the defect_path folder name
-    (if it is a recognised defect name), else it is set to the default doped
-    name for that defect.
+    Parse the defect calculation outputs in ``defect_path`` and return the
+    parsed ``DefectEntry`` object. By default, the ``DefectEntry.name``
+    attribute (later used to label the defects in plots) is set to the
+    defect_path folder name (if it is a recognised defect name), else it is set
+    to the default doped name for that defect.
 
     Note that the bulk and defect supercells should have the same definitions/basis
     sets (for site-matching and finite-size charge corrections to work appropriately).
@@ -670,7 +671,7 @@ class DefectsParser:
             elif len([dir for dir in possible_bulk_folders if dir.endswith("_bulk")]) == 1:
                 self.bulk_path = os.path.join(
                     self.output_path,
-                    [dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")][0],
+                    next(iter(dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk"))),
                 )
             else:
                 raise ValueError(
@@ -838,18 +839,18 @@ class DefectsParser:
             flattened_warnings_list = [
                 warning for warning_list in split_parsing_warnings for warning in warning_list
             ]
-            duplicate_warnings: Dict[str, List[str]] = {
+            duplicate_warnings: dict[str, list[str]] = {
                 warning: []
                 for warning in set(flattened_warnings_list)
                 if flattened_warnings_list.count(warning) > 1
             }
             new_parsing_warnings = []
-            parsing_errors_dict: Dict[str, List[str]] = {
+            parsing_errors_dict: dict[str, list[str]] = {
                 message.split("got error: ")[1]: []
                 for message in set(flattened_warnings_list)
                 if "Parsing failed" in message
             }
-            multiple_files_warning_dict: Dict[str, List[tuple]] = {
+            multiple_files_warning_dict: dict[str, list[tuple]] = {
                 "vasprun.xml": [],
                 "OUTCAR": [],
                 "LOCPOT": [],
@@ -1111,9 +1112,9 @@ class DefectsParser:
 
         if self.json_filename is not False:  # save to json unless json_filename is False:
             if self.json_filename is None:
-                formula = list(self.defect_dict.values())[
-                    0
-                ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+                formula = next(
+                    iter(self.defect_dict.values())
+                ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
                 self.json_filename = f"{formula}_defect_dict.json"
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
@@ -1210,8 +1211,8 @@ class DefectsParser:
 
     def get_defect_thermodynamics(
         self,
-        chempots: Optional[Dict] = None,
-        el_refs: Optional[Dict] = None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
         vbm: Optional[float] = None,
         band_gap: Optional[float] = None,
         dist_tol: float = 1.5,
@@ -1301,9 +1302,9 @@ class DefectsParser:
         """
         Returns a string representation of the DefectsParser object.
         """
-        formula = list(self.defect_dict.values())[
-            0
-        ].defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        formula = next(
+            iter(self.defect_dict.values())
+        ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         attrs = {k for k in vars(self) if not k.startswith("_")}
         methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
         properties = {
@@ -1409,10 +1410,11 @@ class DefectParser:
     ):
         """
         Parse the defect calculation outputs in ``defect_path`` and return the
-        ``DefectParser`` object. By default, the ``DefectParser.defect_entry.name``
-        attribute (later used to label defects in plots) is set to the
-        defect_path folder name (if it is a recognised defect name), else it is
-        set to the default doped name for that defect.
+        ``DefectParser`` object. By default, the
+        ``DefectParser.defect_entry.name`` attribute (later used to label
+        defects in plots) is set to the defect_path folder name (if it is a
+        recognised defect name), else it is set to the default doped name for
+        that defect.
 
         Note that the bulk and defect supercells should have the same definitions/basis
         sets (for site-matching and finite-size charge corrections to work appropriately).
@@ -1787,9 +1789,9 @@ class DefectParser:
                             # convert anisotropic dielectric to harmonic mean of the diagonal:
                             # (this is a better approximation than the pymatgen default of the
                             # standard arithmetic mean of the diagonal)
-                            self.defect_entry.calculation_metadata[
-                                "dielectric"
-                            ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                            self.defect_entry.calculation_metadata["dielectric"] = (
+                                _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                            )
                         self.load_FNV_data()
                         if not isotropic_dielectric:
                             warnings.warn(
@@ -1832,9 +1834,9 @@ class DefectParser:
                     # convert anisotropic dielectric to harmonic mean of the diagonal:
                     # (this is a better approximation than the pymatgen default of the
                     # standard arithmetic mean of the diagonal)
-                    self.defect_entry.calculation_metadata[
-                        "dielectric"
-                    ] = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                    self.defect_entry.calculation_metadata["dielectric"] = (
+                        _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
+                    )
                 self.load_FNV_data()
                 if not isotropic_dielectric:
                     warnings.warn(

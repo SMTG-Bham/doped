@@ -12,6 +12,7 @@ import unittest
 import warnings
 
 import matplotlib as mpl
+import pytest
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
 
@@ -206,15 +207,15 @@ class DefectPlottingTestCase(unittest.TestCase):
 
         # check exceptions raised: invalid charge or defect_species
         # test error catching:
-        with self.assertRaises(ValueError) as e:
-            wrong_charge_error = ValueError(
-                "Problem reading defect name vac_1_Cd_a, should end with charge state after "
-                "underscore (e.g. vac_1_Cd_0)"
-            )
+        wrong_charge_error = ValueError(
+            "Problem reading defect name vac_1_Cd_a, should end with charge state after "
+            "underscore (e.g. vac_1_Cd_0)"
+        )
+        with pytest.raises(ValueError) as e:
             plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
-            assert wrong_charge_error in e.exception
+        assert wrong_charge_error in e.exception
 
-        self.assertRaises(
+        pytest.raises(
             TypeError,
             plotting.format_defect_name,
             defect_species=2,
@@ -394,7 +395,7 @@ class DefectPlottingTestCase(unittest.TestCase):
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_plot_limit_no_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(limit="Te-rich")
         assert (
             "You have specified a chemical potential limit, but no `chempots` have been supplied, "
@@ -402,7 +403,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         ) in str(exc.exception)
 
     def test_plot_limit_user_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, limit="Te-rich")
         assert (
             "You have specified a chemical potential limit, but the supplied chempots are not in the "

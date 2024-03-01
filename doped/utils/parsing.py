@@ -1,6 +1,7 @@
 """
 Helper functions for parsing VASP supercell defect calculations.
 """
+
 import contextlib
 import itertools
 import os
@@ -89,8 +90,8 @@ def get_outcar(outcar_path):
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
     """
-    Search for all files with filenames matching ``output_file``,
-    case-insensitive.
+    Search for all files with filenames matching ``output_file``, case-
+    insensitive.
 
     Returns (output file path, Multiple?) where Multiple is True if multiple
     matching files are found.
@@ -125,9 +126,9 @@ def get_defect_type_and_composition_diff(bulk, defect):
         if int(defect_amount - bulk_comp.get(element, 0)) != 0
     }
 
-    if len(composition_diff) == 1 and list(composition_diff.values())[0] == 1:
+    if len(composition_diff) == 1 and next(iter(composition_diff.values())) == 1:
         defect_type = "interstitial"
-    elif len(composition_diff) == 1 and list(composition_diff.values())[0] == -1:
+    elif len(composition_diff) == 1 and next(iter(composition_diff.values())) == -1:
         defect_type = "vacancy"
     elif len(composition_diff) == 2:
         defect_type = "substitution"
@@ -294,7 +295,7 @@ def _get_species_from_composition_diff(composition_diff, el_change):
     """
     Get the species corresponding to the given change in composition.
     """
-    return [el for el, amt in composition_diff.items() if amt == el_change][0]
+    return next(el for el, amt in composition_diff.items() if amt == el_change)
 
 
 def get_coords_and_idx_of_species(structure, species_name):
@@ -339,10 +340,12 @@ def find_nearest_coords(
         if len(np.unique(site_matches)) != len(site_matches):
             _site_matching_failure_error(defect_type, searched_structure)
 
-        return list(
-            set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
-            - set(site_matches)
-        )[0]
+        return next(
+            iter(
+                set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
+                - set(site_matches)
+            )
+        )
 
     if len(site_matches.shape) == 0:
         # if there are any other matches with a distance within unique_tolerance of the located site

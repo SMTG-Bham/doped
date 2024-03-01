@@ -8,6 +8,7 @@ import unittest
 
 import matplotlib as mpl
 import numpy as np
+import pytest
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
 from doped import core
@@ -114,15 +115,15 @@ class DefectDisplacementsTestCase(unittest.TestCase):
     def test_plot_site_displacements_error(self):
         # Check ValueError raised if user sets both separated_by_direction and vector_to_project_on
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json")
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             defect_entry.plot_site_displacements(
                 separated_by_direction=True, vector_to_project_on=[0, 0, 1]
             )
         # Same but if user sets separated_by_direction and relative_to_defect
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             defect_entry.plot_site_displacements(separated_by_direction=True, relative_to_defect=True)
         # Same but if user sets vector_to_project_on and relative_to_defect
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], relative_to_defect=True)
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")

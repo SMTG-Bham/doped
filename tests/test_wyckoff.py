@@ -1,10 +1,12 @@
 """
 Tests for the `doped.utils.symmetry` module.
 """
+
 import os
 import unittest
 
 import numpy as np
+import pytest
 from pymatgen.core.structure import Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
@@ -74,12 +76,12 @@ class WyckoffTest(unittest.TestCase):
                 ]
             )
 
-        with self.assertRaises(ValueError) as e:
-            no_sgn_or_dict_error = ValueError(
-                "If inputting `conv_cell_site` and not `defect_entry`, either `sgn` or `wyckoff_dict` "
-                "must be provided."
-            )
+        no_sgn_or_dict_error = ValueError(
+            "If inputting `conv_cell_site` and not `defect_entry`, either `sgn` or `wyckoff_dict` "
+            "must be provided."
+        )
+        with pytest.raises(ValueError) as e:
             label, equiv_coord_list = get_wyckoff_label_and_equiv_coord_list(
                 conv_cell_site=self.conv_cdte[0],  # no sgn
             )
-            assert no_sgn_or_dict_error in e.exception
+        assert no_sgn_or_dict_error in e.exception

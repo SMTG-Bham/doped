@@ -3,19 +3,23 @@ Tests for the `doped.generation` module.
 
 Implicitly tests the `doped.utils.symmetry` module as well.
 """
+
 import copy
 import filecmp
 import json
+import operator
 import os
 import random
 import shutil
 import sys
 import unittest
 import warnings
+from functools import reduce
 from io import StringIO
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 from ase.build import bulk, make_supercell
 from monty.json import MontyEncoder
 from monty.serialization import dumpfn, loadfn
@@ -972,24 +976,24 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         assert random_defect_entry_name not in defect_gen
         defect_gen[random_defect_entry_name] = random_defect_entry  # __setitem__()
         # assert setting something else throws an error
-        with self.assertRaises(TypeError) as e:
+        with pytest.raises(TypeError) as e:
             defect_gen[random_defect_entry_name] = random_defect_entry.defect
-            assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
 
-        with self.assertRaises(ValueError) as e:
-            fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
-            fd_up_random_defect_entry.defect.structure = self.CdTe_bulk_supercell  # any structure that
-            # isn't used as a primitive structure for any defect gen will do here
+        fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
+        fd_up_random_defect_entry.defect.structure = self.CdTe_bulk_supercell  # any structure that
+        # isn't used as a primitive structure for any defect gen will do here
+        with pytest.raises(ValueError) as e:
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
-            assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
-                e.exception
-            )
+        assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
+            e.exception
+        )
 
-        with self.assertRaises(ValueError) as e:
-            fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
-            fd_up_random_defect_entry.sc_entry = copy.deepcopy(self.fd_up_sc_entry)
+        fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
+        fd_up_random_defect_entry.sc_entry = copy.deepcopy(self.fd_up_sc_entry)
+        with pytest.raises(ValueError) as e:
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
-            assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
 
     def _generate_and_test_no_warnings(self, structure, min_image_distance=None, **kwargs):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -2247,7 +2251,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         defect_gen.defect_entries = {
             k: v
             for k, v in defect_gen.defect_entries.items()
-            if any(i == v.defect for i in sum(defect_gen.defects.values(), []))
+            if any(i == v.defect for i in reduce(operator.iconcat, defect_gen.defects.values(), []))
         }
         return defect_gen
 
@@ -2673,13 +2677,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def test_cu_no_generate_supercell(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
-        with self.assertRaises(ValueError) as e:
-            single_site_no_supercell_error = ValueError(
-                "Input structure has only one site, so cannot generate defects without supercell (i.e. "
-                "with generate_supercell=False)! Vacancy defect will give empty cell!"
-            )
+        single_site_no_supercell_error = ValueError(
+            "Input structure has only one site, so cannot generate defects without supercell (i.e. "
+            "with generate_supercell=False)! Vacancy defect will give empty cell!"
+        )
+        with pytest.raises(ValueError) as e:
             DefectsGenerator(self.prim_cu, generate_supercell=False)
-            assert single_site_no_supercell_error in e.exception
+        assert single_site_no_supercell_error in e.exception
 
     def agcu_defect_gen_check(self, agcu_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(agcu_defect_gen)
@@ -2994,7 +2998,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         zn3p2_tld_stable_charges = {  # from Yihuang and Geoffroy's: https://arxiv.org/abs/2306.13583
             "v_Zn": list(range(-2, 0 + 1)),
             "v_P": list(range(-1, +1 + 1)),
-            "Zn_i": list(range(0, +2 + 1)),
+            "Zn_i": list(range(+2 + 1)),
             "P_i": list(range(-1, +3 + 1)),
             "Zn_P": list(range(-2, +3 + 1)),  # -2 just below CBM...
             "P_Zn": list(range(-1, +3 + 1)),
@@ -3016,7 +3020,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             "Sb_Se": list(range(-1, +3 + 1)),
             "Se_Sb": list(range(-1, +1 + 1)),
             "Sb_i": list(range(-1, +3 + 1)),
-            "Se_i": list(range(0, +4 + 1)),
+            "Se_i": list(range(+4 + 1)),
         }
 
         # note Sb2Se3 is a case where the lattice vectors are swapped to match the BCS conv cell definition

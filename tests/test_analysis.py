@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
+import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
 from test_thermodynamics import custom_mpl_image_compare
@@ -394,7 +395,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
-        with self.assertRaises(FileNotFoundError) as exc:
+        with pytest.raises(FileNotFoundError) as exc:
             DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam")
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
@@ -528,7 +529,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     def test_DefectsParser_no_defects_parsed_error(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, subfolder="vasp_gam")
         assert (
             f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
@@ -539,7 +540,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="O_Se_example_defects_plot.png")
     def test_extrinsic_Sb2Se3(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             DefectsParser(
                 output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
                 dielectric=self.Sb2Se3_dielectric,
@@ -1918,9 +1919,12 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             )
 
         # edit vasprun.xml.gz to have different INCAR tags:
-        with gzip.open(
-            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl/vasprun.xml.gz", "rb"
-        ) as f_in, open("./vasprun.xml", "wb") as f_out:
+        with (
+            gzip.open(
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl/vasprun.xml.gz", "rb"
+            ) as f_in,
+            open("./vasprun.xml", "wb") as f_out,
+        ):
             shutil.copyfileobj(f_in, f_out)
 
         # open vasprun.xml, edit ENCUT and add LDAU to INCAR but with default value:
@@ -2053,7 +2057,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
     #     # DefectsParser/DefectThermodynamics tests
     #     for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
     #         print(defect_type)  # for debugging
-    #         with self.assertRaises(ValueError) as exc:
+    #         with pytest.raises(ValueError) as exc:
     #             get_orientational_degeneracy(
     #                 relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
     #             )

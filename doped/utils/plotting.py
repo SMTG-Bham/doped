@@ -6,10 +6,11 @@ and AIDE (by Adam Jackson and Alex Ganose), alongside substantial modification,
 in the efforts of making an efficient, user-friendly package for managing and
 analysing defect calculations, with publication-quality outputs.
 """
+
 import contextlib
 import re
 import warnings
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -640,8 +641,8 @@ def _rename_key_and_dicts(
     """
     Given an input key, renames the key if it already exists in the
     ``output_dicts`` dictionaries (to ``key``_a, ``key``_b, ``key``_c etc),
-    renames the corresponding keys in the dictionaries, and returns the
-    renamed key and updated dictionaries.
+    renames the corresponding keys in the dictionaries, and returns the renamed
+    key and updated dictionaries.
     """
     output_dict = output_dicts[0]
     if key in output_dict or any(
@@ -864,13 +865,13 @@ def _TLD_plot(
         )
 
     for cnt, def_name in enumerate(xy.keys()):  # plot transition levels
-        x_trans: List[float] = []
-        y_trans: List[float] = []
+        x_trans: list[float] = []
+        y_trans: list[float] = []
         tl_labels, tl_label_type = [], []
         for x_val, chargeset in defect_thermodynamics.transition_level_map[def_name].items():
             x_trans.append(x_val)
             y_trans.append(
-                [
+                next(
                     defect_thermodynamics.get_formation_energy(
                         defect_entry,
                         chempots=dft_chempots,
@@ -878,7 +879,7 @@ def _TLD_plot(
                     )
                     for defect_entry in defect_thermodynamics.stable_entries[def_name]
                     if defect_entry.charge_state == chargeset[0]
-                ][0]
+                )
             )
             tl_labels.append(
                 rf"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
@@ -911,9 +912,11 @@ def _TLD_plot(
 
     ax.legend(
         _get_legends_txt(
-            [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
-            if all_entries is True
-            else defect_names_for_legend,
+            (
+                [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
+                if all_entries is True
+                else defect_names_for_legend
+            ),
             all_entries=all_entries is True,
         ),
         loc=2,
