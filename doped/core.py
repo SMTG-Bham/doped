@@ -794,9 +794,9 @@ class DefectEntry(thermo.DefectEntry):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
-        from doped.utils.displacements import _plot_site_displacements
+        from doped.utils.displacements import plot_site_displacements
 
-        return _plot_site_displacements(
+        return plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
             relative_to_defect=relative_to_defect,

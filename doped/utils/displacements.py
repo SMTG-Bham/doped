@@ -28,7 +28,7 @@ except ImportError:
     plotly_installed = False
 
 
-def _calc_site_displacements(
+def calc_site_displacements(
     defect_entry,
     vector_to_project_on: Optional[list] = None,
     relative_to_defect: Optional[bool] = False,
@@ -254,7 +254,7 @@ def _calc_site_displacements(
     return disp_dict
 
 
-def _plot_site_displacements(
+def plot_site_displacements(
     defect_entry,
     separated_by_direction: Optional[bool] = False,
     relative_to_defect: Optional[bool] = False,
@@ -368,7 +368,7 @@ def _plot_site_displacements(
             " and vector_to_project_on=None)"
         )
 
-    disp_dict = _calc_site_displacements(
+    disp_dict = calc_site_displacements(
         defect_entry=defect_entry,
         relative_to_defect=relative_to_defect,
         vector_to_project_on=vector_to_project_on,
