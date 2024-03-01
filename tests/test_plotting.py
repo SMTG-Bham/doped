@@ -45,7 +45,7 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
-        return self.CdTe_thermo.plot(self.CdTe_chempots, facet="CdTe-Te")
+        return self.CdTe_thermo.plot(self.CdTe_chempots, limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_listed_colormap.png")
     def test_plot_CdTe_custom_listed_colormap(self):
@@ -60,12 +60,12 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe_multiple_figs(self):
-        # when facets not specified, plots all of them (second should be Te-rich here)
+        # when limits not specified, plots all of them (second should be Te-rich here)
         return self.CdTe_thermo.plot(self.CdTe_chempots)[1]
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
-        # when facets not specified, plots all of them (first should be Cd-rich here)
+        # when limits not specified, plots all of them (first should be Cd-rich here)
         return self.CdTe_thermo.plot(self.CdTe_chempots)[0]
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -389,25 +389,25 @@ class DefectPlottingTestCase(unittest.TestCase):
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))
-        return thermo.plot(chempots, facet="V2O5-O2")
+        return thermo.plot(chempots, limit="V2O5-O2")
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
-    def test_plot_facet_no_chempots_error(self):
+    def test_plot_limit_no_chempots_error(self):
         with self.assertRaises(ValueError) as exc:
-            self.CdTe_defect_thermo.plot(facet="Te-rich")
+            self.CdTe_defect_thermo.plot(limit="Te-rich")
         assert (
-            "You have specified a chemical potential facet, but no `chempots` have been supplied, "
-            "so `facet` cannot be used here!"
+            "You have specified a chemical potential limit, but no `chempots` have been supplied, "
+            "so `limit` cannot be used here!"
         ) in str(exc.exception)
 
-    def test_plot_facet_user_chempots_error(self):
+    def test_plot_limit_user_chempots_error(self):
         with self.assertRaises(ValueError) as exc:
-            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, facet="Te-rich")
+            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, limit="Te-rich")
         assert (
-            "You have specified a chemical potential facet, but the supplied chempots are not in the "
-            "doped format (i.e. with `facets` in the chempots dict), and instead correspond to just a "
-            "single phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
+            "You have specified a chemical potential limit, but the supplied chempots are not in the "
+            "doped format (i.e. with `limits` in the chempots dict), and instead correspond to just a "
+            "single chemical potential limit, so `limit` cannot be used here!"
         ) in str(exc.exception)
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
@@ -423,16 +423,16 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot_explicit_facet(self):
+    def test_default_CdTe_plot_explicit_limit(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="CdTe-Te")
+        return self.CdTe_defect_thermo.plot(limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_specified_chempots(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
     def test_default_CdTe_plot_manual_chempots(self):
@@ -475,35 +475,35 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_default_CdTe_plot_edited_el_refs(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_edited_el_refs_other(self):
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_default_CdTe_plot_Cd_rich(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Cd-rich")
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Cd-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich")
+        return self.V2O5_defect_thermo.plot(limit="O-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot_reduced_dist_tol(self):
         self.V2O5_defect_thermo.dist_tol = 1e-4
         # still two neutral vacancies merged as their site is the exact same
-        return self.V2O5_defect_thermo.plot(facet="O-rich")
+        return self.V2O5_defect_thermo.plot(limit="O-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot_all_entries.png")
     def test_V2O5_O_rich_all_entries_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries=True)
+        return self.V2O5_defect_thermo.plot(limit="O-rich", all_entries=True)
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot_faded.png")
     def test_V2O5_O_rich_faded_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries="faded")
+        return self.V2O5_defect_thermo.plot(limit="O-rich", all_entries="faded")
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
     def test_CdTe_LZ_all_defects_plot(self):
@@ -511,7 +511,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
         )
         CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
-        return CdTe_LZ_thermo_wout_meta.plot(facet="Te-rich")
+        return CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
@@ -522,7 +522,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
         lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
 
-        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
     def test_CdTe_FNV_all_defects_plot_default_old_names(self):

@@ -454,8 +454,8 @@ class CombineExtrinsicTestCase(unittest.TestCase):
     def test_combine_extrinsic(self):
         d = chemical_potentials.combine_extrinsic(self.first, self.second, self.extrinsic_species)
         assert len(d["elemental_refs"].keys()) == 4
-        facets = list(d["facets"].keys())
-        assert facets[0].rsplit("-", 1)[1] == "Y2Zr2O7"
+        limits = list(d["limits"].keys())
+        assert limits[0].rsplit("-", 1)[1] == "Y2Zr2O7"
 
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}

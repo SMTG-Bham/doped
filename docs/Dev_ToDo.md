@@ -102,7 +102,6 @@
   there's any useful functionality we want to add!
 
 ## SK To-Do for next update:
-- Refactor all usages of `facet` to `limit`, more intuitive for most users.
 - Update Sb2O5 test in `test_analysis.py`
   - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
 - Plotting lines colour updates.
