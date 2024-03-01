@@ -315,22 +315,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         with pytest.raises(TypeError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
-        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.exception)
+        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.value)
 
         with pytest.raises(TypeError) as exc:
             defect_thermo.get_quenched_fermi_level_and_concentrations()
-        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.exception)
+        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.value)
 
         if defect_thermo.chempots is None:
             with pytest.raises(ValueError) as exc:
                 defect_thermo.get_doping_windows()
-            assert "No chemical potentials supplied or present" in str(exc.exception)
-            assert "so doping windows cannot be calculated." in str(exc.exception)
+            assert "No chemical potentials supplied or present" in str(exc.value)
+            assert "so doping windows cannot be calculated." in str(exc.value)
 
             with pytest.raises(ValueError) as exc:
                 defect_thermo.get_dopability_limits()
-            assert "No chemical potentials supplied or present" in str(exc.exception)
-            assert "so dopability limits cannot be calculated." in str(exc.exception)
+            assert "No chemical potentials supplied or present" in str(exc.value)
+            assert "so dopability limits cannot be calculated." in str(exc.value)
 
         else:
             with warnings.catch_warnings(record=True) as w:
@@ -1001,11 +1001,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.get_formation_energy("v_Cd_3")
-        assert "No matching DefectEntry with v_Cd_3 in name found in " in str(exc.exception)
-        assert "DefectThermodynamics.defect_entries, which have names:" in str(exc.exception)
+        assert "No matching DefectEntry with v_Cd_3 in name found in " in str(exc.value)
+        assert "DefectThermodynamics.defect_entries, which have names:" in str(exc.value)
         assert (
             "['v_Cd_0', 'v_Cd_-1', 'v_Cd_-2', 'Te_Cd_+1', 'Int_Te_3_2', 'Int_Te_3_1', "
-            "'Int_Te_3_Unperturbed_1']" in str(exc.exception)
+            "'Int_Te_3_Unperturbed_1']" in str(exc.value)
         )
 
         for i, defect_entry in enumerate(self.CdTe_defect_thermo.defect_entries):
