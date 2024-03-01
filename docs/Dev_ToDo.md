@@ -102,6 +102,8 @@
   there's any useful functionality we want to add!
 
 ## SK To-Do for next update:
+- `doped` repo/docs cleanup `TODO`s above
+- Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
 - Update Sb2O5 test in `test_analysis.py`
   - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
 - Plotting lines colour updates.
