@@ -4,9 +4,11 @@ Code to generate VASP defect calculation input files.
 import contextlib
 import copy
 import inspect
+import json
 import os
 import warnings
 from functools import lru_cache
+from importlib import resources
 from multiprocessing import cpu_count
 from multiprocessing.pool import Pool
 from typing import Dict, List, Optional, Tuple, Union, cast
@@ -17,7 +19,7 @@ from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
-from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar, incar_params
+from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
 from tqdm import tqdm
 
@@ -190,6 +192,10 @@ class DefectDictSet(DictSet):
             relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
         if user_incar_settings is not None:
+            # Load INCAR tag/value check reference file from pymatgen.io.vasp.inputs
+            with resources.open_text("pymatgen.io.vasp", "incar_parameters.json") as json_file:
+                incar_params = json.load(json_file)
+
             for k in user_incar_settings:
                 # check INCAR flags and warn if they don't exist (typos)
                 if k not in incar_params.keys() and "#" not in k:
