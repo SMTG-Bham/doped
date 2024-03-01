@@ -84,6 +84,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
 
+        for i in os.listdir(f"{self.YTOS_EXAMPLE_DIR}/Bulk"):
+            if i.startswith("."):
+                if_present_rm(f"{self.YTOS_EXAMPLE_DIR}/Bulk/{i}")
+
+        for i in os.listdir(f"{self.YTOS_EXAMPLE_DIR}/F_O_1"):
+            if i.startswith("."):
+                if_present_rm(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/{i}")
+
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
         thermo = dp.get_defect_thermodynamics()
@@ -504,6 +512,57 @@ class DefectsParsingTestCase(unittest.TestCase):
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         assert not w
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+        dumpfn(
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )  # for test_plotting
+        return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
+    def test_DefectsParser_YTOS_macOS_duplicated_OUTCAR(self):
+        with open(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/._OUTCAR", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/._vasprun.xml", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/._LOCPOT", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/.DS_Store", "w") as f:
+            f.write("test pop")
+
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                output_path=self.YTOS_EXAMPLE_DIR,
+                dielectric=self.ytos_dielectric,
+                json_filename="YTOS_example_defect_dict.json",
+            )  # for testing in test_thermodynamics.py
+        print([warn.message for warn in w])  # for debugging
+        assert not w  # hidden files ignored
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+        dumpfn(
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+        )  # for test_plotting
+        return thermo.plot()  # no chempots for YTOS formation energy plot test
+
+    @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
+    def test_DefectsParser_YTOS_macOS_duplicated_bulk_OUTCAR(self):
+        with open(f"{self.YTOS_EXAMPLE_DIR}/Bulk/._OUTCAR", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/Bulk/._vasprun.xml", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/Bulk/._LOCPOT", "w") as f:
+            f.write("test pop")
+        with open(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/.DS_Store", "w") as f:
+            f.write("test pop")
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                output_path=self.YTOS_EXAMPLE_DIR,
+                dielectric=self.ytos_dielectric,
+                json_filename="YTOS_example_defect_dict.json",
+            )  # for testing in test_thermodynamics.py
+        print([warn.message for warn in w])  # for debugging
+        assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(

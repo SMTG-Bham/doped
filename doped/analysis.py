@@ -870,7 +870,7 @@ class DefectsParser:
                 for warning in warnings_list:
                     if warning.startswith("Multiple"):
                         file_type = warning.split("`")[1]
-                        directory = warning.split("defect directory: ")[1].split(". Using")[0]
+                        directory = warning.split("directory: ")[1].split(". Using")[0]
                         chosen_file = warning.split("Using ")[1].split(" to")[0]
                         multiple_files_warning_dict[file_type].append((directory, chosen_file))
 
