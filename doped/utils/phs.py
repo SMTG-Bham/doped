@@ -181,6 +181,7 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12
+        plt.rc('axes', unicode_minus=False)
 
         # plt.close("all")  # close any previous figures
         emp.construct_plot()
@@ -228,6 +229,26 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
                 if ymax < max(x[0] for x in kpoint):
                     ymax = max(x[0] for x in kpoint)
 
+        gamma_check = "\N{GREEK CAPITAL LETTER GAMMA}"
+        labels = emp.axs[0].get_xticklabels()
+        # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        labels = [label.get_text() for label in labels]
+        # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        for i, label in enumerate(labels):
+            if gamma_check in label:  # Check if the label contains 'gamma'
+                labels[i] = r'$\Gamma$'  # Replace the label
+        emp.axs[0].set_xticklabels(labels)
+
+        if len(emp.axs) > 1:
+            labels = emp.axs[1].get_xticklabels()
+            # Replace the label containing 'gamma' (γ) with the word 'gamma'
+            labels = [label.get_text() for label in labels]
+            # Replace the label containing 'gamma' (γ) with the word 'gamma'
+            for i, label in enumerate(labels):
+                if gamma_check in label:  # Check if the label contains 'gamma'
+                    labels[i] = r'$\Gamma$'  # Replace the label
+            emp.axs[1].set_xticklabels(labels)
+
         fig = emp.plt.gcf()
         ax = fig.gca()
 
@@ -239,6 +260,19 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
             ax.scatter(0, -5, label="Partially Occupied", color=(0, 0.5, 0))
         ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band edges")
         ax.legend(loc="upper right", fontsize=7)
+
+        # gamma_check = "\N{GREEK CAPITAL LETTER GAMMA}"
+        # locs, labels = plt.xticks()
+        #
+        # # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        # labels = [label.get_text() for label in labels]
+        #
+        # # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        # for i, label in enumerate(labels):
+        #     if gamma_check in label:  # Check if the label contains 'gamma'
+        #         labels[i] = r'$\Gamma$'  # Replace the label
+        #
+        # plt.xticks(locs, labels)
 
     if filename:
         emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
