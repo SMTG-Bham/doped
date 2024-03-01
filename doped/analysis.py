@@ -1756,31 +1756,48 @@ class DefectParser:
                     )
 
         if load_phs_data:
-            v_vise = version("vise")
-            if v_vise <= "0.8.1" and defect_vr.parameters.get("LNONCOLLINEAR") is True:
-                raise TypeError(
-                    f"You have version {v_vise} of the package `vise`,"
-                    f" which does not allowing the parsing of non-collinear calculations."
-                    f" You can install the updated version of `vise` from the GitHub repo for this"
-                    f" functionality."
-                )
+            bulk_outcar_phs = dp.kwargs.get("bulk_outcar", None)
+            no_phs = False
+            if bulk_outcar_phs is None:
+                phs_warn = dp.kwargs.get("phs_warning", None)
+                if not isinstance(phs_warn, str):
+                    try:
+                        bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
+                            "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
+                        )
+                        bulk_outcar_phs = get_outcar(bulk_outcar_path)
+                        dp.kwargs["bulk_outcar"] = bulk_outcar_phs
+                        dp.kwargs["phs_warning"] = None
 
-            bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
-                "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
-            )
-            bulk_outcar_phs = get_outcar(bulk_outcar_path)
-            bulk_vr_phs = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
-            defect_vr_phs = get_vasprun(defect_vr_path, parse_projected_eigen=True)
+                    except IsADirectoryError:
+                        # Save warning, so can be used for future defects to skip the loading of PHS file
+                        path_bulk = dp.defect_entry.calculation_metadata["bulk_path"]
+                        dp.kwargs["phs_warning"] = (
+                            f"No `OUTCAR` file found in bulk path {path_bulk}. Skipping"
+                            f" automated PHS data loading for all defects."
+                        )
+                        warnings.warn(dp.kwargs["phs_warning"], UserWarning)
+                        no_phs = True
 
-            band_orb, vbm_info, cbm_info = get_band_edge_info(
-                dp, bulk_vr_phs, bulk_outcar_phs, defect_vr_phs
-            )
+                else:
+                    no_phs = True
 
-            defect_entry.calculation_metadata["phs_data"] = {
-                "band_orb": band_orb,
-                "vbm_info": vbm_info,
-                "cbm_info": cbm_info,
-            }
+            if not no_phs:
+                band_orb, vbm_info, cbm_info = get_band_edge_info(dp, bulk_vr, bulk_outcar_phs, defect_vr)
+            else:
+                band_orb = None
+
+            if band_orb is None:
+                defect_entry.calculation_metadata["phs_data"] = None
+            else:
+                defect_entry.calculation_metadata["phs_data"] = {
+                    "band_orb": band_orb,
+                    "vbm_info": vbm_info,
+                    "cbm_info": cbm_info,
+                }
+
+        else:
+            defect_entry.calculation_metadata["phs_data"] = None
 
         return dp
 
