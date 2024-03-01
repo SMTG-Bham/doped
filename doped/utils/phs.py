@@ -6,9 +6,18 @@ https://github.com/kumagai-group/pydefect
 and vise
 https://github.com/kumagai-group/vise, to avoid the user requiring additional files i.e. PROCAR.
 """
-from typing import Any, List
+import logging
+import os
+import warnings
+from importlib.metadata import version
+from typing import Any, List, Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
+from vise import user_settings
+# suppress pydefect INFO messages
+user_settings.logger.setLevel(logging.CRITICAL)
+
 from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
 from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
 from pydefect.analyzer.make_band_edge_states import make_band_edge_states
@@ -16,8 +25,12 @@ from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
 from pydefect.cli.vasp.make_band_edge_orbital_infos import calc_orbital_character, calc_participation_ratio
 from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
 from pydefect.defaults import defaults
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Vasprun
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
+
+from doped.utils.plotting import _get_backend, format_defect_name
+
 
 
 def make_band_edge_orbital_infos(
@@ -88,18 +101,34 @@ def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
     Returns:
         pydefect EdgeInfo class
     """
-    band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
+    # Change this to a warning...
+    try:
+        band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
+        if defect_vr.parameters.get("LNONCOLLINEAR") is True:
+            assert band_edge_prop._ho_band_index(Spin.up) == int(bulk_vr.parameters.get("NELECT")) - 1
+    except AssertionError:
+        v_vise = version("vise")
+        if v_vise <= "0.8.1":
+            warnings.warn(
+                f"You have version {v_vise} of the package `vise`,"
+                f" which does not allow the parsing of non-collinear calculations."
+                f" You can install the updated version of `vise` from the GitHub repo for this"
+                f" functionality. Attempting to load the PHS data has been automatically skipped"
+            )
+            return None, None, None
+
     orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
     vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
     cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
+    # Using default values pydefect
     dsinfo = MakeDefectStructureInfo(
         DefectParser.defect_entry.bulk_supercell,
         DefectParser.defect_entry.defect_supercell,
         DefectParser.defect_entry.defect_supercell,
         symprec=0.1,
-        dist_tol=0.05,
-        neighbor_cutoff_factor=2,
+        dist_tol=1.0,
+        neighbor_cutoff_factor=1.3,
     )
 
     band_orb = make_band_edge_orbital_infos(
@@ -113,15 +142,17 @@ def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
     return band_orb, vbm_info, cbm_info
 
 
-def get_phs_and_eigenvalue(DefectEntry, save_plot: bool = False):
+def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_labels: bool = False):
     """
     Get PHS info and eigenvalue plot for a given DefectEntry.
 
     Args:
         DefectEntry: DefectEntry object
-        save_plot (bool):
-            Whether to save the eigenvalue plot.
-            Default is False.
+        filename (str):
+            Filename to save the Kumagai site potential plots to.
+            If None, plots are not saved.
+        ks_labels (bool):
+            Add the band index to the KS levels.
 
     Returns:
         pydefect PerfectBandEdgeState class
@@ -136,17 +167,80 @@ def get_phs_and_eigenvalue(DefectEntry, save_plot: bool = False):
     vbm = vbm_info.orbital_info.energy + band_orb.eigval_shift
     cbm = cbm_info.orbital_info.energy + band_orb.eigval_shift
 
-    plotter = EigenvalueMplPlotter(
-        title="title",
+    style_file = f"{os.path.dirname(__file__)}/displacement.mplstyle"
+    plt.style.use(style_file)
+
+    emp = EigenvalueMplPlotter(
+        title="Eigenvalues",
         band_edge_orb_infos=band_orb,
         supercell_vbm=vbm,
         supercell_cbm=cbm,
         y_range=[vbm - 3, cbm + 3],
     )
+    f"{format_defect_name(DefectEntry.name, False)}+ eigenvalues"
 
-    plotter.construct_plot()
+    with plt.style.context(style_file):
+        plt.rcParams["axes.titlesize"] = 12
 
-    if save_plot:
-        plotter.plt.savefig(DefectEntry.name + "eigenvalue.png", bbox_inches="tight")
+        # plt.close("all")  # close any previous figures
+        emp.construct_plot()
+        partial = None
 
-    return bes
+        # Change colors to match sumo and doped conventions
+        for a in range(len(emp.axs)):
+            for i in range(len(emp.axs[a].get_children())):
+                if hasattr(emp.axs[a].get_children()[i], "get_facecolor"):
+                    if np.array_equal(
+                        emp.axs[a].get_children()[i].get_facecolor(), [[1, 0, 0, 1]]
+                    ):  # Check for red color
+                        emp.axs[a].get_children()[i].set_facecolor((0.22, 0.325, 0.643))
+                        emp.axs[a].get_children()[i].set_edgecolor((0.22, 0.325, 0.643))
+                    elif np.array_equal(emp.axs[a].get_children()[i].get_facecolor(), [[0, 0, 1, 1]]):
+                        emp.axs[a].get_children()[i].set_facecolor((0.98, 0.639, 0.086))
+                        emp.axs[a].get_children()[i].set_edgecolor((0.98, 0.639, 0.086))
+                    elif np.array_equal(emp.axs[a].get_children()[i].get_facecolor(), [[0, 0.5, 0, 1]]):
+                        partial = True
+
+        if ks_labels is True:
+            for axes in emp.axs:
+                annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
+                for annotation in annotations:
+                    if annotation.get_position()[0] > 1:
+                        annotation.remove()
+        else:
+            for axes in emp.axs:
+                annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
+                for annotation in annotations:
+                    if annotation:
+                        annotation.remove()
+
+        if len(emp.axs) > 1:
+            emp.axs[0].set_title("spin down")
+            emp.axs[1].set_title("spin up")
+        else:
+            emp.axs[0].set_title("KS levels")
+
+        ymin, ymax = 0, 0
+        for spin in emp._energies_and_occupations:
+            for kpoint in spin:
+                if ymin > min(x[0] for x in kpoint):
+                    ymin = min(x[0] for x in kpoint)
+                if ymax < max(x[0] for x in kpoint):
+                    ymax = max(x[0] for x in kpoint)
+
+        fig = emp.plt.gcf()
+        ax = fig.gca()
+
+        ax.set_ylim([ymin - 0.25, ymax + 0.75])
+        # add a point at 0,-5 with the color range and label unoccopied states
+        ax.scatter(0, -5, label="Occupied", color=(0.98, 0.639, 0.086))
+        ax.scatter(0, -5, label="Unoccupied", color=(0.22, 0.325, 0.643))
+        if partial:
+            ax.scatter(0, -5, label="Partially Occupied", color=(0, 0.5, 0))
+        ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band edges")
+        ax.legend(loc="upper right", fontsize=7)
+
+    if filename:
+        emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+
+    return bes, fig
