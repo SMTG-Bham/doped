@@ -64,6 +64,16 @@ def _custom_formatwarning(
 warnings.formatwarning = _custom_formatwarning
 
 
+def _list_index_or_val(lst, item, val=100):
+    """
+    Returns the index of the item in the lst, or val if not found.
+    """
+    try:
+        return lst.index(item)
+    except ValueError:
+        return val
+
+
 def get_defect_entry_from_defect(
     defect: Defect,
     defect_supercell: Structure,
@@ -193,7 +203,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (symmetry._custom_round(x[0], 2), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -1063,7 +1073,9 @@ class DefectsGenerator(MSONable):
         by specifying keyword arguments with ``supercell_gen_kwargs``, which are passed to
         ``get_ideal_supercell_matrix()`` (e.g. for a minimum image distance of 15 Å with at
         least 100 atoms, use:
-        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``).
+        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``). If the
+        input structure already satisfies these constraints (for the same number of atoms as
+        the ``doped``-generated supercell), then it will be used.
         Alternatively if ``generate_supercell = False``, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
@@ -1246,7 +1258,9 @@ class DefectsGenerator(MSONable):
 
             if not self.generate_supercell or (
                 input_min_image_distance >= specified_min_image_distance
-                and self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
+                and (primitive_structure * supercell_matrix).num_sites
+                >= self.structure.num_sites
+                >= self.supercell_gen_kwargs.get("min_atoms", 0)
             ):
                 if input_min_image_distance < 10:
                     # input structure is <10 Å in at least one direction, and generate_supercell=False,
@@ -2181,7 +2195,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     Sorts defect entries by defect type (vacancies, substitutions,
     interstitials), then by order of appearance of elements in the composition,
     then alphabetically, then (for defect entries of the same type) sort by
-    charge state.
+    charge state (from positive to negative).
     """
     if element_list is None:
         host_element_list = None
@@ -2209,10 +2223,10 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                 defect_entries_dict.items(),
                 key=lambda s: (
                     s[1].defect.defect_type.value,
-                    element_list.index(_first_and_second_element(s[0])[0]),
-                    element_list.index(_first_and_second_element(s[0])[1]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[0]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[1]),
                     s[0].rsplit("_", 1)[0],  # name without charge
-                    s[1].charge_state,  # charge state
+                    -s[1].charge_state,  # charge state
                 ),
             )
         )
@@ -2234,11 +2248,15 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     )
                 return (
                     defect_entry.defect.defect_type.value,
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[0]
+                    ),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[1]
+                    ),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
-                    defect_entry.charge_state,  # charge state
+                    -defect_entry.charge_state,  # charge state
                 )
 
             return dict(
@@ -2281,8 +2299,8 @@ def _sort_defects(defects_dict, element_list=None):
         defect_type: sorted(
             defect_list,
             key=lambda d: (
-                element_list.index(_first_and_second_element(d.name)[0]),
-                element_list.index(_first_and_second_element(d.name)[1]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[0]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[1]),
                 d.name,  # bare name without charge
                 symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
             ),

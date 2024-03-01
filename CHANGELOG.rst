@@ -1,6 +1,15 @@
 Change Log
 ==========
 
+v.2.3.1
+----------
+- Refactor (phase diagram) ``facet`` to (chemical potential) ``limit`` in ``doped`` chemical potential
+  functions, as this is more intuitive for most users.
+- Tests updates.
+- Minor efficiency/verbosity/robustness/docs improvements.
+- Update default ``KPOINTS`` for convergence/production runs in ``chemical_potentials`` based on testing.
+- Add optional projections of site displacements upon given vectors by @ireaml
+
 v.2.3.0
 ----------
 - ``DefectsThermodynamics`` class has been added to replace and greatly expand the functionality of the
