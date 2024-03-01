@@ -544,7 +544,7 @@ class DefectsParser:
         bulk_band_gap_path: Optional[str] = None,
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
-        load_phs_data: bool = False,
+        load_phs_data: bool = True,
     ):
         r"""
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -623,6 +623,11 @@ class DefectsParser:
                 etc). If None (default), set as "{Chemical Formula}_defect_dict.json" where
                 {Chemical Formula} is the chemical formula of the host material.
                 If False, no json file is saved.
+            load_phs_data (bool):
+                Automatically determines the band edge states of the defect to determine
+                if the defect is a PHS. Also returns single-particle levels and their
+                occupation. cite: https://doi.org/10.1103/PhysRevMaterials.5.123803
+                Default = True.
 
         Attributes:
             defect_dict (dict):
@@ -723,6 +728,10 @@ class DefectsParser:
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
+        }
+        self.phs_data = {  # so we only need to load bulk data for PHS once
+            "bulk_outcar": None,
+            "phs_warning": None,
         }
         parsed_defect_entries = []
         parsing_warnings = []
@@ -1181,6 +1190,7 @@ class DefectsParser:
                 bulk_band_gap_path=self.bulk_band_gap_path,
                 load_phs_data = self.load_phs_data,
                 **self.bulk_corrections_data,
+                **self.phs_data,
             )
 
             if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
@@ -1202,6 +1212,12 @@ class DefectsParser:
                 self.bulk_corrections_data["bulk_site_potentials"] = (
                     dp.defect_entry.calculation_metadata
                 )["bulk_site_potentials"]
+
+            if dp.kwargs.get("bulk_outcar", None) is not None:  # ADAIR CHECK
+                self.phs_data["bulk_outcar"] = dp.kwargs["bulk_outcar"]
+
+            if dp.kwargs.get("phs_warning", None) is not None:
+                self.phs_data["phs_warning"] = dp.kwargs["phs_warning"]
 
         except Exception as exc:
             warnings.warn(
@@ -1487,7 +1503,16 @@ class DefectParser:
                 bulk_vr_path,
                 dir_type="bulk",
             )
-        bulk_vr = get_vasprun(bulk_vr_path)
+        if load_phs_data:
+            bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
+            if bulk_vr.projected_eigenvalues is None:
+                load_phs_data = False  # can't load PHS data without projected eigenvalues
+                warnings.warn(
+                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping"
+                    " automated PHS data loading."
+                )
+        else:
+            bulk_vr = get_vasprun(bulk_vr_path)
         bulk_supercell = bulk_vr.final_structure.copy()
 
         # add defect simple properties
@@ -1502,7 +1527,16 @@ class DefectParser:
                 defect_vr_path,
                 dir_type="defect",
             )
-        defect_vr = get_vasprun(defect_vr_path)
+        if load_phs_data:
+            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
+            if defect_vr.projected_eigenvalues is None:
+                load_phs_data = False  # can't load PHS data without projected eigenvalues
+                warnings.warn(
+                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping"
+                    " automated PHS data loading."
+                )
+        else:
+            defect_vr = get_vasprun(defect_vr_path)
 
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
