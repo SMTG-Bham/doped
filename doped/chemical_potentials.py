@@ -44,7 +44,6 @@ warnings.filterwarnings(
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary`.
-# TODO: Refactor 'facet' to 'limit' in chempot dicts?
 
 
 def make_molecule_in_a_box(element: str):
@@ -449,7 +448,7 @@ class CompetingPhases:
             # diagram, if their relative energy was downshifted by ``e_above_hull``:
             MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
 
-            MP_bordering_phases = {phase for facet in MP_gga_chempots for phase in facet.split("-")}
+            MP_bordering_phases = {phase for limit in MP_gga_chempots for phase in limit.split("-")}
             self.entries = [
                 entry for entry in pd_entries if entry.name in MP_bordering_phases or entry.is_element
             ]
@@ -839,7 +838,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             if codoping:
                 # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
                 #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
-                #  entries, including facets with multiple extrinsic entries but still not the
+                #  entries, including limits with multiple extrinsic entries but still not the
                 #  full phase diagram? - To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
                 #  this code block and just use:
@@ -1020,19 +1019,19 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 )
                 MP_extrinsic_bordering_phases = []
 
-                for facet in MP_extrinsic_gga_chempots:
-                    # if the number of intrinsic competing phases for this facet is equal to the
+                for limit in MP_extrinsic_gga_chempots:
+                    # if the number of intrinsic competing phases for this limit is equal to the
                     # number of species in the bulk composition, then include the extrinsic phase(s)
-                    # for this facet (full_sub_approach = False approach)
+                    # for this limit (full_sub_approach = False approach)
                     MP_intrinsic_bordering_phases = {
-                        phase for phase in facet.split("-") if sub_el not in phase
+                        phase for phase in limit.split("-") if sub_el not in phase
                     }
                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                         # add to list of extrinsic bordering phases, if not already present:
                         MP_extrinsic_bordering_phases.extend(
                             [
                                 phase
-                                for phase in facet.split("-")
+                                for phase in limit.split("-")
                                 if sub_el in phase and phase not in MP_extrinsic_bordering_phases
                             ]
                         )
@@ -1055,19 +1054,19 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         )
 
                         if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
-                            # new bordering phase, check if not an over-dependent facet:
+                            # new bordering phase, check if not an over-dependent limit:
 
-                            for facet in new_MP_extrinsic_gga_chempots:
-                                if facet not in MP_extrinsic_gga_chempots:
-                                    # new facet, check if not an over-dependent facet:
+                            for limit in new_MP_extrinsic_gga_chempots:
+                                if limit not in MP_extrinsic_gga_chempots:
+                                    # new limit, check if not an over-dependent limit:
                                     MP_intrinsic_bordering_phases = {
-                                        phase for phase in facet.split("-") if sub_el not in phase
+                                        phase for phase in limit.split("-") if sub_el not in phase
                                     }
                                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                                         MP_extrinsic_bordering_phases.extend(
                                             [
                                                 phase
-                                                for phase in facet.split("-")
+                                                for phase in limit.split("-")
                                                 if sub_el in phase
                                                 and phase not in MP_extrinsic_bordering_phases
                                             ]
@@ -1081,7 +1080,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 ]
 
                 # check that extrinsic competing phases list is not empty (can happen with
-                # 'over-dependent' facets); if so then set full_sub_approach = True and re-run
+                # 'over-dependent' limits); if so then set full_sub_approach = True and re-run
                 # the extrinsic phase addition process
                 if not extrinsic_entries:
                     warnings.warn(
@@ -1468,23 +1467,23 @@ class CompetingPhasesAnalyzer:
             )
 
         self._intrinsic_chempots = {
-            "facets": no_element_chem_lims,
+            "limits": no_element_chem_lims,
             "elemental_refs": {
                 str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
             },
-            "facets_wrt_el_refs": {},
+            "limits_wrt_el_refs": {},
         }
 
-        # relate the facets to the elemental energies
-        for facet, chempot_dict in self._intrinsic_chempots["facets"].items():
+        # relate the limits to the elemental energies
+        for limit, chempot_dict in self._intrinsic_chempots["limits"].items():
             relative_chempot_dict = copy.deepcopy(chempot_dict)
             for e in relative_chempot_dict:
                 relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
-            self._intrinsic_chempots["facets_wrt_el_refs"].update({facet: relative_chempot_dict})
+            self._intrinsic_chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
-        for _, chempot_dict in self._intrinsic_chempots["facets_wrt_el_refs"].items():
+        for _, chempot_dict in self._intrinsic_chempots["limits_wrt_el_refs"].items():
             phase_energy_list = []
             phase_name_columns = []
             for k, v in chempot_dict.items():
@@ -1538,26 +1537,26 @@ class CompetingPhasesAnalyzer:
             df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
             cl2 = {
                 "elemental_refs": self.elemental_energies,
-                "facets_wrt_el_refs": {},
-                "facets": {},
+                "limits_wrt_el_refs": {},
+                "limits": {},
             }
             # print(f"df4: {df4}")  # debugging
 
             for i, d in enumerate(df4):
-                key = list(self._intrinsic_chempots["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+                key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
                 # print(f"key: {key}")  # debugging
-                new_vals = list(self._intrinsic_chempots["facets_wrt_el_refs"].values())[i]
+                new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
-                cl2["facets_wrt_el_refs"][key] = new_vals
+                cl2["limits_wrt_el_refs"][key] = new_vals
             # print(f"cl2: {cl2}")  # debugging
 
-            # relate the facets to the elemental
+            # relate the limits to the elemental
             # energies but in reverse this time
-            for facet, chempot_dict in cl2["facets_wrt_el_refs"].items():
+            for limit, chempot_dict in cl2["limits_wrt_el_refs"].items():
                 relative_chempot_dict = copy.deepcopy(chempot_dict)
                 for e in relative_chempot_dict:
                     relative_chempot_dict[e] += cl2["elemental_refs"][e]
-                cl2["facets"].update({facet: relative_chempot_dict})
+                cl2["limits"].update({limit: relative_chempot_dict})
 
             self._chempots = cl2
 
@@ -1635,8 +1634,8 @@ class CompetingPhasesAnalyzer:
                 print(f"{self.elemental[0]}  # dependent variable (element)")
 
             # get only the lowest energy entries of compositions in self.data which are on a
-            # facet in self._intrinsic_chempots
-            bordering_phases = {phase for facet in self._chempots["facets"] for phase in facet.split("-")}
+            # limit in self._intrinsic_chempots
+            bordering_phases = {phase for limit in self._chempots["limits"] for phase in limit.split("-")}
             entries_for_cplap = [
                 entry_dict
                 for entry_dict in self.data
@@ -1761,10 +1760,10 @@ class CompetingPhasesAnalyzer:
         return string
 
 
-def get_X_rich_facet(X: str, chempots: dict):
+def get_X_rich_limit(X: str, chempots: dict):
     """
-    Determine the phase diagram facet of the input chemical potentials limit
-    dict which corresponds to the most X-rich conditions.
+    Determine the chemical potential limit of the input chempots dict which
+    corresponds to the most X-rich conditions.
 
     Args:
         X (str): Elemental species (e.g. "Te")
@@ -1772,23 +1771,23 @@ def get_X_rich_facet(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_rich_facet = None
-    X_rich_facet_chempot = None
-    for facet, chempot_dict in chempots["facets"].items():
-        if X in chempot_dict and (X_rich_facet is None or chempot_dict[X] > X_rich_facet_chempot):
-            X_rich_facet = facet
-            X_rich_facet_chempot = chempot_dict[X]
+    X_rich_limit = None
+    X_rich_limit_chempot = None
+    for limit, chempot_dict in chempots["limits"].items():
+        if X in chempot_dict and (X_rich_limit is None or chempot_dict[X] > X_rich_limit_chempot):
+            X_rich_limit = limit
+            X_rich_limit_chempot = chempot_dict[X]
 
-    if X_rich_facet is None:
+    if X_rich_limit is None:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    return X_rich_facet
+    return X_rich_limit
 
 
-def get_X_poor_facet(X: str, chempots: dict):
+def get_X_poor_limit(X: str, chempots: dict):
     """
-    Determine the phase diagram facet of the input chemical potentials limit
-    dict which corresponds to the most X-poor conditions.
+    Determine the chemical potential limit of the input chempots dict which
+    corresponds to the most X-poor conditions.
 
     Args:
         X (str): Elemental species (e.g. "Te")
@@ -1796,17 +1795,17 @@ def get_X_poor_facet(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_poor_facet = None
-    X_poor_facet_chempot = None
-    for facet, chempot_dict in chempots["facets"].items():
-        if X in chempot_dict and (X_poor_facet is None or chempot_dict[X] < X_poor_facet_chempot):
-            X_poor_facet = facet
-            X_poor_facet_chempot = chempot_dict[X]
+    X_poor_limit = None
+    X_poor_limit_chempot = None
+    for limit, chempot_dict in chempots["limits"].items():
+        if X in chempot_dict and (X_poor_limit is None or chempot_dict[X] < X_poor_limit_chempot):
+            X_poor_limit = limit
+            X_poor_limit_chempot = chempot_dict[X]
 
-    if X_poor_facet is None:
+    if X_poor_limit is None:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    return X_poor_facet
+    return X_poor_limit
 
 
 def _move_dict_to_start(data, key, value):
@@ -1832,17 +1831,17 @@ def combine_extrinsic(first, second, extrinsic_species):
     Returns:
         dict.
     """
-    keys = ["elemental_refs", "facets", "facets_wrt_el_refs"]
+    keys = ["elemental_refs", "limits", "limits_wrt_el_refs"]
     if not all(key in first for key in keys):
         raise KeyError(
             "the first dictionary doesn't contain the correct keys - it should include "
-            "elemental_refs, facets and facets_wrt_el_refs"
+            "elemental_refs, limits and limits_wrt_el_refs"
         )
 
     if not all(key in second for key in keys):
         raise KeyError(
             "the second dictionary doesn't contain the correct keys - it should include "
-            "elemental_refs, facets and facets_wrt_el_refs"
+            "elemental_refs, limits and limits_wrt_el_refs"
         )
 
     if extrinsic_species not in second["elemental_refs"].keys():
@@ -1850,28 +1849,28 @@ def combine_extrinsic(first, second, extrinsic_species):
 
     cpa1 = copy.deepcopy(first)
     cpa2 = copy.deepcopy(second)
-    new_facets = {}
-    for (k1, v1), (k2, v2) in zip(list(cpa1["facets"].items()), list(cpa2["facets"].items())):
+    new_limits = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1["limits"].items()), list(cpa2["limits"].items())):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
+            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets[new_key] = v1
+        new_limits[new_key] = v1
 
-    new_facets_wrt_el = {}
+    new_limits_wrt_el = {}
     for (k1, v1), (k2, v2) in zip(
-        list(cpa1["facets_wrt_el_refs"].items()),
-        list(cpa2["facets_wrt_el_refs"].items()),
+        list(cpa1["limits_wrt_el_refs"].items()),
+        list(cpa2["limits_wrt_el_refs"].items()),
     ):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
+            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets_wrt_el[new_key] = v1
+        new_limits_wrt_el[new_key] = v1
 
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
@@ -1879,8 +1878,8 @@ def combine_extrinsic(first, second, extrinsic_species):
     new_dict = {}
     new_dict = {
         "elemental_refs": new_elements,
-        "facets": new_facets,
-        "facets_wrt_el_refs": new_facets_wrt_el,
+        "limits": new_limits,
+        "limits_wrt_el_refs": new_limits_wrt_el,
     }
 
     return new_dict

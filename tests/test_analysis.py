@@ -316,7 +316,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         default_thermo = default_dp.get_defect_thermodynamics()
 
-        return default_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
+        return default_thermo.plot(chempots=CdTe_chempots, limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_without_multiprocessing(self):
         # test same behaviour without multiprocessing:
@@ -687,7 +687,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])
         assert not w  # no warnings
 
-        return v2o5_thermo.plot(facet="V2O5-O2")
+        return v2o5_thermo.plot(limit="V2O5-O2")
 
     @custom_mpl_image_compare(filename="merged_renamed_v_O_plot.png")
     def test_V2O5_same_named_defects(self):
@@ -710,7 +710,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         print(thermo.get_symmetries_and_degeneracies())
 
-        return thermo.plot(facet="V2O5-O2")
+        return thermo.plot(limit="V2O5-O2")
 
     @custom_mpl_image_compare(filename="SrTiO3_v_O.png")
     def test_SrTiO3_diff_ISYM_bulk_defect(self):
@@ -2224,19 +2224,19 @@ class ReorderedParsingTestCase(unittest.TestCase):
 #             ).all()
 #
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-#             self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
+#             self.sb2o5_chempots, limits=["Sb2O5-SbO2"], fermi_level=3
 #         )
 #         _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
 #
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(  # test default w/ E_F = 0
 #             self.sb2o5_chempots,
-#             facets=["Sb2O5-O2"],
+#             limits=["Sb2O5-O2"],
 #         )
 #         _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
 #
 #         formation_energy_table_df_manual_chempots = (
 #             self.sb2o5_thermo.get_formation_energies(  # test default with E_F = 0
-#                 chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
+#                 chempots=self.sb2o5_chempots["limits_wrt_el_refs"]["Sb2O5-O2"],
 #                 el_refs=self.sb2o5_chempots["elemental_refs"],
 #             )
 #         )
@@ -2251,7 +2251,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
 #
 #         # assert runs fine with only raw chempots:
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-#             chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
+#             chempots=self.sb2o5_chempots["limits"]["Sb2O5-O2"]
 #         )
 #         _check_formation_energy_table(formation_energy_table_df)
 #         # check same formation energies as with manual chempots plus el_refs:

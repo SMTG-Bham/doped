@@ -260,7 +260,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(df, pd.DataFrame)
         if chempots is not None:
             assert any(
-                "No facet (chemical potential limit) specified! Using" in str(warn.message)
+                "No limit (chemical potential limit) specified! Using" in str(warn.message)
                 for warn in conc_w
             )
 
@@ -345,7 +345,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         {
                             "Compensating Defect",
                             "Dopability Limit (eV from VBM/CBM)",
-                            "Facet",
+                            "limit",
                             "Doping Window (eV at VBM/CBM)",
                         }
                     )
@@ -861,22 +861,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ]:
                 print(f"Testing formation energy methods with {name} input")  # for debugging
                 if thermo_obj.chempots is None:
-                    facets = [
+                    limits = [
                         None,
                     ]
                     with warnings.catch_warnings(record=True) as w:
-                        _form_en = thermo_obj.get_formation_energy(entry, facet="test pop b...")
+                        _form_en = thermo_obj.get_formation_energy(entry, limit="test pop b...")
                     assert len(w) == 2
                     assert "No chemical potentials supplied" in str(w[0].message)
                     assert (
-                        "You have specified a facet (chemical potential limit) but no chemical potentials "
-                        "(`chempots`) were supplied, so `facet` will be ignored." in str(w[-1].message)
+                        "You have specified a limit (chemical potential limit) but no chemical potentials "
+                        "(`chempots`) were supplied, so `limit` will be ignored." in str(w[-1].message)
                     )
 
-                elif len(thermo_obj.chempots["facets_wrt_el_refs"]) == 2:  # CdTe full chempots
+                elif len(thermo_obj.chempots["limits_wrt_el_refs"]) == 2:  # CdTe full chempots
                     with warnings.catch_warnings(record=True) as w:
                         assert (
-                            not np.isclose(  # if chempots present, uses the first facet which is Cd-rich
+                            not np.isclose(  # if chempots present, uses the first limit which is Cd-rich
                                 thermo_obj.get_formation_energy(entry),
                                 form_en_df_row[8],
                                 atol=1e-3,
@@ -884,34 +884,34 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         )
                     assert len(w) == 1
                     assert (
-                        "No facet (chemical potential limit) specified! Using Cd-CdTe for computing "
+                        "No limit (chemical potential limit) specified! Using Cd-CdTe for computing "
                         "the formation energy" in str(w[0].message)
                     )
-                    facets = ["CdTe-Te", "Te-rich"]
+                    limits = ["CdTe-Te", "Te-rich"]
                 else:
-                    facets = list(thermo_obj.chempots["facets_wrt_el_refs"].keys())  # user supplied
+                    limits = list(thermo_obj.chempots["limits_wrt_el_refs"].keys())  # user supplied
 
-                for facet in facets:
+                for limit in limits:
                     if np.isclose(fermi_level, 0.75):  # default CdTe:
                         assert np.isclose(  # test get_formation_energy method
-                            thermo_obj.get_formation_energy(entry, facet=facet),
+                            thermo_obj.get_formation_energy(entry, limit=limit),
                             form_en_df_row[8],
                             atol=1e-3,
                         )
                     assert np.isclose(  # test get_formation_energy method
-                        thermo_obj.get_formation_energy(entry, facet=facet, fermi_level=fermi_level),
+                        thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level),
                         form_en_df_row[8],
                         atol=1e-3,
                     )
                     # Test usage of ``DefectThermodynamics.get_formation_energy()`` where charge state
                     # isn't specified:
                     lowest_e_form = thermo_obj.get_formation_energy(
-                        form_en_df_row[0], facet=facet, fermi_level=fermi_level
+                        form_en_df_row[0], limit=limit, fermi_level=fermi_level
                     )
                     assert np.isclose(
                         lowest_e_form,
                         min(
-                            thermo_obj.get_formation_energy(entry, facet=facet, fermi_level=fermi_level)
+                            thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level)
                             for entry in thermo_obj.defect_entries
                             if form_en_df_row[0] in entry.name
                         ),
@@ -919,14 +919,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
                     assert np.isclose(  # test get_formation_energy() method
                         thermo_obj.get_formation_energy(
-                            entry, fermi_level=fermi_level, facet=facet, chempots=thermo_obj.chempots
+                            entry, fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
                         ),
                         form_en_df_row[8],
                         atol=1e-3,
                     )
                     lowest_e_form = thermo_obj.get_formation_energy(
                         form_en_df_row[0],
-                        facet=facet,
+                        limit=limit,
                         fermi_level=fermi_level,
                         chempots=thermo_obj.chempots,
                     )
@@ -936,7 +936,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                             [
                                 thermo_obj.get_formation_energy(
                                     entry,
-                                    facet=facet,
+                                    limit=limit,
                                     fermi_level=fermi_level,
                                     chempots=thermo_obj.chempots,
                                 )
@@ -949,7 +949,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     # test DefectEntry.formation_energy() method:
                     assert np.isclose(
                         defect_entry.formation_energy(
-                            fermi_level=fermi_level, facet=facet, chempots=thermo_obj.chempots
+                            fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
                         ),
                         form_en_df_row[8],
                         atol=1e-3,
@@ -958,7 +958,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         defect_entry.formation_energy(
                             fermi_level=fermi_level,
                             vbm=thermo_obj.vbm,
-                            facet=facet,
+                            limit=limit,
                             chempots=thermo_obj.chempots,
                         ),
                         form_en_df_row[8],
@@ -968,18 +968,18 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         defect_entry.formation_energy(
                             fermi_level=fermi_level + 0.1,
                             vbm=thermo_obj.vbm - 0.1,
-                            facet=facet,
+                            limit=limit,
                             chempots=thermo_obj.chempots,
                         ),
                         form_en_df_row[8],
                         atol=1e-3,
                     )
-                    if thermo_obj.chempots and "rich" not in facet:  # needs to be 'CdTe-Te' etc for
+                    if thermo_obj.chempots and "rich" not in limit:  # needs to be 'CdTe-Te' etc for
                         # sub-selecting like this
                         assert np.isclose(  # test DefectEntry.formation_energy() method
                             defect_entry.formation_energy(
                                 fermi_level=fermi_level,
-                                chempots=thermo_obj.chempots["facets_wrt_el_refs"][facet],
+                                chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
                                 el_refs=thermo_obj.chempots["elemental_refs"],
                             ),
                             form_en_df_row[8],
@@ -989,7 +989,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                             thermo_obj.get_formation_energy(
                                 entry,
                                 fermi_level=fermi_level,
-                                chempots=thermo_obj.chempots["facets_wrt_el_refs"][facet],
+                                chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
                                 el_refs=thermo_obj.chempots["elemental_refs"],
                             ),
                             form_en_df_row[8],
@@ -1051,9 +1051,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert "Fermi level was not set" in output
 
         te_rich_df = list_of_dfs[1]  # Te-rich
-        for facet in ["Te-rich", "CdTe-Te"]:
+        for limit in ["Te-rich", "CdTe-Te"]:
             df, output, w = _run_func_and_capture_stdout_warnings(
-                self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, facet=facet
+                self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, limit=limit
             )
             self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, te_rich_df)
             assert df.shape == (7, 10)
@@ -1070,13 +1070,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         manual_te_rich_df, output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.get_formation_energies,
-            chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
+            chempots=self.CdTe_chempots["limits_wrt_el_refs"]["CdTe-Te"],
             el_refs=self.CdTe_chempots["elemental_refs"],
         )
         self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, manual_te_rich_df, te_rich_df)
         manual_te_rich_df_w_fermi, output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.get_formation_energies,
-            chempots=self.CdTe_chempots["facets_wrt_el_refs"]["CdTe-Te"],
+            chempots=self.CdTe_chempots["limits_wrt_el_refs"]["CdTe-Te"],
             el_refs=self.CdTe_chempots["elemental_refs"],
             fermi_level=0.7493,  # default mid-gap value
         )
@@ -1193,11 +1193,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert not w
         assert "Fermi level was not set" in output
         non_formatted_te_rich_df = list_of_dfs[1]  # Te-rich
-        for facet in ["Te-rich", "CdTe-Te"]:
+        for limit in ["Te-rich", "CdTe-Te"]:
             df, output, w = _run_func_and_capture_stdout_warnings(
                 self.CdTe_defect_thermo.get_formation_energies,
                 self.CdTe_chempots,
-                facet=facet,
+                limit=limit,
                 skip_formatting=True,
             )
             self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, non_formatted_te_rich_df)
@@ -1273,13 +1273,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ) in output
 
     def _check_chempots_dict(self, chempots_dict):
-        # in the chempots dict, for each subdict in chempots["facets"], it should match the sum of
-        # the chempots["facets_wrt_el_refs"] and chempots["elemental_refs"]:
-        for facet, subdict in chempots_dict["facets"].items():
+        # in the chempots dict, for each subdict in chempots["limits"], it should match the sum of
+        # the chempots["limits_wrt_el_refs"] and chempots["elemental_refs"]:
+        for limit, subdict in chempots_dict["limits"].items():
             for el, mu in subdict.items():
                 assert np.isclose(
                     mu,
-                    chempots_dict["facets_wrt_el_refs"][facet][el] + chempots_dict["elemental_refs"][el],
+                    chempots_dict["limits_wrt_el_refs"][limit][el] + chempots_dict["elemental_refs"][el],
                 )
 
     def test_parse_chempots_CdTe(self):
@@ -1301,9 +1301,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         semi_manual_chempots_dict = {
-            "facets_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+            "limits_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
             "elemental_refs": {"Te": -4.47069234, "Cd": -1.01586484},
-            "facets": {"User Chemical Potentials": {"Cd": -2.26586484, "Te": -4.47069234}},
+            "limits": {"User Chemical Potentials": {"Cd": -2.26586484, "Te": -4.47069234}},
         }
         assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
@@ -1316,11 +1316,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self.CdTe_defect_thermo.chempots = None
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         manual_zeroed_rel_chempots_dict = deepcopy(semi_manual_chempots_dict)
-        manual_zeroed_rel_chempots_dict["facets_wrt_el_refs"]["User Chemical Potentials"] = {
+        manual_zeroed_rel_chempots_dict["limits_wrt_el_refs"]["User Chemical Potentials"] = {
             "Cd": 0,
             "Te": 0,
         }
-        manual_zeroed_rel_chempots_dict["facets"]["User Chemical Potentials"] = self.CdTe_chempots[
+        manual_zeroed_rel_chempots_dict["limits"]["User Chemical Potentials"] = self.CdTe_chempots[
             "elemental_refs"
         ]
         assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict
@@ -1338,9 +1338,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
         self._check_chempots_dict(defect_thermo.chempots)
         zero_el_refs_te_rich_chempots_dict = {
-            "facets_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+            "limits_wrt_el_refs": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
             "elemental_refs": {"Te": 0, "Cd": 0},
-            "facets": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
+            "limits": {"User Chemical Potentials": {"Cd": -1.25, "Te": 0}},
         }
         assert defect_thermo.chempots == zero_el_refs_te_rich_chempots_dict
         assert defect_thermo.el_refs == {"Te": 0, "Cd": 0}
@@ -1535,7 +1535,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 for fermi_level in [0.25, 0.9, 3]:
                     orig_conc = random_defect_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
-                        facet="Cd-rich",
+                        limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
                     )
@@ -1544,7 +1544,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
                     new_conc = new_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
-                        facet="Cd-rich",
+                        limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
                     )
@@ -1553,7 +1553,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     new_entry.degeneracy_factors["spin degeneracy"] *= 0.5
                     new_conc = new_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
-                        facet="Cd-rich",
+                        limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
                     )
@@ -1562,7 +1562,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     new_entry.degeneracy_factors["orientational degeneracy"] *= 3
                     new_conc = new_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
-                        facet="Cd-rich",
+                        limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
                     )
@@ -1571,7 +1571,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     new_entry.degeneracy_factors["fake degeneracy"] = 7
                     new_conc = new_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
-                        facet="Cd-rich",
+                        limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
                     )
@@ -1595,7 +1595,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert len(defect_thermo.defect_entries) == num_entries
         print([entry.name for entry in defect_thermo.defect_entries])
 
-        return defect_thermo.plot(self.CdTe_chempots, facet="Cd-rich")
+        return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
 
 
 def belas_linear_fit(T):  #
@@ -1636,7 +1636,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             ) = cls.defect_thermo.get_quenched_fermi_level_and_concentrations(
                 # quenching to 300K (default)
                 cls.fermi_dos,
-                facet="Te-rich",
+                limit="Te-rich",
                 annealing_temperature=anneal_temp,
                 delta_gap=gap_shift,
             )
@@ -1646,7 +1646,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 annealing_h_conc,
             ) = cls.defect_thermo.get_equilibrium_fermi_level(
                 scissored_dos,
-                facet="Te-rich",
+                limit="Te-rich",
                 temperature=anneal_temp,
                 return_concs=True,
             )
