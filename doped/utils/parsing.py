@@ -580,7 +580,14 @@ def _compare_potcar_symbols(
     return True
 
 
-def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk", defect_name="defect"):
+def _compare_kpoints(
+    bulk_actual_kpoints,
+    defect_actual_kpoints,
+    bulk_kpoints=None,
+    defect_kpoints=None,
+    bulk_name="bulk",
+    defect_name="defect",
+):
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
@@ -592,7 +599,14 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
 
-    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+    actual_kpoints_eq = len(sorted_bulk_kpoints) == len(sorted_defect_kpoints) and np.allclose(
+        sorted_bulk_kpoints, sorted_defect_kpoints
+    )
+    # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
+    # input kpoints, which we assume is fine:
+    kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
+
+    if not (actual_kpoints_eq or kpoints_eq):
         warnings.warn(
             f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
             f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
@@ -914,7 +928,7 @@ def get_orientational_degeneracy(
         )
 
     else:
-        defect_type = defect_entry.defect.defect_type
+        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
@@ -933,21 +947,21 @@ def get_orientational_degeneracy(
             relaxed=False,  # unrelaxed
         )
 
-    orientational_degeneracy = group_order_from_schoenflies(
-        bulk_site_point_group
-    ) / group_order_from_schoenflies(relaxed_point_group)
+    # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
+    # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
+    # if orientational_degeneracy < 1 and not (
+    #     defect_type == DefectType.Interstitial
+    #     or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
+    # ):
+    #     raise ValueError(
+    #         f"From the input/determined point symmetries, an orientational degeneracy factor of "
+    #         f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable "
+    #         f"for vacancies/substitutions, indicating an error in the symmetry determination!"
+    #     )
 
-    if orientational_degeneracy < 1 and not (
-        defect_type == DefectType.Interstitial
-        or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
-    ):
-        raise ValueError(
-            f"From the input/determined point symmetries, an orientational degeneracy factor of "
-            f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable for "
-            f"vacancies/substitutions, indicating an error in the symmetry determination!"
-        )
-
-    return orientational_degeneracy
+    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
+        relaxed_point_group
+    )
 
 
 def _get_bulk_supercell(defect_entry: DefectEntry):

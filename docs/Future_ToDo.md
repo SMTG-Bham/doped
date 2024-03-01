@@ -1,9 +1,5 @@
 # `doped` Future Development WishList
 ## Defect calculations set up
-- CLI Functionality for core functions.
-  - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
-    POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
-    to next VASP folder when converged and submits job.
 - Defect complexes: Functionality to setup and parse calculations – can do this with new `pymatgen`
   code? Note that our defect-centring code is currently not implemented for this!
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
@@ -21,16 +17,29 @@
     good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
   - For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
    This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
+- CLI Functionality for core functions.
+  - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
+    POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
+    to next VASP folder when converged and submits job.
 - Just something to keep in mind; new defect generation code can apparently use oxidation states from
   `defect.defect_structure` and map to defect supercell. Not in our current subclass implementation of
   `Defect`. Is this useful info?
-- Ideally, one should be able to input just defect objects somewhere -> an alternative input to `DefectsGenerator`?
-Depends where we want supercell generation to happen. Can input to both `DefectsGenerator` or `DefectsSet` (but it'll just send it to `DefectsGenerator` with `kwargs`).
+- Ideally, one should be able to input just defect objects somewhere -> an alternative input to `DefectsGenerator`? Can input to both `DefectsGenerator` or `DefectsSet` (but it'll just send it to `DefectsGenerator` with `kwargs`).
 - **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
   plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Needs to be at
   this point because we need relaxed structures. Sensible naming scheme. Would be useful as this is a
   workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
+- Dielectric/kpoint-sampling weighted supercell generation? (essentially just a vectorised cost function implemented in the generation loop). Would natively optimise e.g. layered materials quite well.
+
+## Chemical Potentials
+- Overhaul chemical potentials code, dealing with all `TODO`s in that module. 
+  - Particularly: About the current extrinsic chempot algorithm: "SK: I don't think this is right. Here it's just getting the extrinsic chempots at the intrinsic chempot limits, but actually it should be recalculating the chempot limits with the extrinsic competing phases, then reducing _these_ facets down to those with only one extrinsic competing phase bordering".
+- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, and compare with old code from `vasp.py` (to ensure all functionality present).
+- Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
+- Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
+- Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
+- `vasp_ncl` etc input file generation, `vaspup2.0` `input` folder with `CONFIG` generation, improve `chemical_potentials` docstrings (i.e. mention defaults, note in notebooks if changing `INCAR`/`POTCAR` settings for competing phase production calcs, should also do with defect supercell calcs / vice versa)
 
 ## Post-Processing
 - Symmetry determination in arbitrary (periodicity-breaking) supercells. Should be doable, with defect-expander (stenciling) type code to regenerate the structure in an appropriate larger non-periodicity-breaking cell.

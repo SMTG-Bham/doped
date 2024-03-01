@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.3.0"
+version = "2.3.1"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.21.0",
     "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.3.0",
+    "shakenbreak>=3.3.1",
     "pandas",
     "pydefect",  # for Kumagai (eFNV) correction
     "filelock",
@@ -116,5 +116,5 @@ wrap-descriptions = 79
 
 [tool.codespell]
 ignore-words-list = """
-titel,te,bu,aack,unx,nd,efect,vise
+titel,te,bu,aack,unx,nd,efect,vise,Mater,SiSe
 """
