@@ -11,7 +11,7 @@ import numpy as np
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
 from doped import core
-from doped.utils.displacements import _calc_site_displacements
+from doped.utils.displacements import calc_site_displacements
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -35,11 +35,11 @@ class DefectDisplacementsTestCase(unittest.TestCase):
 
     def test_calc_site_displacements(self):
         """
-        Test _calc_site_displacements() function.
+        Test calc_site_displacements() function.
         """
         # Neutral Cd vacancy:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json")
-        disp_dict = _calc_site_displacements(defect_entry)
+        disp_dict = calc_site_displacements(defect_entry)
         for i, disp in [
             (0, [0.0572041, 0.00036486, -0.01794981]),
             (15, [0.11715445, -0.03659073, 0.01312027]),
@@ -61,14 +61,14 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         # Test displacement of vacancy removed before adding to calculation_metadata
         assert len(disp_dict_metadata["distances"]) == 63  # Cd Vacancy so 63 sites
         # Test relative displacements from defect
-        disp_dict = _calc_site_displacements(defect_entry, relative_to_defect=True)
+        disp_dict = calc_site_displacements(defect_entry, relative_to_defect=True)
         for i, disp in [
             (0, 0.0),
             (1, -0.1165912674943227),
         ]:
             assert np.isclose(disp_dict["Displacement wrt defect"][i], disp)
         # Test projection along Te dimer direction (1,1,0)
-        disp_dict = _calc_site_displacements(defect_entry, vector_to_project_on=[1, 1, 0])
+        disp_dict = calc_site_displacements(defect_entry, vector_to_project_on=[1, 1, 0])
         for i, dist, disp in [
             (32, 2.177851642, 0.980779911),  # index, distance, displacement
             (33, 2.234858368, -0.892888144),
@@ -77,7 +77,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             assert np.isclose(disp_dict["Distance to defect"][i], dist)
         # Test projection along (-1,-1,-1) for V_Cd^-1
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json")
-        disp_dict = _calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
+        disp_dict = calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
         indexes = (32, 33, 34, 35)  # Defect NNs
         distances = (2.5850237041739614, 2.5867590623267396, 2.5867621810347914, 3.0464198655727284)
         disp_parallel = (0.10857369429255698, 0.10824441910793342, 0.10824525022932621, 0.2130514712472405)
@@ -96,7 +96,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
 
         # Substitution:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/Te_Cd_+1_defect_entry.json")
-        disp_dict = _calc_site_displacements(defect_entry)
+        disp_dict = calc_site_displacements(defect_entry)
         for i, disp in [
             (0, [0.00820645, 0.00821417, -0.00815738]),
             (15, [-0.00639524, 0.00639969, -0.01407927]),
@@ -104,7 +104,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             np.allclose(disp_dict["Displacement"][i], np.array(disp))
         # Interstitial:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/Int_Te_3_1_defect_entry.json")
-        disp_dict = _calc_site_displacements(defect_entry)
+        disp_dict = calc_site_displacements(defect_entry)
         for i, disp in [
             (0, [-0.03931121, 0.01800569, 0.04547194]),
             (15, [-0.04850126, -0.01378455, 0.05439607]),
