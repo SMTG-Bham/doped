@@ -103,25 +103,25 @@ package was rewritten to operate using the new ``pymatgen-analysis-defects`` pac
 Studies using ``doped``, so far
 ===============================
 
-- X\. Wang et al. `arXiv <https://arxiv.org/abs/2402.04434>`_ 2024
-- I\. Mosquera-Lois et al. `arXiv <https://doi.org/10.48550/arXiv.2401.12127>`_ 2024
-- W\. Dou et al. `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_ 2024
-- K\. Li et al. `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
-- X\. Wang et al. `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
-- Y\. Kumagai et al. `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
-- S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos `Journal of Physical Chemistry C`_ 2023
-- A\. T. J. Nicolson et al. `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
-- Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
-- P\. A. Hyde et al. `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.3c01510>`_ 2023
-- J\. Willis, K. B. Spooner, D. O. Scanlon. `Applied Physics Letters <https://doi.org/10.1063/5.0170552>`__ 2023
-- J\. Cen et al. `Journal of Materials Chemistry A`_ 2023
-- J\. Willis & R. Claes et al. `Chem Mater <https://doi.org/10.1021/acs.chemmater.3c01628>`__ 2023
-- I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon `npj Computational Materials`_ 2023
-- Y\. T. Huang & S. R. Kavanagh et al. `Nature Communications`_ 2022
-- S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt `Faraday Discussions`_ 2022
-- Y-S\. Choi et al. `ACS Appl. Energy Mater. <https://doi.org/10.1021/acsaem.2c03466>`__ 2022
-- S\. R. Kavanagh, D. O. Scanlon, A. Walsh `ACS Energy Letters <https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380>`__ 2021
-- C\. J. Krajewska et al. `Chemical Science`_ 2021
+- X\. Wang et al. **Upper efficiency limit of Sb₂Se₃ solar cells** `arXiv <https://arxiv.org/abs/2402.04434>`_ 2024
+- I\. Mosquera-Lois et al. **Machine-learning structural reconstructions for accelerated point defect calculations** `arXiv <https://doi.org/10.48550/arXiv.2401.12127>`_ 2024
+- W\. Dou et al. **Giant Band Degeneracy via Orbital Engineering Enhances Thermoelectric Performance from Sb₂Si₂Te₆ to Sc₂Si₂Te₆** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_ 2024
+- K\. Li et al. **Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb₂O₅** `ChemRxiv <https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23>`_ 2024
+- X\. Wang et al. **Four-electron negative-U vacancy defects in antimony selenide** `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
+- Y\. Kumagai et al. **Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation** `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
+- S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **Mixed-Cation Vacancy-Ordered Perovskites (Cs₂Ti\ :sub:`1–x`Sn\ :sub:`x`X₆; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability** `Journal of Physical Chemistry C`_ 2023
+- A\. T. J. Nicolson et al. **Cu₂SiSe₃ as a promising solar absorber: harnessing cation dissimilarity to avoid killer antisites** `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
+- Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh **Inhomogeneous Defect Distribution in Mixed-Polytype Metal Halide Perovskites** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
+- P\. A. Hyde et al. **Lithium Intercalation into the Excitonic Insulator Candidate Ta₂NiSe₅** `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.3c01510>`_ 2023
+- J\. Willis, K. B. Spooner, D. O. Scanlon. **On the possibility of p-type doping in barium stannate** `Applied Physics Letters <https://doi.org/10.1063/5.0170552>`__ 2023
+- J\. Cen et al. **Cation disorder dominates the defect chemistry of high-voltage LiMn\ :sub:`1.5`Ni\ :sub:`0.5`O4 (LMNO) spinel cathodes** `Journal of Materials Chemistry A`_ 2023
+- J\. Willis & R. Claes et al. **_Limits to Hole Mobility and Doping in Copper Iodide** `Chem Mater <https://doi.org/10.1021/acs.chemmater.3c01628>`__ 2023
+- I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon **Identifying the ground state structures of point defects in solids** `npj Computational Materials`_ 2023
+- Y\. T. Huang & S. R. Kavanagh et al. **Strong absorption and ultrafast localisation in NaBiS₂ nanocrystals with slow charge-carrier recombination** `Nature Communications`_ 2022
+- S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt **Impact of metastable defect structures on carrier recombination in solar cells** `Faraday Discussions`_ 2022
+- Y-S\. Choi et al. **Intrinsic Defects and Their Role in the Phase Transition of Na-Ion Anode Na₂Ti₃O₇** `ACS Appl. Energy Mater. <https://doi.org/10.1021/acsaem.2c03466>`__ 2022
+- S\. R. Kavanagh, D. O. Scanlon, A. Walsh **Rapid Recombination by Cadmium Vacancies in CdTe** `ACS Energy Letters <https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380>`__ 2021
+- C\. J. Krajewska et al. **Enhanced visible light absorption in layered Cs₃Bi₂Br₉ through mixed-valence Sn(II)/Sn(IV) doping** `Chemical Science`_ 2021
 
 .. Xinwei early 2024 paper
 .. Se
