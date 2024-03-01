@@ -1177,7 +1177,7 @@ class CompetingPhasesAnalyzer:
         # if path is just a list of all competing phases
         if isinstance(path, list):
             for p in path:
-                if "vasprun.xml" in Path(p).name:
+                if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
                     self.vasprun_paths.append(str(Path(p)))
 
                 # try to find the file - will always pick the first match for vasprun.xml*
@@ -1191,42 +1191,36 @@ class CompetingPhasesAnalyzer:
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
-                if not p.glob("EaH"):  # if path provided doesn't point to the doped created directories
-                    # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
-                    #  only if there's no *EaH* folders at all.
-                    #  Seemed to be causing problems with .DS_Store files on Macs as well
-                    raise FileNotFoundError(
-                        "Folders are not in the correct structure, provide them as a list of "
-                        "paths (or strings). Competing phase folders should have `EaH` in the "
-                        "folder name."
-                    )
-
-                # add bulk simple properties
-                vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
-                if multiple:
-                    warnings.warn(
-                        f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
-                        f"{vr_path} to parse the calculation energy and metadata."
-                    )
-
-                if os.path.exists(vr_path):
-                    self.vasprun_paths.append(vr_path)
-
-                else:
-                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
-                    if multiple:
-                        warnings.warn(
-                            f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                            f"{vr_path} to parse the calculation energy and metadata."
+                if p.is_dir() and not p.name.startswith("."):
+                    # add bulk simple properties
+                    vr_path = "null_directory"
+                    with contextlib.suppress(FileNotFoundError):
+                        vr_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", p / folder
                         )
+                        if multiple:
+                            warnings.warn(
+                                f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                                f"{vr_path} to parse the calculation energy and metadata."
+                            )
 
                     if os.path.exists(vr_path):
                         self.vasprun_paths.append(vr_path)
 
                     else:
-                        warnings.warn(
-                            f"Can't find a vasprun.xml file in {p} or {p/folder}, proceed with caution"
-                        )
+                        with contextlib.suppress(FileNotFoundError):
+                            vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                            if multiple:
+                                warnings.warn(
+                                    f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                                    f"{vr_path} to parse the calculation energy and metadata."
+                                )
+
+                        if os.path.exists(vr_path):
+                            self.vasprun_paths.append(vr_path)
+
+                        else:
+                            warnings.warn(f"Can't find a vasprun.xml file in {p} or {p/folder}, skipping")
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
@@ -1236,9 +1230,30 @@ class CompetingPhasesAnalyzer:
 
         num = len(self.vasprun_paths)
         print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
-        # TODO: Make this a try/except loop to print which vasprun.xml files fail parsing (i.e. are
-        #  corrupted)
-        self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
+
+        self.vaspruns = []
+        failed_parsing_dict = {}
+        for vasprun_path in self.vasprun_paths:
+            try:
+                self.vaspruns.append(Vasprun(vasprun_path).as_dict())
+            except Exception as e:
+                if str(e) in failed_parsing_dict:
+                    failed_parsing_dict[str(e)] += [vasprun_path]
+                else:
+                    failed_parsing_dict[str(e)] = [vasprun_path]
+
+        if failed_parsing_dict:
+            warning_string = (
+                "Failed to parse the following `vasprun.xml` files:\n(files: error)\n"
+                + "\n".join([f"{paths}: {error}" for error, paths in failed_parsing_dict.items()])
+            )
+            warnings.warn(warning_string)
+
+        if not self.vaspruns:
+            raise FileNotFoundError(
+                "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
+                "folders and input parameters are in the correct format (see docstrings/tutorials)."
+            )
         self.data = []
 
         temp_data = []
