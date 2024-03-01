@@ -478,7 +478,11 @@ class DefectDictSetTest(unittest.TestCase):
             dds_incar_without_comments = dds.incar.copy()
             dds_incar_without_comments["ICORELEVEL"] = 0
             dds_incar_without_comments["ISYM"] = 0
-            dds_incar_without_comments["ALGO"] = "Normal"
+            dds_incar_without_comments["ALGO"] = (
+                "Normal"
+                if "normal" in dds_incar_without_comments.get("ALGO", "normal").lower()
+                else dds_incar_without_comments.get("ALGO", "normal")
+            )
             if "KPAR" in dds_incar_without_comments and isinstance(
                 dds_incar_without_comments["KPAR"], str
             ):
@@ -490,11 +494,13 @@ class DefectDictSetTest(unittest.TestCase):
                 incar_lines = f.readlines()
             for comment_string in [
                 "# May want to change NCORE, KPAR, AEXX, ENCUT",
-                "change to all if zhegv, fexcp/f or zbrent",
                 "needed if using the kumagai-oba",
                 "symmetry breaking extremely likely",
             ]:
                 assert any(comment_string in line for line in incar_lines)
+
+            if dds.incar.get("ALGO", "normal").lower() == "normal":  # ALGO = Normal default, has comment
+                assert any("change to all if zhegv, fexcp/f or zbrent" in line for line in incar_lines)
 
         else:
             assert not os.path.exists(f"{output_path}/INCAR")
@@ -642,16 +648,20 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_dict_set, type in dds_test_list:
             if defect_dict_set is not None:
                 print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                print("Here")
                 self.dds_test._check_dds(
                     defect_dict_set,
                     defect_relax_set.defect_supercell,
                     charge_state=defect_relax_set.charge_state,
                     **kwargs,
                 )
+                print("Here")
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
+                print("Here")
                 self.dds_test._write_and_check_dds_files(
                     defect_dict_set, output_path=f"{defect_relax_set.defect_entry.name}"
                 )
+                print("Here")
                 self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
                 if defect_relax_set.charge_state == 0:
                     self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
