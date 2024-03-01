@@ -1333,7 +1333,8 @@ class DopedParsingTestCase(unittest.TestCase):
         parsed_vac_Cd_dict = {}
 
         for i in os.listdir(self.CdTe_EXAMPLE_DIR):
-            if "v_Cd" in i:  # loop folders and parse those with "v_Cd" in name
+            # loop folders and parse those with "v_Cd" in name:
+            if os.path.isdir(f"{self.CdTe_EXAMPLE_DIR}/{i}") and "v_Cd" in i:
                 defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
                 int(i[-2:].replace("_", ""))
                 # parse with no transformation.json

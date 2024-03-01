@@ -653,7 +653,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert Path(path1).is_dir()
         with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
-            assert contents[0] == "pymatgen with grid density = 911 / number of atoms\n"
+            assert contents[0] == "pymatgen with grid density = 1295 / number of atoms\n"
             assert contents[3] == "4 4 4\n"
 
         with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
