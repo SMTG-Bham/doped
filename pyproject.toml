@@ -98,6 +98,7 @@ lint.ignore = [
   "PLR2004", # Magic number
   "PLR",     # pylint refactor
   "W605",    # Invalid escape sequence
+  "PT011",   # too broad pytest.raises()
 ]
 
 [tool.ruff.lint.per-file-ignores]
