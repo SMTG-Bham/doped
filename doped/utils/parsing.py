@@ -97,7 +97,11 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     matching files are found.
     """
     files = os.listdir(path)
-    output_files = [filename for filename in files if output_file.lower() in filename.lower()]
+    output_files = [
+        filename
+        for filename in files
+        if output_file.lower() in filename.lower() and not filename.startswith(".")
+    ]
     # sort by direct match to {output_file}, direct match to {output_file}.gz, then alphabetically:
     if output_files := sorted(
         output_files,
