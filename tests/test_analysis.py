@@ -300,6 +300,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=self.CdTe_EXAMPLE_DIR,
                 dielectric=9.13,
                 json_filename="CdTe_example_defect_dict.json",
+                load_phs_data = False
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
@@ -589,7 +590,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
-    def test_phs_Cu2SiSe3(self):
+    def test_phs_cu2sise3(self):
         """
         Test parsing of PHS in Cu2SiSe3.
         """
@@ -600,10 +601,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             load_phs_data=True,
         ).defect_entry
 
-        bes = defect.get_perturbed_host_state(save_plot=False)
+        bes, fig = defect.get_perturbed_host_state()
         with open(f"{self.Cu2SiSe3_DATA_DIR}/Cu2SiSe3_band_edge_states.json") as f:
             expected = json.load(f)
-        assert bes == expected
+        assert bes.as_dict() == expected
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
