@@ -409,7 +409,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
             f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam - please ensure `vasprun.xml(.gz)` "
             f"files are present and/or specify `bulk_path` manually."
-        ) in str(exc.exception)
+        ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
         # skip_corrections:
@@ -594,7 +594,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
             f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "
             f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
-            f"as expected (see `DefectsParser` docstring)." in str(exc.exception)
+            f"as expected (see `DefectsParser` docstring)." in str(exc.value)
         )
 
     @custom_mpl_image_compare(filename="O_Se_example_defects_plot.png")
@@ -607,7 +607,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert (  # bulk in separate folder so fails
             f"Could not automatically determine bulk supercell calculation folder in "
             f"{self.Sb2Se3_DATA_DIR}/defect, found 0 folders containing `vasprun.xml(.gz)` files (in "
-            f"subfolders) and 'bulk' in the folder name" in str(exc.exception)
+            f"subfolders) and 'bulk' in the folder name" in str(exc.value)
         )
 
         with warnings.catch_warnings(record=True) as w:  # no warning about negative corrections with
@@ -2124,7 +2124,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
     #             "From the input/determined point symmetries, an orientational degeneracy factor of 0.25 "
     #             "is predicted, which is less than 1, which is not reasonable for "
     #             "vacancies/substitutions, indicating an error in the symmetry determination!"
-    #         ) in str(exc.exception)
+    #         ) in str(exc.value)
     #
     #     for defect_type in ["interstitial", DefectType.Interstitial]:
     #         print(defect_type)  # for debugging

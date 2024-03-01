@@ -84,4 +84,4 @@ class WyckoffTest(unittest.TestCase):
             label, equiv_coord_list = get_wyckoff_label_and_equiv_coord_list(
                 conv_cell_site=self.conv_cdte[0],  # no sgn
             )
-        assert no_sgn_or_dict_error in e.exception
+        assert no_sgn_or_dict_error in e.value

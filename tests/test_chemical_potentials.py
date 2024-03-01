@@ -410,7 +410,7 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with pytest.raises(ValueError) as exc:
             reloaded_cpa.from_csv("competing_phases.csv")
-        assert "Supplied csv does not contain the minimal columns required" in str(exc.exception)
+        assert "Supplied csv does not contain the minimal columns required" in str(exc.value)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
@@ -635,7 +635,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "ZrO2",
                 api_key="test",
             )
-        assert nonvalid_api_key_error in e.exception
+        assert str(nonvalid_api_key_error) in str(e.value)
 
         new_api_key_error = ValueError(
             "You are trying to use the new Materials Project (MP) API which is not supported "
@@ -646,7 +646,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "ZrO2",
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
-        assert new_api_key_error in e.exception
+        assert str(new_api_key_error) in str(e.value)
 
     def test_convergence_setup(self):
         # potcar spec doesn't need potcars set up for pmg and it still works

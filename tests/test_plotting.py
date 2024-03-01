@@ -213,7 +213,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         )
         with pytest.raises(ValueError) as e:
             plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
-        assert wrong_charge_error in e.exception
+        assert wrong_charge_error in e.value
 
         pytest.raises(
             TypeError,
@@ -400,7 +400,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert (
             "You have specified a chemical potential limit, but no `chempots` have been supplied, "
             "so `limit` cannot be used here!"
-        ) in str(exc.exception)
+        ) in str(exc.value)
 
     def test_plot_limit_user_chempots_error(self):
         with pytest.raises(ValueError) as exc:
@@ -409,7 +409,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             "You have specified a chemical potential limit, but the supplied chempots are not in the "
             "doped format (i.e. with `limits` in the chempots dict), and instead correspond to just a "
             "single chemical potential limit, so `limit` cannot be used here!"
-        ) in str(exc.exception)
+        ) in str(exc.value)
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
     def test_default_CdTe_plot_no_chempots(self):

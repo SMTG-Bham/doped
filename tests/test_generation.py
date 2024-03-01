@@ -978,7 +978,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         # assert setting something else throws an error
         with pytest.raises(TypeError) as e:
             defect_gen[random_defect_entry_name] = random_defect_entry.defect
-        assert "Value must be a DefectEntry object, not Interstitial" in str(e.exception)
+        assert "Value must be a DefectEntry object, not Interstitial" in str(e.value)
 
         fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
         fd_up_random_defect_entry.defect.structure = self.CdTe_bulk_supercell  # any structure that
@@ -986,14 +986,14 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         with pytest.raises(ValueError) as e:
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
         assert "Value must have the same primitive structure as the DefectsGenerator object, " in str(
-            e.exception
+            e.value
         )
 
         fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
         fd_up_random_defect_entry.sc_entry = copy.deepcopy(self.fd_up_sc_entry)
         with pytest.raises(ValueError) as e:
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
-        assert "Value must have the same supercell as the DefectsGenerator object," in str(e.exception)
+        assert "Value must have the same supercell as the DefectsGenerator object," in str(e.value)
 
     def _generate_and_test_no_warnings(self, structure, min_image_distance=None, **kwargs):
         original_stdout = sys.stdout  # Save a reference to the original standard output
@@ -2683,7 +2683,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         with pytest.raises(ValueError) as e:
             DefectsGenerator(self.prim_cu, generate_supercell=False)
-        assert single_site_no_supercell_error in e.exception
+        assert single_site_no_supercell_error in e.value
 
     def agcu_defect_gen_check(self, agcu_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(agcu_defect_gen)

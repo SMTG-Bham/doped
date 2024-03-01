@@ -153,12 +153,12 @@ class DefectDictSetTest(unittest.TestCase):
             assert not dds.potcars
             with pytest.raises(ValueError) as e:
                 _test_pop = dds.potcar
-            assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.exception)
+            assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.value)
 
             if dds.charge_state != 0:
                 with pytest.raises(ValueError) as e:
                     _test_pop = dds.incar
-                assert _check_nelect_nupdown_error(e.exception)
+                assert _check_nelect_nupdown_error(e.value)
             else:
                 self._check_dds_incar_and_writing_warnings(dds)
         assert dds.structure == struct
@@ -270,7 +270,7 @@ class DefectDictSetTest(unittest.TestCase):
                     self._general_defect_dict_set_check(  # also tests dds.charge_state
                         dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
                     )
-                _check_nelect_nupdown_error(e.exception)
+                _check_nelect_nupdown_error(e.value)
             self._general_defect_dict_set_check(  # also tests dds.charge_state
                 dds, struct, incar_check=kwargs.pop("incar_check", False), **kwargs
             )
@@ -466,7 +466,7 @@ class DefectDictSetTest(unittest.TestCase):
             # error with charged defect and unperturbed_poscar=False
             with pytest.raises(ValueError) as e:
                 dds.write_input(output_path, **kwargs)
-            assert _check_potcar_dir_not_setup_warning_error(dds, e.exception, unperturbed_poscar=False)
+            assert _check_potcar_dir_not_setup_warning_error(dds, e.value, unperturbed_poscar=False)
             return
 
         dds.write_input(output_path, **kwargs)
