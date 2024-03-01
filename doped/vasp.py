@@ -456,7 +456,11 @@ class DefectDictSet(DictSet):
         Returns a string representation of the DefectDictet object.
         """
         attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
+        methods = set()
+        for k in dir(self):
+            with contextlib.suppress(Exception):
+                if callable(getattr(self, k)) and not k.startswith("_"):
+                    methods.add(k)
         properties = {
             name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
         }
