@@ -74,6 +74,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
 
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
+        self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -83,6 +84,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json"))
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json"))
         if_present_rm("V2O5_test")
+        if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -104,6 +106,20 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert defect_entry.get_ediff()  # can get ediff fine
             assert defect_entry.calculation_metadata  # has metadata
 
+        # check __repr__ info:
+        assert all(
+            i in dp.__repr__()
+            for i in [
+                "doped DefectsParser for bulk composition",
+                f"with {len(dp.defect_dict)} parsed defect entries in self.defect_dict. "
+                "Available attributes",
+                "bulk_path",
+                "error_tolerance",
+                "Available methods",
+                "get_defect_thermodynamics",
+            ]
+        )
+
     def _check_parsed_CdTe_defect_energies(self, dp):
         """
         Explicitly check some formation energies for CdTe defects.
@@ -123,7 +139,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=1e-3)
         assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
 
-    def _check_default_CdTe_DefectParser_outputs(
+    def _check_default_CdTe_DefectsParser_outputs(
         self, CdTe_dp, recorded_warnings, multiple_outcars_warning=True, dist_tol=1.5, test_attributes=True
     ):
         assert all("KPOINTS" not in str(warn.message) for warn in recorded_warnings)
@@ -286,7 +302,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 json_filename="CdTe_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectParser_outputs(default_dp, w)
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
 
         # test reloading DefectsParser
         reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
@@ -303,14 +319,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         default_thermo = default_dp.get_defect_thermodynamics()
 
-        return default_thermo.plot(chempots=CdTe_chempots, facet="CdTe-Te")
+        return default_thermo.plot(chempots=CdTe_chempots, limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_without_multiprocessing(self):
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, processes=1)
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectParser_outputs(dp, w)
+        self._check_default_CdTe_DefectsParser_outputs(dp, w)
 
     def test_DefectsParser_CdTe_filterwarnings(self):
         # check using filterwarnings works as expected:
@@ -318,7 +334,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectParser_outputs(dp, w, multiple_outcars_warning=False)
+        self._check_default_CdTe_DefectsParser_outputs(dp, w, multiple_outcars_warning=False)
         warnings.filterwarnings("default", "Multiple")
 
     def test_DefectsParser_CdTe_dist_tol(self):
@@ -327,7 +343,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13)
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectParser_outputs(dp, w, dist_tol=0.1)
+        self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
 
     def test_DefectsParser_CdTe_no_dielectric_json(self):
         # test no dielectric and no JSON:
@@ -368,7 +384,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # correction warning
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
-        self._check_default_CdTe_DefectParser_outputs(dp, w, test_attributes=False)  # same energies as
+        self._check_default_CdTe_DefectsParser_outputs(dp, w, test_attributes=False)  # same energies as
         # above
 
         # test changed attributes:
@@ -690,7 +706,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])
         assert not w  # no warnings
 
-        return v2o5_thermo.plot(facet="V2O5-O2")
+        return v2o5_thermo.plot(limit="V2O5-O2")
 
     @custom_mpl_image_compare(filename="merged_renamed_v_O_plot.png")
     def test_V2O5_same_named_defects(self):
@@ -706,7 +722,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w  # no warnings
         assert len(dp.defect_dict) == 5  # now 5 defects, all still included
-        assert not w  # no warnings
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
@@ -714,7 +729,55 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         print(thermo.get_symmetries_and_degeneracies())
 
-        return thermo.plot(facet="V2O5-O2")
+        return thermo.plot(limit="V2O5-O2")
+
+    @custom_mpl_image_compare(filename="SrTiO3_v_O.png")
+    def test_SrTiO3_diff_ISYM_bulk_defect(self):
+        """
+        Test parsing SrTiO3 defect calculations, where a different ISYM was
+        used for the bulk (= 3) compared to the defect (= 0) calculations.
+
+        Previously this failed because the bulk/defect kpoints could not be
+        properly compared.
+        """
+        # test previous parsing approach first:
+        with warnings.catch_warnings(record=True) as w:
+            _single_dp = DefectParser.from_paths(
+                defect_path=f"{self.SrTiO3_DATA_DIR}/vac_O_2/vasp_std",
+                bulk_path=f"{self.SrTiO3_DATA_DIR}/bulk_sp333",
+                dielectric=6.33,
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "There are mismatching INCAR tags",
+                "[('LASPH', False, True)]",
+            ]
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.SrTiO3_DATA_DIR, dielectric=6.33)  # wrong dielectric from Kanta
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "There are mismatching INCAR tags",
+                "vac_O_0: [('LASPH', False, True)]",
+                "vac_O_1: [('LASPH', False, True)]",
+                "vac_O_2: [('LASPH', False, True)]",
+            ]
+        )
+
+        assert len(dp.defect_dict) == 3
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+
+        print(thermo.get_symmetries_and_degeneracies())
+
+        return thermo.plot()
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -855,23 +918,35 @@ class DopedParsingTestCase(unittest.TestCase):
         fake_aniso_dielectric = [1, 2, 3]
 
         with warnings.catch_warnings(record=True) as w:
-            parsed_v_cd_m2_fake_aniso = DefectParser.from_paths(
+            parsed_v_cd_m2_fake_aniso_dp = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
-            ).defect_entry
-            print([str(warn.message) for warn in w])  # for debugging
-            assert len(w) == 1
-            assert issubclass(w[-1].category, UserWarning)
-            assert (
-                "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
-                "the _anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk "
-                "folder.\n`LOCPOT` files were found in both defect & bulk folders, and so the "
-                "Freysoldt (FNV) charge correction developed for _isotropic_ materials will be applied "
-                "here, which corresponds to using the effective isotropic average of the supplied "
-                "anisotropic dielectric. This could lead to significant errors for very anisotropic "
-                "systems and/or relatively small supercells!" in str(w[-1].message)
             )
+        print([str(warn.message) for warn in w])  # for debugging
+        assert len(w) == 1
+        assert issubclass(w[-1].category, UserWarning)
+        assert (
+            "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
+            "the _anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk "
+            "folder.\n`LOCPOT` files were found in both defect & bulk folders, and so the "
+            "Freysoldt (FNV) charge correction developed for _isotropic_ materials will be applied "
+            "here, which corresponds to using the effective isotropic average of the supplied "
+            "anisotropic dielectric. This could lead to significant errors for very anisotropic "
+            "systems and/or relatively small supercells!" in str(w[-1].message)
+        )
+        assert all(
+            i in parsed_v_cd_m2_fake_aniso_dp.__repr__()
+            for i in [
+                "doped DefectParser for bulk composition CdTe. ",
+                "Available attributes",
+                "defect_entry",
+                "error_tolerance",
+                "Available methods",
+                "load_eFNV_data",
+            ]
+        )
+        parsed_v_cd_m2_fake_aniso = parsed_v_cd_m2_fake_aniso_dp.defect_entry
 
         assert np.isclose(
             parsed_v_cd_m2_fake_aniso.get_ediff() - sum(parsed_v_cd_m2_fake_aniso.corrections.values()),
@@ -1277,7 +1352,8 @@ class DopedParsingTestCase(unittest.TestCase):
         parsed_vac_Cd_dict = {}
 
         for i in os.listdir(self.CdTe_EXAMPLE_DIR):
-            if "v_Cd" in i:  # loop folders and parse those with "v_Cd" in name
+            # loop folders and parse those with "v_Cd" in name:
+            if os.path.isdir(f"{self.CdTe_EXAMPLE_DIR}/{i}") and "v_Cd" in i:
                 defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
                 int(i[-2:].replace("_", ""))
                 # parse with no transformation.json
@@ -2168,19 +2244,19 @@ class ReorderedParsingTestCase(unittest.TestCase):
 #             ).all()
 #
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-#             self.sb2o5_chempots, facets=["Sb2O5-SbO2"], fermi_level=3
+#             self.sb2o5_chempots, limits=["Sb2O5-SbO2"], fermi_level=3
 #         )
 #         _check_formation_energy_table(formation_energy_table_df, fermi_level=3)
 #
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(  # test default w/ E_F = 0
 #             self.sb2o5_chempots,
-#             facets=["Sb2O5-O2"],
+#             limits=["Sb2O5-O2"],
 #         )
 #         _check_formation_energy_table(formation_energy_table_df, fermi_level=0)
 #
 #         formation_energy_table_df_manual_chempots = (
 #             self.sb2o5_thermo.get_formation_energies(  # test default with E_F = 0
-#                 chempots=self.sb2o5_chempots["facets_wrt_el_refs"]["Sb2O5-O2"],
+#                 chempots=self.sb2o5_chempots["limits_wrt_el_refs"]["Sb2O5-O2"],
 #                 el_refs=self.sb2o5_chempots["elemental_refs"],
 #             )
 #         )
@@ -2195,7 +2271,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
 #
 #         # assert runs fine with only raw chempots:
 #         formation_energy_table_df = self.sb2o5_thermo.get_formation_energies(
-#             chempots=self.sb2o5_chempots["facets"]["Sb2O5-O2"]
+#             chempots=self.sb2o5_chempots["limits"]["Sb2O5-O2"]
 #         )
 #         _check_formation_energy_table(formation_energy_table_df)
 #         # check same formation energies as with manual chempots plus el_refs:
