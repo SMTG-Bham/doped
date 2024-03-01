@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.3.1"
+version = "2.3.2"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
 readme = "README.md"
@@ -115,6 +115,4 @@ wrap-summaries = 79
 wrap-descriptions = 79
 
 [tool.codespell]
-ignore-words-list = """
-titel,te,bu,aack,unx,nd,efect,vise,Mater,SiSe
-"""
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise"  # lowercase!

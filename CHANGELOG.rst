@@ -1,6 +1,10 @@
 Change Log
 ==========
 
+v.2.3.2
+----------
+- Update to match breaking change in ``pymatgen==2024.3.1`` (released today), handling ``incar_params``.
+
 v.2.3.1
 ----------
 - Refactor (phase diagram) ``facet`` to (chemical potential) ``limit`` in ``doped`` chemical potential
