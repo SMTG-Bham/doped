@@ -725,7 +725,7 @@ class DefectThermodynamics(MSONable):
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding limits
-            ints_and_limits_zip = zip(hs_ints.intersections, hs_ints.dual_limits)
+            ints_and_limits_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
             # Only include the limits corresponding to entries, not the boundaries
             total_entries = len(sorted_defect_entries)
             ints_and_limits_filter = filter(
