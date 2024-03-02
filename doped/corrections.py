@@ -346,7 +346,7 @@ def get_kumagai_correction(
     For example, with layered materials, the defect charge is often localised
     to one layer, so we may want to adjust ``defect_region_radius`` and/or
     ``excluded_indices`` to ensure that only sites in other layers are used for
-    the sampling region (plateau) - see example on doped docs.
+    the sampling region (plateau) - see example on doped docs Tips page.
 
     Args:
         defect_entry (DefectEntry):

@@ -542,3 +542,20 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
         assert len(w) == 3
         return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_default_TLD.png")
+    def test_Sb2O5_default(self):
+        with warnings.catch_warnings(record=True) as w:
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
+        return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_merged_dist_tol_TLD.png")
+    def test_Sb2O5_merged_dist_tol(self):
+        with warnings.catch_warnings(record=True) as w:
+            self.Sb2O5_defect_thermo.dist_tol = 10
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
+        return plot
