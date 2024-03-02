@@ -3284,3 +3284,13 @@ v_Te         [+2,+1,0,-1,-2]        [0.335,0.003,0.073]  18f
 
         # test DefectsSet initialisation also fine:
         DefectsSet(Si_defect_gen)
+
+    def test_P1_sanity_check(self):
+        """
+        Test sanity check print message if detected symmetry is P1.
+        """
+        from shakenbreak.distortions import rattle
+
+        rattled_struc = rattle(self.prim_cdte, 0.25)
+        defect_gen, output = self._generate_and_test_no_warnings(rattled_struc)
+        assert "Note that the detected symmetry of the input structure is P1" in output

@@ -107,7 +107,5 @@
 - Update Sb2O5 test in `test_analysis.py`
   - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
 - Plotting lines colour updates.
-- Add sanity check warning with `DefectsGenerator`, if input structure symmetry is `P1` – you sure about this??
 - Add spin degeneracy auto determination to get symmetries/degeneracies later (if hasn't been parsed with current code for some reason e.g. Kanta...). Should implement this for all degeneracy factors whenever concentration methods used?
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
-- Note in chempot tutorial you may need to increase the kpoints range for certain metals to reach convergence. Also show writing `KPOINTS` files from convergence dict (as in Alkali_Doping notebook) to folders.
