@@ -201,38 +201,46 @@ Perturbed Host States
 Defects which have hydrogenlike donor and acceptor states are known as perturbed host states (PHS).
 These states typically have wavefunctions distributed over many unit cells, requiring exceptionally
 large supercells to properly capture their physics (`an example  <https://www.nature.com/articles/s41524-020-00448-7>`_).
-Current corrections schemes can not account for errors obtained when calculating the transition energies of PHS,
-and therefore it is recommended to denote that the defect is a PHS and their transition energy is located near
+Current correction schemes can not account for errors obtained when calculating the transition energies of PHS,
+and therefore it is recommended to denote that the defect is a PHS and that their transition energy is located near
 the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
 
 In doped we employ the methodolgy of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
 identify potential PHS through an interface with ``pydefect``.
 
-By including the optional tag ``load_phs_data`` when using the (single) ``DefectParser`` class
-to parse an individual defect, and in combination with ``defect_entry.get_perturbed_host_state()`` PHS
-can be automatically identified. It is however recommended to manually check the charge density
-of the defect state to confirm the identification.
+The optional argument ``load_phs_data: Optional[bool] = True`` loads the projected orbitals,
+and in combination with ``defect_entry.get_perturbed_host_state()`` returns
+additional information about the nature of the band edges, allowing defect states can be automatically identified.
+Furthermore, a plot for the single particle levels is return. It is however recommended to manually
+check the charge density of the defect state to confirm the identification of a PHS. Your ``INCAR`` file needs to
+include ``LORBIT > 10`` in order to obtain the project orbitals and your bulk calculation folder
+must contain the ``OUTCAR`` file.
 
 In the example below the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
-determined to be a PHS. This was additionally confirmed by perform calculations in larger supercells and plotting
-the charge density.
+determined to be a PHS. This was additionally confirmed by perform calculations in larger
+supercells and plotting the charge density. Important terms include: 1) ``P-ratio``: The ratio of the the sum of
+the projected orbitals of the neighbouring sites to the defects to the total sum of the project orbitals. A value
+close to 1 indicate a localised state. 2) ``Occupation``: Indicates if the additional hole/electron has been
+added to the VBM/CBM. 3) ``vbm has acceptor phs``/``cbm has donor phs``: Has a PHS state been automatically identified.
+Depends on how VBM-like/CBM-like the defect states is and the occupancy of the state. 4) ``Localized Orbital(s)``:
+Information about the localised defects states.
 
 .. code-block:: python
 
     bulk = "Cu2SiSe3/bulk/vasp_std"
     defect = "Cu2SiSe3/v_Cu_0/vasp_std/"
 
-    defect = DefectParser.from_paths(defect,bulk,dielectric,skip_corrections=True,load_phs_data=True).defect_entry
-    phs = defect.get_perturbed_host_state(save_plot=False)
+    defect = DefectParser.from_paths(defect,bulk,dielectric,skip_corrections=True).defect_entry
+    bes, fig = defect.get_perturbed_host_state()
     #print information about the defect state
-    print(phs)
+    print(bes)
 
      -- band-edge states info
-     Spin-up
-          Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
-     VBM  347    3.539   0.91     1.00        0.03     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
-     CBM  348    5.139   0.87     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    Spin-up
+         Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
+    VBM  347    3.539   0.05     1.00        0.03     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+    CBM  348    5.139   0.04     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
     vbm has acceptor phs: False (0.000 vs. 0.2)
     cbm has donor phs: False (0.000 vs. 0.2)
     ---
@@ -241,8 +249,8 @@ the charge density.
 
     Spin-down
          Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
-    VBM  347    3.677   0.92     0.00        0.02     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
-    CBM  348    5.142   0.87     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    VBM  347    3.677   0.06     0.00        0.02     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+    CBM  348    5.142   0.04     0.00        0.02     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
     vbm has acceptor phs: True (1.000 vs. 0.2)
     cbm has donor phs: False (0.000 vs. 0.2)
     ---
