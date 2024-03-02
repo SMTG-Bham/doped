@@ -1221,6 +1221,12 @@ class DefectsGenerator(MSONable):
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = symmetry._get_sga(self.structure)
+            if sga.get_space_group_number() == 1:  # print sanity check message
+                print(
+                    "Note that the detected symmetry of the input structure is P1 (i.e. only "
+                    "translational symmetry). If this is not expected (i.e. host system is not "
+                    "disordered/defective), then you should check your input structure!"
+                )
 
             prim_struct = symmetry.get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
