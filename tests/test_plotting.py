@@ -208,12 +208,11 @@ class DefectPlottingTestCase(unittest.TestCase):
         # check exceptions raised: invalid charge or defect_species
         # test error catching:
         wrong_charge_error = ValueError(
-            "Problem reading defect name vac_1_Cd_a, should end with charge state after "
-            "underscore (e.g. vac_1_Cd_0)"
+            "Problem reading defect name vac_1_Cd_a, should end with charge state after underscore"
         )
         with pytest.raises(ValueError) as e:
             plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
-        assert wrong_charge_error in e.value
+        assert str(wrong_charge_error) in str(e.value)
 
         pytest.raises(
             TypeError,

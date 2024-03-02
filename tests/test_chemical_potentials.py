@@ -683,7 +683,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.molecules[0].data["molecule"]
         assert not self.cp.nonmetals[0].data["molecule"]
 
-        path1 = "competing_phases/ZrO2_EaH_0.0/vasp_std/"
+        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         assert Path(path1).is_dir()
         with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -698,7 +698,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        path2 = "competing_phases/O2_EaH_0.0/vasp_std"
+        path2 = "competing_phases/O2_EaH_0/vasp_std"
         assert Path(path2).is_dir()
         with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()

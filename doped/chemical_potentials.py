@@ -10,6 +10,7 @@ import os
 import warnings
 from pathlib import Path, PurePath
 
+import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -566,10 +567,8 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = (
-                    f"competing_phases/{e.name}_EaH"
-                    f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )  # TODO: competing_phases folder name should be an optional parameter
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
+                # TODO: competing_phases folder name should be an optional parameter
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
                 #  out for cases where rounding can give same name (e.g. Te!) - should use
                 #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
@@ -600,11 +599,14 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = (
-                    f"competing_phases/{e.name}_EaH_"
-                    f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
+
+    def _competing_phase_name(self, entry):
+        rounded_eah = round(entry.data["e_above_hull"], 4)
+        if np.isclose(rounded_eah, 0):
+            return f"{entry.name}_EaH_0"
+        return f"{entry.name}_EaH_{rounded_eah}"
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
@@ -692,7 +694,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -712,7 +714,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -739,7 +741,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
 
