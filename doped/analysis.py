@@ -544,7 +544,7 @@ class DefectsParser:
         bulk_band_gap_path: Optional[str] = None,
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
-        load_phs_data: bool = True,
+        load_phs_data: Optional[bool] = True,
     ):
         r"""
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -1426,7 +1426,7 @@ class DefectParser:
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         bulk_band_gap_path: Optional[str] = None,
-        load_phs_data: bool = True,
+        load_phs_data: Optional[bool] = True,
         **kwargs,
     ):
         """

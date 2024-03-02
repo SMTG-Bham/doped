@@ -31,7 +31,7 @@ from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
 from doped.utils.plotting import _get_backend, format_defect_name
 
-
+# TODO: Update linting, update tests, and update tips and tricks
 
 def make_band_edge_orbital_infos(
     vasprun: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
