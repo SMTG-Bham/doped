@@ -978,7 +978,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         # assert setting something else throws an error
         with pytest.raises(TypeError) as e:
             defect_gen[random_defect_entry_name] = random_defect_entry.defect
-        assert "Value must be a DefectEntry object, not Interstitial" in str(e.value)
+        assert "Value must be a DefectEntry object, not" in str(e.value)
 
         fd_up_random_defect_entry = copy.deepcopy(defect_gen.defect_entries[random_defect_entry_name])
         fd_up_random_defect_entry.defect.structure = self.CdTe_bulk_supercell  # any structure that
@@ -2683,7 +2683,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         with pytest.raises(ValueError) as e:
             DefectsGenerator(self.prim_cu, generate_supercell=False)
-        assert single_site_no_supercell_error in e.value
+        assert str(single_site_no_supercell_error) in str(e.value)
 
     def agcu_defect_gen_check(self, agcu_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(agcu_defect_gen)
