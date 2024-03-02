@@ -81,7 +81,7 @@ class WyckoffTest(unittest.TestCase):
             "must be provided."
         )
         with pytest.raises(ValueError) as e:
-            label, equiv_coord_list = get_wyckoff_label_and_equiv_coord_list(
+            _label, _equiv_coord_list = get_wyckoff_label_and_equiv_coord_list(
                 conv_cell_site=self.conv_cdte[0],  # no sgn
             )
-        assert no_sgn_or_dict_error in e.value
+        assert str(no_sgn_or_dict_error) in str(e.value)
