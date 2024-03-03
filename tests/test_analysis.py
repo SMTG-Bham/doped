@@ -54,6 +54,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
         self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+        self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
         self.ytos_dielectric = [  # from legacy Materials Project
@@ -321,11 +322,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # integration test using parsed CdTe thermo and chempots for plotting:
-        CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         default_thermo = default_dp.get_defect_thermodynamics()
 
-        return default_thermo.plot(chempots=CdTe_chempots, limit="CdTe-Te")
+        return default_thermo.plot(chempots=self.CdTe_chempots, limit="CdTe-Te")
 
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_without_multiprocessing(self):
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
@@ -333,6 +334,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w)
 
+        # integration test using parsed CdTe thermo and chempots for plotting:
+        default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
+        return default_thermo.plot(limit="CdTe-Te")
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_filterwarnings(self):
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
@@ -341,6 +347,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w, multiple_outcars_warning=False)
         warnings.filterwarnings("default", "Multiple")
+
+        # integration test using parsed CdTe thermo and chempots for plotting:
+        default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
+        return default_thermo.plot(limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_dist_tol(self):
         # test with reduced dist_tol:
@@ -474,6 +484,38 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
         self._check_DefectsParser(dp)
+
+    def test_DefectsParser_CdTe_kpoints_mismatch(self):
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR,
+                bulk_path=f"{self.module_path}/data/CdTe",  # vasp_gam bulk vr here
+                dielectric=9.13,
+            )
+        print([warn.message for warn in w])  # for debugging
+        for i in [
+            "Defects: ",  # multiple warnings here so best to do this way:
+            "'Int_Te_3_1'",
+            "'v_Cd_-2'",
+            "'v_Cd_-1'",
+            "'Te_Cd_+1'",
+            "'Int_Te_3_2'",
+            "'Int_Te_3_Unperturbed_1'",
+            "each encountered the same warning:",
+            "`LOCPOT` or `OUTCAR` files are missing from the defect or bulk folder. These are needed to",
+            "and vasp_ncl defect subfolders)",
+            "There are mismatching INCAR tags for (some of) your bulk and defect calculations",
+            "There are mismatching KPOINTS for (some of) your bulk and defect calculations ",
+            "Found the following differences:",
+            "(in the format: (bulk kpoints, defect kpoints)):",
+            "Int_Te_3_1: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], "
+            "[0.0, 0.5, 0.5], [0.5, 0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]]]",
+            "v_Cd_0: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
+            "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], ",
+            "In general, the same KPOINTS settings should be used",
+        ]:
+            assert any(i in str(warn.message) for warn in w)
+        dp.get_defect_thermodynamics()  # test thermo generation works fine
 
     def test_DefectsParser_corrections_errors_warning(self):
         with warnings.catch_warnings(record=True) as w:

@@ -618,13 +618,16 @@ def _compare_kpoints(
             f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
             f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
             f"{bulk_name} calculation:"
-            f"\n{sorted_bulk_kpoints}\n"
+            f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable than array
             f"and in the {defect_name} calculation:"
-            f"\n{sorted_defect_kpoints}\n"
+            f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
             f"In general, the same KPOINTS settings should be used for all final calculations for "
             f"accurate results!"
         )
-        return [sorted_bulk_kpoints, sorted_defect_kpoints]
+        return [
+            [list(kpoints) for kpoints in sorted_bulk_kpoints],
+            [list(kpoints) for kpoints in sorted_defect_kpoints],
+        ]
 
     return True
 
