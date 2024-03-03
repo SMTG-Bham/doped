@@ -647,6 +647,7 @@ class DefectsParser:
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
             )
+            and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
         ]
 
         if self.subfolder is None:  # determine subfolder to use
