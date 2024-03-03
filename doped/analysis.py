@@ -1078,7 +1078,7 @@ class DefectsParser:
             for name, defect_entry in self.defect_dict.items()
             if defect_entry.calculation_metadata.get("mismatching_KPOINTS", True) is not True
         ]
-        if mismatching_kpoints_warnings:  # TODO: Test
+        if mismatching_kpoints_warnings:
             joined_info_string = "\n".join(
                 [f"{name}: {mismatching}" for name, mismatching in mismatching_kpoints_warnings]
             )
