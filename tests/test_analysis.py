@@ -47,9 +47,6 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
-# TODO: Add additional extrinsic defects test with our CdTe alkali defects (parsing & plotting)
-
-
 class DefectsParsingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
@@ -73,6 +70,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
+        self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -83,6 +81,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json"))
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json"))
 
         for i in os.listdir(f"{self.YTOS_EXAMPLE_DIR}/Bulk"):
             if i.startswith("."):
@@ -818,6 +817,63 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         print(thermo.get_symmetries_and_degeneracies())
 
+        return thermo.plot()
+
+    @custom_mpl_image_compare(filename="ZnS_defects.png")
+    def test_ZnS_non_diagonal_NKRED_mismatch(self):
+        """
+        Test parsing ZnS defect calculations, which were performed with a non-
+        diagonal periodicity-breaking supercell, and with NKRED mismatch from
+        defect and bulk supercells.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.ZnS_DATA_DIR, dielectric=8.9)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "There are mismatching INCAR tags",
+                "vac_1_Zn_0: [('NKRED', 2, 1)]",
+                "vac_1_Zn_-2: [('NKRED', 2, 1)]",
+                "vac_2_S_2: [('NKRED', 2, 1)]",
+                "inter_29_Al_3: [('NKRED', 2, 1)]",
+                "sub_1_Al_on_Zn_-1: [('NKRED', 2, 1)]",
+            ]
+        )
+
+        assert len(dp.defect_dict) == 17
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+
+        with warnings.catch_warnings(record=True) as w:
+            symm_df = thermo.get_symmetries_and_degeneracies()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert all(
+            i in str(w[0].message)
+            for i in [
+                "The defect supercell has been detected to possibly have a non-scalar matrix expansion",
+                "breaking the cell periodicity",
+                "This will not affect defect formation energies / transition levels,",
+                "but is important for concentrations/doping/Fermi level behaviour",
+                "You can manually check (and edit) the computed defect/bulk point",
+            ]
+        )
+
+        vacancy_and_sub_rows = symm_df[
+            symm_df["Defect"].str.contains("vac", na=False)
+            | symm_df["Defect"].str.contains("sub", na=False)
+        ]
+        assert list(vacancy_and_sub_rows["Site_Symm"].unique()) == ["Td"]
+        assert list(vacancy_and_sub_rows["Defect_Symm"].unique()) == ["C1"]
+
+        interstitial_rows = symm_df[symm_df["Defect"].str.contains("inter", na=False)]
+        assert list(interstitial_rows["Site_Symm"].unique()) == ["C3v", "Cs", "C1"]
+        assert list(interstitial_rows["Defect_Symm"].unique()) == ["C1"]
+
+        thermo.dist_tol = 2.5  # merges Al interstitials together
+        thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
         return thermo.plot()
 
 

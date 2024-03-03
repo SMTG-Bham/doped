@@ -1092,7 +1092,7 @@ class DefectsParser:
                 f"accurate results!"
             )
 
-        mismatching_potcars_warnings = [  # TODO: Test if possible
+        mismatching_potcars_warnings = [
             (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
             for name, defect_entry in self.defect_dict.items()
             if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols", True) is not True
