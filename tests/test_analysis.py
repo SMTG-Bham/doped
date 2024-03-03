@@ -2018,8 +2018,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         self.ytos_bulk_supercell = Structure.from_file(f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
-
-        # TODO: Try rattling the structures (and modifying symprec a little to test tolerance?)
+        self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -2049,6 +2048,153 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 # assert defect_name_from_structures(
                 #     defect_entry.defect.structure, defect_entry.defect.defect_structure
                 # ) == get_defect_name_from_defect(defect_entry.defect)
+
+    def test_defect_from_structures_rattled(self):
+        """
+        Test the robustness of the defect_from_structures function using
+        rattled structures (note that this function is already extensively
+        tested indirectly through the defect parsing tests).
+        """
+        from shakenbreak.distortions import rattle
+
+        from doped.analysis import defect_from_structures
+
+        zns_defect_thermo = loadfn(f"{self.ZnS_DATA_DIR}/ZnS_thermo.json")
+        v_Zn_0 = next(
+            defect_entry
+            for defect_entry in zns_defect_thermo.defect_entries
+            if defect_entry.name == "vac_1_Zn_0"
+        )
+        Al_Zn_m1 = next(
+            defect_entry
+            for defect_entry in zns_defect_thermo.defect_entries
+            if defect_entry.name == "sub_1_Al_on_Zn_-1"
+        )
+        Al_i_2 = next(
+            defect_entry
+            for defect_entry in zns_defect_thermo.defect_entries
+            if defect_entry.name == "inter_26_Al_2"
+        )
+
+        # test increasing stdev still gets correct site IDs:
+        for defect_entry, type in [
+            (v_Zn_0, "vacancy"),
+            (Al_Zn_m1, "substitution"),
+            (Al_i_2, "interstitial"),
+        ]:
+            for stdev in np.linspace(0.1, 1, 10):
+                print(f"{defect_entry.name}, stdev: {stdev}, rattling defect supercell")
+                rattled_defect_supercell = rattle(defect_entry.defect_supercell, stdev=stdev).copy()
+                with warnings.catch_warnings(record=True) as w:
+                    (
+                        defect,
+                        defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+                        defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+                        # w/interstitials
+                        defect_site_index,
+                        bulk_site_index,
+                        guessed_initial_defect_structure,
+                        unrelaxed_defect_structure,
+                        bulk_voronoi_node_dict,
+                    ) = defect_from_structures(
+                        defect_entry.bulk_supercell,
+                        rattled_defect_supercell,
+                        return_all_info=True,
+                    )
+                print([str(warn.message) for warn in w])  # for debugging
+                if stdev >= 0.5:
+                    assert (
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                    ) in str(w[-1].message)
+                rattled_relaxed_defect_coords = (
+                    rattled_defect_supercell[
+                        defect_entry.calculation_metadata["defect_site_index"]
+                    ].frac_coords
+                    if type != "vacancy"
+                    else None
+                )
+                if type != "interstitial":
+                    assert np.allclose(
+                        defect_site_in_bulk.frac_coords,
+                        defect_entry.calculation_metadata["bulk_site"].frac_coords,
+                        atol=1e-2,
+                    )
+                    assert np.allclose(
+                        defect.site.frac_coords, defect_entry.defect_supercell_site.frac_coords, atol=1e-2
+                    )
+                    assert (
+                        unrelaxed_defect_structure
+                        == defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+                    )
+                else:  # interstitial
+                    assert np.allclose(defect.site.frac_coords, rattled_relaxed_defect_coords)
+                    assert np.allclose(
+                        defect_site_in_bulk.frac_coords,
+                        rattled_relaxed_defect_coords,
+                        atol=1e-2,
+                    )
+
+                if type == "vacancy":
+                    assert np.allclose(
+                        defect_site_in_bulk.frac_coords,
+                        defect_entry.defect_supercell_site.frac_coords,
+                        atol=1e-2,
+                    )
+                    assert np.allclose(
+                        defect_site.frac_coords, defect_entry.defect_supercell_site.frac_coords, atol=1e-2
+                    )
+                else:  # substitution/interstitial
+                    assert np.allclose(
+                        defect_site.frac_coords,
+                        rattled_relaxed_defect_coords,
+                        atol=1e-2,
+                    )
+
+                assert defect_site_index == defect_entry.calculation_metadata["defect_site_index"]
+                assert bulk_site_index == defect_entry.calculation_metadata["bulk_site_index"]
+                if stdev < 0.31 or type != "interstitial":  # otherwise nearest Voronoi node can differ!
+                    assert (
+                        guessed_initial_defect_structure
+                        == defect_entry.calculation_metadata["guessed_initial_defect_structure"]
+                    )
+
+                print(f"{defect_entry.name}, stdev: {stdev}, rattling bulk supercell")  # now rattle bulk:
+                with warnings.catch_warnings(record=True) as w:
+                    (
+                        defect,
+                        defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+                        defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+                        # w/interstitials
+                        defect_site_index,
+                        bulk_site_index,
+                        guessed_initial_defect_structure,
+                        unrelaxed_defect_structure,
+                        bulk_voronoi_node_dict,
+                    ) = defect_from_structures(
+                        rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
+                        defect_entry.defect_supercell,
+                        return_all_info=True,
+                    )
+                print([str(warn.message) for warn in w])  # for debugging
+                if stdev >= 0.5:
+                    assert (
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                    ) in str(w[-1].message)
+                assert np.allclose(
+                    defect_site_in_bulk.frac_coords,
+                    defect_entry.defect_supercell_site.frac_coords,
+                    atol=stdev * 3,
+                )
+                assert np.allclose(
+                    defect_site.frac_coords, defect_entry.defect_supercell_site.frac_coords, atol=stdev * 3
+                )
+                assert np.allclose(
+                    defect.site.frac_coords, defect_entry.defect_supercell_site.frac_coords, atol=stdev * 3
+                )
+                assert defect_site_index == defect_entry.calculation_metadata["defect_site_index"]
+                assert bulk_site_index == defect_entry.calculation_metadata["bulk_site_index"]
 
     def test_bulk_defect_compatibility_checks(self):
         """
