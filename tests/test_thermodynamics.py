@@ -98,6 +98,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.MgO_defect_thermo = deepcopy(self.orig_MgO_defect_thermo)
         self.MgO_defect_dict = deepcopy(self.orig_MgO_defect_dict)
         self.Sb2O5_defect_thermo = deepcopy(self.orig_Sb2O5_defect_thermo)
+        self.Zns_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
 
     @classmethod
     def setUpClass(cls):
@@ -162,6 +163,8 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json"))
 
+        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json"))
+
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
@@ -203,14 +206,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert defect_thermo.chempots == chempots
         assert defect_thermo.el_refs == el_refs
 
-        # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5, MgO values:
+        # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5, MgO, Sb2O5, ZnS values:
         assert any(
             np.isclose(defect_thermo.vbm, i, atol=1e-2)
-            for i in [1.65, 3.26, 4.19, 6.60, 0.90, 3.1293, 4.0002]
+            for i in [1.65, 3.26, 4.19, 6.60, 0.90, 3.1293, 4.0002, 1.2794]
         )
         assert any(
             np.isclose(defect_thermo.band_gap, i, atol=1e-2)
-            for i in [1.5, 0.7, 1.47, 0.44, 2.22, 4.7218, 3.1259]
+            for i in [1.5, 0.7, 1.47, 0.44, 2.22, 4.7218, 3.1259, 3.266]
         )  # note YTOS is GGA calcs so band gap underestimated
 
         assert defect_thermo.check_compatibility == check_compatibility
@@ -222,21 +225,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         if_present_rm("test_thermo.json")
 
         defect_thermo.to_json()  # test default naming
-        # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5 values:
-        assert any(
+        compositions = ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5", "ZnS"]
+        assert defect_thermo.bulk_formula in compositions
+        for i in compositions:
             os.path.exists(f"{i}_defect_thermodynamics.json")
-            for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5"]
-        )
-        assert defect_thermo.bulk_formula in [
-            "CdTe",
-            "Y2Ti2S2O5",
-            "Sb2Se3",
-            "SiSbTe3",
-            "V2O5",
-            "MgO",
-            "Sb2O5",
-        ]
-        for i in ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5"]:
             if_present_rm(f"{i}_defect_thermodynamics.json")
 
         thermo_dict = defect_thermo.as_dict()
@@ -293,8 +285,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert chempots_warning == (chempots is None)
 
         for w in [symm_w, conc_w]:  # the dub
-            if defect_thermo.bulk_formula == "SiSbTe3":  # periodicity-breaking, should have warning
-                # TODO: Update this with ZnS example when ready
+            if defect_thermo.bulk_formula in ["SiSbTe3", "ZnS"]:  # periodicity-breaking -> warning:
                 assert any(
                     "The defect supercell has been detected to possibly have" in str(warn.message)
                     for warn in w
@@ -454,6 +445,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
             (self.MgO_defect_thermo, "MgO_defect_thermo"),
             (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
+            (self.Zns_defect_thermo, "ZnS_defect_thermo"),
         ]:
             print(f"Checking {name}")
             if "V2O5" in name:
@@ -474,6 +466,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     chempots=self.Sb2O5_chempots,
                     el_refs=self.Sb2O5_chempots["elemental_refs"],
                 )
+            elif "ZnS" in name:
+                self._check_defect_thermo(defect_thermo, dist_tol=2.5)
             else:
                 self._check_defect_thermo(defect_thermo)  # default values
 

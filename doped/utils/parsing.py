@@ -656,7 +656,7 @@ def _compare_incar_tags(
             "PREC": "Normal",  # default Normal
             "PRECFOCK": "Normal",  # default Normal
             "LDAU": False,  # default False
-            "NKRED": None,  # default None
+            "NKRED": 1,  # default 1
         }
 
     def _compare_incar_vals(val1, val2):
