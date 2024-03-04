@@ -1,20 +1,18 @@
 Tips & Tricks
 ============================
 
-The development philosophy behind ``doped`` has been to try build a powerful, efficient and flexible code
+The development philosophy behind ``doped`` has been to build a powerful, efficient and flexible code
 for managing and analysing solid-state defect calculations, having reasonable defaults (that work well for
-the majority of materials/defects) but with full flexibility for the user to customise the workflow to
+the majority of materials/defects) with flexibility for the user to customise the workflow to
 their specific needs/system.
 
 .. note::
-    Much of the advice for defect calculations given here and elsewhere centres on the message that, while
-    we try to provide some rough general rules-of-thumb for reasonable choices in the calculation workflow
+    While we provide some general rules-of-thumb for reasonable choices in the calculation workflow
     (based on the literature and our experience), there is no substitute for the user's own judgement.
-    Defect behaviour can be incredibly system-dependent, and so it is `always` important to question and
+    Defect behaviour is system-dependent, so it is `always` important to question and
     consider the choices and approximations made in the workflow (such as supercell choice, charge state
     ranges, interstitial site pruning, `MAGMOM` initialisation etc.) in the context of your specific
     host system.
-
 
 Interstitials
 -------------------
@@ -25,22 +23,22 @@ for this, see note below), and then perform Gamma-point-only relaxations (using 
 charge state of the generated interstitial candidates, and then pruning some of the candidate sites based
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
 generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
-``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively you can generate the
+``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
 ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
-- Are very high energy (~>1 eV above the lowest energy site for each charge state), and so are unlikely to form.
+- Are high energy (~>1 eV above the lowest energy site for each charge state), and so are unlikely to form.
 
 - Relax to the same final structure/energy as other interstitial sites (despite different initial
   positions) in each charge state, and so are unnecessary to calculate. This can happen due to interstitial
   migration within the relaxation calculation, from an unfavourable higher energy site, to a lower energy
-  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple meV of eachother,
+  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
   this is the case.
 
 .. tip::
 
-    As with many steps in the defect calculation workflow, these are only rough general rules-of-thumb and
+    As with many steps in the defect calculation workflow, these are only rough general guidelines and
     you should always critically consider the validity of these choices in the context of your specific
     system (for example, considering the charge-state dependence of the interstitial site formation
     energies here).
@@ -50,10 +48,10 @@ We can then compare the energies of these trial relaxations, and remove candidat
     As mentioned above, by default Voronoi tessellation is used to generate the candidate interstitial
     sites in ``doped``. We have consistently found this approach to be the most robust in identifying all
     stable/low-energy interstitial sites across a wide variety of materials and chemistries. A nice
-    discussion of this is given in
+    discussion is given in
     `Kononov et al. J. Phys.: Condens. Matter 2023 <https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf>`_.
 
-    As with all aspects of the calculation workflow however, interstitial site generation is highly
+    As with all aspects of the calculation workflow, interstitial site generation is
     flexible, and you can explicitly specify the interstitial sites to generate using the
     ``interstitial_coords`` (for instance, if you only want to investigate one specific known interstitial
     site, or input a list of candidate sites generated from a different algorithm), and/or customise the
@@ -63,11 +61,11 @@ We can then compare the energies of these trial relaxations, and remove candidat
     for more details.
 
     Charge-density based approaches for interstitial site generation can be useful in some cases and often
-    output less candidate sites, but we have found that these are primarily suited to ionic materials (and
+    output fewer candidate sites, but we have found that these are primarily suited to ionic materials (and
     with fully-ionised defect charge states) where electrostatics primarily govern the energetics. In
     many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
     hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
-    ..  If you are highly limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+    ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
 
 
 Difficult Structural Relaxations
@@ -85,13 +83,13 @@ underlying calculation and/or extreme forces.
 
     - Often (but not always) this indicates that the structure may be stuck around a `saddle point` or
       shallow local minimum on the potential energy surface (PES), so it's important to make sure
-      that you have performed structure-searching (PES scanning) with
+      that you have performed structure-searching (PES scanning) with an approach such as
       `ShakeNBreak <https://shakenbreak.readthedocs.io>`_ (``SnB``) to avoid this. You may want to try
       'rattling' the structure to break symmetry in case this is an issue, as detailed in
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed `SnB` structure-seaerching), convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed `SnB` structure-searching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -115,11 +113,9 @@ underlying calculation and/or extreme forces.
 For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
 
-Layered / Low-Dimensional Materials
+Layered / Low Dimensional Materials
 --------------------------------------
-Layered and low-dimensional materials can add some additional complications when performing defect analysis
-in these systems. One point is that typically such lower symmetry materials exhibit higher rates of
-energy-lowering defect reconstructions (e.g.
+Layered and low-dimensional materials introduce complications for defect analysis. One point is that typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions (e.g.
 `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_), as a result of
 having more complex energy landscapes.
 
@@ -198,32 +194,32 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 Perturbed Host States
 --------------------------------------
 
-Defects which have hydrogenlike donor and acceptor states are known as perturbed host states (PHS).
-These states typically have wavefunctions distributed over many unit cells, requiring exceptionally
-large supercells to properly capture their physics (`an example  <https://www.nature.com/articles/s41524-020-00448-7>`_).
-Current correction schemes can not account for errors obtained when calculating the transition energies of PHS,
-and therefore it is recommended to denote that the defect is a PHS and that their transition energy is located near
+Certain point defects form hydrogen-like donor or acceptor states, known as perturbed host states (PHS).
+These states typically have wavefunctions distributed over many unit cells in real space, requiring exceptionally
+large supercells or dense reciprocal space sampling to properly capture their physics (`see the review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
+Current supercell correction schemes can not account for errors obtained when calculating the transition energies of PHS,
+and it is recommended to denote that the defect is a PHS and that their transition energy is located near
 the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
 
-In doped we employ the methodolgy of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
+We employ the methodology of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
 identify potential PHS through an interface with ``pydefect``.
 
 The optional argument ``load_phs_data: Optional[bool] = True`` loads the projected orbitals,
 and in combination with ``defect_entry.get_perturbed_host_state()`` returns
 additional information about the nature of the band edges, allowing defect states can be automatically identified.
-Furthermore, a plot for the single particle levels is return. It is however recommended to manually
+Furthermore, a plot for the single particle levels is returned. It is however recommended to manually
 check the charge density of the defect state to confirm the identification of a PHS. Your ``INCAR`` file needs to
-include ``LORBIT > 10`` in order to obtain the project orbitals and your bulk calculation folder
+include ``LORBIT > 10``to obtain the project orbitals and your bulk calculation folder
 must contain the ``OUTCAR`` file.
 
 In the example below the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
-determined to be a PHS. This was additionally confirmed by perform calculations in larger
-supercells and plotting the charge density. Important terms include: 1) ``P-ratio``: The ratio of the the sum of
+determined to be a PHS. This was additionally confirmed by performing calculations in larger
+supercells and plotting the charge density. Important terms include: 1) ``P-ratio``: The ratio of the sum of
 the projected orbitals of the neighbouring sites to the defects to the total sum of the project orbitals. A value
-close to 1 indicate a localised state. 2) ``Occupation``: Indicates if the additional hole/electron has been
+close to 1 indicates a localised state. 2) ``Occupation``: Indicates if the additional hole/electron has been
 added to the VBM/CBM. 3) ``vbm has acceptor phs``/``cbm has donor phs``: Has a PHS state been automatically identified.
-Depends on how VBM-like/CBM-like the defect states is and the occupancy of the state. 4) ``Localized Orbital(s)``:
+Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. 4) ``Localized Orbital(s)``:
 Information about the localised defects states.
 
 .. code-block:: python
