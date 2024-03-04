@@ -31,30 +31,29 @@ from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
 from doped.utils.plotting import _get_backend, format_defect_name
 
-# TODO: Update linting, update tests, and update tips and tricks
-
 def make_band_edge_orbital_infos(
-    vasprun: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
+    defect_vr: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
 ):
     """
-    Make BandEdgeOrbitalInfos from vasprun.xml.
+    Make BandEdgeOrbitalInfos from vasprun.xml. Modified from my pydefects to
+    use projected orbitals stored in vasprun.xml.
 
     Args:
-        vasprun: Vasprun object
-        vbm: vbm_info
-        cbm: cbm_info
-        str_info: DefectStructureInfo
-        eigval_shift (float): shift eigenvalues by a value
+        defect_vr: defect Vasprun object
+        vbm: vbm_info from get_edge_info
+        cbm: cbm_info fomr get_edge_info
+        str_info: pydefect DefectStructureInfo
+        eigval_shift (float): Shift eigenvalues by E-E_VBM to set VBM at 0 eV
 
     Returns:
-        BandEdgeOrbitalInfos
+        ``BandEdgeOrbitalInfos `` object
     """
     eigval_range = defaults.eigval_range
-    kpt_coords = [tuple(coord) for coord in vasprun.actual_kpoints]
+    kpt_coords = [tuple(coord) for coord in defect_vr.actual_kpoints]
     max_energy_by_spin, min_energy_by_spin = [], []
     neighbors = str_info.neighbor_atom_indices
 
-    for e in vasprun.eigenvalues.values():
+    for e in defect_vr.eigenvalues.values():
         max_energy_by_spin.append(np.amax(e[:, :, 0], axis=0))
         min_energy_by_spin.append(np.amin(e[:, :, 0], axis=0))
 
@@ -64,9 +63,9 @@ def make_band_edge_orbital_infos(
     lower_idx = np.argwhere(max_energy_by_band > vbm - eigval_range)[0][0]
     upper_idx = np.argwhere(min_energy_by_band < cbm + eigval_range)[-1][-1]
 
-    orbs, s = vasprun.projected_eigenvalues, vasprun.final_structure
+    orbs, s = defect_vr.projected_eigenvalues, defect_vr.final_structure
     orb_infos: List[Any] = []
-    for spin, eigvals in vasprun.eigenvalues.items():
+    for spin, eigvals in defect_vr.eigenvalues.items():
         orb_infos.append([])
         for k_idx in range(len(kpt_coords)):
             orb_infos[-1].append([])
@@ -82,9 +81,9 @@ def make_band_edge_orbital_infos(
     return BandEdgeOrbitalInfos(
         orbital_infos=orb_infos,
         kpt_coords=kpt_coords,
-        kpt_weights=vasprun.actual_kpoints_weights,
+        kpt_weights=defect_vr.actual_kpoints_weights,
         lowest_band_index=int(lower_idx),
-        fermi_level=vasprun.efermi,
+        fermi_level=defect_vr.efermi,
         eigval_shift=eigval_shift,
     )
 
@@ -101,7 +100,8 @@ def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
     Returns:
         pydefect EdgeInfo class
     """
-    # Change this to a warning...
+    # Check in the correct version of Vise installed if a non-collinear calculation is parsed.
+    # TDO: Remove this check when ``vise 0.8.2`` is released on PyPi.
     try:
         band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
         if defect_vr.parameters.get("LNONCOLLINEAR") is True:
@@ -121,14 +121,14 @@ def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
     vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
     cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
-    # Using default values pydefect
+    # Using default values suggested pydefect
     dsinfo = MakeDefectStructureInfo(
         DefectParser.defect_entry.bulk_supercell,
         DefectParser.defect_entry.defect_supercell,
         DefectParser.defect_entry.defect_supercell,
         symprec=0.1,
         dist_tol=1.0,
-        neighbor_cutoff_factor=1.3,
+        neighbor_cutoff_factor=1.3, # Neighbors are sites within min_dist*neighborcutoff_factor
     )
 
     band_orb = make_band_edge_orbital_infos(
@@ -254,8 +254,8 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
 
         ax.set_ylim([ymin - 0.25, ymax + 0.75])
         # add a point at 0,-5 with the color range and label unoccopied states
-        ax.scatter(0, -5, label="Occupied", color=(0.98, 0.639, 0.086))
-        ax.scatter(0, -5, label="Unoccupied", color=(0.22, 0.325, 0.643))
+        ax.scatter(0, -5, label="Occupied", color=(0.22, 0.325, 0.643))
+        ax.scatter(0, -5, label="Unoccupied", color=(0.98, 0.639, 0.086))
         if partial:
             ax.scatter(0, -5, label="Partially Occupied", color=(0, 0.5, 0))
         ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band edges")
