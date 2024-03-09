@@ -36,11 +36,10 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell_site,
     get_neutral_nelect_from_vasprun,
-    get_orientational_degeneracy,
     get_vasprun,
 )
 from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
-from doped.utils.symmetry import _get_all_equiv_sites, _get_sga, point_symmetry_from_defect_entry
+from doped.utils.symmetry import _get_all_equiv_sites, _get_sga
 
 
 def bold_print(string: str) -> None:
@@ -498,14 +497,14 @@ class DefectThermodynamics(MSONable):
                     band_gap_vals.append(defect_entry.calculation_metadata["gap"])
 
             # get the max difference in VBM & band_gap vals:
-            if max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
+            if vbm_vals and max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
                 _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
-            elif self.vbm is None:
+            elif vbm_vals and self.vbm is None:
                 self.vbm = vbm_vals[0]
 
-            if max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
+            if band_gap_vals and max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
                 _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
-            elif self.band_gap is None:
+            elif band_gap_vals and self.band_gap is None:
                 self.band_gap = band_gap_vals[0]
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
@@ -667,7 +666,9 @@ class DefectThermodynamics(MSONable):
         """
         # determine defect charge transition levels:
         midgap_formation_energies = [  # without chemical potentials
-            entry.formation_energy(fermi_level=0.5 * self.band_gap, vbm=self.vbm)
+            entry.formation_energy(
+                fermi_level=0.5 * self.band_gap, vbm=entry.calculation_metadata.get("vbm", self.vbm)
+            )
             for entry in self.defect_entries
         ]
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
@@ -777,11 +778,15 @@ class DefectThermodynamics(MSONable):
                 # confirm formation energies dominant for one defect over other identical defects
                 name_set = [entry.name for entry in sorted_defect_entries]
                 vb_list = [
-                    entry.formation_energy(fermi_level=limits[0][0], vbm=self.vbm)
+                    entry.formation_energy(
+                        fermi_level=limits[0][0], vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                    )
                     for entry in sorted_defect_entries
                 ]
                 cb_list = [
-                    entry.formation_energy(fermi_level=limits[0][1], vbm=self.vbm)
+                    entry.formation_energy(
+                        fermi_level=limits[0][1], vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                    )
                     for entry in sorted_defect_entries
                 ]
 
@@ -1224,7 +1229,11 @@ class DefectThermodynamics(MSONable):
 
         for defect_entry in self.defect_entries:
             formation_energy = defect_entry.formation_energy(
-                chempots=chempots, limit=limit, el_refs=el_refs, fermi_level=fermi_level, vbm=self.vbm
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
             )
             concentration = defect_entry.equilibrium_concentration(
                 chempots=chempots,
@@ -1730,7 +1739,7 @@ class DefectThermodynamics(MSONable):
                 chempots=chempots or self.chempots,
                 limit=limit,
                 el_refs=el_refs,
-                vbm=self.vbm,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
                 fermi_level=fermi_level,
             )
 
@@ -1756,7 +1765,7 @@ class DefectThermodynamics(MSONable):
                 chempots=chempots or self.chempots,
                 limit=limit,
                 el_refs=el_refs,
-                vbm=self.vbm,
+                vbm=exact_match_defect_entries[0].calculation_metadata.get("vbm", self.vbm),
                 fermi_level=fermi_level,
             )
 
@@ -1770,7 +1779,7 @@ class DefectThermodynamics(MSONable):
                     chempots=chempots or self.chempots,
                     limit=limit,
                     el_refs=el_refs,
-                    vbm=self.vbm,
+                    vbm=entry.calculation_metadata.get("vbm", self.vbm),
                     fermi_level=fermi_level,
                 )
                 for entry in matching_defect_entries
@@ -1874,7 +1883,11 @@ class DefectThermodynamics(MSONable):
                         limit,
                         entry.name,
                         -self.get_formation_energy(
-                            entry, chempots=chempots, limit=limit, el_refs=el_refs, fermi_level=0
+                            entry,
+                            chempots=chempots,
+                            limit=limit,
+                            el_refs=el_refs,
+                            fermi_level=0,
                         )
                         / entry.charge_state,
                     )
@@ -1886,7 +1899,11 @@ class DefectThermodynamics(MSONable):
                         limit,
                         entry.name,
                         -self.get_formation_energy(
-                            entry, chempots=chempots, limit=limit, el_refs=el_refs, fermi_level=0
+                            entry,
+                            chempots=chempots,
+                            limit=limit,
+                            el_refs=el_refs,
+                            fermi_level=0,
                         )
                         / entry.charge_state,
                     )
@@ -2644,7 +2661,9 @@ class DefectThermodynamics(MSONable):
             row += [sum(defect_entry.corrections.values())]
             dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
             formation_energy = defect_entry.formation_energy(
-                chempots=dft_chempots, fermi_level=fermi_level
+                chempots=dft_chempots,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
             )
             row += [formation_energy]
             row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
@@ -2750,59 +2769,7 @@ class DefectThermodynamics(MSONable):
         table_list = []
 
         for defect_entry in self.defect_entries:
-            total_degeneracy = (
-                reduce(lambda x, y: x * y, defect_entry.degeneracy_factors.values())
-                if defect_entry.degeneracy_factors
-                else "N/A"
-            )
-            if "relaxed point symmetry" not in defect_entry.calculation_metadata:
-                try:
-                    (
-                        defect_entry.calculation_metadata["relaxed point symmetry"],
-                        defect_entry.calculation_metadata["periodicity_breaking_supercell"],
-                    ) = point_symmetry_from_defect_entry(
-                        defect_entry, relaxed=True, return_periodicity_breaking=True
-                    )  # relaxed so defect symm_ops
-
-                except Exception as e:
-                    warnings.warn(
-                        f"Unable to determine relaxed point group symmetry for {defect_entry.name}, got "
-                        f"error:\n{e!r}"
-                    )
-            if "bulk site symmetry" not in defect_entry.calculation_metadata:
-                try:
-                    defect_entry.calculation_metadata["bulk site symmetry"] = (
-                        point_symmetry_from_defect_entry(defect_entry, relaxed=False, symprec=0.01)
-                    )  # unrelaxed so bulk symm_ops
-                except Exception as e:
-                    warnings.warn(
-                        f"Unable to determine bulk site symmetry for {defect_entry.name}, got error:"
-                        f"\n{e!r}"
-                    )
-
-            if (
-                all(
-                    x in defect_entry.calculation_metadata
-                    for x in ["relaxed point symmetry", "bulk site symmetry"]
-                )
-                and "orientational degeneracy" not in defect_entry.degeneracy_factors
-            ):
-                try:
-                    defect_entry.degeneracy_factors["orientational degeneracy"] = (
-                        get_orientational_degeneracy(
-                            relaxed_point_group=defect_entry.calculation_metadata[
-                                "relaxed point symmetry"
-                            ],
-                            bulk_site_point_group=defect_entry.calculation_metadata["bulk site symmetry"],
-                            defect_type=defect_entry.defect.defect_type,
-                        )
-                    )
-                except Exception as e:
-                    warnings.warn(
-                        f"Unable to determine orientational degeneracy for {defect_entry.name}, got "
-                        f"error:\n{e!r}"
-                    )
-
+            defect_entry._parse_and_set_degeneracies()
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
                     len(defect_entry.defect.structure.get_primitive_structure())
@@ -2811,6 +2778,12 @@ class DefectThermodynamics(MSONable):
 
             except Exception:
                 multiplicity_per_unit_cell = "N/A"
+
+            total_degeneracy = (
+                reduce(lambda x, y: x * y, defect_entry.degeneracy_factors.values())
+                if defect_entry.degeneracy_factors
+                else "N/A"
+            )
 
             table_list.append(
                 {

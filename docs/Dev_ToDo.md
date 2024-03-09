@@ -99,7 +99,6 @@
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
 - Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
-- Plotting lines colour updates.
-- Add spin degeneracy auto determination to get symmetries/degeneracies later (if hasn't been parsed with current code for some reason e.g. Kanta...). Should implement this for all degeneracy factors whenever concentration methods used?
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
+- Plotting lines colour updates.

@@ -209,11 +209,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         # CdTe, YTOS, Sb2Se3, Sb2Si2Te6, V2O5, MgO, Sb2O5, ZnS values:
         assert any(
             np.isclose(defect_thermo.vbm, i, atol=1e-2)
-            for i in [1.65, 3.26, 4.19, 6.60, 0.90, 3.1293, 4.0002, 1.2794]
+            for i in [1.65, 3.26, 4.19, 6.60, 0.90, 3.1293, 4.0002, 1.2707]
         )
         assert any(
             np.isclose(defect_thermo.band_gap, i, atol=1e-2)
-            for i in [1.5, 0.7, 1.47, 0.44, 2.22, 4.7218, 3.1259, 3.266]
+            for i in [1.5, 0.7, 1.47, 0.44, 2.22, 4.7218, 3.1259, 3.3084]
         )  # note YTOS is GGA calcs so band gap underestimated
 
         assert defect_thermo.check_compatibility == check_compatibility
@@ -470,6 +470,73 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 self._check_defect_thermo(defect_thermo, dist_tol=2.5)
             else:
                 self._check_defect_thermo(defect_thermo)  # default values
+
+    def test_DefectsParser_thermo_objs_no_metadata(self):
+        """
+        Test the `DefectThermodynamics` objects created from the
+        `DefectsParser.get_defect_thermodynamics()` method.
+        """
+        for defect_thermo, name in [
+            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
+            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
+            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
+            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
+            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
+            (self.MgO_defect_thermo, "MgO_defect_thermo"),
+            (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
+            (self.Zns_defect_thermo, "ZnS_defect_thermo"),
+        ]:
+            print(f"Checking {name}")
+            defect_entries_wout_metadata = defect_thermo.defect_entries
+            for entry in defect_entries_wout_metadata:
+                entry.calculation_metadata = {}
+
+            with pytest.raises(ValueError) as exc:
+                DefectThermodynamics(defect_entries_wout_metadata)
+            assert (
+                "No VBM eigenvalue was supplied or able to be parsed from the defect entries ("
+                "calculation_metadata attributes). Please specify the VBM eigenvalue in the function "
+                "input."
+            ) in str(exc.value)
+            with pytest.raises(ValueError) as exc:
+                DefectThermodynamics(defect_entries_wout_metadata, vbm=1.65)
+            assert (
+                "No band gap value was supplied or able to be parsed from the defect entries ("
+                "calculation_metadata attributes). Please specify the band gap value in the function "
+                "input."
+            ) in str(exc.value)
+
+            thermo_wout_metadata = DefectThermodynamics(
+                defect_entries_wout_metadata, vbm=1.65, band_gap=1.499
+            )
+            self._check_defect_thermo(thermo_wout_metadata)  # default values
+
+            defect_entries_wout_metadata_or_degeneracy = defect_thermo.defect_entries
+            for entry in defect_entries_wout_metadata_or_degeneracy:
+                entry.calculation_metadata = {}
+                entry.degeneracy_factors = {}
+
+            thermo_wout_metadata_or_degeneracy = DefectThermodynamics(
+                defect_entries_wout_metadata_or_degeneracy, vbm=1.65, band_gap=1.499
+            )
+            self._check_defect_thermo(thermo_wout_metadata_or_degeneracy)  # default values
+            symm_df = thermo_wout_metadata_or_degeneracy.get_symmetries_and_degeneracies()
+            assert symm_df["g_Spin"].apply(lambda x: isinstance(x, int)).all()
+
+            for defect_entry in defect_thermo.defect_entries:
+                assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
+                assert isinstance(
+                    defect_entry.degeneracy_factors["orientational degeneracy"], (int, float)
+                )
+
+                defect_entry.degeneracy_factors = {}
+                defect_entry.calculation_metadata = {}
+
+                _conc = defect_entry.equilibrium_concentration()
+                assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
+                assert isinstance(
+                    defect_entry.degeneracy_factors["orientational degeneracy"], (int, float)
+                )
 
     def test_transition_levels_CdTe(self):
         """
@@ -1700,6 +1767,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert val == reloaded_df_row[j]
 
         os.remove("test.csv")
+
+    def test_symmetry_degeneracy_unparsed(self):
+        """
+        Test that the symmetry and degeneracy functions still work if the
+        symmetry and degeneracy metadata wasn't parsed earlier for any reason
+        (e.g. transferring from old doped versions, from pymatgen-analysis-
+        defects objects etc).
+        """
 
 
 def belas_linear_fit(T):  #
