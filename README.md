@@ -4,21 +4,29 @@
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 
-<a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="275" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a python package for
-managing solid-state defect calculations, with functionality to
-generate defect structures and relevant competing phases (for chemical potentials), interface with
-[`ShakeNBreak`](https://shakenbreak.readthedocs.io) for
-[defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for defect
-supercell calculations, and automatically parse and analyse the results.
+<a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
 
-Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site.
+Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site, and an overview of the key advances of the package is given in the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433).
+<!--- Update this link!! --->
 
-### Example Outputs:
-Chemical potential/stability region plots and defect formation energy (a.k.a. transition level) diagrams:
+<a href="https://doi.org/10.21105/joss.06433"><img class="center" width="750" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/JOSS/doped_JOSS_workflow_figure.png"></a>
 
-<a href="https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits"><img align="left" width="365" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_chempot_plotting.png"></a> <a href="https://doped.readthedocs.io/en/latest/dope_parsing_example.html#defect-formation-energy-transition-level-diagrams"><img align="right" width="385" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_TLD_plot.png"></a>
-<br><br><br><br><br><br><br><br><br><br><br>
+## Key Features
+All features and functionality are fully-customisable:
+- **Supercell Generation**: Generate an optimal supercell, maximising periodic image separation for the minimum number of atoms (computational cost).
+- **Defect Generation**: Generate defect supercells and guess likely charge states based on chemical intuition.
+- **Calculation I/O**: Automatically write input files and parse defect supercell calculations (for `VASP` and other DFT/force-field codes).
+- **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
+- **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
+- **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials etc.
+- **Plotting**: Generate publication-quality plots of defect formation energies, chemical potential limits, defect/carrier concentrations, Fermi levels, charge corrections, etc.
+- **`Python` Interface**: Fully-customisable and modular, with a `Python` API for all functionality, being plug-and-play with [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), [`easyunfold`](https://smtg-bham.github.io/easyunfold/) for band unfolding, [`CarrierCapture.jl`](https://github.com/WMD-group/CarrierCapture.jl)/[`nonrad`](https://nonrad.readthedocs.io/en/latest/) for non-radiative recombination etc.
+- Reproducibility, tabulation, automated compatibility/sanity checking, strain/displacement analysis, shallow defect analysis, high-throughput compatibility, Wyckoff analysis...
 
+### Performance and Example Outputs
+![](docs/JOSS/doped_JOSS_figure.png)
+**a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. Data and code to reproduce these plots is provided in the [`docs/JOSS`](https://github.com/SMTG-Bham/doped/blob/main/docs/JOSS) subfolder. See the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433) for more details.
+<!--- Update this link!! --->
 
 ## Installation
 ```bash
@@ -35,33 +43,10 @@ If you haven't done so already, you will need to set up your VASP `POTCAR` files
 See the docs [Installation](https://doped.readthedocs.io/en/latest/Installation.html) page for details on this.
 
 
-
 ## `ShakeNBreak`
-As shown in the example notebook, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-Bham/doped/blob/main/dope_workflow_example.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
+As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped example notebook](https://github.com/SMTG-Bham/doped/blob/main/dope_workflow_example.ipynb), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
 
-Summary GIF:
 ![ShakeNBreak Summary](https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif)
-
-`SnB` CLI Usage:
-![ShakeNBreak CLI](https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_CLI.gif)
-
-
-## Acknowledgments
-`doped` (née `DefectsWithTheBoys` #iykyk) has benefitted from feedback from many users, in particular
-members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Bonan Zhu, Katarina Brlec, Adair Nicolson,
-Sabrine Hachmioune and Savya Aggarwal.
-
-Code to efficiently identify defect species from input supercell structures was contributed by Dr
-[Alex Ganose](https://github.com/utf), and the colour scheme for defect formation energy plots was originally templated from
-the `aide` package, developed by the dynamic duo [Adam Jackson](https://github.com/ajjackson) and [Alex Ganose](https://github.com/utf).
-
-The [docs](https://readthedocs.io) website setup was templated from the `ShakeNBreak` docs set up by [Irea Mosquera-Lois](https://scholar.google.com/citations?user=oIMzt0cAAAAJ&hl=en) 🙌
-
-`doped` was originally based on the excellent
-[PyCDT](https://www.sciencedirect.com/science/article/pii/S0010465518300079) (no longer maintained), but transformed
-and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was
-entirely refactored and rewritten, to work with the new
-`pymatgen-analysis-defects` package.
 
 ## Studies using `doped`, so far
 
@@ -84,3 +69,10 @@ entirely refactored and rewritten, to work with the new
 - Y-S. Choi et al. **_Intrinsic Defects and Their Role in the Phase Transition of Na-Ion Anode Na<sub>2</sub>Ti<sub>3</sub>O<sub>7</sub>_** [_ACS Appl. Energy Mater._](https://doi.org/10.1021/acsaem.2c03466) 2022
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh **_Rapid Recombination by Cadmium Vacancies in CdTe_** [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. **_Enhanced visible light absorption in layered Cs<sub>3</sub>Bi<sub>2</sub>Br<sub>9</sub> through mixed-valence Sn(II)/Sn(IV) doping_** [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
+
+## Acknowledgments
+`doped` (née `DefectsWithTheBoys` #iykyk) has benefitted from feedback from many users, in particular
+members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
+
+`doped` was originally based on the excellent `PyCDT` (no longer maintained), but transformed and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was entirely refactored and rewritten, to work with the new
+`pymatgen-analysis-defects` package.
