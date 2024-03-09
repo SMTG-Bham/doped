@@ -62,13 +62,15 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
+        Structure, formula and total magnetization:
+
         structure (Structure):
             ``pymatgen`` ``Structure`` object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
         total_magnetization (int):
-            Total magnetization of the molecule in a box (0 for all X2 except
-            O2 which has a triplet ground state (S = 1)).
+            Total magnetization of the molecule in a box
+            (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
     lattice = [[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]]
     all_structures = {
@@ -124,15 +126,14 @@ def make_molecule_in_a_box(element: str):
         },
     }
 
-    if element in all_structures:
-        structure = all_structures[element]["structure"]
-        formula = all_structures[element]["formula"]
-        total_magnetization = all_structures[element]["total_magnetization"]
-
-    else:
+    if element not in all_structures:
         raise ValueError(
             f"Element {element} is not currently supported for molecule-in-a-box structure generation."
         )
+
+    structure = all_structures[element]["structure"]
+    formula = all_structures[element]["formula"]
+    total_magnetization = all_structures[element]["total_magnetization"]
 
     return structure, formula, total_magnetization
 
