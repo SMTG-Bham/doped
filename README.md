@@ -7,26 +7,26 @@
 <a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
 
 Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site, and an overview of the key advances of the package is given in the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433).
-<!--- Update this link!! --->
+<!-- Update this link!! -->
 
-<a href="https://doi.org/10.21105/joss.06433"><img class="center" width="750" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/JOSS/doped_JOSS_workflow_figure.png"></a>
+<a href="https://doi.org/10.21105/joss.06433"><img class="center" width="800" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/JOSS/doped_JOSS_workflow_figure.png"></a>
 
 ## Key Features
 All features and functionality are fully-customisable:
 - **Supercell Generation**: Generate an optimal supercell, maximising periodic image separation for the minimum number of atoms (computational cost).
 - **Defect Generation**: Generate defect supercells and guess likely charge states based on chemical intuition.
-- **Calculation I/O**: Automatically write input files and parse defect supercell calculations (for `VASP` and other DFT/force-field codes).
+- **Calculation I/O**: Automatically write inputs & parse supercell calculations (`VASP` & other DFT/force-field codes).
 - **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
 - **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials etc.
 - **Plotting**: Generate publication-quality plots of defect formation energies, chemical potential limits, defect/carrier concentrations, Fermi levels, charge corrections, etc.
-- **`Python` Interface**: Fully-customisable and modular, with a `Python` API for all functionality, being plug-and-play with [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), [`easyunfold`](https://smtg-bham.github.io/easyunfold/) for band unfolding, [`CarrierCapture.jl`](https://github.com/WMD-group/CarrierCapture.jl)/[`nonrad`](https://nonrad.readthedocs.io/en/latest/) for non-radiative recombination etc.
+- **`Python` Interface**: Fully-customisable and modular `Python` API, being plug-and-play with [`ShakeNBreak`](https://shakenbreak.readthedocs.io) for [defect structure-searching](https://www.nature.com/articles/s41524-023-00973-1), [`easyunfold`](https://smtg-bham.github.io/easyunfold/) for band unfolding, [`CarrierCapture.jl`](https://github.com/WMD-group/CarrierCapture.jl)/[`nonrad`](https://nonrad.readthedocs.io/en/latest/) for non-radiative recombination etc.
 - Reproducibility, tabulation, automated compatibility/sanity checking, strain/displacement analysis, shallow defect analysis, high-throughput compatibility, Wyckoff analysis...
 
 ### Performance and Example Outputs
-![](docs/JOSS/doped_JOSS_figure.png)
-**a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. Data and code to reproduce these plots is provided in the [`docs/JOSS`](https://github.com/SMTG-Bham/doped/blob/main/docs/JOSS) subfolder. See the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433) for more details.
-<!--- Update this link!! --->
+![https://github.com/openjournals/joss-reviews/issues/6433](docs/JOSS/doped_JOSS_figure.png)
+**a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. See the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433) for more details.
+<!-- Update this link!! -->
 
 ## Installation
 ```bash

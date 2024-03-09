@@ -158,13 +158,16 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     refactored for extrinsic species and code efficiency/robustness improvements.
 
     Returns:
-        bulk_site_idx: index of the site in the bulk structure that corresponds
+        bulk_site_idx:
+            Index of the site in the bulk structure that corresponds
             to the defect site in the defect structure
-        defect_site_idx: index of the defect site in the defect structure
-        unrelaxed_defect_structure: pristine defect supercell structure for
-            vacancies/substitutions (i.e. pristine bulk with unrelaxed vacancy/
-            substitution), or the pristine bulk structure with the `final`
-            relaxed interstitial site for interstitials.
+        defect_site_idx:
+            Index of the defect site in the defect structure
+        unrelaxed_defect_structure:
+            Pristine defect supercell structure for vacancies/substitutions
+            (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
+            pristine bulk structure with the `final` relaxed interstitial
+            site for interstitials.
     """
 
     def process_substitution(bulk, defect, composition_diff):
