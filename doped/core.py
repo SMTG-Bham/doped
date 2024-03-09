@@ -18,6 +18,7 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
+from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 _orientational_degeneracy_warning = (
@@ -595,6 +596,64 @@ class DefectEntry(thermo.DefectEntry):
 
         return formation_energy
 
+    def _parse_and_set_degeneracies(self):
+        """
+        Check if degeneracy info is present in self.calculation_metadata, and
+        attempt to (re)-parse if not.
+
+        e.g. if the DefectEntry was generated with older versions of ``doped``,
+        manually, or with ``pymatgen-analysis-defects`` etc.
+        """
+        from doped.utils.parsing import get_orientational_degeneracy, simple_spin_degeneracy_from_charge
+        from doped.utils.symmetry import point_symmetry_from_defect_entry
+
+        if "relaxed point symmetry" not in self.calculation_metadata:
+            try:
+                (
+                    self.calculation_metadata["relaxed point symmetry"],
+                    self.calculation_metadata["periodicity_breaking_supercell"],
+                ) = point_symmetry_from_defect_entry(
+                    self,
+                    relaxed=True,
+                    return_periodicity_breaking=True,
+                    verbose=False,
+                )  # relaxed so defect symm_ops
+
+            except Exception as e:
+                warnings.warn(
+                    f"Unable to determine relaxed point group symmetry for {self.name}, got error:\n{e!r}"
+                )
+        if "bulk site symmetry" not in self.calculation_metadata:
+            try:
+                self.calculation_metadata["bulk site symmetry"] = point_symmetry_from_defect_entry(
+                    self, relaxed=False, symprec=0.01
+                )  # unrelaxed so bulk symm_ops
+            except Exception as e:
+                warnings.warn(f"Unable to determine bulk site symmetry for {self.name}, got error:\n{e!r}")
+
+        if (
+            all(x in self.calculation_metadata for x in ["relaxed point symmetry", "bulk site symmetry"])
+            and "orientational degeneracy" not in self.degeneracy_factors
+        ):
+            try:
+                self.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+                    relaxed_point_group=self.calculation_metadata["relaxed point symmetry"],
+                    bulk_site_point_group=self.calculation_metadata["bulk site symmetry"],
+                    defect_type=self.defect.defect_type,
+                )
+            except Exception as e:
+                warnings.warn(
+                    f"Unable to determine orientational degeneracy for {self.name}, got error:\n{e!r}"
+                )
+
+        if "spin degeneracy" not in self.degeneracy_factors:
+            try:
+                self.degeneracy_factors["spin degeneracy"] = simple_spin_degeneracy_from_charge(
+                    self.defect_supercell, self.charge_state
+                )
+            except Exception as e:
+                warnings.warn(f"Unable to determine spin degeneracy for {self.name}, got error:\n{e!r}")
+
     def equilibrium_concentration(
         self,
         chempots: Optional[dict] = None,
@@ -682,6 +741,8 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
         """
+        self._parse_and_set_degeneracies()
+
         if "spin degeneracy" not in self.degeneracy_factors:
             warnings.warn(
                 "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
@@ -716,11 +777,12 @@ class DefectEntry(thermo.DefectEntry):
         formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
         )
-        from scipy.constants import value as constants_value
 
-        exp_factor = np.exp(
-            -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-        )
+        with np.errstate(over="ignore"):
+            exp_factor = np.exp(
+                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
+            )
+
         degeneracy_factor = (
             reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
         )
@@ -729,7 +791,8 @@ class DefectEntry(thermo.DefectEntry):
 
         volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
 
-        return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
+        with np.errstate(over="ignore"):
+            return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
 
     def __repr__(self):
         """
