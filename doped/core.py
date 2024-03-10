@@ -504,26 +504,31 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance=error_tolerance,
         )
 
-    def get_perturbed_host_state(self, save_plot: bool = False):
+    def get_perturbed_host_state(self, filename: Optional[str] = None, **kwargs):
         """
         Determines if the defect is a perturbed host state (PHS) and also
         returns a plot of the single-particle eigenvalues.
 
         Args:
-            save_plot (bool):
-                Whether to save the eigenvalue plot.
-                Default is False.
+            filename (str):
+                Filename to save the Kumagai site potential plots to.
+                If None, plots are not saved.
+            **kwargs:
+                Additional kwargs to pass to doped.utils.phs.get_phs_and_eigenvalue.
 
         Returns:
             pydefect BandEdgeStates object
         """
         from doped.utils.phs import get_phs_and_eigenvalue
 
-        if self.calculation_metadata.get("phs_data") is None:
+        if self.calculation_metadata.get("phs_data", None) is None:
             raise ValueError(
                 "No PHS data loaded for defect_entry. Please parse with load_phs_data = True "
             )
-        return get_phs_and_eigenvalue(self, save_plot)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            return get_phs_and_eigenvalue(self, filename, **kwargs)
 
     def _get_chempot_term(self, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}
