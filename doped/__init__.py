@@ -6,6 +6,7 @@ chemical potentials), interface with ShakeNBreak
 https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
+
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
@@ -68,6 +69,9 @@ def _ignore_pmg_warnings():
     # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
     # otherwise) for the bulk):
     warnings.filterwarnings("ignore", message="Not all sites have property")
+
+    # ignore warning about structure charge that appears when getting Vasprun.as_dict():
+    warnings.filterwarnings("ignore", message="Structure charge")
 
 
 _ignore_pmg_warnings()

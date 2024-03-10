@@ -3,12 +3,14 @@ Functions for setting up and parsing competing phase calculations in order to
 determine and analyse the elemental chemical potentials for defect formation
 energies.
 """
+
 import contextlib
 import copy
 import os
 import warnings
 from pathlib import Path, PurePath
 
+import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -44,7 +46,6 @@ warnings.filterwarnings(
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary`.
-# TODO: Refactor 'facet' to 'limit' in chempot dicts?
 
 
 def make_molecule_in_a_box(element: str):
@@ -61,13 +62,15 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
+        Structure, formula and total magnetization:
+
         structure (Structure):
             ``pymatgen`` ``Structure`` object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
         total_magnetization (int):
-            Total magnetization of the molecule in a box (0 for all X2 except
-            O2 which has a triplet ground state (S = 1)).
+            Total magnetization of the molecule in a box
+            (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
     lattice = [[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]]
     all_structures = {
@@ -123,15 +126,14 @@ def make_molecule_in_a_box(element: str):
         },
     }
 
-    if element in all_structures:
-        structure = all_structures[element]["structure"]
-        formula = all_structures[element]["formula"]
-        total_magnetization = all_structures[element]["total_magnetization"]
-
-    else:
+    if element not in all_structures:
         raise ValueError(
             f"Element {element} is not currently supported for molecule-in-a-box structure generation."
         )
+
+    structure = all_structures[element]["structure"]
+    formula = all_structures[element]["formula"]
+    total_magnetization = all_structures[element]["total_magnetization"]
 
     return structure, formula, total_magnetization
 
@@ -225,9 +227,7 @@ def _calculate_formation_energies(data: list, elemental: dict):
         by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
     )
     # drop num_atoms_in_fu and num_species
-    formation_energy_df = formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
-
-    return formation_energy_df
+    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom):
@@ -275,7 +275,7 @@ class CompetingPhases:
     # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
     #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    # on the MP - warn user (i.e. check your sh*t) and generate the competing phases according to
+    # on the MP - warn user (i.e. check your stuff) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
     # and generate from there)
     # E.g. from pycdt chemical_potentials:
@@ -287,15 +287,19 @@ class CompetingPhases:
     # analyze_GGA_chempots code for example.
     # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
+    # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
+    #  efficient by just editing the kpoints in each loop (not reinitialising) for the convergence test
+    #  generation, and using the POTCAR hashing function from `doped.vasp`. Also should dynamically set
+    #  KPAR based on the (default) number of KPOINTS for each material
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
         Class to generate the input files for competing phases on the phase
         diagram for the host material (determining the chemical potential
         limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by ``e_above_hull``, to determine the relevant competing
-        phases. Diatomic gaseous molecules are generated as molecules-in-a-box
-        as appropriate.
+        range specified by ``e_above_hull``, to determine the relevant
+        competing phases. Diatomic gaseous molecules are generated as
+        molecules-in-a-box as appropriate.
 
         Args:
             composition (str, Composition): Composition of host material
@@ -343,6 +347,8 @@ class CompetingPhases:
         # entries for the same composition, warn the user (that if the groundstate phase at low/room
         # temp is well-known, then likely best to prune to that) and direct to relevant section on the
         # docs discussing this
+        # - Could have two optional EaH tolerances, a tight one (0.02 eV/atom?) that applies to all,
+        # and a looser one (0.1 eV/atom?) that applies to phases with ICSD IDs?
 
         # all data collected from materials project
         self.data = [  # can see available fields with MPRester.*.available_fields on new API
@@ -443,7 +449,7 @@ class CompetingPhases:
             # diagram, if their relative energy was downshifted by ``e_above_hull``:
             MP_gga_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
 
-            MP_bordering_phases = {phase for facet in MP_gga_chempots for phase in facet.split("-")}
+            MP_bordering_phases = {phase for limit in MP_gga_chempots for phase in limit.split("-")}
             self.entries = [
                 entry for entry in pd_entries if entry.name in MP_bordering_phases or entry.is_element
             ]
@@ -476,12 +482,10 @@ class CompetingPhases:
     # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
-    # TODO: Currently doesn't exactly match vaspup2.0 naming convention which means it doesn't
-    #  account for the ordering switch from 1..9 to 10 etc
     def convergence_setup(
         self,
-        kpoints_metals=(40, 120, 5),
-        kpoints_nonmetals=(5, 80, 5),
+        kpoints_metals=(40, 1000, 5),
+        kpoints_nonmetals=(5, 120, 5),
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
@@ -559,24 +563,26 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                fname = (
-                    f"competing_phases/{e.name}_EaH"
-                    f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )  # TODO: competing_phases folder name should be an optional parameter
+                kname = (
+                    "k"
+                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
+                # TODO: competing_phases folder name should be an optional parameter
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
-                #  out for cases where rounding can give same name (e.g. Te!)
+                #  out for cases where rounding can give same name (e.g. Te!) - should use
+                #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
+                #  rare cases of overwriting
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            # change the ismear and sigma for metals
-            uis["ISMEAR"] = -5
-            uis["SIGMA"] = 0.2
+            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
+            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
+                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
@@ -589,29 +595,37 @@ class CompetingPhases:
                     force_gamma=True,
                 )
 
-                kname = "k" + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                fname = (
-                    f"competing_phases/{e.name}_EaH_"
-                    f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
+                kname = (
+                    "k"
+                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
+
+    def _competing_phase_name(self, entry):
+        rounded_eah = round(entry.data["e_above_hull"], 4)
+        if np.isclose(rounded_eah, 0):
+            return f"{entry.name}_EaH_0"
+        return f"{entry.name}_EaH_{rounded_eah}"
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
         self,
-        kpoints_metals=95,
-        kpoints_nonmetals=45,
+        kpoints_metals=200,
+        kpoints_nonmetals=64,  # MPRelaxSet default
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
         **kwargs,
     ):
         """
-        Generates VASP input files for ``vasp_std`` relaxations of the competing
-        phases, using HSE06 (hybrid DFT) DFT by default. Automatically sets the
-        ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not. Note that any
-        changes to the default ``INCAR``/``POTCAR`` settings should be consistent
-        with those used for the defect supercell calculations.
+        Generates VASP input files for ``vasp_std`` relaxations of the
+        competing phases, using HSE06 (hybrid DFT) DFT by default.
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
 
         Args:
             kpoints_metals (int):
@@ -681,18 +695,16 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
             uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            # change the ismear and sigma for metals
-            uis["ISMEAR"] = 1
-            uis["SIGMA"] = 0.2
+            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
+            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
 
             if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
+                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
                 if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
                     uis["NUPDOWN"] = int(e.data["total_magnetization"])
 
@@ -703,7 +715,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -730,7 +742,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
 
@@ -829,7 +841,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             if codoping:
                 # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
                 #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
-                #  entries, including facets with multiple extrinsic entries but still not the
+                #  entries, including limits with multiple extrinsic entries but still not the
                 #  full phase diagram? - To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
                 #  this code block and just use:
@@ -1010,19 +1022,19 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 )
                 MP_extrinsic_bordering_phases = []
 
-                for facet in MP_extrinsic_gga_chempots:
-                    # if the number of intrinsic competing phases for this facet is equal to the
+                for limit in MP_extrinsic_gga_chempots:
+                    # if the number of intrinsic competing phases for this limit is equal to the
                     # number of species in the bulk composition, then include the extrinsic phase(s)
-                    # for this facet (full_sub_approach = False approach)
+                    # for this limit (full_sub_approach = False approach)
                     MP_intrinsic_bordering_phases = {
-                        phase for phase in facet.split("-") if sub_el not in phase
+                        phase for phase in limit.split("-") if sub_el not in phase
                     }
                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                         # add to list of extrinsic bordering phases, if not already present:
                         MP_extrinsic_bordering_phases.extend(
                             [
                                 phase
-                                for phase in facet.split("-")
+                                for phase in limit.split("-")
                                 if sub_el in phase and phase not in MP_extrinsic_bordering_phases
                             ]
                         )
@@ -1045,19 +1057,19 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         )
 
                         if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
-                            # new bordering phase, check if not an over-dependent facet:
+                            # new bordering phase, check if not an over-dependent limit:
 
-                            for facet in new_MP_extrinsic_gga_chempots:
-                                if facet not in MP_extrinsic_gga_chempots:
-                                    # new facet, check if not an over-dependent facet:
+                            for limit in new_MP_extrinsic_gga_chempots:
+                                if limit not in MP_extrinsic_gga_chempots:
+                                    # new limit, check if not an over-dependent limit:
                                     MP_intrinsic_bordering_phases = {
-                                        phase for phase in facet.split("-") if sub_el not in phase
+                                        phase for phase in limit.split("-") if sub_el not in phase
                                     }
                                     if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
                                         MP_extrinsic_bordering_phases.extend(
                                             [
                                                 phase
-                                                for phase in facet.split("-")
+                                                for phase in limit.split("-")
                                                 if sub_el in phase
                                                 and phase not in MP_extrinsic_bordering_phases
                                             ]
@@ -1071,7 +1083,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 ]
 
                 # check that extrinsic competing phases list is not empty (can happen with
-                # 'over-dependent' facets); if so then set full_sub_approach = True and re-run
+                # 'over-dependent' limits); if so then set full_sub_approach = True and re-run
                 # the extrinsic phase addition process
                 if not extrinsic_entries:
                     warnings.warn(
@@ -1168,12 +1180,12 @@ class CompetingPhasesAnalyzer:
         # if path is just a list of all competing phases
         if isinstance(path, list):
             for p in path:
-                if "vasprun.xml" in Path(p).name:
+                if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
                     self.vasprun_paths.append(str(Path(p)))
 
                 # try to find the file - will always pick the first match for vasprun.xml*
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
-                    vsp = list(Path(p).glob("vasprun.xml*"))[0]
+                    vsp = next(iter(Path(p).glob("vasprun.xml*")))
                     self.vasprun_paths.append(str(vsp))
 
                 else:
@@ -1182,42 +1194,36 @@ class CompetingPhasesAnalyzer:
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
-                if not p.glob("EaH"):  # if path provided doesn't point to the doped created directories
-                    # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
-                    #  only if there's no *EaH* folders at all.
-                    #  Seemed to be causing problems with .DS_Store files on Macs as well
-                    raise FileNotFoundError(
-                        "Folders are not in the correct structure, provide them as a list of "
-                        "paths (or strings). Competing phase folders should have `EaH` in the "
-                        "folder name."
-                    )
-
-                # add bulk simple properties
-                vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
-                if multiple:
-                    warnings.warn(
-                        f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
-                        f"{vr_path} to parse the calculation energy and metadata."
-                    )
-
-                if os.path.exists(vr_path):
-                    self.vasprun_paths.append(vr_path)
-
-                else:
-                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
-                    if multiple:
-                        warnings.warn(
-                            f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                            f"{vr_path} to parse the calculation energy and metadata."
+                if p.is_dir() and not p.name.startswith("."):
+                    # add bulk simple properties
+                    vr_path = "null_directory"
+                    with contextlib.suppress(FileNotFoundError):
+                        vr_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", p / folder
                         )
+                        if multiple:
+                            warnings.warn(
+                                f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                                f"{vr_path} to parse the calculation energy and metadata."
+                            )
 
                     if os.path.exists(vr_path):
                         self.vasprun_paths.append(vr_path)
 
                     else:
-                        warnings.warn(
-                            f"Can't find a vasprun.xml file in {p} or {p/folder}, proceed with caution"
-                        )
+                        with contextlib.suppress(FileNotFoundError):
+                            vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                            if multiple:
+                                warnings.warn(
+                                    f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                                    f"{vr_path} to parse the calculation energy and metadata."
+                                )
+
+                        if os.path.exists(vr_path):
+                            self.vasprun_paths.append(vr_path)
+
+                        else:
+                            warnings.warn(f"Can't find a vasprun.xml file in {p} or {p/folder}, skipping")
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
@@ -1227,9 +1233,30 @@ class CompetingPhasesAnalyzer:
 
         num = len(self.vasprun_paths)
         print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
-        # TODO: Make this a try/except loop to print which vasprun.xml files fail parsing (i.e. are
-        #  corrupted)
-        self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
+
+        self.vaspruns = []
+        failed_parsing_dict = {}
+        for vasprun_path in self.vasprun_paths:
+            try:
+                self.vaspruns.append(Vasprun(vasprun_path).as_dict())
+            except Exception as e:
+                if str(e) in failed_parsing_dict:
+                    failed_parsing_dict[str(e)] += [vasprun_path]
+                else:
+                    failed_parsing_dict[str(e)] = [vasprun_path]
+
+        if failed_parsing_dict:
+            warning_string = (
+                "Failed to parse the following `vasprun.xml` files:\n(files: error)\n"
+                + "\n".join([f"{paths}: {error}" for error, paths in failed_parsing_dict.items()])
+            )
+            warnings.warn(warning_string)
+
+        if not self.vaspruns:
+            raise FileNotFoundError(
+                "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
+                "folders and input parameters are in the correct format (see docstrings/tutorials)."
+            )
         self.data = []
 
         temp_data = []
@@ -1321,9 +1348,7 @@ class CompetingPhasesAnalyzer:
         ]
         # if all values are None for a certain key, remove that key from all dicts in list:
         keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
-        data = [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
-
-        return data
+        return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
 
     def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
         """
@@ -1458,23 +1483,23 @@ class CompetingPhasesAnalyzer:
             )
 
         self._intrinsic_chempots = {
-            "facets": no_element_chem_lims,
+            "limits": no_element_chem_lims,
             "elemental_refs": {
                 str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
             },
-            "facets_wrt_el_refs": {},
+            "limits_wrt_el_refs": {},
         }
 
-        # relate the facets to the elemental energies
-        for facet, chempot_dict in self._intrinsic_chempots["facets"].items():
+        # relate the limits to the elemental energies
+        for limit, chempot_dict in self._intrinsic_chempots["limits"].items():
             relative_chempot_dict = copy.deepcopy(chempot_dict)
             for e in relative_chempot_dict:
                 relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
-            self._intrinsic_chempots["facets_wrt_el_refs"].update({facet: relative_chempot_dict})
+            self._intrinsic_chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
-        for _, chempot_dict in self._intrinsic_chempots["facets_wrt_el_refs"].items():
+        for _, chempot_dict in self._intrinsic_chempots["limits_wrt_el_refs"].items():
             phase_energy_list = []
             phase_name_columns = []
             for k, v in chempot_dict.items():
@@ -1521,38 +1546,33 @@ class CompetingPhasesAnalyzer:
             #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
             # 3. find the most negative mu_dopant which then becomes the new
             #    canonical chemical potential for that dopant species and the
-            #    competing phase is the 'limiting phase' right?
-            # 4. update the chemical potential limits table to reflect this?
-            # TODO: I don't think this is right. Here it's just getting the extrinsic chempots at
-            #  the intrinsic chempot limits, but actually it should be recalculating the chempot
-            #  limits with the extrinsic competing phases, then reducing _these_ facets down to
-            #  those with only one extrinsic competing phase bordering
+            #    competing phase is the 'limiting phase' right
+            # 4. update the chemical potential limits table to reflect this
 
             # reverse engineer chem lims for extrinsic
             df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
             cl2 = {
                 "elemental_refs": self.elemental_energies,
-                "facets_wrt_el_refs": {},
-                "facets": {},
+                "limits_wrt_el_refs": {},
+                "limits": {},
             }
             # print(f"df4: {df4}")  # debugging
 
             for i, d in enumerate(df4):
-                key = list(self._intrinsic_chempots["facets_wrt_el_refs"].keys())[i] + "-" + d[col_name]
-                print(f"key: {key}")  # TODO: Remove any unnecessary print statements when this
-                # has been fixed
-                new_vals = list(self._intrinsic_chempots["facets_wrt_el_refs"].values())[i]
+                key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+                # print(f"key: {key}")  # debugging
+                new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
                 new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
-                cl2["facets_wrt_el_refs"][key] = new_vals
+                cl2["limits_wrt_el_refs"][key] = new_vals
             # print(f"cl2: {cl2}")  # debugging
 
-            # relate the facets to the elemental
+            # relate the limits to the elemental
             # energies but in reverse this time
-            for facet, chempot_dict in cl2["facets_wrt_el_refs"].items():
+            for limit, chempot_dict in cl2["limits_wrt_el_refs"].items():
                 relative_chempot_dict = copy.deepcopy(chempot_dict)
                 for e in relative_chempot_dict:
                     relative_chempot_dict[e] += cl2["elemental_refs"][e]
-                cl2["facets"].update({facet: relative_chempot_dict})
+                cl2["limits"].update({limit: relative_chempot_dict})
 
             self._chempots = cl2
 
@@ -1630,8 +1650,8 @@ class CompetingPhasesAnalyzer:
                 print(f"{self.elemental[0]}  # dependent variable (element)")
 
             # get only the lowest energy entries of compositions in self.data which are on a
-            # facet in self._intrinsic_chempots
-            bordering_phases = {phase for facet in self._chempots["facets"] for phase in facet.split("-")}
+            # limit in self._intrinsic_chempots
+            bordering_phases = {phase for limit in self._chempots["limits"] for phase in limit.split("-")}
             entries_for_cplap = [
                 entry_dict
                 for entry_dict in self.data
@@ -1756,10 +1776,10 @@ class CompetingPhasesAnalyzer:
         return string
 
 
-def get_X_rich_facet(X: str, chempots: dict):
+def get_X_rich_limit(X: str, chempots: dict):
     """
-    Determine the phase diagram facet of the input chemical potentials limit
-    dict which corresponds to the most X-rich conditions.
+    Determine the chemical potential limit of the input chempots dict which
+    corresponds to the most X-rich conditions.
 
     Args:
         X (str): Elemental species (e.g. "Te")
@@ -1767,23 +1787,23 @@ def get_X_rich_facet(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_rich_facet = None
-    X_rich_facet_chempot = None
-    for facet, chempot_dict in chempots["facets"].items():
-        if X in chempot_dict and (X_rich_facet is None or chempot_dict[X] > X_rich_facet_chempot):
-            X_rich_facet = facet
-            X_rich_facet_chempot = chempot_dict[X]
+    X_rich_limit = None
+    X_rich_limit_chempot = None
+    for limit, chempot_dict in chempots["limits"].items():
+        if X in chempot_dict and (X_rich_limit is None or chempot_dict[X] > X_rich_limit_chempot):
+            X_rich_limit = limit
+            X_rich_limit_chempot = chempot_dict[X]
 
-    if X_rich_facet is None:
+    if X_rich_limit is None:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    return X_rich_facet
+    return X_rich_limit
 
 
-def get_X_poor_facet(X: str, chempots: dict):
+def get_X_poor_limit(X: str, chempots: dict):
     """
-    Determine the phase diagram facet of the input chemical potentials limit
-    dict which corresponds to the most X-poor conditions.
+    Determine the chemical potential limit of the input chempots dict which
+    corresponds to the most X-poor conditions.
 
     Args:
         X (str): Elemental species (e.g. "Te")
@@ -1791,17 +1811,17 @@ def get_X_poor_facet(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_poor_facet = None
-    X_poor_facet_chempot = None
-    for facet, chempot_dict in chempots["facets"].items():
-        if X in chempot_dict and (X_poor_facet is None or chempot_dict[X] < X_poor_facet_chempot):
-            X_poor_facet = facet
-            X_poor_facet_chempot = chempot_dict[X]
+    X_poor_limit = None
+    X_poor_limit_chempot = None
+    for limit, chempot_dict in chempots["limits"].items():
+        if X in chempot_dict and (X_poor_limit is None or chempot_dict[X] < X_poor_limit_chempot):
+            X_poor_limit = limit
+            X_poor_limit_chempot = chempot_dict[X]
 
-    if X_poor_facet is None:
+    if X_poor_limit is None:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    return X_poor_facet
+    return X_poor_limit
 
 
 def _move_dict_to_start(data, key, value):
@@ -1827,55 +1847,52 @@ def combine_extrinsic(first, second, extrinsic_species):
     Returns:
         dict.
     """
-    keys = ["elemental_refs", "facets", "facets_wrt_el_refs"]
-    if not all(key in first for key in keys):
+    keys = ["elemental_refs", "limits", "limits_wrt_el_refs"]
+    if any(key not in first for key in keys):
         raise KeyError(
             "the first dictionary doesn't contain the correct keys - it should include "
-            "elemental_refs, facets and facets_wrt_el_refs"
+            "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if not all(key in second for key in keys):
+    if any(key not in second for key in keys):
         raise KeyError(
             "the second dictionary doesn't contain the correct keys - it should include "
-            "elemental_refs, facets and facets_wrt_el_refs"
+            "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if extrinsic_species not in second["elemental_refs"].keys():
+    if extrinsic_species not in second["elemental_refs"]:
         raise ValueError("extrinsic species is not present in the second dictionary")
 
     cpa1 = copy.deepcopy(first)
     cpa2 = copy.deepcopy(second)
-    new_facets = {}
-    for (k1, v1), (k2, v2) in zip(list(cpa1["facets"].items()), list(cpa2["facets"].items())):
+    new_limits = {}
+    for (k1, v1), (k2, v2) in zip(list(cpa1["limits"].items()), list(cpa2["limits"].items())):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
+            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets[new_key] = v1
+        new_limits[new_key] = v1
 
-    new_facets_wrt_el = {}
+    new_limits_wrt_el = {}
     for (k1, v1), (k2, v2) in zip(
-        list(cpa1["facets_wrt_el_refs"].items()),
-        list(cpa2["facets_wrt_el_refs"].items()),
+        list(cpa1["limits_wrt_el_refs"].items()),
+        list(cpa2["limits_wrt_el_refs"].items()),
     ):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
-            raise ValueError("The facets aren't matching, make sure you've used the correct dictionary")
+            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_facets_wrt_el[new_key] = v1
+        new_limits_wrt_el[new_key] = v1
 
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
 
-    new_dict = {}
-    new_dict = {
+    return {
         "elemental_refs": new_elements,
-        "facets": new_facets,
-        "facets_wrt_el_refs": new_facets_wrt_el,
+        "limits": new_limits,
+        "limits_wrt_el_refs": new_limits_wrt_el,
     }
-
-    return new_dict

@@ -2,7 +2,7 @@
 Utility code and functions for generating defect supercells.
 """
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 from pymatgen.core.lattice import Lattice
@@ -240,7 +240,7 @@ def cell_metric(cell_matrix: np.ndarray, target: str = "SC") -> float:
     )  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
 
 
-def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> Tuple[Any, ...]:
+def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> tuple[Any, ...]:
     lengths = tuple(np.sqrt(np.sum(matrix**2, axis=1)).tolist())
     angles = np.zeros(3)
     for dim in range(3):
@@ -481,10 +481,10 @@ def find_ideal_supercell(
 ) -> Union[np.ndarray, tuple]:
     r"""
     Given an input cell matrix (e.g. Structure.lattice.matrix or Atoms.cell)
-    and chosen target_size (size of supercell in number of ``cell``\s), finds an
-    ideal supercell matrix (P) that yields the largest minimum image distance
-    (i.e. minimum distance between periodic images of sites in a lattice),
-    while also being as close to cubic as possible.
+    and chosen target_size (size of supercell in number of ``cell``\s), finds
+    an ideal supercell matrix (P) that yields the largest minimum image
+    distance (i.e. minimum distance between periodic images of sites in a
+    lattice), while also being as close to cubic as possible.
 
     Supercell matrices are searched for by first identifying the ideal
     (fractional) transformation matrix (P) that would yield a perfectly cubic
@@ -531,9 +531,9 @@ def find_ideal_supercell(
         float: Minimum image distance (in Å) if ``return_min_dist`` is True.
     """
     if target_size == 1:  # just identity innit
-        return np.eye(3, dtype=int), _get_min_image_distance_from_matrix(
-            cell
-        ) if return_min_dist else np.eye(3, dtype=int)
+        return np.eye(3, dtype=int), (
+            _get_min_image_distance_from_matrix(cell) if return_min_dist else np.eye(3, dtype=int)
+        )
 
     # Initial code here is based off that in ASE's find_optimal_cell_shape() function, but with significant
     # efficiency improvements, and then re-based on the minimum image distance rather than cubic cell

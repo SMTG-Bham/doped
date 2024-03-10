@@ -448,7 +448,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         reduced_lattice.matrix,
     ]
 
-    for i in range(4):
+    for _ in range(4):
         reduced_lattice = reduced_lattice.get_niggli_reduced_lattice()
         if np.linalg.det(reduced_lattice.matrix) < 0:
             reduced_lattice = Lattice(reduced_lattice.matrix * -1)
@@ -459,7 +459,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         for i in range(3):
             for j in range(i + 1, 3):
                 new_lattice_matrix = reduced_lattice.matrix.copy()
-                new_lattice_matrix[i] = new_lattice_matrix[i] * -1  # flake8: noqa: PLW2901
+                new_lattice_matrix[i] = new_lattice_matrix[i] * -1
                 new_lattice_matrix[j] = new_lattice_matrix[j] * -1
                 possible_lattice_matrices.append(new_lattice_matrix)
 
@@ -696,7 +696,7 @@ def get_conv_cell_site(defect_entry):
         ]
     )
 
-    conv_cell_site = [site for site in s2_really_like_s1.sites if site.specie.symbol == "X"][0]
+    conv_cell_site = next(site for site in s2_really_like_s1.sites if site.specie.symbol == "X")
     # site choice doesn't matter so much here, as we later get the equivalent coordinates using the
     # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
     # initialisation)
@@ -842,7 +842,7 @@ def get_wyckoff_label_and_equiv_coord_list(
 
     def evaluate_expression(sympy_expr, coord, variable_dict):
         equation = Eq(sympy_expr, coord)
-        variable = list(sympy_expr.free_symbols)[0]
+        variable = next(iter(sympy_expr.free_symbols))
         variable_dict[variable] = solve(equation, variable)[0]
 
         return simplify(sympy_expr).subs(variable_dict)
@@ -964,8 +964,8 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
 
 def _read_wyckoff_datafile(spacegroup, f, setting=None):
     """
-    Read the ``wyckpos.dat`` file of specific spacegroup and returns a dictionary
-    with this information.
+    Read the ``wyckpos.dat`` file of specific spacegroup and returns a
+    dictionary with this information.
     """
     if isinstance(spacegroup, int):
         pass
@@ -1338,6 +1338,7 @@ def _check_relaxed_defect_symmetry_determination(
         )
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
+            print(bulk_spglib_point_group_symbol, unrelaxed_spglib_point_group_symbol)
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
