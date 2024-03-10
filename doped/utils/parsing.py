@@ -1,6 +1,7 @@
 """
 Helper functions for parsing VASP supercell defect calculations.
 """
+
 import contextlib
 import itertools
 import os
@@ -10,6 +11,7 @@ from typing import Optional, Union
 import numpy as np
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
+from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
@@ -89,14 +91,18 @@ def get_outcar(outcar_path):
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
     """
-    Search for all files with filenames matching ``output_file``,
-    case-insensitive.
+    Search for all files with filenames matching ``output_file``, case-
+    insensitive.
 
     Returns (output file path, Multiple?) where Multiple is True if multiple
     matching files are found.
     """
     files = os.listdir(path)
-    output_files = [filename for filename in files if output_file.lower() in filename.lower()]
+    output_files = [
+        filename
+        for filename in files
+        if output_file.lower() in filename.lower() and not filename.startswith(".")
+    ]
     # sort by direct match to {output_file}, direct match to {output_file}.gz, then alphabetically:
     if output_files := sorted(
         output_files,
@@ -125,9 +131,9 @@ def get_defect_type_and_composition_diff(bulk, defect):
         if int(defect_amount - bulk_comp.get(element, 0)) != 0
     }
 
-    if len(composition_diff) == 1 and list(composition_diff.values())[0] == 1:
+    if len(composition_diff) == 1 and next(iter(composition_diff.values())) == 1:
         defect_type = "interstitial"
-    elif len(composition_diff) == 1 and list(composition_diff.values())[0] == -1:
+    elif len(composition_diff) == 1 and next(iter(composition_diff.values())) == -1:
         defect_type = "vacancy"
     elif len(composition_diff) == 2:
         defect_type = "substitution"
@@ -152,13 +158,16 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     refactored for extrinsic species and code efficiency/robustness improvements.
 
     Returns:
-        bulk_site_idx: index of the site in the bulk structure that corresponds
+        bulk_site_idx:
+            Index of the site in the bulk structure that corresponds
             to the defect site in the defect structure
-        defect_site_idx: index of the defect site in the defect structure
-        unrelaxed_defect_structure: pristine defect supercell structure for
-            vacancies/substitutions (i.e. pristine bulk with unrelaxed vacancy/
-            substitution), or the pristine bulk structure with the `final`
-            relaxed interstitial site for interstitials.
+        defect_site_idx:
+            Index of the defect site in the defect structure
+        unrelaxed_defect_structure:
+            Pristine defect supercell structure for vacancies/substitutions
+            (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
+            pristine bulk structure with the `final` relaxed interstitial
+            site for interstitials.
     """
 
     def process_substitution(bulk, defect, composition_diff):
@@ -294,7 +303,7 @@ def _get_species_from_composition_diff(composition_diff, el_change):
     """
     Get the species corresponding to the given change in composition.
     """
-    return [el for el, amt in composition_diff.items() if amt == el_change][0]
+    return next(el for el, amt in composition_diff.items() if amt == el_change)
 
 
 def get_coords_and_idx_of_species(structure, species_name):
@@ -339,10 +348,12 @@ def find_nearest_coords(
         if len(np.unique(site_matches)) != len(site_matches):
             _site_matching_failure_error(defect_type, searched_structure)
 
-        return list(
-            set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
-            - set(site_matches)
-        )[0]
+        return next(
+            iter(
+                set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
+                - set(site_matches)
+            )
+        )
 
     if len(site_matches.shape) == 0:
         # if there are any other matches with a distance within unique_tolerance of the located site
@@ -580,7 +591,14 @@ def _compare_potcar_symbols(
     return True
 
 
-def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk", defect_name="defect"):
+def _compare_kpoints(
+    bulk_actual_kpoints,
+    defect_actual_kpoints,
+    bulk_kpoints=None,
+    defect_kpoints=None,
+    bulk_name="bulk",
+    defect_name="defect",
+):
     """
     Check bulk and defect KPOINTS are the same, using the
     Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
@@ -592,18 +610,28 @@ def _compare_kpoints(bulk_actual_kpoints, defect_actual_kpoints, bulk_name="bulk
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
 
-    if not np.allclose(sorted_bulk_kpoints, sorted_defect_kpoints):
+    actual_kpoints_eq = len(sorted_bulk_kpoints) == len(sorted_defect_kpoints) and np.allclose(
+        sorted_bulk_kpoints, sorted_defect_kpoints
+    )
+    # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
+    # input kpoints, which we assume is fine:
+    kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
+
+    if not (actual_kpoints_eq or kpoints_eq):
         warnings.warn(
             f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
             f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
             f"{bulk_name} calculation:"
-            f"\n{sorted_bulk_kpoints}\n"
+            f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable than array
             f"and in the {defect_name} calculation:"
-            f"\n{sorted_defect_kpoints}\n"
+            f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
             f"In general, the same KPOINTS settings should be used for all final calculations for "
             f"accurate results!"
         )
-        return [sorted_bulk_kpoints, sorted_defect_kpoints]
+        return [
+            [list(kpoints) for kpoints in sorted_bulk_kpoints],
+            [list(kpoints) for kpoints in sorted_defect_kpoints],
+        ]
 
     return True
 
@@ -635,6 +663,7 @@ def _compare_incar_tags(
             "PREC": "Normal",  # default Normal
             "PRECFOCK": "Normal",  # default Normal
             "LDAU": False,  # default False
+            "NKRED": 1,  # default 1
         }
 
     def _compare_incar_vals(val1, val2):
@@ -1017,8 +1046,8 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
     sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
     site = None
 
-    if not relaxed and hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
-        site = defect_entry.calculation_metadata.get("bulk_site")
+    if not relaxed:
+        site = _get_defect_supercell_site(defect_entry, relaxed=False)
     if sc_defect_frac_coords is None and site is None:
         site = _get_defect_supercell_site(defect_entry)
     if site is not None:
@@ -1027,7 +1056,84 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
     return sc_defect_frac_coords
 
 
-def _get_defect_supercell_site(defect_entry: DefectEntry):
+def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
+    if not relaxed:
+        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
+            site = defect_entry.calculation_metadata.get("bulk_site")
+            if site:
+                return site
+
+        # otherwise need to reparse info:
+        from doped.analysis import defect_from_structures
+
+        bulk_supercell = _get_bulk_supercell(defect_entry)
+        defect_supercell = _get_defect_supercell(defect_entry)
+
+        (
+            _defect,
+            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            defect_site_index,
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+
+        # update any missing calculation_metadata:
+        defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
+            defect_entry.calculation_metadata.get(
+                "guessed_initial_defect_structure", guessed_initial_defect_structure
+            )
+        )
+        defect_entry.calculation_metadata["defect_site_index"] = defect_entry.calculation_metadata.get(
+            "defect_site_index", defect_site_index
+        )
+        defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
+            "bulk_site_index", bulk_site_index
+        )
+        defect_entry.calculation_metadata["unrelaxed_defect_structure"] = (
+            defect_entry.calculation_metadata.get("unrelaxed_defect_structure", unrelaxed_defect_structure)
+        )
+
+        # add displacement from (guessed) initial site to final defect site:
+        if defect_site_index is not None:  # not a vacancy
+            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
+            final_site = defect_supercell[defect_site_index]
+            guessed_displacement = final_site.distance(guessed_initial_site)
+            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
+                defect_entry.calculation_metadata.get("guessed_initial_defect_site", guessed_initial_site)
+            )
+            defect_entry.calculation_metadata["guessed_defect_displacement"] = (
+                defect_entry.calculation_metadata.get("guessed_defect_displacement", guessed_displacement)
+            )
+            defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
+                "bulk_site_index", bulk_site_index
+            )
+        else:  # vacancy
+            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
+                defect_entry.calculation_metadata.get(
+                    "guessed_initial_defect_site", bulk_supercell[bulk_site_index]
+                )
+            )
+            defect_entry.calculation_metadata[
+                "guessed_defect_displacement"
+            ] = defect_entry.calculation_metadata.get(
+                "guessed_defect_displacement", None
+            )  # type: ignore
+
+        if bulk_site_index is None:  # interstitial
+            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
+                "bulk_site", defect_site_in_bulk
+            )
+        else:
+            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
+                "bulk_site", bulk_supercell[bulk_site_index]
+            )
+
+        return defect_entry.calculation_metadata["bulk_site"]
+
     if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
         return defect_entry.defect_supercell_site
 
@@ -1039,3 +1145,154 @@ def _get_defect_supercell_site(defect_entry: DefectEntry):
         )
 
     return None
+
+
+def simple_spin_degeneracy_from_charge(structure, charge_state: int = 0) -> int:
+    """
+    Get the defect spin degeneracy from the supercell and charge state,
+    assuming either simple singlet (S=0) or doublet (S=1/2) behaviour.
+
+    Even-electron defects are assumed to have a singlet ground state, and odd-
+    electron defects are assumed to have a doublet ground state.
+    """
+    total_Z = int(sum(Element(elt).Z * num for elt, num in structure.composition.as_dict().items()))
+    return int((total_Z + charge_state) % 2 + 1)
+
+
+def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0) -> int:
+    """
+    Get the defect spin degeneracy from the vasprun output, assuming either
+    singlet (S=0) or doublet (S=1/2) behaviour.
+
+    Even-electron defects are assumed to have a singlet ground state, and odd-
+    electron defects are assumed to have a doublet ground state.
+    """
+    return simple_spin_degeneracy_from_charge(defect_vr.final_structure, charge_state)
+
+
+def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]):
+    """
+    Determine the defect charge state from the defect and bulk vaspruns, and
+    compare to the manually-set charge state if provided.
+    """
+    auto_charge = None
+
+    try:
+        if defect_vr.incar.get("NELECT") is None:
+            auto_charge = 0  # neutral defect if NELECT not specified
+
+        else:
+            defect_nelect = defect_vr.parameters.get("NELECT")
+            bulk_nelect = get_neutral_nelect_from_vasprun(bulk_vr)
+            neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
+
+            if bulk_vr.parameters.get("NELECT", False):
+                assert bulk_nelect == bulk_vr.parameters["NELECT"]
+
+            auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+
+            if auto_charge is None or abs(auto_charge) >= 10:
+                neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr, skip_potcar_init=True)
+                try:
+                    auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+
+                except Exception as e:
+                    auto_charge = None
+                    if charge_state is None:
+                        raise RuntimeError(
+                            "Defect charge cannot be automatically determined as POTCARs have not been "
+                            "setup with pymatgen (see Step 2 at "
+                            "https://github.com/SMTG-Bham/doped#installation). Please specify defect "
+                            "charge manually using the `charge_state` argument, or set up POTCARs with "
+                            "pymatgen."
+                        ) from e
+
+            if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
+                raise RuntimeError(
+                    f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
+                    f"Please specify defect charge manually using the `charge` argument."
+                )
+
+        if (
+            charge_state is not None
+            and auto_charge is not None
+            and int(charge_state) != int(auto_charge)
+            and abs(auto_charge) < 5
+        ):
+            warnings.warn(
+                f"Auto-determined defect charge q={int(auto_charge):+} does not match specified charge "
+                f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
+            )
+
+        if charge_state is None and auto_charge is not None:
+            charge_state = auto_charge
+
+    except Exception as e:
+        if charge_state is None:
+            raise e
+
+    if charge_state is None:
+        raise RuntimeError(
+            "Defect charge could not be automatically determined from the defect calculation outputs. "
+            "Please manually specify defect charge using the `charge_state` argument."
+        )
+
+    return charge_state
+
+
+def _get_bulk_locpot_dict(bulk_path, quiet=False):
+    bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
+    if multiple and not quiet:
+        _multiple_files_warning(
+            "LOCPOT",
+            bulk_path,
+            bulk_locpot_path,
+            dir_type="bulk",
+        )
+    bulk_locpot = get_locpot(bulk_locpot_path)
+    return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+
+
+def _get_bulk_site_potentials(bulk_path, quiet=False):
+    from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
+
+    bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
+    if multiple and not quiet:
+        _multiple_files_warning(
+            "OUTCAR",
+            bulk_path,
+            bulk_outcar_path,
+            dir_type="bulk",
+        )
+    bulk_outcar = get_outcar(bulk_outcar_path)
+
+    if bulk_outcar.electrostatic_potential is None:
+        _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
+
+    return -1 * np.array(bulk_outcar.electrostatic_potential)
+
+
+def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):
+    meta = defect_entry.calculation_metadata[f"{charge_correction_type}_meta"]
+    corr = (
+        meta[f"{charge_correction_type}_electrostatic"]
+        + meta[f"{charge_correction_type}_potential_alignment_correction"]
+    )
+    defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
+
+
+_vasp_file_parsing_action_dict = {
+    "vasprun.xml": "parse the calculation energy and metadata.",
+    "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
+    "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
+}
+
+
+def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, dir_type="bulk"):
+    filename = os.path.basename(chosen_filepath)
+    if action is None:
+        action = _vasp_file_parsing_action_dict[file_type]
+    warnings.warn(
+        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
+        f"{action}"
+    )

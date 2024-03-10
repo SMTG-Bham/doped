@@ -25,7 +25,7 @@ copyright = '2023, Seán R. Kavanagh'
 author = 'Seán R. Kavanagh'
 
 # The full version, including alpha/beta/rc tags
-release = '2.3.0'
+release = '2.3.2'
 
 
 # -- General configuration ---------------------------------------------------
@@ -91,11 +91,15 @@ html_theme_options = {
     "github_repo": "https://github.com/SMTG-Bham/doped",  # renku
     "github_button": True,
     "github_user": "SMTG-Bham", # Username
-    "description": "Python package for setting up, parsing and analysing ab-initio defect calculations",
+    "description": "Python package for setting up, parsing and analysing charged defect supercell calculations",
     "repository_branch": "develop",
     "path_to_docs": "docs",
     "use_repository_button": True,
     "home_page_in_toc": True,
+    "launch_buttons": {
+        "binderhub_url": "https://mybinder.org",
+        "colab_url": "https://colab.research.google.com",
+    },
 }
 
 # Adding “Edit Source” links on your Sphinx theme

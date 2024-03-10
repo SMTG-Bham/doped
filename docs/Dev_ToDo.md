@@ -1,55 +1,35 @@
 # `doped` Development To-Do List
-## Defect calculations set up
-- See SK Remarkable notes
-
 ## Chemical potential
+- Check through chemical potential TO-DOs. Need to recheck validity of approximations used for extrinsic competing phases (and code for this).
+- Efficient generation of competing phases for which there are many polymorphs?
 - Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
-- Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
 - Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?)
   - Also see `Cs2SnTiI6` notebooks for template code for this.
-- Functionality to combine chemical potential limits from considering different extrinsic species, to be able to plot defect formation energies for different dopants on the same diagram.
-- Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, remove the old code in `vasp.py`.
-- Should output `json` of Materials Project `ComputedStructureEntry` used for each competing phase directory, to aid provenance.
 - Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
-- **`pydefect`** Interface:
-  - Having an interface module for `pydefect` to convert parsed outputs to the `pydefect`/`vise` output, would allow the easy:
-    - Automation of shallow defect analysis (and allow for easy further analysis of eigenvalues etc) – Adair's done before
-    - Ready automation with `vise` if one wants (easy high-throughput and can setup primitive calcs (BS, DOS, dielectric).
-    - Some nice defect structure and eigenvalue analysis
-  - Should tag parsed defects with `is_shallow` (or similar), and then omit these from plotting/analysis
-    (and note this behaviour in examples/docs)
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting)
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
   - Don't show transition levels outside of the bandgap (or within a certain range of the band edge, possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
-- Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
-- Showcase `py-sc-fermi` plotting (e.g. from thesis notebook) using `interface` functionality. When doing, add CdTe data as test case for this part of the code. Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? (once properly integrated, add and ask Alex to check/test?). With this, should also mention that DOS calcs should be well converged wrt kpoints for accurate Fermi level prediction.
-  Brouwer diagrams; show examples of these in docs using `py-sc-fermi` interface tools. Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this (some could be PR'd to `py-sc-fermi`)
+  - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
+  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! 
+  - Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? With this, should also mention that DOS calcs should be well converged wrt kpoints for accurate Fermi level prediction. 
+  - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
+- Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
 ## Housekeeping
 - Tutorials general structure clean-up
 - Clean up repo, removing old unnecessary git blobs
-- Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
-- Code tidy up:
-  - Test coverage?
-  - Generate docs locally and check warnings
-  - Add type hints for all functions.
-- Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
   - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
-  - Barebones tutorial workflow, as suggested by Alex G. 
-  - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-  - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.
+  - Barebones tutorial workflow, as suggested by Alex G.
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Show on chemical potentials docs how chempots can be later set as attribute for DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
-  - Show example in docs/advanced tutorial of changing `dist_tol` after parsing
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple DefectThermodynamics objects
-  - Example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta charge state, and TLs with two meta charge states, using df output from `get_transition_levels` (i.e. to get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
@@ -76,7 +56,7 @@
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
   - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
-    this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials, and example of doing the Kumagai PRX Energy carrier concentration with TLD plots (can use: https://py-sc-fermi.readthedocs.io/en/latest/tutorial.html#plot-defect-concentrations-as-a-function-of-Fermi-energy). Also include examples of extending to
+    this to their docs as example use cases as well. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Worth adding a very short example showing how to set `MAGMOM`s for AFM/FM systems (see Dan & Abdullah chat)
@@ -105,6 +85,15 @@
   - Note about rare cases where `vasp_gam` pre-relaxation can fail (e.g. Wenzhen's case); extremely disperse bands with small bandgaps, where low k-point sampling can induce a phase transition in the bulk structure. In these cases, using a special k-point is advised for the pre-relaxations. You can get the corresponding k-point for your supercell (given the primitive cell special k-point) using the `get_K_from_k` function from `easyunfold`, with the `doped` `supercell_matrix`.
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
   - Note (in tutorial when showing thermodynamic analysis?) that the spin degeneracy is automatically guessed based on the number of electrons (singlet if even or doublet if odd), but can be more complicated if you have higher multiplets (e.g. with quantum/magnetic defects, d-orbital defects etc), in which case you can manually adjust (show example). Also note that the VASP output magnetisation should match this, and e.g. a magnetisation of 0 for an odd-electron system is unphysical! – Can mention this at the false charge states discussion part as it's a consequence of this. (Unfortunately can't auto check this in `doped` as is as it's only in `pymatgen` `Outcar` objects not `Vasprun`)
+  - Brief mention in tips/advanced docs about possibly wanting to do dielectric/kpoints-sampling weighted supercell generation (if user knows what they're doing, they can use a modified version of the supercell generation algorithm to do this), and in general if kpoints can be reduced with just a slightly larger supercell, then this is often preferable.
+  - Note about cation-anion antisites often not being favourable in ionic systems, may be unnecessary to calculate (and you should think about the charge states, can play around with `probability_threshold` etc).
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
+
+## SK To-Do for next update:
+- `doped` repo/docs cleanup `TODO`s above
+- Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
+- Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
+- `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
+- Plotting lines colour updates.
