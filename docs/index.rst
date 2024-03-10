@@ -35,8 +35,8 @@ Key Features
 All features and functionality are fully-customisable:
 
 - **Supercell Generation**: Generate an optimal supercell, maximising periodic image separation for the minimum number of atoms (computational cost).
-- **Defect Generation**: Generate defect supercells and guess likely charge states based on chemical intuition.
-- **Calculation I/O**: Automatically write inputs & parse supercell calculations (``VASP`` & other DFT/force-field codes).
+- **Defect Generation**: Generate defect supercells and likely charge states from chemical intuition.
+- **Calculation I/O**: Automatically write inputs & parse calculations (``VASP`` & other DFT/force-field codes).
 - **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
 - **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials etc.
