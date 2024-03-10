@@ -1338,6 +1338,7 @@ def _check_relaxed_defect_symmetry_determination(
         )
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
+            print(bulk_spglib_point_group_symbol, unrelaxed_spglib_point_group_symbol)
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "

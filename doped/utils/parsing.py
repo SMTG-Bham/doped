@@ -1057,86 +1057,82 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
 
 
 def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
-    site = None
     if not relaxed:
         if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
             site = defect_entry.calculation_metadata.get("bulk_site")
-        if site is None:  # need to reparse info:
-            from doped.analysis import defect_from_structures
+            if site:
+                return site
 
-            bulk_supercell = _get_bulk_supercell(defect_entry)
-            defect_supercell = _get_defect_supercell(defect_entry)
+        # otherwise need to reparse info:
+        from doped.analysis import defect_from_structures
 
-            (
-                _defect,
-                _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-                defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-                # w/interstitials
-                defect_site_index,
-                bulk_site_index,
-                guessed_initial_defect_structure,
-                unrelaxed_defect_structure,
-                _bulk_voronoi_node_dict,
-            ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+        bulk_supercell = _get_bulk_supercell(defect_entry)
+        defect_supercell = _get_defect_supercell(defect_entry)
 
-            # update any missing calculation_metadata:
-            defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
-                defect_entry.calculation_metadata.get(
-                    "guessed_initial_defect_structure", guessed_initial_defect_structure
-                )
+        (
+            _defect,
+            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials
+            defect_site_index,
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+
+        # update any missing calculation_metadata:
+        defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
+            defect_entry.calculation_metadata.get(
+                "guessed_initial_defect_structure", guessed_initial_defect_structure
             )
-            defect_entry.calculation_metadata["defect_site_index"] = defect_entry.calculation_metadata.get(
-                "defect_site_index", defect_site_index
+        )
+        defect_entry.calculation_metadata["defect_site_index"] = defect_entry.calculation_metadata.get(
+            "defect_site_index", defect_site_index
+        )
+        defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
+            "bulk_site_index", bulk_site_index
+        )
+        defect_entry.calculation_metadata["unrelaxed_defect_structure"] = (
+            defect_entry.calculation_metadata.get("unrelaxed_defect_structure", unrelaxed_defect_structure)
+        )
+
+        # add displacement from (guessed) initial site to final defect site:
+        if defect_site_index is not None:  # not a vacancy
+            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
+            final_site = defect_supercell[defect_site_index]
+            guessed_displacement = final_site.distance(guessed_initial_site)
+            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
+                defect_entry.calculation_metadata.get("guessed_initial_defect_site", guessed_initial_site)
+            )
+            defect_entry.calculation_metadata["guessed_defect_displacement"] = (
+                defect_entry.calculation_metadata.get("guessed_defect_displacement", guessed_displacement)
             )
             defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
                 "bulk_site_index", bulk_site_index
             )
-            defect_entry.calculation_metadata["unrelaxed_defect_structure"] = (
+        else:  # vacancy
+            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
                 defect_entry.calculation_metadata.get(
-                    "unrelaxed_defect_structure", unrelaxed_defect_structure
+                    "guessed_initial_defect_site", bulk_supercell[bulk_site_index]
                 )
             )
+            defect_entry.calculation_metadata[
+                "guessed_defect_displacement"
+            ] = defect_entry.calculation_metadata.get(
+                "guessed_defect_displacement", None
+            )  # type: ignore
 
-            # add displacement from (guessed) initial site to final defect site:
-            if defect_site_index is not None:  # not a vacancy
-                guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
-                final_site = defect_supercell[defect_site_index]
-                guessed_displacement = final_site.distance(guessed_initial_site)
-                defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                    defect_entry.calculation_metadata.get(
-                        "guessed_initial_defect_site", guessed_initial_site
-                    )
-                )
-                defect_entry.calculation_metadata["guessed_defect_displacement"] = (
-                    defect_entry.calculation_metadata.get(
-                        "guessed_defect_displacement", guessed_displacement
-                    )
-                )
-                defect_entry.calculation_metadata["bulk_site_index"] = (
-                    defect_entry.calculation_metadata.get("bulk_site_index", bulk_site_index)
-                )
-            else:  # vacancy
-                defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                    defect_entry.calculation_metadata.get(
-                        "guessed_initial_defect_site", bulk_supercell[bulk_site_index]
-                    )
-                )
-                defect_entry.calculation_metadata[
-                    "guessed_defect_displacement"
-                ] = defect_entry.calculation_metadata.get(
-                    "guessed_defect_displacement", None
-                )  # type: ignore
+        if bulk_site_index is None:  # interstitial
+            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
+                "bulk_site", defect_site_in_bulk
+            )
+        else:
+            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
+                "bulk_site", bulk_supercell[bulk_site_index]
+            )
 
-            if bulk_site_index is None:  # interstitial
-                defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                    "bulk_site", defect_site_in_bulk
-                )
-            else:
-                defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                    "bulk_site", bulk_supercell[bulk_site_index]
-                )
-
-            return defect_entry.calculation_metadata["bulk_site"]
+        return defect_entry.calculation_metadata["bulk_site"]
 
     if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
         return defect_entry.defect_supercell_site
