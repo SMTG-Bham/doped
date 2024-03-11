@@ -708,7 +708,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     @custom_mpl_image_compare(filename="cu2sise3_phs_plot.png")
-    def test_phs_warnings(self):
+    def test_phs_parsing_and_warnings(self):
         """
         Test PHS functions.
         """
@@ -736,7 +736,14 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         print([str(warning.message) for warning in w])  # for debugging
         assert any(
-            "Attempting to load the PHS data has been automatically skipped" in str(warning.message)
+            all(
+                i in str(warning.message)
+                for i in [
+                    "PHS data parsing failed with error:",
+                    "You have version 0.8.1 of the package `vise`, which does not allow the parsing of "
+                    "non-collinear (SOC) calculations.",
+                ]
+            )
             for warning in w
         )
 

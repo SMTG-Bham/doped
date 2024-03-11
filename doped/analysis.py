@@ -1657,11 +1657,10 @@ class DefectParser:
                     )
 
         if load_phs_data:
-            bulk_outcar_phs = dp.kwargs.get("bulk_outcar", None)
-            no_phs = False
-            if bulk_outcar_phs is None:
-                phs_warn = dp.kwargs.get("phs_warning", None)
-                if not isinstance(phs_warn, str):
+            try:
+                bulk_outcar_phs = dp.kwargs.get("bulk_outcar", None)
+
+                if bulk_outcar_phs is None and dp.kwargs.get("phs_warning", None) is None:
                     try:
                         bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
                             "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
@@ -1677,25 +1676,22 @@ class DefectParser:
                             f"No `OUTCAR` file found in bulk path {path_bulk}. Skipping automated PHS "
                             f"data loading for all defects."
                         )
-                        warnings.warn(dp.kwargs["phs_warning"], UserWarning)
-                        no_phs = True
+                        warnings.warn(dp.kwargs["phs_warning"])
+
+                if bulk_outcar_phs is None:
+                    defect_entry.calculation_metadata["phs_data"] = None
 
                 else:
-                    no_phs = True
+                    band_orb, vbm_info, cbm_info = get_band_edge_info(defect_vr, bulk_vr, bulk_outcar_phs)
+                    defect_entry.calculation_metadata["phs_data"] = {
+                        "band_orb": band_orb,
+                        "vbm_info": vbm_info,
+                        "cbm_info": cbm_info,
+                    }
 
-            if not no_phs:
-                band_orb, vbm_info, cbm_info = get_band_edge_info(dp, bulk_vr, bulk_outcar_phs, defect_vr)
-            else:
-                band_orb = None
-
-            if band_orb is None:
+            except Exception as exc:
+                warnings.warn(f"PHS data parsing failed with error: {exc!r}")
                 defect_entry.calculation_metadata["phs_data"] = None
-            else:
-                defect_entry.calculation_metadata["phs_data"] = {
-                    "band_orb": band_orb,
-                    "vbm_info": vbm_info,
-                    "cbm_info": cbm_info,
-                }
 
         else:
             defect_entry.calculation_metadata["phs_data"] = None
