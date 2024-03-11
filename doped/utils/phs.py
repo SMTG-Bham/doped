@@ -1,23 +1,17 @@
 """
 Helper functions for setting up PHS analysis.
 
-Contains modified versions of functions from pydefect
-https://github.com/kumagai-group/pydefect
-and vise
-https://github.com/kumagai-group/vise, to avoid the user requiring additional files i.e. PROCAR.
+Contains modified versions of functions from pydefect (https://github.com/kumagai-group/pydefect)
+and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``s).
 """
+
 import logging
 import os
-import warnings
 from importlib.metadata import version
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-from vise import user_settings
-# suppress pydefect INFO messages
-user_settings.logger.setLevel(logging.CRITICAL)
-
 from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
 from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
 from pydefect.analyzer.make_band_edge_states import make_band_edge_states
@@ -26,22 +20,29 @@ from pydefect.cli.vasp.make_band_edge_orbital_infos import calc_orbital_characte
 from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
 from pydefect.defaults import defaults
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.io.vasp.outputs import Outcar, Vasprun
+from vise import user_settings
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
 from doped.utils.plotting import _get_backend, format_defect_name
+
+# suppress pydefect INFO messages
+user_settings.logger.setLevel(logging.CRITICAL)
+
 
 def make_band_edge_orbital_infos(
     defect_vr: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
 ):
     """
-    Make BandEdgeOrbitalInfos from vasprun.xml. Modified from my pydefects to
-    use projected orbitals stored in vasprun.xml.
+    Make BandEdgeOrbitalInfos from vasprun.xml.
+
+    Modified from my pydefect to use projected
+    orbitals stored in vasprun.xml.
 
     Args:
         defect_vr: defect Vasprun object
         vbm: vbm_info from get_edge_info
-        cbm: cbm_info fomr get_edge_info
+        cbm: cbm_info from get_edge_info
         str_info: pydefect DefectStructureInfo
         eigval_shift (float): Shift eigenvalues by E-E_VBM to set VBM at 0 eV
 
@@ -64,7 +65,7 @@ def make_band_edge_orbital_infos(
     upper_idx = np.argwhere(min_energy_by_band < cbm + eigval_range)[-1][-1]
 
     orbs, s = defect_vr.projected_eigenvalues, defect_vr.final_structure
-    orb_infos: List[Any] = []
+    orb_infos: list[Any] = []
     for spin, eigvals in defect_vr.eigenvalues.items():
         orb_infos.append([])
         for k_idx in range(len(kpt_coords)):
@@ -88,47 +89,51 @@ def make_band_edge_orbital_infos(
     )
 
 
-def get_band_edge_info(DefectParser, bulk_vr, bulk_outcar, defect_vr):
+def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar):
     """
-    Load metadata required for performing phs identification.
+    Load metadata required for performing PHS identification.
+
+    See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states
 
     Args:
-        DefectParser: DefectParser object
-        bulk_vr: Vasprun object for bulk
-        bulk_outcar: Outcar object for bulk
-        defect_vr: Vasprun object for defect
+        defect_vr (Vasprun):
+            Vasprun object of the defect supercell calculation
+        bulk_vr (Vasprun):
+            Vasprun object of the bulk supercell calculation
+        bulk_outcar (Outcar):
+            Outcar object of the bulk supercell calculation
     Returns:
         pydefect EdgeInfo class
     """
-    # Check in the correct version of Vise installed if a non-collinear calculation is parsed.
-    # TDO: Remove this check when ``vise 0.8.2`` is released on PyPi.
+    # Check in the correct version of vise installed if a non-collinear calculation is parsed.
+    # TODO: Remove this check when ``vise 0.8.2`` is released on PyPi.
     try:
         band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
         if defect_vr.parameters.get("LNONCOLLINEAR") is True:
             assert band_edge_prop._ho_band_index(Spin.up) == int(bulk_vr.parameters.get("NELECT")) - 1
-    except AssertionError:
+
+    except AssertionError as exc:
         v_vise = version("vise")
         if v_vise <= "0.8.1":
-            warnings.warn(
-                f"You have version {v_vise} of the package `vise`,"
-                f" which does not allow the parsing of non-collinear calculations."
-                f" You can install the updated version of `vise` from the GitHub repo for this"
-                f" functionality. Attempting to load the PHS data has been automatically skipped"
-            )
-            return None, None, None
+            raise RuntimeError(
+                f"You have version {v_vise} of the package `vise`, which does not allow the parsing of "
+                f"non-collinear (SOC) calculations. You can install the updated version of `vise` from "
+                f"the GitHub repo for this functionality."
+            ) from exc
+
+        raise exc
 
     orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
     vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
     cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
-    # Using default values suggested pydefect
-    dsinfo = MakeDefectStructureInfo(
-        DefectParser.defect_entry.bulk_supercell,
-        DefectParser.defect_entry.defect_supercell,
-        DefectParser.defect_entry.defect_supercell,
+    dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
+        bulk_vr.final_structure,
+        defect_vr.final_structure,
+        defect_vr.final_structure,
         symprec=0.1,
         dist_tol=1.0,
-        neighbor_cutoff_factor=1.3, # Neighbors are sites within min_dist*neighborcutoff_factor
+        neighbor_cutoff_factor=1.3,  # Neighbors are sites within min_dist * neighbor_cutoff_factor
     )
 
     band_orb = make_band_edge_orbital_infos(
@@ -181,7 +186,7 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12
-        plt.rc('axes', unicode_minus=False)
+        plt.rc("axes", unicode_minus=False)
 
         # plt.close("all")  # close any previous figures
         emp.construct_plot()
@@ -231,22 +236,22 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
 
         gamma_check = "\N{GREEK CAPITAL LETTER GAMMA}"
         labels = emp.axs[0].get_xticklabels()
-        # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        # Replace the label containing 'gamma' (Γ) with the word 'gamma'
         labels = [label.get_text() for label in labels]
-        # Replace the label containing 'gamma' (γ) with the word 'gamma'
+        # Replace the label containing 'gamma' (Γ) with the word 'gamma'
         for i, label in enumerate(labels):
             if gamma_check in label:  # Check if the label contains 'gamma'
-                labels[i] = r'$\Gamma$'  # Replace the label
+                labels[i] = r"$\Gamma$"  # Replace the label
         emp.axs[0].set_xticklabels(labels)
 
         if len(emp.axs) > 1:
             labels = emp.axs[1].get_xticklabels()
-            # Replace the label containing 'gamma' (γ) with the word 'gamma'
+            # Replace the label containing 'gamma' (Γ) with the word 'gamma'
             labels = [label.get_text() for label in labels]
-            # Replace the label containing 'gamma' (γ) with the word 'gamma'
+            # Replace the label containing 'gamma' (Γ) with the word 'gamma'
             for i, label in enumerate(labels):
                 if gamma_check in label:  # Check if the label contains 'gamma'
-                    labels[i] = r'$\Gamma$'  # Replace the label
+                    labels[i] = r"$\Gamma$"  # Replace the label
             emp.axs[1].set_xticklabels(labels)
 
         fig = emp.plt.gcf()
