@@ -252,9 +252,10 @@ PHS (but you should use your own judgement of course).
 
     bulk = "Cu2SiSe3/bulk/vasp_std"
     defect = "Cu2SiSe3/v_Cu_0/vasp_std/"
+    dielectric = 10
 
-    defect = DefectParser.from_paths(defect,bulk,dielectric,skip_corrections=True).defect_entry
-    bes, fig = defect.get_perturbed_host_state()
+    defect_entry = DefectParser.from_paths(defect, bulk, dielectric).defect_entry
+    bes, fig = defect_entry.get_perturbed_host_state()
     print(bes)  # print information about the defect state
 
      -- band-edge states info
