@@ -1,6 +1,30 @@
 Change Log
 ==========
 
+v.2.3.3
+----------
+- General robustness updates:
+    - Updated file parsing to avoid hidden files.
+    - Sanity check in `DefectsGenerator` if input symmetry is `P1`.
+    - Add `NKRED` to `INCAR` mismatch tests.
+    - Re-parse config & spin degeneracies in concentration/symmetry functions if data not already present
+      (if user is porting `DefectEntry`s from older `doped` versions or manually).
+    - Avoid unnecessary `DeprecationWarning`s
+- Updated docs and linting
+
+v.2.3.2
+----------
+- Update to match breaking change in ``pymatgen==2024.3.1`` (released today), handling ``incar_params``.
+
+v.2.3.1
+----------
+- Refactor (phase diagram) ``facet`` to (chemical potential) ``limit`` in ``doped`` chemical potential
+  functions, as this is more intuitive for most users.
+- Tests updates.
+- Minor efficiency/verbosity/robustness/docs improvements.
+- Update default ``KPOINTS`` for convergence/production runs in ``chemical_potentials`` based on testing.
+- Add optional projections of site displacements upon given vectors by @ireaml
+
 v.2.3.0
 ----------
 - ``DefectsThermodynamics`` class has been added to replace and greatly expand the functionality of the

@@ -12,6 +12,7 @@ import unittest
 import warnings
 
 import matplotlib as mpl
+import pytest
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
 
@@ -45,7 +46,7 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
-        return self.CdTe_thermo.plot(self.CdTe_chempots, facet="CdTe-Te")
+        return self.CdTe_thermo.plot(self.CdTe_chempots, limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_listed_colormap.png")
     def test_plot_CdTe_custom_listed_colormap(self):
@@ -60,12 +61,12 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe_multiple_figs(self):
-        # when facets not specified, plots all of them (second should be Te-rich here)
+        # when limits not specified, plots all of them (second should be Te-rich here)
         return self.CdTe_thermo.plot(self.CdTe_chempots)[1]
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
-        # when facets not specified, plots all of them (first should be Cd-rich here)
+        # when limits not specified, plots all of them (first should be Cd-rich here)
         return self.CdTe_thermo.plot(self.CdTe_chempots)[0]
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -80,125 +81,125 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     def test_format_defect_name(self):
         """
-        Test _format_defect_name() function.
+        Test format_defect_name() function.
         """
         # test standard behaviour
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test interstitial case with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test interstitial case with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test lowercase interstitial with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test lowercase interstitial with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test uppercase vacancy (pymatgen default name) with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test uppercase vacancy (pymatgen default name) with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test substitution with site number excluded
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Ni$_{Li}^{0}$"
 
         # test substitution with site number included
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Ni$_{Li_{1}}^{0}$"
 
         # test substitution with site number excluded, current doped format, two-letter subbed element
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1",
             include_site_info_in_name=False,
         )
         assert formatted_name == "P$_{Na}^{-1}$"
 
         # test substitution with site number included, current doped format, two-letter subbed element
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1 ",
             include_site_info_in_name=True,
         )
         assert formatted_name == "P$_{Na_{1}}^{-1}$"
 
         # test substitution with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "Na$_{P}^{0}$"
 
         # test substitution with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "Na$_{P_{2}}^{0}$"
 
         # test interstitial with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
             include_site_info_in_name=False,
         )
         assert formatted_name == "P$_i^{0}$"
 
         # test interstitial with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
             include_site_info_in_name=True,
         )
         assert formatted_name == "P$_{i_{12}}^{0}$"
 
         # test vacancy with site number excluded, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
             include_site_info_in_name=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{P}^{-2}$"
 
         # test vacancy with site number included, current doped format
-        formatted_name = plotting._format_defect_name(
+        formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
             include_site_info_in_name=True,
         )
@@ -206,24 +207,22 @@ class DefectPlottingTestCase(unittest.TestCase):
 
         # check exceptions raised: invalid charge or defect_species
         # test error catching:
-        with self.assertRaises(ValueError) as e:
-            wrong_charge_error = ValueError(
-                "Problem reading defect name vac_1_Cd_a, should end with charge state after "
-                "underscore (e.g. vac_1_Cd_0)"
-            )
-            plotting._format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
-            assert wrong_charge_error in e.exception
+        wrong_charge_error = ValueError(
+            "Problem reading defect name vac_1_Cd_a, should end with charge state after underscore"
+        )
+        with pytest.raises(ValueError) as e:
+            plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
+        assert str(wrong_charge_error) in str(e.value)
 
-        self.assertRaises(
+        pytest.raises(
             TypeError,
-            plotting._format_defect_name,
+            plotting.format_defect_name,
             defect_species=2,
             include_site_info_in_name=True,
         )
         # check invalid defect type returns None
         assert (
-            plotting._format_defect_name(defect_species="kk_Cd_1_0", include_site_info_in_name=True)
-            is None
+            plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info_in_name=True) is None
         )
 
         defect_species_name_dict = {
@@ -283,10 +282,15 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Se_S_0": "Se$_{S}^{0}$",
             "Si_S_0": "Si$_{S}^{0}$",
             "S_Si_0": "S$_{Si}^{0}$",
+            "inter_8_O_-1": "O$_i^{-1}$",
+            "inter_14_O_0": "O$_i^{0}$",
+            "inter_14_O_+2": "O$_i^{+2}$",
+            "inter_14_Th_+2": "Th$_i^{+2}$",
+            "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
-            formatted_name = plotting._format_defect_name(
+            formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
                 include_site_info_in_name=False,
             )
@@ -355,12 +359,17 @@ class DefectPlottingTestCase(unittest.TestCase):
             "v_Cd_C3v_Cd2.71_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Cd2.71}}^{-1}$",
             "v_Cd_C3v_Te2.83Cd4.25_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Te2.83Cd4.25}}^{-1}$",
             "v_Cd_C3v_Te2.83Cd4.62_-1": "$\\it{V}\\!$ $_{Cd_{C_{3v}-Te2.83Cd4.62}}^{-1}$",
+            "inter_8_O_-1": "O$_{i_{8}}^{-1}$",
+            "inter_14_O_0": "O$_{i_{14}}^{0}$",
+            "inter_14_O_+2": "O$_{i_{14}}^{+2}$",
+            "inter_14_Th_+2": "Th$_{i_{14}}^{+2}$",
+            "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
         }
         for (
             defect_species,
             expected_name,
         ) in defect_species_w_site_info_name_dict.items():
-            formatted_name = plotting._format_defect_name(
+            formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
                 include_site_info_in_name=True,
             )
@@ -380,26 +389,26 @@ class DefectPlottingTestCase(unittest.TestCase):
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))
-        return thermo.plot(chempots, facet="V2O5-O2")
+        return thermo.plot(chempots, limit="V2O5-O2")
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
-    def test_plot_facet_no_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
-            self.CdTe_defect_thermo.plot(facet="Te-rich")
+    def test_plot_limit_no_chempots_error(self):
+        with pytest.raises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(limit="Te-rich")
         assert (
-            "You have specified an X-rich/poor facet, but no `chempots` have been supplied, "
-            "so `facet` cannot be used here!"
-        ) in str(exc.exception)
+            "You have specified a chemical potential limit, but no `chempots` have been supplied, "
+            "so `limit` cannot be used here!"
+        ) in str(exc.value)
 
-    def test_plot_facet_user_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
-            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, facet="Te-rich")
+    def test_plot_limit_user_chempots_error(self):
+        with pytest.raises(ValueError) as exc:
+            self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, limit="Te-rich")
         assert (
-            "You have specified an X-rich/poor facet, but the supplied chempots are not in the doped "
-            "format (i.e. with `facets` in the chempots dict), and instead correspond to just a single "
-            "phase diagram facet / chemical potential limit, so `facet` cannot be used here!"
-        ) in str(exc.exception)
+            "You have specified a chemical potential limit, but the supplied chempots are not in the "
+            "doped format (i.e. with `limits` in the chempots dict), and instead correspond to just a "
+            "single chemical potential limit, so `limit` cannot be used here!"
+        ) in str(exc.value)
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
     def test_default_CdTe_plot_no_chempots(self):
@@ -414,16 +423,16 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_default_CdTe_plot_explicit_facet(self):
+    def test_default_CdTe_plot_explicit_limit(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="CdTe-Te")
+        return self.CdTe_defect_thermo.plot(limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_specified_chempots(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_manual_Te_rich_plot.png")
     def test_default_CdTe_plot_manual_chempots(self):
@@ -466,35 +475,35 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_default_CdTe_plot_edited_el_refs(self):
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_edited_el_refs_other(self):
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         self.CdTe_defect_thermo.chempots = self.CdTe_chempots
-        return self.CdTe_defect_thermo.plot(facet="Te-rich")
+        return self.CdTe_defect_thermo.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_default_CdTe_plot_Cd_rich(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Cd-rich")
+        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Cd-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich")
+        return self.V2O5_defect_thermo.plot(limit="O-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot_reduced_dist_tol(self):
         self.V2O5_defect_thermo.dist_tol = 1e-4
         # still two neutral vacancies merged as their site is the exact same
-        return self.V2O5_defect_thermo.plot(facet="O-rich")
+        return self.V2O5_defect_thermo.plot(limit="O-rich")
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot_all_entries.png")
     def test_V2O5_O_rich_all_entries_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries=True)
+        return self.V2O5_defect_thermo.plot(limit="O-rich", all_entries=True)
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot_faded.png")
     def test_V2O5_O_rich_faded_plot(self):
-        return self.V2O5_defect_thermo.plot(facet="O-rich", all_entries="faded")
+        return self.V2O5_defect_thermo.plot(limit="O-rich", all_entries="faded")
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
     def test_CdTe_LZ_all_defects_plot(self):
@@ -502,7 +511,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
         )
         CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
-        return CdTe_LZ_thermo_wout_meta.plot(facet="Te-rich")
+        return CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
@@ -513,7 +522,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
         lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
 
-        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, facet="Te-rich")
+        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
     def test_CdTe_FNV_all_defects_plot_default_old_names(self):
@@ -532,4 +541,21 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         )
         assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
         assert len(w) == 3
+        return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_default_TLD.png")
+    def test_Sb2O5_default(self):
+        with warnings.catch_warnings(record=True) as w:
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
+        return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_merged_dist_tol_TLD.png")
+    def test_Sb2O5_merged_dist_tol(self):
+        with warnings.catch_warnings(record=True) as w:
+            self.Sb2O5_defect_thermo.dist_tol = 10
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
         return plot
