@@ -1,6 +1,7 @@
 """
 Code to analyse site displacements around a defect.
 """
+
 import os
 import warnings
 from copy import deepcopy

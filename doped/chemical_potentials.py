@@ -3,12 +3,14 @@ Functions for setting up and parsing competing phase calculations in order to
 determine and analyse the elemental chemical potentials for defect formation
 energies.
 """
+
 import contextlib
 import copy
 import os
 import warnings
 from pathlib import Path, PurePath
 
+import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -60,13 +62,15 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
+        Structure, formula and total magnetization:
+
         structure (Structure):
             ``pymatgen`` ``Structure`` object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
         total_magnetization (int):
-            Total magnetization of the molecule in a box (0 for all X2 except
-            O2 which has a triplet ground state (S = 1)).
+            Total magnetization of the molecule in a box
+            (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
     lattice = [[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]]
     all_structures = {
@@ -122,15 +126,14 @@ def make_molecule_in_a_box(element: str):
         },
     }
 
-    if element in all_structures:
-        structure = all_structures[element]["structure"]
-        formula = all_structures[element]["formula"]
-        total_magnetization = all_structures[element]["total_magnetization"]
-
-    else:
+    if element not in all_structures:
         raise ValueError(
             f"Element {element} is not currently supported for molecule-in-a-box structure generation."
         )
+
+    structure = all_structures[element]["structure"]
+    formula = all_structures[element]["formula"]
+    total_magnetization = all_structures[element]["total_magnetization"]
 
     return structure, formula, total_magnetization
 
@@ -224,9 +227,7 @@ def _calculate_formation_energies(data: list, elemental: dict):
         by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
     )
     # drop num_atoms_in_fu and num_species
-    formation_energy_df = formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
-
-    return formation_energy_df
+    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom):
@@ -296,9 +297,9 @@ class CompetingPhases:
         Class to generate the input files for competing phases on the phase
         diagram for the host material (determining the chemical potential
         limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by ``e_above_hull``, to determine the relevant competing
-        phases. Diatomic gaseous molecules are generated as molecules-in-a-box
-        as appropriate.
+        range specified by ``e_above_hull``, to determine the relevant
+        competing phases. Diatomic gaseous molecules are generated as
+        molecules-in-a-box as appropriate.
 
         Args:
             composition (str, Composition): Composition of host material
@@ -567,10 +568,8 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = (
-                    f"competing_phases/{e.name}_EaH"
-                    f"_{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )  # TODO: competing_phases folder name should be an optional parameter
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
+                # TODO: competing_phases folder name should be an optional parameter
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
                 #  out for cases where rounding can give same name (e.g. Te!) - should use
                 #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
@@ -601,11 +600,14 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = (
-                    f"competing_phases/{e.name}_EaH_"
-                    f"{round(e.data['e_above_hull'],4)}/kpoint_converge/{kname}"
-                )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
+
+    def _competing_phase_name(self, entry):
+        rounded_eah = round(entry.data["e_above_hull"], 4)
+        if np.isclose(rounded_eah, 0):
+            return f"{entry.name}_EaH_0"
+        return f"{entry.name}_EaH_{rounded_eah}"
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
@@ -618,11 +620,12 @@ class CompetingPhases:
         **kwargs,
     ):
         """
-        Generates VASP input files for ``vasp_std`` relaxations of the competing
-        phases, using HSE06 (hybrid DFT) DFT by default. Automatically sets the
-        ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not. Note that any
-        changes to the default ``INCAR``/``POTCAR`` settings should be consistent
-        with those used for the defect supercell calculations.
+        Generates VASP input files for ``vasp_std`` relaxations of the
+        competing phases, using HSE06 (hybrid DFT) DFT by default.
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
 
         Args:
             kpoints_metals (int):
@@ -692,7 +695,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -712,7 +715,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -739,7 +742,7 @@ class CompetingPhases:
                 user_incar_settings=uis,
                 force_gamma=True,
             )
-            fname = f"competing_phases/{e.name}_EaH_{round(e.data['e_above_hull'],4)}/vasp_std"
+            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
 
@@ -1177,12 +1180,12 @@ class CompetingPhasesAnalyzer:
         # if path is just a list of all competing phases
         if isinstance(path, list):
             for p in path:
-                if "vasprun.xml" in Path(p).name:
+                if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
                     self.vasprun_paths.append(str(Path(p)))
 
                 # try to find the file - will always pick the first match for vasprun.xml*
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
-                    vsp = list(Path(p).glob("vasprun.xml*"))[0]
+                    vsp = next(iter(Path(p).glob("vasprun.xml*")))
                     self.vasprun_paths.append(str(vsp))
 
                 else:
@@ -1191,42 +1194,36 @@ class CompetingPhasesAnalyzer:
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
             for p in path.iterdir():
-                if not p.glob("EaH"):  # if path provided doesn't point to the doped created directories
-                    # TODO: This shouldn't break if there's a folder in the directory that isn't *EaH*,
-                    #  only if there's no *EaH* folders at all.
-                    #  Seemed to be causing problems with .DS_Store files on Macs as well
-                    raise FileNotFoundError(
-                        "Folders are not in the correct structure, provide them as a list of "
-                        "paths (or strings). Competing phase folders should have `EaH` in the "
-                        "folder name."
-                    )
-
-                # add bulk simple properties
-                vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p / folder)
-                if multiple:
-                    warnings.warn(
-                        f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
-                        f"{vr_path} to parse the calculation energy and metadata."
-                    )
-
-                if os.path.exists(vr_path):
-                    self.vasprun_paths.append(vr_path)
-
-                else:
-                    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
-                    if multiple:
-                        warnings.warn(
-                            f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                            f"{vr_path} to parse the calculation energy and metadata."
+                if p.is_dir() and not p.name.startswith("."):
+                    # add bulk simple properties
+                    vr_path = "null_directory"
+                    with contextlib.suppress(FileNotFoundError):
+                        vr_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", p / folder
                         )
+                        if multiple:
+                            warnings.warn(
+                                f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                                f"{vr_path} to parse the calculation energy and metadata."
+                            )
 
                     if os.path.exists(vr_path):
                         self.vasprun_paths.append(vr_path)
 
                     else:
-                        warnings.warn(
-                            f"Can't find a vasprun.xml file in {p} or {p/folder}, proceed with caution"
-                        )
+                        with contextlib.suppress(FileNotFoundError):
+                            vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                            if multiple:
+                                warnings.warn(
+                                    f"Multiple `vasprun.xml` files found in directory: {p}. Using "
+                                    f"{vr_path} to parse the calculation energy and metadata."
+                                )
+
+                        if os.path.exists(vr_path):
+                            self.vasprun_paths.append(vr_path)
+
+                        else:
+                            warnings.warn(f"Can't find a vasprun.xml file in {p} or {p/folder}, skipping")
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
@@ -1236,9 +1233,30 @@ class CompetingPhasesAnalyzer:
 
         num = len(self.vasprun_paths)
         print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
-        # TODO: Make this a try/except loop to print which vasprun.xml files fail parsing (i.e. are
-        #  corrupted)
-        self.vaspruns = [Vasprun(e).as_dict() for e in self.vasprun_paths]
+
+        self.vaspruns = []
+        failed_parsing_dict = {}
+        for vasprun_path in self.vasprun_paths:
+            try:
+                self.vaspruns.append(Vasprun(vasprun_path).as_dict())
+            except Exception as e:
+                if str(e) in failed_parsing_dict:
+                    failed_parsing_dict[str(e)] += [vasprun_path]
+                else:
+                    failed_parsing_dict[str(e)] = [vasprun_path]
+
+        if failed_parsing_dict:
+            warning_string = (
+                "Failed to parse the following `vasprun.xml` files:\n(files: error)\n"
+                + "\n".join([f"{paths}: {error}" for error, paths in failed_parsing_dict.items()])
+            )
+            warnings.warn(warning_string)
+
+        if not self.vaspruns:
+            raise FileNotFoundError(
+                "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
+                "folders and input parameters are in the correct format (see docstrings/tutorials)."
+            )
         self.data = []
 
         temp_data = []
@@ -1330,9 +1348,7 @@ class CompetingPhasesAnalyzer:
         ]
         # if all values are None for a certain key, remove that key from all dicts in list:
         keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
-        data = [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
-
-        return data
+        return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
 
     def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
         """
@@ -1832,19 +1848,19 @@ def combine_extrinsic(first, second, extrinsic_species):
         dict.
     """
     keys = ["elemental_refs", "limits", "limits_wrt_el_refs"]
-    if not all(key in first for key in keys):
+    if any(key not in first for key in keys):
         raise KeyError(
             "the first dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if not all(key in second for key in keys):
+    if any(key not in second for key in keys):
         raise KeyError(
             "the second dictionary doesn't contain the correct keys - it should include "
             "elemental_refs, limits and limits_wrt_el_refs"
         )
 
-    if extrinsic_species not in second["elemental_refs"].keys():
+    if extrinsic_species not in second["elemental_refs"]:
         raise ValueError("extrinsic species is not present in the second dictionary")
 
     cpa1 = copy.deepcopy(first)
@@ -1875,11 +1891,8 @@ def combine_extrinsic(first, second, extrinsic_species):
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
 
-    new_dict = {}
-    new_dict = {
+    return {
         "elemental_refs": new_elements,
         "limits": new_limits,
         "limits_wrt_el_refs": new_limits_wrt_el,
     }
-
-    return new_dict

@@ -1,15 +1,19 @@
 """
 Tests for the `doped.chemical_potentials` module.
 """
+
 import os
 import shutil
 import unittest
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
+from test_analysis import if_present_rm
 
 from doped import chemical_potentials
 
@@ -43,6 +47,10 @@ class ChemPotsTestCase(unittest.TestCase):
         if Path("input.dat").is_file():
             os.remove("input.dat")
 
+        for i in os.listdir(self.path / "ZrO2"):
+            if i.startswith("."):
+                if_present_rm(self.path / "ZrO2" / i)
+
         return super().tearDown()
 
     def test_cpa_csv(self):
@@ -57,7 +65,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(self.ext_cpa.elemental) == 3
         assert any(entry["formula"] == "O2" for entry in stable_cpa.data)
         assert np.isclose(
-            [entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"][0],
+            next(entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"),
             -119.619571095,
         )
 
@@ -66,13 +74,13 @@ class ChemPotsTestCase(unittest.TestCase):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         chempot_df = stable_cpa.calculate_chempots()
-        assert list(chempot_df["O"])[0] == 0
+        assert next(iter(chempot_df["O"])) == 0
         # check if it's no longer Element
-        assert type(list(stable_cpa.intrinsic_chempots["elemental_refs"].keys())[0]) == str
+        assert isinstance(next(iter(stable_cpa.intrinsic_chempots["elemental_refs"].keys())), str)
 
         self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.unstable_system)
         self.unstable_cpa.from_csv(self.csv_path)
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             self.unstable_cpa.calculate_chempots()
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
@@ -80,8 +88,8 @@ class ChemPotsTestCase(unittest.TestCase):
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
         chempot_df = self.ext_cpa.calculate_chempots()
-        assert list(chempot_df["La_limiting_phase"])[0] == "La2Zr2O7"
-        assert np.isclose(list(chempot_df["La"])[0], -9.46298748)
+        assert next(iter(chempot_df["La_limiting_phase"])) == "La2Zr2O7"
+        assert np.isclose(next(iter(chempot_df["La"])), -9.46298748)
 
     def test_ext_cpa_chempots(self):
         # test accessing cpa.chempots without previously calling cpa.calculate_chempots()
@@ -99,10 +107,10 @@ class ChemPotsTestCase(unittest.TestCase):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         chempot_df = stable_cpa.calculate_chempots(sort_by="Zr")
-        assert np.isclose(list(chempot_df["Zr"])[0], -0.199544)
+        assert np.isclose(next(iter(chempot_df["Zr"])), -0.199544)
         assert np.isclose(list(chempot_df["Zr"])[1], -10.975428439999998)
 
-        with self.assertRaises(KeyError):
+        with pytest.raises(KeyError):
             stable_cpa.calculate_chempots(sort_by="M")
 
     # test vaspruns
@@ -114,10 +122,10 @@ class ChemPotsTestCase(unittest.TestCase):
         assert cpa.data[0]["formula"] == "O2"
 
         cpa_no = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        with self.assertRaises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError):
             cpa_no.from_vaspruns(path="path")
 
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             cpa_no.from_vaspruns(path=0)
 
         ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.extrinsic_species)
@@ -191,14 +199,40 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(lst_cpa.elemental) == 2
         assert len(lst_cpa.vasprun_paths) == 8
 
-        all_fols = []
-        for p in path.iterdir():
-            if not p.name.startswith("."):
-                pp = p / "relax"
-                all_fols.append(pp)
+        all_fols = [p / "relax" for p in path.iterdir() if not p.name.startswith(".")]
         lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_fols_cpa.from_vaspruns(path=all_fols)
         assert len(lst_fols_cpa.elemental) == 2
+
+    def test_vaspruns_hidden_files(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = self.path / "ZrO2"
+
+        with open(f"{path}/._OUTCAR", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/._vasprun.xml", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/._LOCPOT", "w") as f:
+            f.write("test pop")
+        with open(f"{path}/.DS_Store", "w") as f:
+            f.write("test pop")
+
+        with warnings.catch_warnings(record=True) as w:
+            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+
+    def test_vaspruns_none_parsed(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        path = Path(__file__).parents[1].joinpath("examples/competing_phases")
+
+        with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
+            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert "Failed to parse the following `vasprun.xml` files:\n(files: error)\n" in str(w[0].message)
+        assert "Is a directory" in str(w[0].message)
+        assert "No vasprun files have been parsed," in str(e.value)
 
     def test_cplap_input(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -261,7 +295,7 @@ class ChemPotsTestCase(unittest.TestCase):
 
         cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa_csv.from_csv(self.csv_path)
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             cpa_csv.to_LaTeX_table(splits=3)
 
     def test_to_csv(self):
@@ -374,9 +408,9 @@ class ChemPotsTestCase(unittest.TestCase):
         too_minimal_formation_energy_df = formation_energy_df[["formula"]]
         too_minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             reloaded_cpa.from_csv("competing_phases.csv")
-        assert "Supplied csv does not contain the minimal columns required" in str(exc.exception)
+        assert "Supplied csv does not contain the minimal columns required" in str(exc.value)
 
 
 class BoxedMoleculesTestCase(unittest.TestCase):
@@ -386,7 +420,7 @@ class BoxedMoleculesTestCase(unittest.TestCase):
         assert m == 2
         assert type(s) == Structure
 
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             chemical_potentials.make_molecule_in_a_box("R2")
 
 
@@ -459,13 +493,13 @@ class CombineExtrinsicTestCase(unittest.TestCase):
 
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}
-        with self.assertRaises(KeyError):
+        with pytest.raises(KeyError):
             chemical_potentials.combine_extrinsic(d, self.second, self.extrinsic_species)
 
-        with self.assertRaises(KeyError):
+        with pytest.raises(KeyError):
             chemical_potentials.combine_extrinsic(self.first, d, self.extrinsic_species)
 
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             chemical_potentials.combine_extrinsic(self.first, self.second, "R")
 
 
@@ -526,7 +560,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZnSe", api_key=self.api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
         assert len(cp.entries) == 14  # ZnSe2 now present
-        znse2_entry = [e for e in cp.entries if e.name == "ZnSe2"][0]
+        znse2_entry = next(e for e in cp.entries if e.name == "ZnSe2")
         assert znse2_entry.data["e_above_hull"] == 0
         assert not znse2_entry.data["molecule"]
         assert np.isclose(znse2_entry.data["energy_per_atom"], -3.080017)
@@ -592,27 +626,27 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(o2_entries[0].data["energy_per_atom"], -4.94795546875)
 
     def test_api_keys_errors(self):
-        with self.assertRaises(ValueError) as e:
-            nonvalid_api_key_error = ValueError(
-                "API key test is not a valid legacy Materials Project API key. These are "
-                "available at https://legacy.materialsproject.org/open"
-            )
+        nonvalid_api_key_error = ValueError(
+            "API key test is not a valid legacy Materials Project API key. These are "
+            "available at https://legacy.materialsproject.org/open"
+        )
+        with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
                 api_key="test",
             )
-            assert nonvalid_api_key_error in e.exception
+        assert str(nonvalid_api_key_error) in str(e.value)
 
-        with self.assertRaises(ValueError) as e:
-            new_api_key_error = ValueError(
-                "You are trying to use the new Materials Project (MP) API which is not supported "
-                "by doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
-            )
+        new_api_key_error = ValueError(
+            "You are trying to use the new Materials Project (MP) API which is not supported "
+            "by doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
+        )
+        with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
                 api_key="testabcdefghijklmnopqrstuvwxyz12",
             )
-            assert new_api_key_error in e.exception
+        assert str(new_api_key_error) in str(e.value)
 
     def test_convergence_setup(self):
         # potcar spec doesn't need potcars set up for pmg and it still works
@@ -649,7 +683,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert self.cp.molecules[0].data["molecule"]
         assert not self.cp.nonmetals[0].data["molecule"]
 
-        path1 = "competing_phases/ZrO2_EaH_0.0/vasp_std/"
+        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
         assert Path(path1).is_dir()
         with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -664,7 +698,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        path2 = "competing_phases/O2_EaH_0.0/vasp_std"
+        path2 = "competing_phases/O2_EaH_0/vasp_std"
         assert Path(path2).is_dir()
         with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()

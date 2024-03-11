@@ -12,6 +12,7 @@ import unittest
 import warnings
 
 import matplotlib as mpl
+import pytest
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
 
@@ -206,15 +207,14 @@ class DefectPlottingTestCase(unittest.TestCase):
 
         # check exceptions raised: invalid charge or defect_species
         # test error catching:
-        with self.assertRaises(ValueError) as e:
-            wrong_charge_error = ValueError(
-                "Problem reading defect name vac_1_Cd_a, should end with charge state after "
-                "underscore (e.g. vac_1_Cd_0)"
-            )
+        wrong_charge_error = ValueError(
+            "Problem reading defect name vac_1_Cd_a, should end with charge state after underscore"
+        )
+        with pytest.raises(ValueError) as e:
             plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
-            assert wrong_charge_error in e.exception
+        assert str(wrong_charge_error) in str(e.value)
 
-        self.assertRaises(
+        pytest.raises(
             TypeError,
             plotting.format_defect_name,
             defect_species=2,
@@ -394,21 +394,21 @@ class DefectPlottingTestCase(unittest.TestCase):
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_plot_limit_no_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(limit="Te-rich")
         assert (
             "You have specified a chemical potential limit, but no `chempots` have been supplied, "
             "so `limit` cannot be used here!"
-        ) in str(exc.exception)
+        ) in str(exc.value)
 
     def test_plot_limit_user_chempots_error(self):
-        with self.assertRaises(ValueError) as exc:
+        with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(chempots={"Cd": 0.5, "Te": -0.5}, limit="Te-rich")
         assert (
             "You have specified a chemical potential limit, but the supplied chempots are not in the "
             "doped format (i.e. with `limits` in the chempots dict), and instead correspond to just a "
             "single chemical potential limit, so `limit` cannot be used here!"
-        ) in str(exc.exception)
+        ) in str(exc.value)
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_no_chempots.png")
     def test_default_CdTe_plot_no_chempots(self):
@@ -541,4 +541,21 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         )
         assert any("All formation energies for Int_Te_3 are below zero" in str(warn.message) for warn in w)
         assert len(w) == 3
+        return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_default_TLD.png")
+    def test_Sb2O5_default(self):
+        with warnings.catch_warnings(record=True) as w:
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
+        return plot
+
+    @custom_mpl_image_compare(filename="Sb2O5_merged_dist_tol_TLD.png")
+    def test_Sb2O5_merged_dist_tol(self):
+        with warnings.catch_warnings(record=True) as w:
+            self.Sb2O5_defect_thermo.dist_tol = 10
+            plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
+        print([str(warn.message) for warn in w])  # for debugging
+        assert not w
         return plot

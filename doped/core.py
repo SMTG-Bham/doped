@@ -2,14 +2,13 @@
 Core functions and classes for defects in doped.
 """
 
-
 import collections
 import contextlib
 import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -19,6 +18,7 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar
+from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 _orientational_degeneracy_warning = (
@@ -115,27 +115,27 @@ class DefectEntry(thermo.DefectEntry):
     defect: "Defect"
     charge_state: int
     sc_entry: ComputedStructureEntry
-    corrections: Dict[str, float] = field(default_factory=dict)
-    corrections_metadata: Dict[str, Any] = field(default_factory=dict)
-    sc_defect_frac_coords: Optional[Tuple[float, float, float]] = None
+    corrections: dict[str, float] = field(default_factory=dict)
+    corrections_metadata: dict[str, Any] = field(default_factory=dict)
+    sc_defect_frac_coords: Optional[tuple[float, float, float]] = None
     bulk_entry: Optional[ComputedEntry] = None
     entry_id: Optional[str] = None
 
     # doped attributes:
     name: str = ""
-    calculation_metadata: Dict = field(default_factory=dict)
-    degeneracy_factors: Dict = field(default_factory=dict)
+    calculation_metadata: dict = field(default_factory=dict)
+    degeneracy_factors: dict = field(default_factory=dict)
     conventional_structure: Optional[Structure] = None
     conv_cell_frac_coords: Optional[np.ndarray] = None
-    equiv_conv_cell_frac_coords: List[np.ndarray] = field(default_factory=list)
-    _BilbaoCS_conv_cell_vector_mapping: List[int] = field(default_factory=lambda: [0, 1, 2])
+    equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
+    _BilbaoCS_conv_cell_vector_mapping: list[int] = field(default_factory=lambda: [0, 1, 2])
     wyckoff: Optional[str] = None
-    charge_state_guessing_log: Dict = field(default_factory=dict)
+    charge_state_guessing_log: dict = field(default_factory=dict)
     defect_supercell: Optional[Structure] = None
     defect_supercell_site: Optional[PeriodicSite] = None  # TODO: Add `from_structures` method to
     # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
     # codes etc)
-    equivalent_supercell_sites: List[PeriodicSite] = field(default_factory=list)
+    equivalent_supercell_sites: list[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
 
     def __post_init__(self):
@@ -375,7 +375,7 @@ class DefectEntry(thermo.DefectEntry):
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         defect_region_radius: Optional[float] = None,
-        excluded_indices: Optional[List[int]] = None,
+        excluded_indices: Optional[list[int]] = None,
         defect_outcar: Optional[Union[str, Outcar]] = None,
         bulk_outcar: Optional[Union[str, Outcar]] = None,
         plot: bool = False,
@@ -404,7 +404,7 @@ class DefectEntry(thermo.DefectEntry):
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust ``defect_region_radius`` and/or
         ``excluded_indices`` to ensure that only sites in other layers are used for
-        the sampling region (plateau) - see example on doped docs.
+        the sampling region (plateau) - see example on doped docs Tips page.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -596,6 +596,64 @@ class DefectEntry(thermo.DefectEntry):
 
         return formation_energy
 
+    def _parse_and_set_degeneracies(self):
+        """
+        Check if degeneracy info is present in self.calculation_metadata, and
+        attempt to (re)-parse if not.
+
+        e.g. if the DefectEntry was generated with older versions of ``doped``,
+        manually, or with ``pymatgen-analysis-defects`` etc.
+        """
+        from doped.utils.parsing import get_orientational_degeneracy, simple_spin_degeneracy_from_charge
+        from doped.utils.symmetry import point_symmetry_from_defect_entry
+
+        if "relaxed point symmetry" not in self.calculation_metadata:
+            try:
+                (
+                    self.calculation_metadata["relaxed point symmetry"],
+                    self.calculation_metadata["periodicity_breaking_supercell"],
+                ) = point_symmetry_from_defect_entry(
+                    self,
+                    relaxed=True,
+                    return_periodicity_breaking=True,
+                    verbose=False,
+                )  # relaxed so defect symm_ops
+
+            except Exception as e:
+                warnings.warn(
+                    f"Unable to determine relaxed point group symmetry for {self.name}, got error:\n{e!r}"
+                )
+        if "bulk site symmetry" not in self.calculation_metadata:
+            try:
+                self.calculation_metadata["bulk site symmetry"] = point_symmetry_from_defect_entry(
+                    self, relaxed=False, symprec=0.01
+                )  # unrelaxed so bulk symm_ops
+            except Exception as e:
+                warnings.warn(f"Unable to determine bulk site symmetry for {self.name}, got error:\n{e!r}")
+
+        if (
+            all(x in self.calculation_metadata for x in ["relaxed point symmetry", "bulk site symmetry"])
+            and "orientational degeneracy" not in self.degeneracy_factors
+        ):
+            try:
+                self.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+                    relaxed_point_group=self.calculation_metadata["relaxed point symmetry"],
+                    bulk_site_point_group=self.calculation_metadata["bulk site symmetry"],
+                    defect_type=self.defect.defect_type,
+                )
+            except Exception as e:
+                warnings.warn(
+                    f"Unable to determine orientational degeneracy for {self.name}, got error:\n{e!r}"
+                )
+
+        if "spin degeneracy" not in self.degeneracy_factors:
+            try:
+                self.degeneracy_factors["spin degeneracy"] = simple_spin_degeneracy_from_charge(
+                    self.defect_supercell, self.charge_state
+                )
+            except Exception as e:
+                warnings.warn(f"Unable to determine spin degeneracy for {self.name}, got error:\n{e!r}")
+
     def equilibrium_concentration(
         self,
         chempots: Optional[dict] = None,
@@ -683,6 +741,8 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
         """
+        self._parse_and_set_degeneracies()
+
         if "spin degeneracy" not in self.degeneracy_factors:
             warnings.warn(
                 "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
@@ -717,11 +777,12 @@ class DefectEntry(thermo.DefectEntry):
         formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
             chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
         )
-        from scipy.constants import value as constants_value
 
-        exp_factor = np.exp(
-            -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-        )
+        with np.errstate(over="ignore"):
+            exp_factor = np.exp(
+                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
+            )
+
         degeneracy_factor = (
             reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
         )
@@ -730,7 +791,8 @@ class DefectEntry(thermo.DefectEntry):
 
         volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
 
-        return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
+        with np.errstate(over="ignore"):
+            return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
 
     def __repr__(self):
         """
@@ -823,7 +885,7 @@ def _get_dft_chempots(chempots, el_refs, limit):
     if chempots is not None:
         limit = _parse_limit(chempots, limit)
         if limit is None:
-            limit = list(chempots["limits"].keys())[0]
+            limit = next(iter(chempots["limits"].keys()))
             if "User" not in limit:
                 warnings.warn(
                     f"No chemical potential limit specified! Using {limit} for computing the "
@@ -888,10 +950,10 @@ class Defect(core.Defect):
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
         oxi_state: Optional[float] = None,
-        equivalent_sites: Optional[List[PeriodicSite]] = None,
+        equivalent_sites: Optional[list[PeriodicSite]] = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
-        user_charges: Optional[List[int]] = None,
+        user_charges: Optional[list[int]] = None,
         **doped_kwargs,
     ):
         """
@@ -927,9 +989,11 @@ class Defect(core.Defect):
             multiplicity=multiplicity,
             oxi_state=0,  # set oxi_state in more efficient and robust way below (crashes for large
             # input structures)
-            equivalent_sites=[site.to_unit_cell() for site in equivalent_sites]
-            if equivalent_sites is not None
-            else None,
+            equivalent_sites=(
+                [site.to_unit_cell() for site in equivalent_sites]
+                if equivalent_sites is not None
+                else None
+            ),
             symprec=symprec,
             angle_tolerance=angle_tolerance,
             user_charges=user_charges,
@@ -942,10 +1006,10 @@ class Defect(core.Defect):
 
         self.conventional_structure: Optional[Structure] = doped_kwargs.get("conventional_structure", None)
         self.conv_cell_frac_coords: Optional[np.ndarray] = doped_kwargs.get("conv_cell_frac_coords", None)
-        self.equiv_conv_cell_frac_coords: List[np.ndarray] = doped_kwargs.get(
+        self.equiv_conv_cell_frac_coords: list[np.ndarray] = doped_kwargs.get(
             "equiv_conv_cell_frac_coords", []
         )
-        self._BilbaoCS_conv_cell_vector_mapping: List[int] = doped_kwargs.get(
+        self._BilbaoCS_conv_cell_vector_mapping: list[int] = doped_kwargs.get(
             "_BilbaoCS_conv_cell_vector_mapping", [0, 1, 2]
         )
         self.wyckoff: Optional[str] = doped_kwargs.get("wyckoff", None)
@@ -1003,9 +1067,11 @@ class Defect(core.Defect):
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
             oxi_state=None if bulk_oxi_states else defect.oxi_state,
-            equivalent_sites=[site.to_unit_cell() for site in defect.equivalent_sites]
-            if defect.equivalent_sites is not None
-            else None,
+            equivalent_sites=(
+                [site.to_unit_cell() for site in defect.equivalent_sites]
+                if defect.equivalent_sites is not None
+                else None
+            ),
             symprec=defect.symprec,
             angle_tolerance=defect.angle_tolerance,
             user_charges=defect.user_charges,
@@ -1146,7 +1212,7 @@ class Defect(core.Defect):
 
             Same method as Structure.remove_oxidation_states().
             """
-            new_sp: Dict[Element, float] = collections.defaultdict(float)
+            new_sp: dict[Element, float] = collections.defaultdict(float)
             for el, occu in site.species.items():
                 sym = el.symbol
                 new_sp[Element(sym)] += occu
