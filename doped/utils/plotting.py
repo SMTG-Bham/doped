@@ -6,10 +6,11 @@ and AIDE (by Adam Jackson and Alex Ganose), alongside substantial modification,
 in the efforts of making an efficient, user-friendly package for managing and
 analysing defect calculations, with publication-quality outputs.
 """
+
 import contextlib
 import re
 import warnings
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -147,14 +148,16 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
         )
 
 
-def _format_defect_name(
+def format_defect_name(
     defect_species: str,
     include_site_info_in_name: bool,
     wout_charge: bool = False,
 ) -> Optional[str]:
     """
-    Format defect name for plot titles. (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$
-    or $Cd_{i_{C3v}}^{0}$. Note this assumes "V_" means vacancy not Vanadium.
+    Format defect name for plot titles.
+
+    (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$ or $Cd_{i_{C3v}}^{0}$).
+    Note this assumes "V_" means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):
@@ -261,7 +264,9 @@ def _format_defect_name(
     # check if name is doped format, having site info as point group symbol (and more) after 2nd "_":
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
-        if point_group_symbol in sch_symbols:  # recognised point group symbol?
+        if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
+            i not in defect_species.lower() for i in ["int", "vac", "sub", "as"]
+        ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
             formatted_point_group_symbol = (
@@ -490,7 +495,7 @@ def _format_defect_name(
     two_character_pairs_in_name = [
         trimmed_pre_charge_name[i : i + 2]  # trimmed_pre_charge_name name for finding elements,
         # pre_charge_name for matching defect format
-        for i in range(0, len(trimmed_pre_charge_name), 1)
+        for i in range(len(trimmed_pre_charge_name))
         if len(trimmed_pre_charge_name[i : i + 2]) == 2
     ]
     possible_two_character_elements = [
@@ -598,7 +603,7 @@ def _get_legends_txt(for_legend, all_entries=False):
             any(name.startswith(i) for i in ["Int_", "vac_", "as_", "sub_"]) for name in for_legend
         )
         try:
-            defect_name = _format_defect_name(
+            defect_name = format_defect_name(
                 defect_species=defect_entry_name,
                 include_site_info_in_name=include_site_info,
                 wout_charge=not all_entries,  # defect names without charge
@@ -636,8 +641,8 @@ def _rename_key_and_dicts(
     """
     Given an input key, renames the key if it already exists in the
     ``output_dicts`` dictionaries (to ``key``_a, ``key``_b, ``key``_c etc),
-    renames the corresponding keys in the dictionaries, and returns the
-    renamed key and updated dictionaries.
+    renames the corresponding keys in the dictionaries, and returns the renamed
+    key and updated dictionaries.
     """
     output_dict = output_dicts[0]
     if key in output_dict or any(
@@ -860,13 +865,13 @@ def _TLD_plot(
         )
 
     for cnt, def_name in enumerate(xy.keys()):  # plot transition levels
-        x_trans: List[float] = []
-        y_trans: List[float] = []
+        x_trans: list[float] = []
+        y_trans: list[float] = []
         tl_labels, tl_label_type = [], []
         for x_val, chargeset in defect_thermodynamics.transition_level_map[def_name].items():
             x_trans.append(x_val)
             y_trans.append(
-                [
+                next(
                     defect_thermodynamics.get_formation_energy(
                         defect_entry,
                         chempots=dft_chempots,
@@ -874,7 +879,7 @@ def _TLD_plot(
                     )
                     for defect_entry in defect_thermodynamics.stable_entries[def_name]
                     if defect_entry.charge_state == chargeset[0]
-                ][0]
+                )
             )
             tl_labels.append(
                 rf"$\epsilon$({max(chargeset):{'+' if max(chargeset) else ''}}/"
@@ -907,9 +912,11 @@ def _TLD_plot(
 
     ax.legend(
         _get_legends_txt(
-            [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
-            if all_entries is True
-            else defect_names_for_legend,
+            (
+                [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
+                if all_entries is True
+                else defect_names_for_legend
+            ),
             all_entries=all_entries is True,
         ),
         loc=2,

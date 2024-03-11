@@ -1,7 +1,7 @@
 .. _troubleshooting:
 
-Troubleshooting
-================
+Troubleshooting & Support
+=========================
 
 ``doped``/``pymatgen`` Errors
 -----------------------------
@@ -43,6 +43,21 @@ If this does not solve your issue, please contact the developers through the ``G
       pip install --force --no-cache-dir numpy==1.23
       pip uninstall pymatgen
       pip install pymatgen
+
+
+``spglib`` Errors
+-------------------
+- A previous known issue with ``spglib`` is that it could give an error similar to:
+
+  .. code:: python
+
+      spglib: ssm_get_exact_positions failed (attempt=0).
+      ...
+      spglib: ssm_get_exact_positions failed (attempt=4).
+      spglib: get_bravais_exact_positions_and_lattice failed
+      spglib: ref_get_exact_structure_and_symmetry failed.
+
+  This can be fixed by reinstalling ``spglib`` with ``conda install -c conda-forge spglib``. It's important to use ``conda`` rather than ``pip`` as ``conda``  will bundle the C and Fortran libraries.
 
 
 ``ShakeNBreak``
@@ -100,5 +115,5 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
 
 .. NOTE::
-    If you run into any issues using ``doped``, please contact the developers through the ``GitHub``
-    `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+    If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
+    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.

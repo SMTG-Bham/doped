@@ -2,13 +2,15 @@
 Code to generate Defect objects and supercell structures for ab-initio
 calculations.
 """
+
 import copy
 import logging
+import operator
 import warnings
-from functools import partial
+from functools import partial, reduce
 from itertools import chain
 from multiprocessing import Pool, Process, Queue, cpu_count
-from typing import Dict, List, Optional, Tuple, Type, Union, cast
+from typing import Optional, Union, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -50,7 +52,7 @@ core._logger.setLevel(logging.CRITICAL)  # avoid unnecessary pymatgen-analysis-d
 
 def _custom_formatwarning(
     message: Union[Warning, str],
-    category: Type[Warning],
+    category: type[Warning],
     filename: str,
     lineno: int,
     line: Optional[str] = None,
@@ -62,6 +64,16 @@ def _custom_formatwarning(
 
 
 warnings.formatwarning = _custom_formatwarning
+
+
+def _list_index_or_val(lst, item, val=100):
+    """
+    Returns the index of the item in the lst, or val if not found.
+    """
+    try:
+        return lst.index(item)
+    except ValueError:
+        return val
 
 
 def get_defect_entry_from_defect(
@@ -90,7 +102,9 @@ def get_defect_entry_from_defect(
 
     # Dummy species (used to keep track of the defect coords in the supercell)
     # Find its fractional coordinates & remove it from the supercell
-    dummy_site = [site for site in defect_entry_structure if site.specie.symbol == dummy_species.symbol][0]
+    dummy_site = next(
+        site for site in defect_entry_structure if (site.specie.symbol == dummy_species.symbol)
+    )
     sc_defect_frac_coords = dummy_site.frac_coords
     defect_entry_structure.remove(dummy_site)
 
@@ -193,7 +207,7 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
             for site in defect_supercell
             if site.distance(defect_supercell_site) > 0.01
         ],
-        key=lambda x: (symmetry._custom_round(x[0], 2), element_list.index(x[1]), x[1]),
+        key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
     )
 
     # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
@@ -334,9 +348,9 @@ def _get_neutral_defect_entry(
     neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
     neutral_defect_entry.bulk_supercell = bulk_supercell
 
-    neutral_defect_entry.conventional_structure = (
-        neutral_defect_entry.defect.conventional_structure
-    ) = conventional_structure
+    neutral_defect_entry.conventional_structure = neutral_defect_entry.defect.conventional_structure = (
+        conventional_structure
+    )
 
     try:
         wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
@@ -368,11 +382,9 @@ def _get_neutral_defect_entry(
     conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
-    neutral_defect_entry.conv_cell_frac_coords = (
-        neutral_defect_entry.defect.conv_cell_frac_coords
-    ) = conv_cell_coord_list[
-        0
-    ]  # ideal/cleanest coords
+    neutral_defect_entry.conv_cell_frac_coords = neutral_defect_entry.defect.conv_cell_frac_coords = (
+        conv_cell_coord_list[0]
+    )  # ideal/cleanest coords
     neutral_defect_entry.equiv_conv_cell_frac_coords = (
         neutral_defect_entry.defect.equiv_conv_cell_frac_coords
     ) = conv_cell_coord_list
@@ -653,7 +665,7 @@ def _charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> List[int]:
+def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> list[int]:
     """
     Get the possible charge states for a vacancy defect, which is from +/-1 to
     the vacancy oxidation state.
@@ -668,7 +680,7 @@ def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> List[int]:
             Default is 1.
 
     Returns:
-        List[int]: A list of possible charge states for the defect.
+        list[int]: A list of possible charge states for the defect.
     """
     if defect.oxi_state > 0:
         return list(range(-padding, int(defect.oxi_state) + 1))  # from -1 to oxi_state
@@ -679,7 +691,7 @@ def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> List[int]:
     return list(range(-padding, padding + 1))  # from -1 to +1 for default
 
 
-def _get_possible_oxi_states(defect: Defect) -> Dict:
+def _get_possible_oxi_states(defect: Defect) -> dict:
     """
     Get the possible oxidation states and probabilities for a defect.
 
@@ -687,7 +699,7 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
         defect (Defect): A doped Defect object.
 
     Returns:
-        Dict: A dictionary with possible oxidation states as
+        dict: A dictionary with possible oxidation states as
             keys and their probabilities as values.
     """
     return {
@@ -698,11 +710,11 @@ def _get_possible_oxi_states(defect: Defect) -> Dict:
 
 
 def _get_charge_states(
-    possible_oxi_states: Dict,
+    possible_oxi_states: dict,
     orig_oxi: int,
     max_host_oxi_magnitude: int,
     return_log: bool = False,
-) -> Dict:
+) -> dict:
     return {
         int(oxi - orig_oxi): _charge_state_probability(
             oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude, return_log=return_log
@@ -713,7 +725,7 @@ def _get_charge_states(
 
 def guess_defect_charge_states(
     defect: Defect, probability_threshold: float = 0.0075, padding: int = 1, return_log: bool = False
-) -> Union[List[int], Tuple[List[int], List[Dict]]]:
+) -> Union[list[int], tuple[list[int], list[dict]]]:
     """
     Guess the possible charge states of a defect.
 
@@ -882,8 +894,8 @@ def get_ideal_supercell_matrix(
 ) -> Union[np.ndarray, None]:
     """
     Determine the ideal supercell matrix for a given structure, based on the
-    minimum image distance, minimum number of atoms and ``ideal_threshold``
-    for further expanding if a diagonal expansion of the primitive/conventional
+    minimum image distance, minimum number of atoms and ``ideal_threshold`` for
+    further expanding if a diagonal expansion of the primitive/conventional
     cell is possible.
 
     The ideal supercell is the smallest possible supercell which has
@@ -1029,13 +1041,13 @@ class DefectsGenerator(MSONable):
     def __init__(
         self,
         structure: Structure,
-        extrinsic: Optional[Union[str, List, Dict]] = None,
-        interstitial_coords: Optional[List] = None,
+        extrinsic: Optional[Union[str, list, dict]] = None,
+        interstitial_coords: Optional[list] = None,
         generate_supercell: bool = True,
-        charge_state_gen_kwargs: Optional[Dict] = None,
-        supercell_gen_kwargs: Optional[Dict] = None,
-        interstitial_gen_kwargs: Optional[Dict] = None,
-        target_frac_coords: Optional[List] = None,
+        charge_state_gen_kwargs: Optional[dict] = None,
+        supercell_gen_kwargs: Optional[dict] = None,
+        interstitial_gen_kwargs: Optional[dict] = None,
+        target_frac_coords: Optional[list] = None,
         processes: Optional[int] = None,
     ):
         """
@@ -1063,7 +1075,9 @@ class DefectsGenerator(MSONable):
         by specifying keyword arguments with ``supercell_gen_kwargs``, which are passed to
         ``get_ideal_supercell_matrix()`` (e.g. for a minimum image distance of 15 Å with at
         least 100 atoms, use:
-        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``).
+        ``supercell_gen_kwargs = {'min_image_distance': 15, 'min_atoms': 100}``). If the
+        input structure already satisfies these constraints (for the same number of atoms as
+        the ``doped``-generated supercell), then it will be used.
         Alternatively if ``generate_supercell = False``, then no supercell is generated
         and the input structure is used as the defect & bulk supercell. (Note this
         may give a slightly different (but fully equivalent) set of coordinates).
@@ -1095,7 +1109,7 @@ class DefectsGenerator(MSONable):
                 Structure of the host material (as a pymatgen Structure object).
                 If this is not the primitive unit cell, it will be reduced to the
                 primitive cell for defect generation, before supercell generation.
-            extrinsic (Union[str, List, Dict]):
+            extrinsic (Union[str, list, dict]):
                 List or dict of elements (or string for single element) to be used
                 for extrinsic defect generation (i.e. dopants/impurities). If a
                 list is provided, all possible substitutional defects for each
@@ -1103,7 +1117,7 @@ class DefectsGenerator(MSONable):
                 should be the host elements to be substituted, and the values the
                 extrinsic element(s) to substitute in; as a string or list.
                 In both cases, all possible extrinsic interstitials are generated.
-            interstitial_coords (List):
+            interstitial_coords (list):
                 List of fractional coordinates (corresponding to the input structure),
                 or a single set of fractional coordinates, to use as interstitial
                 defect site(s). Default (when interstitial_coords not specified) is
@@ -1122,23 +1136,23 @@ class DefectsGenerator(MSONable):
                 - which can be controlled with ``supercell_gen_kwargs``).
                 If False, then the input structure is used as the defect & bulk supercell.
                 (Note this may give a slightly different (but fully equivalent) set of coordinates).
-            charge_state_gen_kwargs (Dict):
+            charge_state_gen_kwargs (dict):
                 Keyword arguments to be passed to the ``_charge_state_probability``
                 function (such as ``probability_threshold`` (default = 0.0075, used for
                 substitutions and interstitials) and ``padding`` (default = 1, used for
                 vacancies)) to control defect charge state generation.
-            supercell_gen_kwargs (Dict):
+            supercell_gen_kwargs (dict):
                 Keyword arguments to be passed to the ``get_ideal_supercell_matrix``
                 function (such as ``min_image_distance`` (default = 10), ``min_atoms``
                 (default = 50), ``ideal_threshold`` (default = 0.1), ``force_cubic``
                 - which enforces a (near-)cubic supercell output (default = False),
                 or ``force_diagonal`` (default = False)).
-            interstitial_gen_kwargs (Dict, bool):
+            interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to the ``VoronoiInterstitialGenerator``
                 class (such as ``clustering_tol``, ``stol``, ``min_dist`` etc), or to
                 ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
                 If set to False, interstitial generation will be skipped entirely.
-            target_frac_coords (List):
+            target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
                 if not set (i.e. the supercell centre, to aid visualisation).
@@ -1147,9 +1161,9 @@ class DefectsGenerator(MSONable):
                 one less than the number of CPUs available.
 
         Attributes:
-            defect_entries (Dict): Dictionary of {defect_species: DefectEntry} for all
+            defect_entries (dict): Dictionary of {defect_species: DefectEntry} for all
                 defect entries (with charge state and supercell properties) generated.
-            defects (Dict): Dictionary of {defect_type: [Defect, ...]} for all defect
+            defects (dict): Dictionary of {defect_type: [Defect, ...]} for all defect
                 objects generated.
             primitive_structure (Structure): Primitive cell structure of the host
                 used to generate defects.
@@ -1163,8 +1177,8 @@ class DefectsGenerator(MSONable):
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
-        self.defects: Dict[str, List[Defect]] = {}  # {defect_type: [Defect, ...]}
-        self.defect_entries: Dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
+        self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
+        self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         if interstitial_coords is not None:
@@ -1207,6 +1221,12 @@ class DefectsGenerator(MSONable):
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
             sga = symmetry._get_sga(self.structure)
+            if sga.get_space_group_number() == 1:  # print sanity check message
+                print(
+                    "Note that the detected symmetry of the input structure is P1 (i.e. only "
+                    "translational symmetry). If this is not expected (i.e. host system is not "
+                    "disordered/defective), then you should check your input structure!"
+                )
 
             prim_struct = symmetry.get_primitive_structure(sga)
             if prim_struct.num_sites < self.structure.num_sites:
@@ -1246,7 +1266,9 @@ class DefectsGenerator(MSONable):
 
             if not self.generate_supercell or (
                 input_min_image_distance >= specified_min_image_distance
-                and self.structure.num_sites <= (primitive_structure * supercell_matrix).num_sites
+                and (primitive_structure * supercell_matrix).num_sites
+                >= self.structure.num_sites
+                >= self.supercell_gen_kwargs.get("min_atoms", 0)
             ):
                 if input_min_image_distance < 10:
                     # input structure is <10 Å in at least one direction, and generate_supercell=False,
@@ -1304,9 +1326,9 @@ class DefectsGenerator(MSONable):
                     f"to find an appropriate supercell - otherwise please report this to the developers!"
                 )
 
-            self._bulk_oxi_states: Union[
-                bool, Dict
-            ] = True  # to check if pymatgen can guess the bulk oxidation states
+            self._bulk_oxi_states: Union[bool, dict] = (
+                True  # to check if pymatgen can guess the bulk oxidation states
+            )
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
                 isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
@@ -1606,7 +1628,7 @@ class DefectsGenerator(MSONable):
 
             # Generate DefectEntry objects:
             pbar.set_description("Determining Wyckoff sites")
-            defect_list: List[Defect] = sum(self.defects.values(), [])
+            defect_list: list[Defect] = reduce(operator.iconcat, self.defects.values(), [])
             num_defects = len(defect_list)
 
             # get BCS conventional structure and lattice vector swap array:
@@ -1699,7 +1721,7 @@ class DefectsGenerator(MSONable):
                         neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
                     )
                     charge_state_guessing_output = cast(
-                        Tuple[List[int], List[Dict]], charge_state_guessing_output
+                        tuple[list[int], list[dict]], charge_state_guessing_output
                     )  # for correct type checking; guess_defect_charge_states can return different types
                     # depending on return_log
                     charge_states, charge_state_guessing_log = charge_state_guessing_output
@@ -1791,11 +1813,11 @@ class DefectsGenerator(MSONable):
                     ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
                     # convert list of strings to one string with comma-separated charges
                     charges = "[" + ",".join(charges) + "]"
-                    defect_entry = [
+                    defect_entry = next(
                         entry
                         for name, entry in self.defect_entries.items()
                         if name.startswith(defect_name)
-                    ][0]
+                    )
                     frac_coords_string = ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
                     row = [
                         defect_name,
@@ -1835,9 +1857,9 @@ class DefectsGenerator(MSONable):
                 Doesn't need to include the charge state.
             charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
         """
-        previous_defect_entry = [
+        previous_defect_entry = next(
             entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry_name)
-        ][0]
+        )
         for charge in charge_states:
             defect_entry = copy.deepcopy(previous_defect_entry)
             defect_entry.charge_state = charge
@@ -2181,7 +2203,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     Sorts defect entries by defect type (vacancies, substitutions,
     interstitials), then by order of appearance of elements in the composition,
     then alphabetically, then (for defect entries of the same type) sort by
-    charge state.
+    charge state (from positive to negative).
     """
     if element_list is None:
         host_element_list = None
@@ -2209,10 +2231,10 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                 defect_entries_dict.items(),
                 key=lambda s: (
                     s[1].defect.defect_type.value,
-                    element_list.index(_first_and_second_element(s[0])[0]),
-                    element_list.index(_first_and_second_element(s[0])[1]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[0]),
+                    _list_index_or_val(element_list, _first_and_second_element(s[0])[1]),
                     s[0].rsplit("_", 1)[0],  # name without charge
-                    s[1].charge_state,  # charge state
+                    -s[1].charge_state,  # charge state
                 ),
             )
         )
@@ -2234,11 +2256,15 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     )
                 return (
                     defect_entry.defect.defect_type.value,
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[0]),
-                    element_list.index(_first_and_second_element(defect_entry.defect.name)[1]),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[0]
+                    ),
+                    _list_index_or_val(
+                        element_list, _first_and_second_element(defect_entry.defect.name)[1]
+                    ),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
-                    defect_entry.charge_state,  # charge state
+                    -defect_entry.charge_state,  # charge state
                 )
 
             return dict(
@@ -2247,8 +2273,8 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
                     key=lambda s: _defect_entry_sorting_func(s[1]),  # sort by defect entry object
                 )
             )
-        except ValueError:
-            raise value_err
+        except ValueError as value_err_2:
+            raise value_err_2 from value_err
 
 
 def _sort_defects(defects_dict, element_list=None):
@@ -2281,8 +2307,8 @@ def _sort_defects(defects_dict, element_list=None):
         defect_type: sorted(
             defect_list,
             key=lambda d: (
-                element_list.index(_first_and_second_element(d.name)[0]),
-                element_list.index(_first_and_second_element(d.name)[1]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[0]),
+                _list_index_or_val(element_list, _first_and_second_element(d.name)[1]),
                 d.name,  # bare name without charge
                 symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
             ),

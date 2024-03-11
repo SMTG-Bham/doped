@@ -37,7 +37,7 @@ eFNV) were developed, they should be used here.
 
 import os
 import warnings
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -58,7 +58,7 @@ from doped.utils.parsing import (
     get_locpot,
     get_outcar,
 )
-from doped.utils.plotting import _format_defect_name, _get_backend
+from doped.utils.plotting import _get_backend, format_defect_name
 
 warnings.simplefilter("default")
 # `message` only needs to match start of message:
@@ -290,7 +290,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
             x,
             short_range,
             c="green",
-            label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",  # noqa: ISC003
+            label=r"$V_{sr}$ = $\Delta$(Locpot) - $V_{lr}$" + "\n(pre-alignment)",
         )
         leg1 = ax.legend(handles=[line1, line2, line3], loc=9)  # middle top legend
         ax.add_artist(leg1)  # so isn't overwritten with later legend call
@@ -318,7 +318,7 @@ def get_kumagai_correction(
     defect_entry,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
     defect_region_radius: Optional[float] = None,
-    excluded_indices: Optional[List[int]] = None,
+    excluded_indices: Optional[list[int]] = None,
     defect_outcar: Optional[Union[str, Outcar]] = None,
     bulk_outcar: Optional[Union[str, Outcar]] = None,
     plot: bool = False,
@@ -346,7 +346,7 @@ def get_kumagai_correction(
     For example, with layered materials, the defect charge is often localised
     to one layer, so we may want to adjust ``defect_region_radius`` and/or
     ``excluded_indices`` to ensure that only sites in other layers are used for
-    the sampling region (plateau) - see example on doped docs.
+    the sampling region (plateau) - see example on doped docs Tips page.
 
     Args:
         defect_entry (DefectEntry):
@@ -576,7 +576,7 @@ def get_kumagai_correction(
     _install_custom_font()
 
     spp = SitePotentialMplPlotter.from_efnv_corr(
-        title=f"{_format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
+        title=f"{format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
     style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"

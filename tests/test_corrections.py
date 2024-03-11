@@ -5,9 +5,10 @@ These tests are templated off those originally written by the PyCDT (
 https://doi.org/10.1016/j.cpc.2018.01.004)
 developers.
 """
+
 import os
 import unittest
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch
 
 import matplotlib as mpl
@@ -151,7 +152,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     ytos_dielectric: list
     CdTe_bulk_data_dir: str
     CdTe_dielectric: np.ndarray
-    v_Cd_dict: Dict[Any, Any]
+    v_Cd_dict: dict[Any, Any]
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 
@@ -171,7 +172,9 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         cls.v_Cd_dict = {}  # dictionary of parsed vacancy defect entries
 
         for i in os.listdir(cls.CdTe_example_dir):  # loops through the example directory
-            if "v_Cd" in i:  # and parses folders that have "v_Cd" in their name
+            if (
+                os.path.isdir(f"{cls.CdTe_example_dir}/{i}") and "v_Cd" in i
+            ):  # and parses folders that have "v_Cd" in their name
                 print(f"Parsing {i}...")
                 defect_path = f"{cls.CdTe_example_dir}/{i}/vasp_ncl"
                 cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(

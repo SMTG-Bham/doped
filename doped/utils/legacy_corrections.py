@@ -61,7 +61,7 @@ def get_murphy_image_charge_correction(
     # will be conunted.
     axis = np.array([int(r_c / a + 10) for a in latt])
 
-    # Calculate supercell parallelpiped and dimensions
+    # Calculate supercell parallelepiped and dimensions
     sup_latt = np.dot(np.diag(axis), lattice)
 
     # Determine which of the lattice calculation_metadata is the largest and determine
@@ -102,27 +102,16 @@ def get_murphy_image_charge_correction(
 
     if verbose:
         print(
-            """
+            f"""
     Results                      v_M^scr    dE(q=1) /eV
     -----------------------------------------------------
-    Real space contribution    =  {:.6f}     {:.6f}
-    Reciprocal space component =  {:.6f}     {:.6f}
-    Third term                 = {:.6f}    {:.6f}
-    Neutralising background    = {:.6f}    {:.6f}
+    Real space contribution    =  {real_space:.6f}     {real_ev:.6f}
+    Reciprocal space component =  {reciprocal:.6f}     {recip_ev:.6f}
+    Third term                 = {third_term:.6f}    {third_ev:.6f}
+    Neutralising background    = {fourth_term:.6f}    {fourth_ev:.6f}
     -----------------------------------------------------
-    Final Madelung potential   = {:.6f}     {:.6f}
-    -----------------------------------------------------""".format(
-                real_space,
-                real_ev,
-                reciprocal,
-                recip_ev,
-                third_term,
-                third_ev,
-                fourth_term,
-                fourth_ev,
-                madelung,
-                madelung_ev,
-            )
+    Final Madelung potential   = {madelung:.6f}     {madelung_ev:.6f}
+    -----------------------------------------------------"""
         )
 
         print(
@@ -177,7 +166,7 @@ def _get_recip(
     dielectric_matrix,
 ):
     # convert factional motif to reciprocal space and
-    # calculate reciprocal space supercell parallelpiped
+    # calculate reciprocal space supercell parallelepiped
     recip_sup_latt = np.dot(np.diag(recip_axis), recip_latt)
 
     # Calculate reciprocal space component
@@ -219,7 +208,7 @@ def lany_zunger_corrected_defect_dict(defect_dict: dict):
         Parsed defect dictionary with Lany-Zunger charge corrections.
     """
     # Just need any DefectEntry from defect_dict to get the lattice and dielectric matrix
-    random_defect_entry = list(defect_dict.values())[0]
+    random_defect_entry = next(iter(defect_dict.values()))
     lattice = _get_bulk_supercell(random_defect_entry).lattice.matrix
     dielectric = random_defect_entry.calculation_metadata["dielectric"]
     lz_image_charge_corrections = get_murphy_image_charge_correction(lattice, dielectric)
