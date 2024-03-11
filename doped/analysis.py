@@ -1372,8 +1372,8 @@ class DefectParser:
             if bulk_vr.projected_eigenvalues is None:
                 load_phs_data = False  # can't load PHS data without projected eigenvalues
                 warnings.warn(
-                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping"
-                    " automated PHS data loading."
+                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
+                    "loading."
                 )
         else:
             bulk_vr = get_vasprun(bulk_vr_path)
@@ -1396,8 +1396,8 @@ class DefectParser:
             if defect_vr.projected_eigenvalues is None:
                 load_phs_data = False  # can't load PHS data without projected eigenvalues
                 warnings.warn(
-                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping"
-                    " automated PHS data loading."
+                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
+                    "loading."
                 )
         else:
             defect_vr = get_vasprun(defect_vr_path)
@@ -1674,8 +1674,8 @@ class DefectParser:
                         # Save warning, so can be used for future defects to skip the loading of PHS file
                         path_bulk = dp.defect_entry.calculation_metadata["bulk_path"]
                         dp.kwargs["phs_warning"] = (
-                            f"No `OUTCAR` file found in bulk path {path_bulk}. Skipping"
-                            f" automated PHS data loading for all defects."
+                            f"No `OUTCAR` file found in bulk path {path_bulk}. Skipping automated PHS "
+                            f"data loading for all defects."
                         )
                         warnings.warn(dp.kwargs["phs_warning"], UserWarning)
                         no_phs = True

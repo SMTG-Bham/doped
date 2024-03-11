@@ -194,33 +194,59 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 Perturbed Host States
 --------------------------------------
 
-Certain point defects form hydrogen-like donor or acceptor states, known as perturbed host states (PHS).
-These states typically have wavefunctions distributed over many unit cells in real space, requiring exceptionally
-large supercells or dense reciprocal space sampling to properly capture their physics (`see the review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
-Current supercell correction schemes can not account for errors obtained when calculating the transition energies of PHS,
-and it is recommended to denote that the defect is a PHS and that their transition energy is located near
-the band edges only qualitatively. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
+Certain point defects form shallow (hydrogen-like) donor or acceptor states, known as perturbed host
+states (PHS). These states typically have wavefunctions distributed over many unit cells in real space,
+requiring exceptionally large supercells or dense reciprocal space sampling to properly capture their
+physics (`see this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
+This weak attraction of the electron/hole to the defect site corresponds to a relatively small
+donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
+the nearby band edge), which is typically <100 meV.
+
+Current supercell correction schemes can not accurately account for finite-size errors obtained when
+calculating the energies of PHS in moderate supercells, so it is recommended to denote such shallow defects
+as PHS and conclude only `qualitatively` that their transition level is located near the corresponding
+band edge. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
+
+```{tip}
+Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic model,
+similar to the `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__
+exciton model, which predicts a binding energy given by:
+
+.. math::
+
+   E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
+
+where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
+charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
+(:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant (i.e.
+binding energy of an electron in a hydrogen atom).
+```
 
 We employ the methodology of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
 identify potential PHS through an interface with ``pydefect``.
 
-The optional argument ``load_phs_data: Optional[bool] = True`` loads the projected orbitals,
-and in combination with ``defect_entry.get_perturbed_host_state()`` returns
-additional information about the nature of the band edges, allowing defect states can be automatically identified.
+The optional argument ``load_phs_data`` in ``DefectsParser`` (``True`` by default) controls whether to
+load the projected orbitals, and in combination with ``defect_entry.get_perturbed_host_state()`` returns
+additional information about the nature of the band edges, allowing defect states (and whether they are
+deep or shallow (PHS)) to be automatically identified.
 Furthermore, a plot for the single particle levels is returned. It is however recommended to manually
-check the charge density of the defect state to confirm the identification of a PHS. Your ``INCAR`` file needs to
-include ``LORBIT > 10``to obtain the project orbitals and your bulk calculation folder
-must contain the ``OUTCAR`` file.
+check the real-space charge density (i.e. ``PARCHG``) of the defect state to confirm the identification of
+a PHS. Your ``INCAR`` file needs to include ``LORBIT > 10`` to obtain the projected orbitals and your
+bulk calculation folder must contain the ``OUTCAR(.gz)`` file.
 
-In the example below the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
+In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
 determined to be a PHS. This was additionally confirmed by performing calculations in larger
-supercells and plotting the charge density. Important terms include: 1) ``P-ratio``: The ratio of the sum of
-the projected orbitals of the neighbouring sites to the defects to the total sum of the project orbitals. A value
-close to 1 indicates a localised state. 2) ``Occupation``: Indicates if the additional hole/electron has been
-added to the VBM/CBM. 3) ``vbm has acceptor phs``/``cbm has donor phs``: Has a PHS state been automatically identified.
-Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. 4) ``Localized Orbital(s)``:
-Information about the localised defects states.
+supercells and plotting the charge density. Important terms include:
+1) ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites
+to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1
+indicates a localised state.
+2) ``Occupation``: Occupation of the electronic state / orbital.
+3) ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified.
+Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)``
+refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a
+PHS (but you should use your own judgement of course).
+4) ``Localized Orbital(s)``: Information about the localised defects states.
 
 .. code-block:: python
 
@@ -229,8 +255,7 @@ Information about the localised defects states.
 
     defect = DefectParser.from_paths(defect,bulk,dielectric,skip_corrections=True).defect_entry
     bes, fig = defect.get_perturbed_host_state()
-    #print information about the defect state
-    print(bes)
+    print(bes)  # print information about the defect state
 
      -- band-edge states info
     Spin-up

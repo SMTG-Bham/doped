@@ -243,9 +243,11 @@ class DefectEntry(thermo.DefectEntry):
                 f"the accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
-                f"which can't be accurately modelled with the supercell approach). If this error is not "
-                f"acceptable, you may need to use a larger supercell for more accurate energies."
-            )  # TODO: Link docs mention of shallow defects / false charge states here when ready
+                f"which can't be accurately modelled with the supercell approach; see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
+                f"If this error is not acceptable, you may need to use a larger supercell for more "
+                f"accurate energies."
+            )
 
         return correction_output
 
