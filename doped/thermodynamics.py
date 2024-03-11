@@ -1477,7 +1477,7 @@ class DefectThermodynamics(MSONable):
         defects/charge states are considered fixed and some are allowed to
         re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
         these specific cases is demonstrated in:
-        py-sc-fermi.readthedocs.io/en/latest/tutorial.html#3.-Applying-concentration-constraints
+        https://doped.readthedocs.io/en/latest/py_sc_fermi_interface_tutorial.html
 
         This function works by calculating the self-consistent Fermi level and total
         concentration of each defect at the annealing temperature, then fixing the
@@ -1497,8 +1497,8 @@ class DefectThermodynamics(MSONable):
         concentration equation and thus Fermi level calculation (see discussion in
         doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
         final concentration by up to 2 orders of magnitude. This factor is taken from
-        the product of the defect_entry.defect.multiplicity and
-        defect_entry.degeneracy_factors attributes.
+        the product of the ``defect_entry.defect.multiplicity`` and
+        ``defect_entry.degeneracy_factors`` attributes.
 
         If you use this code in your work, please also cite:
         Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
@@ -1584,8 +1584,6 @@ class DefectThermodynamics(MSONable):
             quenched defect concentrations (in cm^-3).
             (fermi_level, e_conc, h_conc, conc_df)
         """
-        # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
-        #  advanced analysis
         fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
