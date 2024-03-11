@@ -1212,8 +1212,10 @@ class DopedParsingTestCase(unittest.TestCase):
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
                 f"to unstable or shallow defect charge states (which can't be accurately modelled with "
-                f"the supercell approach). If this error is not acceptable, you may need to use a larger "
-                f"supercell for more accurate energies." in str(w[1].message)
+                f"the supercell approach; see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
+                f"If this error is not acceptable, you may need to use a larger supercell for more "
+                f"accurate energies." in str(w[1].message)
             )
 
         assert np.isclose(
@@ -1807,8 +1809,9 @@ class DopedParsingTestCase(unittest.TestCase):
             f"0.001 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
-            f"which can't be accurately modelled with the supercell approach). If this error is not "
-            f"acceptable, you may need to use a larger supercell for more accurate energies."
+            f"which can't be accurately modelled with the supercell approach; see "
+            f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). If this error is "
+            f"not acceptable, you may need to use a larger supercell for more accurate energies."
             in str(w[0].message)
         )
 
@@ -1898,9 +1901,11 @@ class DopedParsingTestCase(unittest.TestCase):
             f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
             f"check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due to "
-            f"unstable or shallow defect charge states (which can't be accurately modelled with the "
-            f"supercell approach). If this error is not acceptable, you may need to use a larger "
-            f"supercell for more accurate energies." in str(warning.message)
+            f"to unstable or shallow defect charge states (which can't be accurately modelled with "
+            f"the supercell approach; see "
+            f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
+            f"If this error is not acceptable, you may need to use a larger supercell for more "
+            f"accurate energies." in str(warning.message)
             for warning in w
         )
 
