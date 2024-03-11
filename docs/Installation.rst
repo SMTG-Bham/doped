@@ -39,10 +39,10 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    .. code-block:: bash
 
       mkdir temp_potcars  # make a top folder to store the unzipped POTCARs
-      mkdir temp_potcars/POT_PAW_GGA_PBE  # make a subfolder to store the unzipped POTCARs
-      mv potpaw_PBE.54.tar.gz temp_potcars/POT_PAW_GGA_PBE  # copy in your zipped VASP POTCAR source
-      cd temp_potcars/POT_PAW_GGA_PBE
-      tar -xzf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
+      mkdir temp_potcars/POT_GGA_PAW_PBE  # make a subfolder to store the unzipped POTCARs
+      mv potpaw_PBE.54.tar.gz temp_potcars/POT_GGA_PAW_PBE  # copy in your zipped VASP POTCAR source
+      cd temp_potcars/POT_GGA_PAW_PBE
+      tar -xf potpaw_PBE.54.tar.gz  # unzip your VASP POTCAR source
       cd ../..  # return to the top folder
       pmg config -p temp_potcars psp_resources  # configure the psp_resources pymatgen POTCAR directory
       pmg config --add PMG_VASP_PSP_DIR "${PWD}/psp_resources"  # add the POTCAR directory to pymatgen's config file ($HOME/.pmgrc.yaml)

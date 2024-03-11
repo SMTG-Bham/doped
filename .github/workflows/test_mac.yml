@@ -5,6 +5,8 @@ on:
 
   workflow_run:
     workflows: [ "Tests" ]
+    branches:
+      - '*'  # all branches
     types:
       - completed  # only test when new release has been deployed to PyPI
 
