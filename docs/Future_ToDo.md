@@ -84,6 +84,8 @@
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
 - `doped` functions should be equally applicable to the base `pymatgen` `Defect`/`DefectEntry` objects (as well as the corresponding `doped` subclasses) as much as possible. Can we add some quick tests for this? 
+- Implement shallow donor/acceptor binding estimation functions (via effective mass theory)
+- Kasamatsu formula for defect concentrations at high concentrations (accounts for lattice site competition), as shown in DefAP paper
 
 ## Docs
 - Add LDOS plotting, big selling point for defects and disorder!

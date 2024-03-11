@@ -6,6 +6,7 @@ chemical potentials), interface with ShakeNBreak
 https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
+
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 

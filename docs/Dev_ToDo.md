@@ -22,24 +22,14 @@
 ## Housekeeping
 - Tutorials general structure clean-up
 - Clean up repo, removing old unnecessary git blobs
-- Clean `README` with bullet-point summary of key features, and sidebar like `SnB`. Add correction plots and other example outputs (see MRS poster for this).
-- Code tidy up:
-  - Test coverage?
-  - Generate docs locally and check warnings
-  - Add type hints for all functions.
-- Need JOSS requirements; how to run tests and community guidelines
 
 - Docs:
   - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
-  - Barebones tutorial workflow, as suggested by Alex G. 
-  - Create GGA practice workflow, for people to learn how to work with doped and defect calculations
-  - Note in Tips page about eFNV correction with layered materials; may want to adjust sampling region (see `doped` Slack discussion). Add link to docstrings when added.
+  - Barebones tutorial workflow, as suggested by Alex G.
   - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Show on chemical potentials docs how chempots can be later set as attribute for DefectThermodynamics (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
-  - Show example in docs/advanced tutorial of changing `dist_tol` after parsing
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple DefectThermodynamics objects
-  - Example in docs of printing number of in-gap thermodynamic TLs, TLs with one meta charge state, and TLs with two meta charge states, using df output from `get_transition_levels` (i.e. to get the numbers we reported in the Te_i Faraday Discussions paper (10.1039/D2FD00043A)
   - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
@@ -66,7 +56,7 @@
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
   - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
-    this to their docs as example use cases as well. Add our thesis sc-fermi analysis notebooks to tutorials, and example of doing the Kumagai PRX Energy carrier concentration with TLD plots (can use: https://py-sc-fermi.readthedocs.io/en/latest/tutorial.html#plot-defect-concentrations-as-a-function-of-Fermi-energy). Also include examples of extending to
+    this to their docs as example use cases as well. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Worth adding a very short example showing how to set `MAGMOM`s for AFM/FM systems (see Dan & Abdullah chat)
@@ -104,10 +94,6 @@
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
 - Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
-- Update Sb2O5 test in `test_analysis.py`
-  - Add Sb2O5 as example case in plotting customisation tutorial, nice case for `dist_tol` usage.
-- Plotting lines colour updates.
-- Add sanity check warning with `DefectsGenerator`, if input structure symmetry is `P1` – you sure about this??
-- Add spin degeneracy auto determination to get symmetries/degeneracies later (if hasn't been parsed with current code for some reason e.g. Kanta...). Should implement this for all degeneracy factors whenever concentration methods used?
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
-- Note in chempot tutorial you may need to increase the kpoints range for certain metals to reach convergence. Also show writing `KPOINTS` files from convergence dict (as in Alkali_Doping notebook) to folders.
+- `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
+- Plotting lines colour updates.
