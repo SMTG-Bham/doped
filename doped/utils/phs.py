@@ -21,10 +21,11 @@ from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
 from pydefect.defaults import defaults
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Outcar, Vasprun
+from shakenbreak.plotting import _install_custom_font
 from vise import user_settings
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
-from doped.utils.plotting import _get_backend, format_defect_name
+from doped.utils.plotting import _get_backend
 
 # suppress pydefect INFO messages
 user_settings.logger.setLevel(logging.CRITICAL)
@@ -34,16 +35,16 @@ def make_band_edge_orbital_infos(
     defect_vr: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
 ):
     """
-    Make BandEdgeOrbitalInfos from vasprun.xml.
+    Make ``BandEdgeOrbitalInfos`` from ``vasprun.xml``.
 
-    Modified from my pydefect to use projected
-    orbitals stored in vasprun.xml.
+    Modified from ``pydefect`` to use projected
+    orbitals stored in ``vasprun.xml``.
 
     Args:
-        defect_vr: defect Vasprun object
-        vbm: vbm_info from get_edge_info
-        cbm: cbm_info from get_edge_info
-        str_info: pydefect DefectStructureInfo
+        defect_vr: defect ``Vasprun`` object
+        vbm: VBM eigenvalue in eV
+        cbm: CBM eigenvalue in eV
+        str_info: ``pydefect`` ``DefectStructureInfo``
         eigval_shift (float): Shift eigenvalues by E-E_VBM to set VBM at 0 eV
 
     Returns:
@@ -147,20 +148,35 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
     return band_orb, vbm_info, cbm_info
 
 
-def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_labels: bool = False):
+def get_phs_and_eigenvalue(
+    DefectEntry,
+    filename: Optional[str] = None,
+    plot: bool = True,
+    ks_labels: bool = False,
+    style_file: Optional[str] = None,
+):
     """
-    Get PHS info and eigenvalue plot for a given DefectEntry.
+    Get PHS info and eigenvalue plot (if ``plot = True``; default) for a given
+    ``DefectEntry``.
 
     Args:
-        DefectEntry: DefectEntry object
+        DefectEntry: ``DefectEntry`` object
         filename (str):
             Filename to save the Kumagai site potential plots to.
-            If None, plots are not saved.
+            If None (default), plots are not saved.
         ks_labels (bool):
             Add the band index to the KS levels.
+            (Default: False)
+        plot (bool):
+            Whether to plot the single-particle eigenvalues.
+            (Default: True)
+        style_file (str):
+            Path to a ``mplstyle`` file to use for the plot. If None
+            (default), uses the ``doped`` displacement plot style
+            (``doped/utils/displacement.mplstyle``).
 
     Returns:
-        pydefect PerfectBandEdgeState class
+        ``pydefect`` ``PerfectBandEdgeState`` class
     """
     band_orb = DefectEntry.calculation_metadata["phs_data"]["band_orb"]
     vbm_info = DefectEntry.calculation_metadata["phs_data"]["vbm_info"]
@@ -169,11 +185,15 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
     perfect = PerfectBandEdgeState(vbm_info, cbm_info)
     bes = make_band_edge_states(band_orb, perfect)
 
+    if not plot:
+        return bes
+
     vbm = vbm_info.orbital_info.energy + band_orb.eigval_shift
     cbm = cbm_info.orbital_info.energy + band_orb.eigval_shift
 
-    style_file = f"{os.path.dirname(__file__)}/displacement.mplstyle"
-    plt.style.use(style_file)
+    _install_custom_font()  # in case not installed already
+    style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
+    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
     emp = EigenvalueMplPlotter(
         title="Eigenvalues",
@@ -182,13 +202,11 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
         supercell_cbm=cbm,
         y_range=[vbm - 3, cbm + 3],
     )
-    f"{format_defect_name(DefectEntry.name, False)}+ eigenvalues"
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12
         plt.rc("axes", unicode_minus=False)
 
-        # plt.close("all")  # close any previous figures
         emp.construct_plot()
         partial = None
 
@@ -207,52 +225,32 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
                     elif np.array_equal(emp.axs[a].get_children()[i].get_facecolor(), [[0, 0.5, 0, 1]]):
                         partial = True
 
-        if ks_labels is True:
-            for axes in emp.axs:
-                annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
-                for annotation in annotations:
-                    if annotation.get_position()[0] > 1:
-                        annotation.remove()
-        else:
-            for axes in emp.axs:
-                annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
-                for annotation in annotations:
-                    if annotation:
-                        annotation.remove()
+        for axes in emp.axs:
+            annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
+            for annotation in annotations:
+                if (ks_labels and annotation.get_position()[0] > 1) or not ks_labels:
+                    annotation.remove()
 
         if len(emp.axs) > 1:
-            emp.axs[0].set_title("spin down")
-            emp.axs[1].set_title("spin up")
+            emp.axs[0].set_title("Spin Down")
+            emp.axs[1].set_title("Spin Up")
         else:
             emp.axs[0].set_title("KS levels")
 
         ymin, ymax = 0, 0
         for spin in emp._energies_and_occupations:
             for kpoint in spin:
-                if ymin > min(x[0] for x in kpoint):
-                    ymin = min(x[0] for x in kpoint)
-                if ymax < max(x[0] for x in kpoint):
-                    ymax = max(x[0] for x in kpoint)
+                ymin = min(ymin, *(x[0] for x in kpoint))
+                ymax = max(ymax, *(x[0] for x in kpoint))
 
         gamma_check = "\N{GREEK CAPITAL LETTER GAMMA}"
-        labels = emp.axs[0].get_xticklabels()
-        # Replace the label containing 'gamma' (Γ) with the word 'gamma'
-        labels = [label.get_text() for label in labels]
-        # Replace the label containing 'gamma' (Γ) with the word 'gamma'
-        for i, label in enumerate(labels):
-            if gamma_check in label:  # Check if the label contains 'gamma'
-                labels[i] = r"$\Gamma$"  # Replace the label
-        emp.axs[0].set_xticklabels(labels)
-
-        if len(emp.axs) > 1:
-            labels = emp.axs[1].get_xticklabels()
-            # Replace the label containing 'gamma' (Γ) with the word 'gamma'
+        for ax in emp.axs:
+            labels = ax.get_xticklabels()
             labels = [label.get_text() for label in labels]
-            # Replace the label containing 'gamma' (Γ) with the word 'gamma'
             for i, label in enumerate(labels):
-                if gamma_check in label:  # Check if the label contains 'gamma'
-                    labels[i] = r"$\Gamma$"  # Replace the label
-            emp.axs[1].set_xticklabels(labels)
+                if gamma_check in label:
+                    labels[i] = r"$\Gamma$"
+            ax.set_xticklabels(labels)
 
         fig = emp.plt.gcf()
         ax = fig.gca()
@@ -263,7 +261,7 @@ def get_phs_and_eigenvalue(DefectEntry, filename: Optional[str] = None, ks_label
         ax.scatter(0, -5, label="Unoccupied", color=(0.98, 0.639, 0.086))
         if partial:
             ax.scatter(0, -5, label="Partially Occupied", color=(0, 0.5, 0))
-        ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band edges")
+        ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band Edges")
         ax.legend(loc="upper right", fontsize=7)
 
     if filename:
