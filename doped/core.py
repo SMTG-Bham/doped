@@ -506,31 +506,39 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance=error_tolerance,
         )
 
-    def get_perturbed_host_state(self, filename: Optional[str] = None, **kwargs):
+    def get_perturbed_host_state(self, filename: Optional[str] = None, plot: bool = True, **kwargs):
         """
         Determines if the defect is a perturbed host state (PHS) and also
-        returns a plot of the single-particle eigenvalues.
+        returns a plot of the single-particle eigenvalues if ``plot=True``
+        (default).
 
         Args:
             filename (str):
                 Filename to save the Kumagai site potential plots to.
-                If None, plots are not saved.
+                If None (default), plots are not saved.
+            plot (bool):
+                Whether to plot the single-particle eigenvalues.
+                (Default: True)
             **kwargs:
-                Additional kwargs to pass to doped.utils.phs.get_phs_and_eigenvalue.
+                Additional kwargs to pass to ``doped.utils.phs.get_phs_and_eigenvalue``,
+                such as ``style_file``, ``ks_levels``
 
         Returns:
-            pydefect BandEdgeStates object
+            ``pydefect`` ``BandEdgeStates`` object and ``matplotlib`` ``Figure`` object
+            (if ``plot=True``).
         """
         from doped.utils.phs import get_phs_and_eigenvalue
 
-        if self.calculation_metadata.get("phs_data", None) is None:
+        if self.calculation_metadata.get("phs_data") is None:
             raise ValueError(
                 "No PHS data loaded for defect_entry. Please parse with load_phs_data = True "
             )
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            return get_phs_and_eigenvalue(self, filename, **kwargs)
+            bes, fig = get_phs_and_eigenvalue(self, filename, **kwargs)
+
+        return (bes, fig) if plot else bes
 
     def _get_chempot_term(self, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}

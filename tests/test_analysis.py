@@ -713,17 +713,20 @@ class DefectsParsingTestCase(unittest.TestCase):
         Test PHS functions.
         """
         # Test the loading of Cu2SiSe3 vacancy
-        defect = DefectParser.from_paths(
+        defect_entry = DefectParser.from_paths(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std",
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std",
             skip_corrections=True,
             load_phs_data=True,
         ).defect_entry
 
-        bes, fig = defect.get_perturbed_host_state()  # Test plotting KS
+        bes, fig = defect_entry.get_perturbed_host_state()  # Test plotting KS
         with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_band_edge_states.json") as f:
             expected = json.load(f)
         assert bes.as_dict() == expected
+
+        bes2 = defect_entry.get_perturbed_host_state(plot=False)  # Test getting BES and not plot
+        assert bes2.as_dict() == bes.as_dict()
 
         # Test warnings for non-collinear calc. with wrong version vise Int_3
         with warnings.catch_warnings(record=True) as w:
