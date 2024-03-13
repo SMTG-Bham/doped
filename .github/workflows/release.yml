@@ -34,9 +34,9 @@ jobs:
           current_pip_version=$(pip index versions doped | grep LATEST | awk '{print $NF}')
           current_repo_version=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"' | head -1)
           if [ "$current_pip_version" != "$current_repo_version" ]; then
-            echo "::set-output name=version_changed::true"
+            echo "version_changed=true" >> $GITHUB_ENV
           else
-            echo "::set-output name=version_changed::false"
+            echo "version_changed=false" >> $GITHUB_ENV
           fi
 
       - name: Build packages
