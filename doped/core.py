@@ -818,7 +818,7 @@ class DefectEntry(thermo.DefectEntry):
 
         return get_eigenvalue_analysis(self, plot=plot, filename=filename, **kwargs)
 
-    def _get_chempot_term(self, chemical_potentials=None):
+    def _get_chempot_term(self, chemical_potentials=None) -> float:
         chemical_potentials = chemical_potentials or {}
         element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
         missing_elts = [elt for elt in element_changes if elt not in chemical_potentials]
@@ -2044,6 +2044,21 @@ class Defect(core.Defect):
 
         return charges
 
+    def __setattr__(self, name, value):
+        """
+        Handle attribute updates.
+
+        Safety function to ensure properties (``defect_site``, ``volume``,
+        ``element_changes``) are recomputed whenever any defect attributes
+        are changed, to ensure consistency and correct predictions.
+        """
+        super().__setattr__(name, value)
+        if name in ["site", "structure"]:
+            # delete internal pre-computed attributes, so they are re-computed when needed:
+            for attr in ["_defect_site", "_volume", "_element_changes"]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
+
     @property
     def defect_site(self) -> PeriodicSite:
         """
@@ -2083,6 +2098,25 @@ class Defect(core.Defect):
             self._volume = self.structure.volume
 
         return self._volume
+
+    @property
+    def element_changes(self) -> dict[Element, int]:
+        """
+        The stoichiometry changes of the defect, as a dict.
+
+        e.g. {"Mg": -1, "O": +1} for a O-on-Mg antisite in MgO.
+        Redefined from the ``pymatgen-analysis-defects`` method
+        to be far more efficient when used in loops (e.g. for
+        calculating defect concentrations as functions of chemical
+        potentials, temperature etc.).
+
+        Returns:
+            dict[Element, int]: The species changes of the defect.
+        """
+        if not hasattr(self, "_element_changes"):
+            self._element_changes = super().element_changes
+
+        return self._element_changes
 
     def __hash__(self):
         """
