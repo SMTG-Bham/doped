@@ -93,7 +93,9 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
+- Quick-start tutorial suggested by Alex G
 - Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
+- Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise.
 - Plotting lines colour updates.
