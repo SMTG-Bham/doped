@@ -504,13 +504,65 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance=error_tolerance,
         )
 
-    def _get_chempot_term(self, chemical_potentials=None):
+    def get_elt_changes(self) -> dict:
+        """
+        Get a dictionary of the element changes (composition difference)
+        between the defect and bulk supercells.
+
+        Used for calculating the chemical potential term in the defect
+        formation energy equation.
+        """
+        # attempt to extract from name, if it's a doped-formatted name (most efficient):
+        elt_changes = None
+        name_components = self.name.split("_")
+        if len(name_components) >= 2 and (
+            Element("H").is_valid_symbol(name_components[1]) or name_components[1] == "i"
+        ):  # should be doped name, try using this:
+
+            if name_components[1] == "i":
+                elt_changes = {name_components[0]: 1}
+
+            elif name_components[0] == "v":
+                elt_changes = {name_components[1]: -1}
+
+            elif Element("H").is_valid_symbol(name_components[0]):
+                elt_changes = {name_components[0]: 1, name_components[1]: -1}
+
+            # otherwise continue and use alternative approach, name not actually doped-formatted
+
+        # try using the defect_entry defect_supercell_site and calculation_metadata['bulk_site']:
+        if elt_changes is None and self.defect_supercell_site is not None:
+            try:
+                if self.defect.defect_type == core.DefectType.Vacancy:
+                    elt_changes = {self.defect_supercell_site.specie.symbol: -1}
+
+                if self.defect.defect_type == core.DefectType.Interstitial:
+                    elt_changes = {self.defect_supercell_site.specie.symbol: +1}
+
+                if self.defect.defect_type == core.DefectType.Substitution:
+                    elt_changes = {
+                        self.defect_supercell_site.specie.symbol: +1,
+                        self.calculation_metadata["bulk_site"].specie.symbol: -1,
+                    }
+            except Exception:
+                elt_changes = self.defect.element_changes  # slow, but fallback option here
+
+        if elt_changes is None:
+            raise ValueError(
+                f"Unable to determine element changes (composition difference) for defect entry "
+                f"{self.name}."
+            )
+
+        return elt_changes
+
+    def _get_chempot_term(self, chemical_potentials=None) -> float:
         chemical_potentials = chemical_potentials or {}
+        elt_changes = self.get_elt_changes()
 
         return sum(
-            chem_pot * -self.defect.element_changes[Element(el)]
+            chem_pot * -elt_changes[el]
             for el, chem_pot in chemical_potentials.items()
-            if Element(el) in self.defect.element_changes
+            if el in elt_changes
         )
 
     def formation_energy(
