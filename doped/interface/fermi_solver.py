@@ -54,7 +54,10 @@ class FermiSolver(MSONable):
     def __init__(self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str):
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr
-        self._not_implemented_message = "This method is implemented in the derived class, use FermiSolverDoped or FermiSolverPyScFermi instead."
+        self._not_implemented_message = (
+            "This method is implemented in the derived class, "
+            "use FermiSolverDoped or FermiSolverPyScFermi instead."
+        )
 
     def equilibrium_solve(self) -> None:
         """
@@ -652,13 +655,12 @@ class FermiSolverPyScFermi(FermiSolver):
         Returns:
             DefectChargeState: The initialized DefectChargeState.
         """
-        if effective_dopant_concentration is not None:
-            if effective_dopant_concentration > 0:
-                charge = 1
-                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
-            elif effective_dopant_concentration < 0:
-                charge = -1
-                effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+        if effective_dopant_concentration > 0:
+            charge = 1
+            effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
+        elif effective_dopant_concentration < 0:
+            charge = -1
+            effective_dopant_concentration = abs(effective_dopant_concentration) / 1e24 * self.volume
         dopant = self.DefectChargeState(
             charge=charge, fixed_concentration=effective_dopant_concentration, degeneracy=1
         )
@@ -809,7 +811,7 @@ class FermiSolverPyScFermi(FermiSolver):
         chemical_potentials,
         quenched_temperature,
         annealing_temperature,
-        fix_defect_species=True,
+        fix_charge_states=False,
         effective_dopant_concentration=None,
         exceptions=None,
     ) -> "DefectSystem":
@@ -820,25 +822,32 @@ class FermiSolverPyScFermi(FermiSolver):
         (quenching_temperature).
 
         Args:
-            mu (dict[str, float]): set of chemical potentials used to generate the
-              DefectSystem
-            annealing_temperature (float): high temperature at which to generate
-              the initial DefectSystem for concentration fixing
-            target_temperature (float, optional): The low temperature at which to
-              generate the final DefectSystem. Defaults to 300.0.
-            fix_defect_species (bool): if annealing temperature is set, this sets
-              whether the concentrations of the py-sc-fermi DefectSpecies are fixed
-              to their high temperature values, or whether the DefectChargeStates
-              are fixed. If in doubt, leave as default value.
-            exceptions (list): if annealing_temperature is set, this lists the
-              defects to be excluded from the high-temperature concentration fixing
-              this may be important in systems with highly mobile defects that are
-              not expected to be "frozen-in"
+            mu (dict[str, float]):
+                Set of chemical potentials used to generate the ``DefectSystem``.
+            annealing_temperature (float):
+                High temperature at which to generate the initial ``DefectSystem``
+                for concentration fixing.
+            target_temperature (float, optional):
+                The low temperature (in Kelvin) at which to generate the final
+                ``DefectSystem``. Default is 300.0.
+            fix_charge_states (bool):
+                If annealing temperature is set, this controls whether the
+                concentrations of individual defect charge states are fixed to
+                their high temperature values (i.e. assuming kinetic trapping of
+                charge states), or whether the total concentrations of inequivalent
+                defects are fixed but with charge states allowed to vary – the latter
+                of which is the typical assumption within the 'frozen defect' model.
+                (Default is False).
+            exceptions (list):
+                If ``annealing_temperature`` is set, this lists the defects to be
+                excluded from the high-temperature concentration fixing. This may be
+                important in systems with highly mobile defects that are not
+                expected to be "frozen-in". (Default is None).
 
         Returns:
-            DefectSystem: a low temperature defect system (target_temperature),
-              with defect concentrations fixed to high temperature
-              (annealing_temperature) values.
+            DefectSystem:
+             A low temperature defect system (``target_temperature``), with defect
+             concentrations fixed to high temperature (``annealing_temperature``) values.
         """
         # Calculate concentrations at initial temperature
         if exceptions is None:
@@ -866,16 +875,16 @@ class FermiSolverPyScFermi(FermiSolver):
 
         # Apply the fixed concentrations
         for defect_species in defect_system.defect_species:
-            if fix_defect_species == True:
-                if defect_species.name in fixed_concs:
-                    defect_species.fix_concentration(
-                        fixed_concs[defect_species.name] / 1e24 * defect_system.volume
-                    )
-            elif fix_defect_species == False:
+            if fix_charge_states:
                 for k, v in defect_species.charge_states.items():
                     key = f"{defect_species.name}_{int(k)}"
                     if key in list(fixed_concs.keys()):
                         v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
+
+            elif defect_species.name in fixed_concs:
+                defect_species.fix_concentration(
+                    fixed_concs[defect_species.name] / 1e24 * defect_system.volume
+                )
 
         if effective_dopant_concentration is not None:
             dopant = self._generate_dopant(effective_dopant_concentration)
