@@ -1138,6 +1138,7 @@ class DefectThermodynamics(MSONable):
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
+        skip_formation_energy: bool = False,
     ) -> pd.DataFrame:
         r"""
         Compute the `equilibrium` concentrations (in cm^-3) for all
@@ -1215,6 +1216,10 @@ class DefectThermodynamics(MSONable):
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
                 strings (and keep as ints and floats instead). (default: False)
+            skip_formation_energy (bool):
+                Whether to include the defect formation energies in the output ``DataFrame``.
+                Mainly intended for internal use, to speed up thermodynamics calculations.
+                (default: False)
 
         Returns:
             pandas DataFrame of defect concentrations (and formation energies) for each
@@ -1228,13 +1233,14 @@ class DefectThermodynamics(MSONable):
         energy_concentration_list = []
 
         for defect_entry in self.defect_entries:
-            formation_energy = defect_entry.formation_energy(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
+            if not skip_formation_energy:
+                formation_energy = defect_entry.formation_energy(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    fermi_level=fermi_level,
+                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                )
             concentration = defect_entry.equilibrium_concentration(
                 chempots=chempots,
                 limit=limit,
@@ -1253,7 +1259,9 @@ class DefectThermodynamics(MSONable):
                         if skip_formatting
                         else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                     ),
-                    "Formation Energy (eV)": round(formation_energy, 3),
+                    "Formation Energy (eV)": (
+                        "N/A" if skip_formation_energy else round(formation_energy, 3)
+                    ),
                     "Raw Concentration": concentration,
                     "Concentration (per site)" if per_site else "Concentration (cm^-3)": (
                         concentration if skip_formatting else f"{concentration:.3e}"
@@ -1310,6 +1318,39 @@ class DefectThermodynamics(MSONable):
             )
         return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr))
 
+    def _add_effective_dopant_concentration(
+        self, conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
+    ):
+        """
+        Add the effective dopant concentration to the concentration
+        ``DataFrame``.
+        """
+        if effective_dopant_concentration is not None:
+            eff_dopant_df = pd.DataFrame(
+                {
+                    "Defect": "Effective Dopant",
+                    "Charge": np.sign(effective_dopant_concentration),
+                    "Formation Energy (eV)": "N/A",
+                    "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
+                    "Charge State Population": "100.0%",
+                },
+                index=[0],
+            )
+            for col in conc_df.columns:
+                if col not in eff_dopant_df.columns:
+                    eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
+
+            if "Charge" not in conc_df.columns:
+                eff_dopant_df = eff_dopant_df.drop(
+                    columns=["Charge", "Formation Energy (eV)", "Charge State Population"]
+                )
+                eff_dopant_df = eff_dopant_df.set_index("Defect")  # Defect is index with summed conc df
+                return pd.concat([conc_df, eff_dopant_df])
+
+            return pd.concat([conc_df, eff_dopant_df], ignore_index=True)
+
+        return conc_df
+
     def get_equilibrium_fermi_level(
         self,
         bulk_dos_vr: Union[str, Vasprun, FermiDos],
@@ -1318,6 +1359,7 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[dict] = None,
         temperature: float = 300,
         return_concs: bool = False,
+        effective_dopant_concentration: Optional[float] = None,
     ) -> Union[float, tuple[float, float, float]]:
         r"""
         Calculate the self-consistent Fermi level, at a given chemical
@@ -1407,6 +1449,14 @@ class DefectThermodynamics(MSONable):
             return_concs (bool):
                 Whether to return the corresponding electron and hole concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping.
+                (Default: None; no extrinsic dopant)
 
         Returns:
             Self consistent Fermi level (in eV from the VBM), and the corresponding
@@ -1425,7 +1475,10 @@ class DefectThermodynamics(MSONable):
                 temperature=temperature,
                 fermi_level=fermi_level,
                 skip_formatting=True,
+                skip_formation_energy=True,  # reduce compute time
             )
+            # add effective dopant concentration if supplied:
+            conc_df = self._add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
             qd_tot += fermi_dos.get_doping(fermi_level=fermi_level + self.vbm, temperature=temperature)
             return qd_tot
@@ -1451,6 +1504,7 @@ class DefectThermodynamics(MSONable):
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         delta_gap: float = 0,
+        effective_dopant_concentration: Optional[float] = None,
         **kwargs,
     ) -> tuple[float, float, float, pd.DataFrame]:
         r"""
@@ -1574,6 +1628,14 @@ class DefectThermodynamics(MSONable):
                 about the VBM and CBM (i.e. assuming equal up/downshifts of the band-edges
                 around their original eigenvalues) while the defect levels remain fixed.
                 (Default: 0)
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping.
+                (Default: None; no extrinsic dopant)
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
                 is not 0).
@@ -1605,6 +1667,7 @@ class DefectThermodynamics(MSONable):
             el_refs=el_refs,
             temperature=annealing_temperature,
             return_concs=False,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
         annealing_defect_concentrations = self.get_equilibrium_concentrations(
             chempots=chempots,
@@ -1614,7 +1677,11 @@ class DefectThermodynamics(MSONable):
             temperature=annealing_temperature,
             per_charge=False,  # give total concentrations for each defect
             skip_formatting=True,
+            skip_formation_energy=True,  # reduce compute time
         )
+        annealing_defect_concentrations = self._add_effective_dopant_concentration(
+            annealing_defect_concentrations, effective_dopant_concentration
+        )  # add effective dopant concentration if supplied
         annealing_defect_concentrations = annealing_defect_concentrations.rename(
             columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
         )
@@ -1627,7 +1694,9 @@ class DefectThermodynamics(MSONable):
                 temperature=quenched_temperature,
                 fermi_level=fermi_level,
                 skip_formatting=True,
+                skip_formation_energy=not return_conc_df,  # reduce compute time
             )
+            conc_df = self._add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
 
             conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
             conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
