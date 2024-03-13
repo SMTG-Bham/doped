@@ -13,6 +13,12 @@ from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+# ruff: noqa: E402
+from vise import user_settings
+
+user_settings.logger.setLevel(logging.CRITICAL)
+
 from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
 from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
 from pydefect.analyzer.make_band_edge_states import make_band_edge_states
@@ -24,13 +30,9 @@ from pydefect.util.structure_tools import Coordination, Distances
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Outcar, Vasprun
 from shakenbreak.plotting import _install_custom_font
-from vise import user_settings
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
 from doped.utils.plotting import _get_backend
-
-# suppress pydefect INFO messages
-user_settings.logger.setLevel(logging.CRITICAL)
 
 
 def make_band_edge_orbital_infos(
