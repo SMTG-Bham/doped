@@ -467,7 +467,10 @@ class FermiSolverDoped(FermiSolver):
         )
 
     def _get_fermi_level_and_carriers(
-        self, chempots: dict[str, float], temperature: float
+        self,
+        chempots: dict[str, float],
+        temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the Fermi level and carrier concentrations under a given
@@ -476,6 +479,14 @@ class FermiSolverDoped(FermiSolver):
         Args:
             chempots (dict[str, float]) chemical potentials to solve at
             temperature (float): temperature in to solve at
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping.
+                (Default: None; no extrinsic dopant)
 
         Returns:
             float: fermi level
@@ -488,16 +499,16 @@ class FermiSolverDoped(FermiSolver):
             limit=None,
             temperature=temperature,
             return_concs=True,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
         return fermi_level, electrons, holes
 
-    def scan_dopant_concentration(self) -> pd.DataFrame:
-        raise NotImplementedError(
-            """This method is not implemented in Doped, please use
-              FermiSolverPyScFermi instead."""
-        )
-
-    def equilibrium_solve(self, chempots: dict[str, float], temperature: float) -> pd.DataFrame:
+    def equilibrium_solve(
+        self,
+        chempots: dict[str, float],
+        temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
+    ) -> pd.DataFrame:
         """
         Calculate the defect concentrations under thermodynamic equilibrium
         given a set of elemental chemical potentials and a temperature.
@@ -505,13 +516,23 @@ class FermiSolverDoped(FermiSolver):
         Args:
             chempots (dict): chemical potentials to solve
             temperature (float): temperature to solve
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping.
+                (Default: None; no extrinsic dopant)
 
         returns:
            pd.DataFrame: DataFrame containing defect and carrier concentrations
               and the self consistent Fermi energy
         """
         fermi_level, electrons, holes = self._get_fermi_level_and_carriers(
-            chempots=chempots, temperature=temperature
+            chempots=chempots,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
         concentrations = self.defect_thermodynamics.get_equilibrium_concentrations(
             chempots=chempots,
@@ -520,6 +541,9 @@ class FermiSolverDoped(FermiSolver):
             per_charge=False,
             per_site=False,
             skip_formatting=False,
+        )
+        concentrations = self.defect_thermodynamics._add_effective_dopant_concentration(
+            concentrations, effective_dopant_concentration
         )
         new_columns = {
             "Fermi Level": fermi_level,
@@ -535,7 +559,11 @@ class FermiSolverDoped(FermiSolver):
         return concentrations
 
     def pseudo_equilibrium_solve(
-        self, chempots: dict[str, float], quenched_temperature: float, annealing_temperature: float
+        self,
+        chempots: dict[str, float],
+        quenched_temperature: float,
+        annealing_temperature: float,
+        effective_dopant_concentration: Optional[float] = None,
     ) -> pd.DataFrame:
         """
         Calculate the defect concentrations under pseudo equilibrium given a
@@ -546,6 +574,14 @@ class FermiSolverDoped(FermiSolver):
             chempots (dict): chemical potentials to solve
             quenched_temperature (float): temperature to quench to
             annealing_temperature (float): temperature to anneal at
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping.
+                (Default: None; no extrinsic dopant)
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
@@ -562,6 +598,7 @@ class FermiSolverDoped(FermiSolver):
             limit=None,
             annealing_temperature=annealing_temperature,
             quenched_temperature=quenched_temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
 
         new_columns = {
@@ -853,7 +890,9 @@ class FermiSolverPyScFermi(FermiSolver):
         if exceptions is None:
             exceptions = []
         defect_system = self.generate_defect_system(
-            chemical_potentials=chemical_potentials, temperature=annealing_temperature
+            chemical_potentials=chemical_potentials,
+            temperature=annealing_temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
         )
         initial_conc_dict = defect_system.concentration_dict()
 
@@ -885,10 +924,6 @@ class FermiSolverPyScFermi(FermiSolver):
                 defect_species.fix_concentration(
                     fixed_concs[defect_species.name] / 1e24 * defect_system.volume
                 )
-
-        if effective_dopant_concentration is not None:
-            dopant = self._generate_dopant(effective_dopant_concentration)
-            defect_system.defect_species.append(dopant)
 
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
