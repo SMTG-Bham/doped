@@ -2213,8 +2213,8 @@ class DefectsGenerator(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectsGenerator object, and
-        prints the DefectsGenerator info.
+        Returns a string representation of the ``DefectsGenerator`` object, and
+        prints the ``DefectsGenerator`` info.
 
         Note that Wyckoff letters can depend on the ordering of elements in
         the conventional standard structure, for which doped uses the ``spglib``
@@ -2300,7 +2300,10 @@ def _sort_defect_entries(
         for defect_entry in defect_entries_dict.values():
             extrinsic_element_list.extend(
                 el.symbol
-                for el in defect_entry.defect.defect_structure.composition.elements
+                for el in [
+                    *defect_entry.defect.structure.composition.elements,
+                    *defect_entry.defect.site.species.elements,
+                ]
                 if el.symbol not in host_element_list
             )
 
