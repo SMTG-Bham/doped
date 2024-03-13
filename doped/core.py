@@ -39,12 +39,12 @@ _orientational_degeneracy_warning = (
 @dataclass
 class DefectEntry(thermo.DefectEntry):
     """
-    Subclass of pymatgen.analysis.defects.thermo.DefectEntry with additional
-    attributes used by doped.
+    Subclass of ``pymatgen.analysis.defects.thermo.DefectEntry`` with
+    additional attributes used by doped.
 
     Core Attributes:
         defect:
-            doped/pymatgen defect object corresponding to the defect in the entry.
+            ``doped``/``pymatgen`` defect object corresponding to the defect in the entry.
         charge_state:
             Charge state of the defect.
         sc_entry:
@@ -80,8 +80,8 @@ class DefectEntry(thermo.DefectEntry):
 
     Generation Attributes:
         name:
-            The doped-generated name of the defect entry. See docstrings of
-            DefectsGenerator for the doped naming algorithm.
+            The ``doped``-generated name of the defect entry. See docstrings
+            of ``DefectsGenerator`` for the doped naming algorithm.
         conventional_structure:
             Conventional cell structure of the host according to the Bilbao
             Crystallographic Server (BCS) definition, used to determine defect
@@ -101,14 +101,14 @@ class DefectEntry(thermo.DefectEntry):
             A log of the input & computed values used to determine charge state
             probabilities.
         defect_supercell:
-            pymatgen Structure object of the defect supercell.
+            ``pymatgen`` ``Structure`` object of the defect supercell.
         defect_supercell_site:
-            pymatgen PeriodicSite object of the defect in the defect supercell.
+            ``pymatgen`` ``PeriodicSite`` object of the defect in the defect supercell.
         equivalent_supercell_sites:
-            List of pymatgen PeriodicSite objects of symmetry-equivalent defect
+            List of ``pymatgen`` ``PeriodicSite`` objects of symmetry-equivalent defect
             sites in the defect supercell.
         bulk_supercell:
-            pymatgen Structure object of the bulk (pristine, defect-free) supercell.
+            ``pymatgen`` ``Structure`` object of the bulk (pristine, defect-free) supercell.
     """
 
     # core attributes:
@@ -184,13 +184,13 @@ class DefectEntry(thermo.DefectEntry):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the DefectEntry object to a json file, which can be reloaded with
-        the DefectEntry.from_json() class method.
+        Save the ``DefectEntry`` object to a json file, which can be reloaded
+        with the ``DefectEntry.from_json()`` class method.
 
         Args:
             filename (str):
                 Filename to save json file as. If None, the filename will
-                be set as "{DefectEntry.name}.json".
+                be set as ``"{DefectEntry.name}.json"``.
         """
         if filename is None:
             filename = f"{self.name}.json"
@@ -200,20 +200,20 @@ class DefectEntry(thermo.DefectEntry):
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a DefectEntry object from a json file.
+        Load a ``DefectEntry`` object from a json file.
 
         Args:
             filename (str):
-                Filename of json file to load DefectEntry from.
+                Filename of json file to load ``DefectEntry`` from.
 
         Returns:
-            DefectEntry object
+            ``DefectEntry`` object
         """
         return loadfn(filename)
 
     def as_dict(self) -> dict:
         """
-        Returns a dictionary representation of the DefectEntry object.
+        Returns a dictionary representation of the ``DefectEntry`` object.
         """
         # ignore warning about oxidation states not summing to Structure charge:
         warnings.filterwarnings("ignore", message=".*unset_charge.*")
@@ -282,14 +282,14 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata`` if available.
             defect_locpot:
                 Path to the output VASP LOCPOT file from the defect supercell
-                calculation, or the corresponding pymatgen Locpot object, or
+                calculation, or the corresponding ``pymatgen`` Locpot object, or
                 a dictionary of the planar-averaged potential in the form:
                 {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
                 If None, will try to use ``defect_locpot`` from the
                 ``defect_entry`` ``calculation_metadata`` if available.
             bulk_locpot:
                 Path to the output VASP LOCPOT file from the bulk supercell
-                calculation, or the corresponding pymatgen Locpot object, or
+                calculation, or the corresponding ``pymatgen`` Locpot object, or
                 a dictionary of the planar-averaged potential in the form:
                 {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
                 If None, will try to use ``bulk_locpot`` from the
@@ -319,7 +319,7 @@ class DefectEntry(thermo.DefectEntry):
                 (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
-                pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction
+                ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
                 (e.g. energy_cutoff, mad_tol, q_model, step).
 
         Returns:
@@ -426,12 +426,12 @@ class DefectEntry(thermo.DefectEntry):
                 If None (default), no sites are excluded.
             defect_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
-                calculation, or the corresponding pymatgen Outcar object.
+                calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``defect_supercell_site_potentials``
                 from the ``defect_entry`` ``calculation_metadata`` if available.
             bulk_outcar (str or Outcar):
                 Path to the output VASP OUTCAR file from the bulk supercell
-                calculation, or the corresponding pymatgen Outcar object.
+                calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``bulk_supercell_site_potentials``
                 from the ``defect_entry`` ``calculation_metadata`` if available.
             plot (bool):
@@ -558,8 +558,8 @@ class DefectEntry(thermo.DefectEntry):
         fermi_level: float = 0,
     ) -> float:
         r"""
-        Compute the formation energy for the DefectEntry at a given chemical
-        potential limit and fermi_level.
+        Compute the formation energy for the ``DefectEntry`` at a given
+        chemical potential limit and fermi_level.
 
         Args:
             chempots (dict):
@@ -637,7 +637,7 @@ class DefectEntry(thermo.DefectEntry):
         Check if degeneracy info is present in self.calculation_metadata, and
         attempt to (re)-parse if not.
 
-        e.g. if the DefectEntry was generated with older versions of ``doped``,
+        e.g. if the ``DefectEntry`` was generated with older versions of ``doped``,
         manually, or with ``pymatgen-analysis-defects`` etc.
         """
         from doped.utils.parsing import get_orientational_degeneracy, simple_spin_degeneracy_from_charge
@@ -701,12 +701,12 @@ class DefectEntry(thermo.DefectEntry):
         per_site: bool = False,
     ) -> float:
         r"""
-        Compute the `equilibrium` concentration (in cm^-3) for the DefectEntry
-        at a given chemical potential limit, fermi_level and temperature,
-        assuming the dilute limit approximation.
+        Compute the `equilibrium` concentration (in cm^-3) for the
+        ``DefectEntry`` at a given chemical potential limit, fermi_level and
+        temperature, assuming the dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
-        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
+        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()`` can
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
         (quenched) to room/operating temperature (where defect concentrations
@@ -832,7 +832,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectEntry object.
+        Returns a string representation of the ``DefectEntry`` object.
         """
         from doped.utils.parsing import _get_bulk_supercell
 
@@ -856,7 +856,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def __eq__(self, other):
         """
-        Determine whether two DefectEntry objects are equal, by comparing
+        Determine whether two ``DefectEntry`` objects are equal, by comparing
         self.name and self.sc_entry.
         """
         return self.name == other.name and self.sc_entry == other.sc_entry
@@ -977,7 +977,7 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
 
 class Defect(core.Defect):
     """
-    Doped Defect object.
+    ``doped`` ``Defect`` object.
     """
 
     def __init__(
@@ -993,7 +993,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of pymatgen.analysis.defects.core.Defect with additional
+        Subclass of ``pymatgen.analysis.defects.core.Defect`` with additional
         attributes and methods used by doped.
 
         Args:
@@ -1063,18 +1063,18 @@ class Defect(core.Defect):
     @classmethod
     def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
         """
-        Create a doped Defect from a pymatgen Defect object.
+        Create a ``doped`` ``Defect`` from a ``pymatgen`` ``Defect`` object.
 
         Args:
             defect:
-                pymatgen Defect object.
+                ``pymatgen`` ``Defect`` object.
             bulk_oxi_states:
                 Either a dict of bulk oxidation states to use, or a boolean. If True,
-                re-guesses the oxidation state of the defect (ignoring the pymatgen
-                Defect oxi_state attribute), otherwise uses the already-set oxi_state
-                (default = 0). Used in doped defect generation to make defect setup
-                more robust and efficient (particularly for odd input structures,
-                such as defect supercells etc).
+                re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
+                ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
+                ``oxi_state`` (default = 0). Used in doped defect generation to make
+                defect setup more robust and efficient (particularly for odd input
+                structures, such as defect supercells etc).
             **doped_kwargs:
                 Additional keyword arguments to define doped-specific attributes
                 (see class docstring).
@@ -1095,7 +1095,7 @@ class Defect(core.Defect):
                 doped_kwargs[doped_attr] = getattr(defect, doped_attr)
 
         if isinstance(bulk_oxi_states, dict):
-            # set oxidation states, as these are removed in pymatgen defect generation
+            # set oxidation states, as these are removed in ``pymatgen`` defect generation
             defect.structure.add_oxidation_state_by_element(bulk_oxi_states)
 
         return cls(
@@ -1119,12 +1119,12 @@ class Defect(core.Defect):
         sc_mat: Optional[np.ndarray] = None,
         target_frac_coords: Optional[np.ndarray] = None,
         return_sites: bool = False,
-        min_image_distance: float = 10.0,  # same as current pymatgen default
-        min_atoms: int = 50,  # different to current pymatgen default (80)
+        min_image_distance: float = 10.0,  # same as current ``pymatgen`` default
+        min_atoms: int = 50,  # different to current ``pymatgen`` default (80)
         force_cubic: bool = False,
-        force_diagonal: bool = False,  # same as current pymatgen default
+        force_diagonal: bool = False,  # same as current ``pymatgen`` default
         ideal_threshold: float = 0.1,
-        min_length: Optional[float] = None,  # same as current pymatgen default, kept for compatibility
+        min_length: Optional[float] = None,  # same as current ``pymatgen`` default, kept for compatibility
         dummy_species: Optional[str] = None,
     ) -> Structure:
         """
@@ -1280,7 +1280,7 @@ class Defect(core.Defect):
 
     def as_dict(self):
         """
-        JSON-serializable dict representation of Defect.
+        JSON-serializable dict representation of ``Defect``.
 
         Needs to be redefined because attributes not explicitly specified in
         subclasses, which is required for monty functions.
@@ -1289,8 +1289,8 @@ class Defect(core.Defect):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the Defect object to a json file, which can be reloaded with the
-        Defect.from_json() class method.
+        Save the ``Defect`` object to a json file, which can be reloaded with
+        the `` Defect``.from_json()`` class method.
 
         Args:
             filename (str):
@@ -1305,33 +1305,34 @@ class Defect(core.Defect):
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a Defect object from a json file.
+        Load a ``Defect`` object from a json file.
 
         Args:
             filename (str):
-                Filename of json file to load Defect from.
+                Filename of json file to load ``Defect`` from.
 
         Returns:
-            Defect object
+            ``Defect`` object
         """
         return loadfn(filename)
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
     """
-    Create the corresponding doped Defect (Vacancy, Interstitial, Substitution)
-    from an input pymatgen Defect object.
+    Create the corresponding ``doped`` ``Defect`` (``Vacancy``,
+    ``Interstitial``, ``Substitution``) from an input ``pymatgen`` ``Defect``
+    object.
 
     Args:
         defect:
-            pymatgen Defect object.
+            ``pymatgen`` ``Defect`` object.
         bulk_oxi_states:
             Either a dict of bulk oxidation states to use, or a boolean. If True,
-            re-guesses the oxidation state of the defect (ignoring the pymatgen
-            Defect oxi_state attribute), otherwise uses the already-set oxi_state
-            (default = 0). Used in doped defect generation to make defect setup
-            more robust and efficient (particularly for odd input structures,
-            such as defect supercells etc).
+            re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
+            ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
+            ``oxi_state`` (default = 0). Used in doped defect generation to make
+            defect setup more robust and efficient (particularly for odd input
+            structures, such as defect supercells etc).
         **doped_kwargs:
             Additional keyword arguments to define doped-specific attributes
             (see class docstring).
@@ -1355,7 +1356,7 @@ def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **d
 class Vacancy(core.Vacancy, Defect):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of pymatgen.analysis.defects.core.Vacancy with additional
+        Subclass of ``pymatgen.analysis.defects.core.Vacancy`` with additional
         attributes and methods used by doped.
         """
         super().__init__(*args, **kwargs)
@@ -1371,8 +1372,8 @@ class Vacancy(core.Vacancy, Defect):
 class Substitution(core.Substitution, Defect):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of pymatgen.analysis.defects.core.Substitution with additional
-        attributes and methods used by doped.
+        Subclass of ``pymatgen.analysis.defects.core.Substitution`` with
+        additional attributes and methods used by doped.
         """
         super().__init__(*args, **kwargs)
 
@@ -1387,8 +1388,8 @@ class Substitution(core.Substitution, Defect):
 class Interstitial(core.Interstitial, Defect):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of pymatgen.analysis.defects.core.Interstitial with additional
-        attributes and methods used by doped.
+        Subclass of ``pymatgen.analysis.defects.core.Interstitial`` with
+        additional attributes and methods used by doped.
         """
         super().__init__(*args, **kwargs)
 
