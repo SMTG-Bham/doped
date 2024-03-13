@@ -252,7 +252,7 @@ PHS (but you should use your own judgement of course).
 
     bulk = "Cu2SiSe3/bulk/vasp_std"
     defect = "Cu2SiSe3/v_Cu_0/vasp_std/"
-    dielectric = 10
+    dielectric = [[8.73, 0, -0.48],[0., 7.78, 0],[-0.48, 0, 10.11]]
 
     defect_entry = DefectParser.from_paths(defect, bulk, dielectric).defect_entry
     bes, fig = defect_entry.get_perturbed_host_state()
@@ -278,6 +278,16 @@ PHS (but you should use your own judgement of course).
     ---
     Localized Orbital(s)
     Index  Energy  P-ratio  Occupation  Orbitals
+
+The plot of the single particle levels is shown below (left), and an example of how you might chose to represent the
+PHS on the transition level diagram with a clear circle is shown on the right.
+
+.. image:: cu2sise3_phs_plot.png
+    :width: 320px
+    :align: left
+.. image:: cu2sise3_phs_tld.png
+    :width: 320px
+    :align: left
 
 .. note::
 
