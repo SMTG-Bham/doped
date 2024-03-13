@@ -139,7 +139,8 @@ def get_defect_type_and_composition_diff(bulk, defect):
         defect_type = "substitution"
     else:
         raise RuntimeError(
-            "Could not determine defect type from composition difference of bulk and defect structures."
+            f"Could not determine defect type from composition difference of bulk ({bulk_comp}) and "
+            f"defect ({defect_comp}) structures."
         )
 
     return defect_type, composition_diff
@@ -1058,9 +1059,10 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
 
 def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
     if not relaxed:
-        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
-            site = defect_entry.calculation_metadata.get("bulk_site")
-            if site:
+        if (  # noqa: SIM102
+            hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata
+        ):
+            if site := defect_entry.calculation_metadata.get("bulk_site"):
                 return site
 
         # otherwise need to reparse info:
