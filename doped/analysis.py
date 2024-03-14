@@ -1424,10 +1424,6 @@ class DefectParser:
                 "loading."
             )
 
-        # delete projected_magnetisation attributes, not needed
-        for vr in [defect_vr, bulk_vr]:
-            vr.projected_magnetisation = None
-
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
         )  # set equal to folder name

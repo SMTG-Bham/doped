@@ -5,7 +5,9 @@ Helper functions for parsing VASP supercell defect calculations.
 import contextlib
 import itertools
 import os
+import re
 import warnings
+from collections import defaultdict
 from typing import Optional, Union
 
 import numpy as np
@@ -13,8 +15,9 @@ from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
@@ -35,6 +38,42 @@ def find_archived_fname(fname, raise_error=True):
     if raise_error:
         raise FileNotFoundError
     return None
+
+
+# has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
+# fake custom class:
+@staticmethod  # type: ignore[misc]
+def parse_projected_eigen_no_mag(elem):
+    """
+    Parse the projected eigenvalues from a Vasprun object (used during
+    initialisation), but excluding the projected magnetisation for efficiency.
+
+    This is a modified version of ``_parse_projected_eigen``
+    from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
+    parsing of the projected magnetisation in order to expedite
+    parsing in ``doped``.
+    """
+    root = elem.find("array").find("set")
+    proj_eigen = defaultdict(list)
+    sets = root.findall("set")
+    for s in sets:
+        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
+        if spin == 1 or (spin == 2 and len(sets) == 2):
+            # Force spin to be +1 or -1
+            for ss in s.findall("set"):
+                dk = []
+                for sss in ss.findall("set"):
+                    db = _parse_vasp_array(sss)
+                    dk.append(db)
+                proj_eigen[spin].append(dk)
+    proj_eigen = {spin: np.array(v) for spin, v in proj_eigen.items()}
+    proj_eigen = {Spin.up if k == 1 else Spin.down: v for k, v in proj_eigen.items()}
+    proj_mag = None
+    elem.clear()
+    return proj_eigen, proj_mag
+
+
+Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
 
 
 def get_vasprun(vasprun_path, **kwargs):
