@@ -665,13 +665,13 @@ def _charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> list[int]:
+def _get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     """
     Get the possible charge states for a vacancy defect, which is from +/-1 to
     the vacancy oxidation state.
 
     Args:
-        defect (Defect): A doped Vacancy object.
+        vacancy (Defect): A ``doped`` ``Vacancy`` object.
         padding (int):
             Padding for vacancy charge states, such that the vacancy
             charge states are set to range(vacancy oxi state, padding),
@@ -682,10 +682,15 @@ def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> list[int]:
     Returns:
         list[int]: A list of possible charge states for the defect.
     """
-    if defect.oxi_state > 0:
-        return list(range(-padding, int(defect.oxi_state) + 1))  # from -1 to oxi_state
-    if defect.oxi_state < 0:
-        return list(range(int(defect.oxi_state), padding + 1))  # from oxi_state to +1
+    if not isinstance(vacancy.oxi_state, (int, float)):
+        raise ValueError(
+            f"Vacancy oxidation state (= {vacancy.oxi_state}) is not an integer or float (needed for "
+            f"charge state guessing)! Please manually set the vacancy oxidation state."
+        )
+    if vacancy.oxi_state > 0:
+        return list(range(-padding, int(vacancy.oxi_state) + 1))  # from -1 to oxi_state
+    if vacancy.oxi_state < 0:
+        return list(range(int(vacancy.oxi_state), padding + 1))  # from oxi_state to +1
 
     # oxi_state is 0
     return list(range(-padding, padding + 1))  # from -1 to +1 for default

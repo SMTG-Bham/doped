@@ -537,7 +537,7 @@ class DefectsParser:
             dir
             for dir in os.listdir(self.output_path)
             if any(
-                "vasprun.xml" in file
+                "vasprun" in file and ".xml" in file
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
             )
@@ -587,15 +587,19 @@ class DefectsParser:
 
         # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is:
         if os.path.isdir(os.path.join(self.bulk_path, self.subfolder)) and any(
-            "vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
+            "vasprun" in file and ".xml" in file
+            for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
         ):
             self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
-        elif all("vasprun.xml" not in file for file in os.listdir(self.bulk_path)):
+        elif all("vasprun" not in file or ".xml" not in file for file in os.listdir(self.bulk_path)):
             possible_bulk_subfolders = [
                 dir
                 for dir in os.listdir(self.bulk_path)
                 if os.path.isdir(os.path.join(self.bulk_path, dir))
-                and any("vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, dir)))
+                and any(
+                    "vasprun" in file and ".xml" in file
+                    for file in os.listdir(os.path.join(self.bulk_path, dir))
+                )
             ]
             if len(possible_bulk_subfolders) == 1 and subfolder is None:
                 # if only one subfolder with a vasprun.xml file in it, and `subfolder` wasn't explicitly

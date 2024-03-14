@@ -8,6 +8,7 @@ import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
+from multiprocessing import Process
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -949,7 +950,7 @@ class Defect(core.Defect):
         structure: Structure,
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
-        oxi_state: Optional[float] = None,
+        oxi_state: Optional[Union[float, int, str]] = None,
         equivalent_sites: Optional[list[PeriodicSite]] = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
@@ -961,20 +962,21 @@ class Defect(core.Defect):
         attributes and methods used by doped.
 
         Args:
-            structure:
+            structure (Structure):
                 The structure in which to create the defect. Typically
                 the primitive structure of the host crystal for defect
                 generation, and/or the calculation supercell for defect
                 parsing.
-            site: The defect site in the structure.
-            multiplicity: The multiplicity of the defect in the structure.
-            oxi_state: The oxidation state of the defect, if not specified,
+            site (PeriodicSite): The defect site in the structure.
+            multiplicity (int): The multiplicity of the defect in the structure.
+            oxi_state (float, int or str):
+                The oxidation state of the defect. If not specified,
                 this will be determined automatically.
-            equivalent_sites:
+            equivalent_sites (list[PeriodicSite]):
                 A list of equivalent sites for the defect in the structure.
-            symprec: Tolerance for symmetry finding.
-            angle_tolerance: Angle tolerance for symmetry finding.
-            user_charges:
+            symprec (float): Tolerance for symmetry finding.
+            angle_tolerance (float): Angle tolerance for symmetry finding.
+            user_charges (list[int]):
                 User specified charge states. If specified, ``get_charge_states``
                 will return this list. If ``None`` or empty list the charge
                 states will be determined automatically.
@@ -1020,9 +1022,38 @@ class Defect(core.Defect):
             all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
             and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
         ):
-            _guess_and_set_struct_oxi_states(self.structure)
+            # implement oxi-state guessing but with timeout, as it can be extremely slow for large
+            # structures and isn't actually a required property for defect parsing
+            guess_oxi_process_wout_max_sites = Process(
+                target=_guess_and_set_struct_oxi_states, args=(self.structure, True)
+            )  # try without max sites first, if fails, try with max sites
+            guess_oxi_process_wout_max_sites.start()
+            guess_oxi_process_wout_max_sites.join(timeout=5)  # if still going, revert to using max sites
 
-        self.oxi_state = self._guess_oxi_state()
+            if guess_oxi_process_wout_max_sites.is_alive():
+                guess_oxi_process_wout_max_sites.terminate()
+                guess_oxi_process_wout_max_sites.join()
+
+                guess_oxi_process = Process(
+                    target=_guess_and_set_struct_oxi_states,
+                    args=(self.structure, False),
+                )
+                guess_oxi_process.start()
+                guess_oxi_process.join(timeout=5)  # wait 5 seconds for pymatgen to guess oxi states,
+                # otherwise revert to all Defect oxi states being set to 0
+
+                if guess_oxi_process.is_alive():
+                    guess_oxi_process.terminate()
+                    guess_oxi_process.join()
+
+        if not (  # oxi states unable to be parsed, set to "Undetermined"
+            all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
+            and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
+        ):
+            self.oxi_state = "Undetermined"
+
+        else:
+            self.oxi_state = self._guess_oxi_state()
 
     @classmethod
     def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
