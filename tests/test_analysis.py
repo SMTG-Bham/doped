@@ -413,10 +413,10 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
         with pytest.raises(FileNotFoundError) as exc:
-            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam")
+            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_std")
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam - please ensure `vasprun.xml(.gz)` "
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std - please ensure `vasprun.xml(.gz)` "
             f"files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
