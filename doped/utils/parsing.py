@@ -94,14 +94,26 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     Search for all files with filenames matching ``output_file``, case-
     insensitive.
 
-    Returns (output file path, Multiple?) where Multiple is True if multiple
-    matching files are found.
+    Returns (output file path, Multiple?) where ``Multiple`` is
+    ``True`` if multiple matching files are found.
+
+    Args:
+        output_file (str):
+            The filename to search for (case-insensitive).
+            Should be either ``vasprun.xml``, ``OUTCAR``,
+            ``LOCPOT`` or ``PROCAR``.
+        path (str): The path to the directory to search in.
     """
+    if output_file.lower() == "vasprun.xml":
+        search_patterns = ["vasprun", ".xml"]
+    else:
+        search_patterns = [output_file.lower()]
+
     files = os.listdir(path)
     output_files = [
         filename
         for filename in files
-        if output_file.lower() in filename.lower() and not filename.startswith(".")
+        if all(i in filename.lower() for i in search_patterns) and not filename.startswith(".")
     ]
     # sort by direct match to {output_file}, direct match to {output_file}.gz, then alphabetically:
     if output_files := sorted(
