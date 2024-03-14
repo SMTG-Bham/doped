@@ -236,7 +236,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
-            List of symmetry operations of defect.structure, to avoid
+            List of symmetry operations of ``defect.structure``, to avoid
             re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for spglib. Default is 0.01.
