@@ -1424,6 +1424,10 @@ class DefectParser:
                 "loading."
             )
 
+        # delete projected_magnetisation attributes, not needed
+        for vr in [defect_vr, bulk_vr]:
+            vr.projected_magnetisation = None
+
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
         )  # set equal to folder name
@@ -1642,42 +1646,6 @@ class DefectParser:
             **kwargs,
         )
 
-        dp.load_and_check_calculation_metadata()  # Load standard defect metadata
-        dp.load_bulk_gap_data(bulk_band_gap_path=bulk_band_gap_path)  # Load band gap data
-
-        if not skip_corrections and defect_entry.charge_state != 0:
-            # no finite-size charge corrections by default for neutral defects
-            skip_corrections = dp._check_and_load_appropriate_charge_correction()
-
-        if not skip_corrections and defect_entry.charge_state != 0:
-            dp.apply_corrections()
-
-            # check that charge corrections are not negative
-            summed_corrections = sum(
-                val
-                for key, val in dp.defect_entry.corrections.items()
-                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
-            )
-            if summed_corrections < -0.08:
-                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
-                # affecting the potential alignment)
-                # how anisotropic is the dielectric?
-                how_aniso = np.diag(
-                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
-                )
-                if np.allclose(how_aniso, 0, atol=0.05):
-                    warnings.warn(
-                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
-                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
-                        f"relatively isotropic dielectrics (as is the case here) this is usually "
-                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
-                        f"charge occupying the band edge states and not localised at the defect), "
-                        f"affecting the potential alignment, or some error/mismatch in the defect and "
-                        f"bulk calculations. If this defect species is not stable in the formation "
-                        f"energy diagram then this warning can usually be ignored, but if it is, "
-                        f"you should double-check your calculations and parsed results!"
-                    )
-
         if load_phs_data:
             try:
                 bulk_outcar_phs = dp.kwargs.get("bulk_outcar", None)
@@ -1717,6 +1685,45 @@ class DefectParser:
 
         else:
             defect_entry.calculation_metadata["phs_data"] = None
+
+        # delete projected_eigenvalues attribute from defect_vr, no longer needed
+        defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
+
+        dp.load_and_check_calculation_metadata()  # Load standard defect metadata
+        dp.load_bulk_gap_data(bulk_band_gap_path=bulk_band_gap_path)  # Load band gap data
+
+        if not skip_corrections and defect_entry.charge_state != 0:
+            # no finite-size charge corrections by default for neutral defects
+            skip_corrections = dp._check_and_load_appropriate_charge_correction()
+
+        if not skip_corrections and defect_entry.charge_state != 0:
+            dp.apply_corrections()
+
+            # check that charge corrections are not negative
+            summed_corrections = sum(
+                val
+                for key, val in dp.defect_entry.corrections.items()
+                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
+            )
+            if summed_corrections < -0.08:
+                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
+                # affecting the potential alignment)
+                # how anisotropic is the dielectric?
+                how_aniso = np.diag(
+                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
+                )
+                if np.allclose(how_aniso, 0, atol=0.05):
+                    warnings.warn(
+                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
+                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
+                        f"relatively isotropic dielectrics (as is the case here) this is usually "
+                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
+                        f"charge occupying the band edge states and not localised at the defect), "
+                        f"affecting the potential alignment, or some error/mismatch in the defect and "
+                        f"bulk calculations. If this defect species is not stable in the formation "
+                        f"energy diagram then this warning can usually be ignored, but if it is, "
+                        f"you should double-check your calculations and parsed results!"
+                    )
 
         return dp
 
