@@ -540,6 +540,7 @@ class DefectsParser:
         self.processes = processes
         self.json_filename = json_filename
         self.load_phs_data = load_phs_data
+        self.bulk_vr = None  # loaded later
 
         possible_defect_folders = [
             dir
@@ -618,6 +619,17 @@ class DefectsParser:
 
         # remove trailing '/.' from bulk_path if present:
         self.bulk_path = self.bulk_path.rstrip("/.")
+        bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", self.bulk_path)
+        if multiple:
+            _multiple_files_warning(
+                "vasprun.xml",
+                self.bulk_path,
+                bulk_vr_path,
+                dir_type="bulk",
+            )
+        self.bulk_vr = get_vasprun(
+            bulk_vr_path, parse_projected_eigen=load_phs_data
+        )  # parsing projected eigenvalues makes Vasprun loading much slower...
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
@@ -1079,6 +1091,7 @@ class DefectsParser:
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
+                bulk_vr=self.bulk_vr,
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
@@ -1282,7 +1295,8 @@ class DefectParser:
     def from_paths(
         cls,
         defect_path: str,
-        bulk_path: str,
+        bulk_path: Optional[str] = None,
+        bulk_vr: Optional[Vasprun] = None,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         charge_state: Optional[int] = None,
         initial_defect_structure_path: Optional[str] = None,
@@ -1308,6 +1322,11 @@ class DefectParser:
                 Path to defect supercell folder (containing at least vasprun.xml(.gz)).
             bulk_path (str):
                 Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+                Not required if ``bulk_vr`` is provided.
+            bulk_vr (Vasprun):
+                ``pymatgen`` ``Vasprun`` object for the reference bulk supercell calculation,
+                if already loaded (can be supplied to expedite parsing).
+                Default is None.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Ionic + static contributions to the dielectric constant. If not provided,
                 charge corrections cannot be computed and so ``skip_corrections`` will be
@@ -1354,29 +1373,33 @@ class DefectParser:
         _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
         calculation_metadata = {
-            "bulk_path": bulk_path,
+            "bulk_path": bulk_path or "bulk Vasprun supplied",
             "defect_path": defect_path,
         }
 
-        # add bulk simple properties
-        bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
-        if multiple:
-            _multiple_files_warning(
-                "vasprun.xml",
-                bulk_path,
-                bulk_vr_path,
-                dir_type="bulk",
-            )
-        if load_phs_data:
-            bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
-            if bulk_vr.projected_eigenvalues is None:
+        if bulk_path is not None:
+            # add bulk simple properties
+            bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
+            if multiple:
+                _multiple_files_warning(
+                    "vasprun.xml",
+                    bulk_path,
+                    bulk_vr_path,
+                    dir_type="bulk",
+                )
+            bulk_vr = get_vasprun(
+                bulk_vr_path, parse_projected_eigen=load_phs_data
+            )  # parsing projected eigenvalues makes Vasprun loading much slower...
+            if load_phs_data and bulk_vr.projected_eigenvalues is None:
                 load_phs_data = False  # can't load PHS data without projected eigenvalues
                 warnings.warn(
                     "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
                     "loading."
                 )
-        else:
-            bulk_vr = get_vasprun(bulk_vr_path)
+
+        elif bulk_vr is None:
+            raise ValueError("Either `bulk_path` or `bulk_vr` must be provided!")
+
         bulk_supercell = bulk_vr.final_structure.copy()
 
         # add defect simple properties
@@ -1391,16 +1414,15 @@ class DefectParser:
                 defect_vr_path,
                 dir_type="defect",
             )
-        if load_phs_data:
-            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
-            if defect_vr.projected_eigenvalues is None:
-                load_phs_data = False  # can't load PHS data without projected eigenvalues
-                warnings.warn(
-                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
-                    "loading."
-                )
-        else:
-            defect_vr = get_vasprun(defect_vr_path)
+        defect_vr = get_vasprun(
+            defect_vr_path, parse_projected_eigen=load_phs_data
+        )  # parsing projected eigenvalues makes Vasprun loading much slower...
+        if load_phs_data and defect_vr.projected_eigenvalues is None:
+            load_phs_data = False  # can't load PHS data without projected eigenvalues
+            warnings.warn(
+                "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
+                "loading."
+            )
 
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
@@ -1600,7 +1622,7 @@ class DefectParser:
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
-        if bulk_voronoi_node_dict:  # save to bulk folder for future expedited parsing:
+        if bulk_voronoi_node_dict and bulk_path:  # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
                 with FileLock("voronoi_nodes.json.lock"):
                     dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
@@ -2003,7 +2025,7 @@ class DefectParser:
             }
         )
 
-        # grab defect energy and eigenvalue information for band filling and localization analysis
+        # grab defect energy and eigenvalue information for localization analysis
         eigenvalues = {
             spincls.value: eigdict.copy() for spincls, eigdict in self.defect_vr.eigenvalues.items()
         }
