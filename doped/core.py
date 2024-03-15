@@ -8,7 +8,8 @@ import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
-from multiprocessing import Process
+from multiprocessing import TimeoutError
+from multiprocessing.pool import ThreadPool
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -1024,27 +1025,17 @@ class Defect(core.Defect):
         ):
             # implement oxi-state guessing but with timeout, as it can be extremely slow for large
             # structures and isn't actually a required property for defect parsing
-            guess_oxi_process_wout_max_sites = Process(
-                target=_guess_and_set_struct_oxi_states, args=(self.structure, True)
-            )  # try without max sites first, if fails, try with max sites
-            guess_oxi_process_wout_max_sites.start()
-            guess_oxi_process_wout_max_sites.join(timeout=5)  # if still going, revert to using max sites
+            with ThreadPool(1) as pool:
+                result = pool.apply_async(_guess_and_set_struct_oxi_states, args=(self.structure, True))
+                with contextlib.suppress(TimeoutError):
+                    result.get(timeout=5)  # if timeout, revert to using max sites
 
-            if guess_oxi_process_wout_max_sites.is_alive():
-                guess_oxi_process_wout_max_sites.terminate()
-                guess_oxi_process_wout_max_sites.join()
-
-                guess_oxi_process = Process(
-                    target=_guess_and_set_struct_oxi_states,
-                    args=(self.structure, False),
-                )
-                guess_oxi_process.start()
-                guess_oxi_process.join(timeout=5)  # wait 5 seconds for pymatgen to guess oxi states,
-                # otherwise revert to all Defect oxi states being set to 0
-
-                if guess_oxi_process.is_alive():
-                    guess_oxi_process.terminate()
-                    guess_oxi_process.join()
+                if not result.ready():
+                    result = pool.apply_async(
+                        _guess_and_set_struct_oxi_states, args=(self.structure, False)
+                    )
+                    with contextlib.suppress(TimeoutError):
+                        result.get(timeout=5)  # else revert to setting oxi state to 'Undetermined'
 
         if not (  # oxi states unable to be parsed, set to "Undetermined"
             all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
