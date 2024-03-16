@@ -1415,15 +1415,15 @@ class DefectParser:
             bulk_vr = get_vasprun(
                 bulk_vr_path, parse_projected_eigen=load_phs_data
             )  # parsing projected eigenvalues makes Vasprun loading much slower...
-            if load_phs_data and bulk_vr.projected_eigenvalues is None:
-                load_phs_data = False  # can't load PHS data without projected eigenvalues
-                warnings.warn(
-                    "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data "
-                    "loading."
-                )
 
         elif bulk_vr is None:
             raise ValueError("Either `bulk_path` or `bulk_vr` must be provided!")
+
+        if load_phs_data and bulk_vr.projected_eigenvalues is None:
+            load_phs_data = False  # can't load PHS data without projected eigenvalues
+            warnings.warn(
+                "No projected orbitals found in bulk 'vasprun.xml'. Skipping automated PHS data loading."
+            )
 
         bulk_supercell = bulk_vr.final_structure.copy()
 
