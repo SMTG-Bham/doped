@@ -9,7 +9,7 @@ import operator
 import warnings
 from functools import partial, reduce
 from itertools import chain
-from multiprocessing import Pool, Process, Queue, cpu_count
+from multiprocessing import Pool, Queue, cpu_count
 from typing import Optional, Union, cast
 from unittest.mock import MagicMock
 
@@ -39,7 +39,7 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
-    _guess_and_set_struct_oxi_states,
+    _guess_and_set_oxi_states_with_timeout,
     doped_defect_from_pmg_defect,
 )
 from doped.utils import parsing, supercells, symmetry
@@ -1344,44 +1344,24 @@ class DefectsGenerator(MSONable):
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
                 queue: Queue = Queue()
-                guess_oxi_process_wout_max_sites = Process(
-                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure, True, queue)
-                )  # try without max sites first, if fails, try with max sites
-                guess_oxi_process_wout_max_sites.start()
-                guess_oxi_process_wout_max_sites.join(timeout=10)  # if still going, revert to using max
-                # sites
-
-                if guess_oxi_process_wout_max_sites.is_alive():
-                    guess_oxi_process_wout_max_sites.terminate()
-                    guess_oxi_process_wout_max_sites.join()
-
-                    guess_oxi_process = Process(
-                        target=_guess_and_set_struct_oxi_states,
-                        args=(self.primitive_structure, False, queue),
-                    )
-                    guess_oxi_process.start()
-                    guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
-                    # otherwise revert to all Defect oxi states being set to 0
-
-                    if guess_oxi_process.is_alive():
-                        self._bulk_oxi_states = False  # couldn't guess oxi states, so set to False
-                        warnings.warn(
-                            "\nOxidation states could not be guessed for the input structure. This is "
-                            "required for charge state guessing, so defects will still be generated but "
-                            "all charge states will be set to -1, 0, +1. You can manually edit these "
-                            "with the add/remove_charge_states methods (see tutorials), or you can set "
-                            "the oxidation states of the input structure (e.g. using "
-                            "structure.add_oxidation_state_by_element()) and re-initialize "
-                            "DefectsGenerator()."
-                        )
-                        guess_oxi_process.terminate()
-                        guess_oxi_process.join()
-
-                if self._bulk_oxi_states is not False:
+                self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
+                    self.primitive_structure, queue=queue
+                )
+                if self._bulk_oxi_states:
                     self.primitive_structure = queue.get()
                     self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
+                else:
+                    warnings.warn(
+                        "\nOxidation states could not be guessed for the input structure. This is "
+                        "required for charge state guessing, so defects will still be generated but "
+                        "all charge states will be set to -1, 0, +1. You can manually edit these "
+                        "with the add/remove_charge_states methods (see tutorials), or you can set "
+                        "the oxidation states of the input structure (e.g. using "
+                        "structure.add_oxidation_state_by_element()) and re-initialize "
+                        "DefectsGenerator()."
+                    )
 
             pbar.update(10)  # 15% of progress bar
 
