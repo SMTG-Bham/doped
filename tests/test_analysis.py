@@ -78,6 +78,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
         self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
+        self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -89,6 +90,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json"))
+
+        for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
+            if "json" in i:
+                if_present_rm(os.path.join(self.SOLID_SOLUTION_DATA_DIR, i))
 
         for i in os.listdir(f"{self.YTOS_EXAMPLE_DIR}/Bulk"):
             if i.startswith("."):
@@ -423,10 +428,10 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
         with pytest.raises(FileNotFoundError) as exc:
-            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_gam", load_phs_data=False)
+            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_std", load_phs_data=False)
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_gam - please ensure `vasprun.xml(.gz)` "
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std - please ensure `vasprun.xml(.gz)` "
             f"files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
@@ -1012,6 +1017,32 @@ class DefectsParsingTestCase(unittest.TestCase):
         thermo.dist_tol = 2.5  # merges Al interstitials together
         thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
         return thermo.plot()
+
+    def test_solid_solution_oxi_state_handling(self):
+        """
+        Test parsing a defect in a large, complex solid solution supercell,
+        which hangs with using ``pymatgen``'s oxi state methods (so is set as
+        'undetermined' by ``doped``, as this property isn't necessary when
+        parsing).
+        """
+        with warnings.catch_warnings(record=True) as w:
+            # no warning with no dielectric/OUTCARs, as is neutral
+            dp = DefectsParser(self.SOLID_SOLUTION_DATA_DIR)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 1
+        self._check_DefectsParser(dp)
+        thermo = dp.get_defect_thermodynamics()
+
+        with warnings.catch_warnings(record=True) as w:
+            symm_df = thermo.get_symmetries_and_degeneracies()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+
+        assert list(symm_df["Site_Symm"].unique()) == ["C1"]
+        assert list(symm_df["Defect_Symm"].unique()) == ["C1"]
+        assert list(symm_df["g_Orient"].unique()) == [1.0]
+        assert list(symm_df["g_Spin"].unique()) == [2]
 
 
 class DopedParsingTestCase(unittest.TestCase):
