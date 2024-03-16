@@ -11,7 +11,7 @@ import contextlib
 import inspect
 import os
 import warnings
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, Queue, cpu_count
 from typing import Optional, Union
 
 import numpy as np
@@ -27,7 +27,7 @@ from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
-from doped.core import DefectEntry
+from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.parsing import (
@@ -161,7 +161,7 @@ def check_and_set_defect_entry_name(
 
 
 def defect_from_structures(
-    bulk_supercell, defect_supercell, return_all_info=False, bulk_voronoi_node_dict=None
+    bulk_supercell, defect_supercell, return_all_info=False, bulk_voronoi_node_dict=None, oxi_state=None
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
@@ -188,6 +188,9 @@ def defect_from_structures(
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
             expedited site-matching. If None, will be re-calculated.
+        oxi_state (int, float, str):
+            Oxidation state of the defect site. If not provided, will be
+            automatically determined from the defect structure.
 
     Returns:
         defect (Defect):
@@ -310,6 +313,7 @@ def defect_from_structures(
         "@class": def_type.capitalize(),
         "structure": bulk_supercell,
         "site": defect_site_in_bulk,
+        "oxi_state": oxi_state,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
@@ -343,7 +347,8 @@ def defect_name_from_structures(bulk_structure, defect_structure):
     Returns:
         str: Defect name.
     """
-    defect = defect_from_structures(bulk_structure, defect_structure)
+    # set oxi_state to avoid wasting time trying to auto-determine when unnecessary here
+    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state=0)
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
     # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
@@ -546,7 +551,7 @@ class DefectsParser:
             dir
             for dir in os.listdir(self.output_path)
             if any(
-                "vasprun.xml" in file
+                "vasprun" in file and ".xml" in file
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
             )
@@ -596,15 +601,19 @@ class DefectsParser:
 
         # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is:
         if os.path.isdir(os.path.join(self.bulk_path, self.subfolder)) and any(
-            "vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
+            "vasprun" in file and ".xml" in file
+            for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
         ):
             self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
-        elif all("vasprun.xml" not in file for file in os.listdir(self.bulk_path)):
+        elif all("vasprun" not in file or ".xml" not in file for file in os.listdir(self.bulk_path)):
             possible_bulk_subfolders = [
                 dir
                 for dir in os.listdir(self.bulk_path)
                 if os.path.isdir(os.path.join(self.bulk_path, dir))
-                and any("vasprun.xml" in file for file in os.listdir(os.path.join(self.bulk_path, dir)))
+                and any(
+                    "vasprun" in file and ".xml" in file
+                    for file in os.listdir(os.path.join(self.bulk_path, dir))
+                )
             ]
             if len(possible_bulk_subfolders) == 1 and subfolder is None:
                 # if only one subfolder with a vasprun.xml file in it, and `subfolder` wasn't explicitly
@@ -630,6 +639,21 @@ class DefectsParser:
         self.bulk_vr = get_vasprun(
             bulk_vr_path, parse_projected_eigen=load_phs_data
         )  # parsing projected eigenvalues makes Vasprun loading much slower...
+
+        # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
+        # fully ionised charge states):
+        if _rough_oxi_state_cost_from_comp(self.bulk_vr.final_structure.composition) > 1e6:
+            self._bulk_oxi_states: Union[dict, bool] = False  # will take very long to guess oxi_state
+        else:
+            queue: Queue = Queue()
+            self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
+                self.bulk_vr.final_structure, queue=queue
+            )
+            if self._bulk_oxi_states:
+                self.bulk_vr.final_structure = queue.get()  # oxi-state decorated structure
+                self._bulk_oxi_states = {
+                    el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements
+                }
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
@@ -1099,6 +1123,7 @@ class DefectsParser:
                 load_phs_data=self.load_phs_data,
                 **self.bulk_corrections_data,
                 **self.phs_data,
+                oxi_state=None if self._bulk_oxi_states else "Undetermined",
             )
 
             if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
@@ -1377,7 +1402,7 @@ class DefectParser:
             "defect_path": defect_path,
         }
 
-        if bulk_path is not None:
+        if bulk_path is not None and bulk_vr is None:
             # add bulk simple properties
             bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
             if multiple:
@@ -1515,6 +1540,7 @@ class DefectParser:
                 defect_structure.copy(),
                 return_all_info=True,
                 bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                oxi_state=kwargs.get("oxi_state"),
             )
 
         except RuntimeError:
@@ -1536,6 +1562,7 @@ class DefectParser:
                 defect_structure_for_ID,
                 return_all_info=True,
                 bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                oxi_state=kwargs.get("oxi_state"),
             )
 
             # then try get defect_site in final structure:

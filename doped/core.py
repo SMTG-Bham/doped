@@ -8,6 +8,8 @@ import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
+from itertools import combinations_with_replacement
+from multiprocessing import Process, Queue, current_process
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -943,6 +945,17 @@ def _get_dft_chempots(chempots, el_refs, limit):
 def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
     """
     Tries to guess (and set) the oxidation states of the input structure.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        try_without_max_sites (bool):
+            Whether to try to guess the oxidation states
+            without using the ``max_sites=-1`` argument (``True``)(which attempts
+            to use the reduced composition for guessing oxi states) or not (``False``).
+        queue (Queue):
+            A multiprocessing queue to put the guessed structure in, if provided.
+            Only really intended for use internally in ``doped``, during defect
+            generation.
     """
     if try_without_max_sites:
         with contextlib.suppress(Exception):
@@ -975,6 +988,96 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
         queue.put(structure)
 
 
+def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15, queue=None) -> bool:
+    """
+    Tries to guess (and set) the oxidation states of the input structure, with
+    a timeout catch for cases where the structure is complex and oxi state
+    guessing will take a very very long time.
+
+    Tries first without using the ``max_sites=-1`` argument with ``pymatgen``'s
+    oxidation state guessing functions (which attempts to use the reduced
+    composition for guessing oxi states, but can be a little less reliable for tricky
+    cases), and if that times out, tries without ``max_sites=-1``.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        queue (Queue):
+            A multiprocessing queue to put the guessed structure in, if provided.
+            Only really intended for use internally in ``doped``, during defect
+            generation.
+        timeout_1 (float):
+            Timeout in seconds for the first attempt to guess the oxidation states
+            (with ``max_sites=-1``). Default is 10 seconds.
+        timeout_2 (float):
+            Timeout in seconds for the second attempt to guess the oxidation states
+            (without ``max_sites=-1``). Default is 15 seconds.
+    """
+    if queue is None:
+        queued_struct = False
+        queue = Queue()
+    else:
+        queued_struct = True
+
+    guess_oxi_process_wout_max_sites = Process(
+        target=_guess_and_set_struct_oxi_states, args=(structure, True, queue)
+    )  # try without max sites first, if fails, try with max sites
+    guess_oxi_process_wout_max_sites.start()
+    guess_oxi_process_wout_max_sites.join(timeout=timeout_1)
+
+    if guess_oxi_process_wout_max_sites.is_alive():  # still running, revert to using max sites
+        guess_oxi_process_wout_max_sites.terminate()
+        guess_oxi_process_wout_max_sites.join()
+
+        guess_oxi_process = Process(
+            target=_guess_and_set_struct_oxi_states,
+            args=(structure, False, queue),
+        )
+        guess_oxi_process.start()
+        guess_oxi_process.join(timeout=timeout_2)  # wait for pymatgen to guess oxi states,
+        # otherwise revert to all Defect oxi states being set to 0
+
+        if guess_oxi_process.is_alive():
+            guess_oxi_process.terminate()
+            guess_oxi_process.join()
+
+            return False
+
+    if not queued_struct:
+        # apply oxi states to structure:
+        structure_from_subprocess = queue.get()
+        structure.add_oxidation_state_by_element(
+            {el.symbol: el.oxi_state for el in structure_from_subprocess.composition.elements}
+        )
+
+    return True
+
+
+def _rough_oxi_state_cost_from_comp(comp: Union[str, Composition], max_sites=True) -> float:
+    """
+    A cost function which roughly estimates the computational cost of guessing
+    the oxidation states of a given composition.
+    """
+    if isinstance(comp, str):
+        comp = Composition(comp)
+
+    if max_sites:
+        comp, _factor = comp.get_reduced_composition_and_factor()
+
+    el_amt = comp.get_el_amt_dict()
+    elements = list(el_amt)
+    return np.prod(
+        [
+            sum(
+                1
+                for _i in combinations_with_replacement(
+                    Element(el).icsd_oxidation_states or Element(el).oxidation_states, int(el_amt[el])
+                )
+            )
+            for el in elements
+        ]
+    )
+
+
 class Defect(core.Defect):
     """
     ``doped`` ``Defect`` object.
@@ -985,7 +1088,7 @@ class Defect(core.Defect):
         structure: Structure,
         site: PeriodicSite,
         multiplicity: Optional[int] = None,
-        oxi_state: Optional[float] = None,
+        oxi_state: Optional[Union[float, int, str]] = None,
         equivalent_sites: Optional[list[PeriodicSite]] = None,
         symprec: float = 0.01,
         angle_tolerance: float = 5,
@@ -997,20 +1100,21 @@ class Defect(core.Defect):
         attributes and methods used by doped.
 
         Args:
-            structure:
+            structure (Structure):
                 The structure in which to create the defect. Typically
                 the primitive structure of the host crystal for defect
                 generation, and/or the calculation supercell for defect
                 parsing.
-            site: The defect site in the structure.
-            multiplicity: The multiplicity of the defect in the structure.
-            oxi_state: The oxidation state of the defect, if not specified,
+            site (PeriodicSite): The defect site in the structure.
+            multiplicity (int): The multiplicity of the defect in the structure.
+            oxi_state (float, int or str):
+                The oxidation state of the defect. If not specified,
                 this will be determined automatically.
-            equivalent_sites:
+            equivalent_sites (list[PeriodicSite]):
                 A list of equivalent sites for the defect in the structure.
-            symprec: Tolerance for symmetry finding.
-            angle_tolerance: Angle tolerance for symmetry finding.
-            user_charges:
+            symprec (float): Tolerance for symmetry finding.
+            angle_tolerance (float): Angle tolerance for symmetry finding.
+            user_charges (list[int]):
                 User specified charge states. If specified, ``get_charge_states``
                 will return this list. If ``None`` or empty list the charge
                 states will be determined automatically.
@@ -1056,9 +1160,26 @@ class Defect(core.Defect):
             all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
             and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
         ):
-            _guess_and_set_struct_oxi_states(self.structure)
+            if _rough_oxi_state_cost_from_comp(self.structure.composition) > 1e6:
+                self.oxi_state = "Undetermined"  # likely will take very long to guess oxi_state
+                return
 
-        self.oxi_state = self._guess_oxi_state()
+            if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+                _guess_and_set_struct_oxi_states(self.structure)
+                self.oxi_state = self._guess_oxi_state()
+                return
+
+            # else try guess oxi-states but with timeout, using new `Process`s:
+            _guess_and_set_oxi_states_with_timeout(self.structure, timeout_1=5, timeout_2=5)
+
+        if not (  # oxi states unable to be parsed, set to "Undetermined"
+            all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
+            and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
+        ):
+            self.oxi_state = "Undetermined"
+
+        else:
+            self.oxi_state = self._guess_oxi_state()
 
     @classmethod
     def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
