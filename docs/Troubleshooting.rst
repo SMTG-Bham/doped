@@ -45,19 +45,23 @@ If this does not solve your issue, please contact the developers through the ``G
       pip install pymatgen
 
 
-``spglib`` Errors
--------------------
-- A previous known issue with ``spglib`` is that it could give an error similar to:
+``spglib`` Errors/Warnings
+--------------------------
+- A previous known issue with ``spglib`` is that it could give an error or warnings similar to:
 
   .. code:: python
 
       spglib: ssm_get_exact_positions failed (attempt=0).
+      spglib: No point group was found (line 405, ...).
       ...
       spglib: ssm_get_exact_positions failed (attempt=4).
       spglib: get_bravais_exact_positions_and_lattice failed
       spglib: ref_get_exact_structure_and_symmetry failed.
 
-  This can be fixed by reinstalling ``spglib`` with ``conda install -c conda-forge spglib``. It's important to use ``conda`` rather than ``pip`` as ``conda``  will bundle the C and Fortran libraries.
+  This can be fixed by reinstalling ``spglib`` with ``conda install -c conda-forge spglib==2.0.2``.
+  Sometimes installation with ``conda`` rather than ``pip`` is required, as ``conda``  will bundle the C
+  and Fortran libraries, while using version ``2.0.2`` for now avoids some unnecessary warnings (see this
+  `Issue <https://github.com/spglib/spglib/issues/338>`_ on the ``spglib`` GitHub for details).
 
 
 ``ShakeNBreak``
