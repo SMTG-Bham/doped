@@ -151,6 +151,14 @@ class FermiSolver(MSONable):
         processes: int = 1,
         **kwargs,
     ) -> pd.DataFrame:
+        """
+        With a given set of chemical potentials, scan over a range of effective
+        dopant concentrations and solve for the defect concentrations and Fermi
+        energy at each dopant concentration.
+
+        Note: 
+        
+        """
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._add_effective_dopant_concentration_and_solve_pseudo)(
@@ -192,6 +200,23 @@ class FermiSolver(MSONable):
         processes: int = 1,
         **kwargs,
     ) -> pd.DataFrame:
+        """
+        Interpolate between two sets of chemical potentials and solve for the
+        defect concentrations and Fermi energy at each interpolated point.
+
+
+        Args:
+            chem_pot_start (dict): The starting chemical potentials.
+            chem_pot_end (dict): The ending chemical potentials.
+            n_points (int): The number of points to generate.
+            temperature (float): The temperature to solve at.
+            annealing_temperature (float): The temperature to anneal at.
+            quenching_temperature (float): The temperature to quench to.
+            processes (int): The number of processes to use for parallelization.
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
+        """
         interpolated_chem_pots = self._get_interpolated_chempots(chem_pot_start, chem_pot_end, n_points)
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
@@ -671,7 +696,7 @@ class FermiSolverPyScFermi(FermiSolver):
     """
 
     def __init__(
-        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str, multiplicity_scaling=1.0
+        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str, multiplicity_scaling=None
     ):
         """
         Initialize the FermiSolverPyScFermi object.
@@ -680,7 +705,18 @@ class FermiSolverPyScFermi(FermiSolver):
         vr = Vasprun(self.bulk_dos)
         self.bulk_dos = self.DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
-        self.multiplicity_scaling = multiplicity_scaling
+
+        if multiplicity_scaling is None:
+            ms = self.defect_thermodynamics.defect_entries[0].defect.structure.volume / self.volume
+            # check multiplicity scaling is almost an integer
+            if not np.isclose(ms, round(ms)):
+                raise ValueError(
+                    "The multiplicity scaling factor is not almost an integer. "
+                    "Please specify a multiplicity scaling factor."
+                )
+            self.multiplicity_scaling = round(ms)
+        else:
+            self.multiplicity_scaling = multiplicity_scaling
 
     def _generate_dopant(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
