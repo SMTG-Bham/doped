@@ -37,6 +37,7 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
 
 ```bash
   conda install -c conda-forge doped
+  pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
 ```
 
 If you haven't done so already, you will need to set up your VASP `POTCAR` files and `Materials Project` API with `pymatgen` using the `.pmgrc.yaml` file, in order for `doped` to automatically generate VASP input files for defect calculations and determine competing phases for chemical potentials.

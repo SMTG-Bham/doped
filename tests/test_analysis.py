@@ -1948,13 +1948,19 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_tricky_relaxed_interstitial_corrections_kumagai(self):
         """
         Test the eFNV correction performance with tricky-to-locate relaxed
-        interstitial sites (Te_i^+1 ground-state and metastable from Kavanagh
-        et al.
+        interstitial sites.
 
-        2022 doi.org/10.1039/D2FD00043A).
+        In this test case, we look at Te_i^+1 ground-state and metastable
+        structures from Kavanagh et al. 2022 doi.org/10.1039/D2FD00043A.
         """
-        from pydefect.analyzer.calc_results import CalcResults
-        from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+        try:
+            from pydefect.analyzer.calc_results import CalcResults
+            from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+        except ImportError as exc:
+            raise ImportError(
+                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+                "You can do this by running `pip install pydefect`."
+            ) from exc
 
         def _make_calc_results(directory) -> CalcResults:
             vasprun = get_vasprun(f"{directory}/vasprun.xml.gz")
