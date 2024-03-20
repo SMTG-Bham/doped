@@ -399,17 +399,24 @@ def get_kumagai_correction(
     # suppress pydefect INFO messages
     import logging
 
-    from vise import user_settings  #
+    try:
+        from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    from pydefect.analyzer.calc_results import CalcResults
-    from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
-    from pydefect.corrections.ewald import Ewald
-    from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
-    from pydefect.defaults import defaults
-    from pydefect.util.error_classes import SupercellError
+        user_settings.logger.setLevel(logging.CRITICAL)
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
+        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+        from pydefect.corrections.ewald import Ewald
+        from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+        from pydefect.defaults import defaults
+        from pydefect.util.error_classes import SupercellError
+
+    except ImportError as exc:
+        raise ImportError(
+            "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+            "You can do this by running `pip install pydefect`."
+        ) from exc
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")

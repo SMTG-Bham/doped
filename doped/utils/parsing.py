@@ -425,10 +425,14 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     # suppress pydefect INFO messages
     import logging
 
-    from vise import user_settings
+    try:
+        from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+        user_settings.logger.setLevel(logging.CRITICAL)
+        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+
+    except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
+        return
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")

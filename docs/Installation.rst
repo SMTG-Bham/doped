@@ -12,6 +12,11 @@ Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 .. code-block:: bash
 
    conda install -c conda-forge doped
+   pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
+
+If you are installing ``doped`` via ``conda`` and you plan on using the eFNV (Kumagai-Oba) finite-size
+correction, you will need to install the ``pydefect`` package with ``pip`` as shown or otherwise, as it is
+not available on ``conda``.
 
 Setup ``POTCAR``\s and Materials Project API
 --------------------------------------------
