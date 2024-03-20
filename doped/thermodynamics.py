@@ -115,21 +115,37 @@ def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
     return limit
 
 
+def _update_old_chempots_dict(chempots: dict) -> dict:
+    """
+    Update a chempots dict in the old ``doped`` format (i.e. with ``facets``
+    rather than ``limits``) to that of the new format.
+    """
+    if "facets" in chempots:
+        chempots["limits"] = chempots.pop("facets")
+
+    if "facets_wrt_el_refs" in chempots:
+        chempots["limits_wrt_el_refs"] = chempots.pop("facets_wrt_el_refs")
+
+    return chempots
+
+
 def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = None):
     """
-    Parse the chemical potentials input, formatting them in the doped format
-    for use in analysis functions.
+    Parse the chemical potentials input, formatting them in the ``doped``
+    format for use in analysis functions.
 
-    Can be either doped format or user-specified format.
+    Can be either ``doped`` format or user-specified format.
 
-    Returns parsed chempots and el_refs
+    Returns parsed ``chempots`` and ``el_refs``
     """
     if chempots is not None and "limits_wrt_elt_refs" in chempots:
-        chempots = {
-            "limits": chempots.get("limits", {}),
-            "elemental_refs": chempots.get("elemental_refs"),
-            "limits_wrt_el_refs": chempots["limits_wrt_elt_refs"],
-        }
+        chempots["limits_wrt_el_refs"] = chempots.pop("limits_wrt_elt_refs")
+
+    if chempots is not None and "facets_wrt_elt_refs" in chempots:
+        chempots["facets_wrt_el_refs"] = chempots.pop("facets_wrt_elt_refs")
+
+    if chempots is not None and ("facets" in chempots or "facets_wrt_el_refs" in chempots):
+        chempots = _update_old_chempots_dict(chempots)
 
     if chempots is None:
         if el_refs is not None:
