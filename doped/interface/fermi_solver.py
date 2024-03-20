@@ -80,6 +80,20 @@ class FermiSolver(MSONable):
         processes: int = 1,
         **kwargs,
     ) -> pd.DataFrame:
+        """
+        With a given set of chemical potentials, scan over a range of temperatures
+        and solve for the defect concentrations and Fermi energy at each temperature.
+
+        Args:
+            chempots (dict): The chemical potentials to solve at.
+            temperature_range (float or list): The range of temperatures to scan over.
+            annealing_temperature_range (float or list): The range of annealing temperatures to scan over.
+            quenching_temperature_range (float or list): The range of quenching temperatures to scan over.
+            processes (int): The number of processes to use for parallelization.
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
+        """
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
@@ -117,6 +131,22 @@ class FermiSolver(MSONable):
         processes: 1,
         **kwargs,
     ) -> pd.DataFrame:
+        """
+        Scan over a range of chemical
+        potentials and solve for the defect concentrations and Fermi energy at
+        each set of chemical potentials.
+
+        Args:
+            chempots (list): The chemical potentials to scan over.
+            temperature (float): The temperature to solve at.
+            annealing_temperature (float): The temperature to anneal at.
+            quenching_temperature (float): The temperature to quench to.
+            processes (int): The number of processes to use for parallelization.
+        
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
+        """
+
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
@@ -156,8 +186,21 @@ class FermiSolver(MSONable):
         dopant concentrations and solve for the defect concentrations and Fermi
         energy at each dopant concentration.
 
-        Note: 
-        
+        Note: the sign of the effective dopant concentration determines whether
+        the dopant is an acceptor or donor. A negative value corresponds to an
+        acceptor, while a positive value corresponds to a donor.
+
+        Args:
+            chempots (dict): The chemical potentials to solve at.
+            effective_dopant_concentration_range (float or list): The range of
+              effective dopant concentrations to scan over.
+            temperature (float): The temperature to solve at.
+            annealing_temperature (float): The temperature to anneal at.
+            quenching_temperature (float): The temperature to quench to.
+            processes (int): The number of processes to use for parallelization.
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations
         """
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
