@@ -886,7 +886,7 @@ class FermiSolverPyScFermi(FermiSolver):
         annealing_temperature,
         fix_charge_states=False,
         effective_dopant_concentration=None,
-        exceptions=None,
+        free_defects=None,
     ) -> "DefectSystem":
         """
         Generate a py-sc-fermi ``DefectSystem`` object that has defect
@@ -911,7 +911,7 @@ class FermiSolverPyScFermi(FermiSolver):
                 defects are fixed but with charge states allowed to vary – the latter
                 of which is the typical assumption within the 'frozen defect' model.
                 (Default is False).
-            exceptions (list):
+            free_defects (list):
                 If ``annealing_temperature`` is set, this lists the defects to be
                 excluded from the high-temperature concentration fixing. This may be
                 important in systems with highly mobile defects that are not
@@ -923,8 +923,8 @@ class FermiSolverPyScFermi(FermiSolver):
              concentrations fixed to high temperature (``annealing_temperature``) values.
         """
         # Calculate concentrations at initial temperature
-        if exceptions is None:
-            exceptions = []
+        if free_defects is None:
+            free_defects = []
         defect_system = self.generate_defect_system(
             chemical_potentials=chemical_potentials,
             temperature=annealing_temperature,
@@ -932,21 +932,21 @@ class FermiSolverPyScFermi(FermiSolver):
         )
         initial_conc_dict = defect_system.concentration_dict()
 
-        # Exclude the exceptions, carrier concentrations and
+        # Exclude the free_defects, carrier concentrations and
         # Fermi energy from fixing
-        all_exceptions = ["Fermi Energy", "n0", "p0"]
-        all_exceptions.extend(exceptions)
+        all_free_defects = ["Fermi Energy", "n0", "p0"]
+        all_free_defects.extend(free_defects)
 
         # Get the fixed concentrations of non-exceptional defects
         decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
         additional_data = {}
         for k, v in decomposed_conc_dict.items():
-            if k not in all_exceptions:
+            if k not in all_free_defects:
                 for k1, v1 in v.items():
                     additional_data[k + "_" + str(k1)] = v1
         initial_conc_dict.update(additional_data)
 
-        fixed_concs = {k: v for k, v in initial_conc_dict.items() if k not in all_exceptions}
+        fixed_concs = {k: v for k, v in initial_conc_dict.items() if k not in all_free_defects}
 
         # Apply the fixed concentrations
         for defect_species in defect_system.defect_species:
