@@ -30,6 +30,7 @@ from pydefect.cli.vasp.make_perfect_band_edge_state import (
 )
 from pydefect.defaults import defaults
 from pydefect.util.structure_tools import Coordination, Distances
+from pymatgen.core import Element, Species
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Outcar, Vasprun
 from shakenbreak.plotting import _install_custom_font
@@ -56,6 +57,27 @@ def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordinati
         distance_dict[element] = sorted(distances)
 
     return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
+
+
+def _distances(self, remove_self=True, specie=None) -> list[float]:
+    result = []
+    lattice = self.structure.lattice
+    if isinstance(specie, Element):
+        el = specie.symbol
+    elif specie is None:
+        el = None
+    elif isinstance(specie, Species):
+        el = specie.element
+    for site in self.structure:
+        site_specie = site.specie.element if isinstance(site.specie, Species) else site.specie
+        if el and Element(el) != site_specie:
+            result.append(float("inf"))
+            continue
+        distance, _ = lattice.get_distance_and_image(site.frac_coords, self.coord)
+        if remove_self and distance < 1e-5:
+            continue
+        result.append(distance)
+    return result
 
 
 def make_band_edge_orbital_infos_vr(
@@ -156,8 +178,10 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
     cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
     # Money patch to set include_on_site = True
-    _orig_method = Distances.coordination
+    _orig_method_coor = Distances.coordination
     Distances.coordination = _coordination
+    _orig_method_dist = Distances.distances
+    Distances.distances = _distances
 
     dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
         bulk_vr.final_structure,
@@ -169,7 +193,8 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
     )
 
     # Undo monkey patch in case used in other parts of the code:
-    Distances.coordination = _orig_method
+    Distances.coordination = _orig_method_coor
+    Distances.distances = _orig_method_dist
 
     band_orb = make_band_edge_orbital_infos_vr(
         defect_vr,
@@ -203,7 +228,6 @@ def get_band_edge_info_procar(bulk_procar, bulk_vasprun, bulk_outcar, defect_vas
     """
     try:
         pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vasprun, bulk_outcar)
-        # TODO: Check if this works
     except AssertionError as exc:
         v_vise = version("vise")
         if v_vise <= "0.8.1":
@@ -214,10 +238,11 @@ def get_band_edge_info_procar(bulk_procar, bulk_vasprun, bulk_outcar, defect_vas
             ) from exc
 
         raise exc
-
     # Money patch to set include_on_site = True
-    _orig_method = Distances.coordination
+    _orig_method_coor = Distances.coordination
     Distances.coordination = _coordination
+    _orig_method_dist = Distances.distances
+    Distances.distances = _distances
 
     dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
         bulk_vasprun.final_structure,
@@ -227,6 +252,9 @@ def get_band_edge_info_procar(bulk_procar, bulk_vasprun, bulk_outcar, defect_vas
         dist_tol=1.0,
         neighbor_cutoff_factor=1.3,  # Neighbors are sites within min_dist * neighbor_cutoff_factor
     )
+    # Undo monkey patch in case used in other parts of the code:
+    Distances.coordination = _orig_method_coor
+    Distances.distances = _orig_method_dist
 
     band_orb = make_bes.make_band_edge_orbital_infos(
         defect_procar,
@@ -273,6 +301,20 @@ def get_phs_and_eigenvalue(
     band_orb = DefectEntry.calculation_metadata["phs_data"]["band_orb"]
     vbm_info = DefectEntry.calculation_metadata["phs_data"]["vbm_info"]
     cbm_info = DefectEntry.calculation_metadata["phs_data"]["cbm_info"]
+
+    # def orbital_diff(orbital_1: dict, orbital_2: dict) -> float:
+    #     element_set = set(list(orbital_1.keys()) + list(orbital_2.keys()))
+    #     orb_1, orb_2 = defaultdict(list, orbital_1), defaultdict(list, orbital_2)
+    #     result = 0
+    #     for e in element_set:
+    #         result += sum([abs(i - j) for i, j
+    #                        in zip_longest(orb_1[e], orb_2[e], fillvalue=0)])
+    #     result = round(result, 3)
+    #     return result
+    #
+    # import pydefect.analyzer.make_band_edge_states
+    #
+    # pydefect.analyzer.make_band_edge_states.orbital_diff = orbital_diff
 
     perfect = PerfectBandEdgeState(vbm_info, cbm_info)
     bes = make_band_edge_states(band_orb, perfect)
