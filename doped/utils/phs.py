@@ -19,12 +19,15 @@ from vise import user_settings
 
 user_settings.logger.setLevel(logging.CRITICAL)
 
+import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
 from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
 from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
 from pydefect.analyzer.make_band_edge_states import make_band_edge_states
 from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
-from pydefect.cli.vasp.make_band_edge_orbital_infos import calc_orbital_character, calc_participation_ratio
-from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
+from pydefect.cli.vasp.make_perfect_band_edge_state import (
+    get_edge_info,
+    make_perfect_band_edge_state_from_vasp,
+)
 from pydefect.defaults import defaults
 from pydefect.util.structure_tools import Coordination, Distances
 from pymatgen.electronic_structure.core import Spin
@@ -35,7 +38,27 @@ from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 from doped.utils.plotting import _get_backend
 
 
-def make_band_edge_orbital_infos(
+def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":
+    cutoff_factor = cutoff_factor or defaults.cutoff_distance_factor
+    cutoff = self.shortest_distance * cutoff_factor
+    elements = [element.specie.name for element in self.structure]
+    e_d = zip(elements, self.distances(remove_self=False))
+
+    unsorted_distances = defaultdict(list)
+    neighboring_atom_indices = []
+    for i, (element, distance) in enumerate(e_d):
+        if distance < cutoff and include_on_site:
+            unsorted_distances[element].append(round(distance, 2))
+            neighboring_atom_indices.append(i)
+
+    distance_dict = {}
+    for element, distances in unsorted_distances.items():
+        distance_dict[element] = sorted(distances)
+
+    return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
+
+
+def make_band_edge_orbital_infos_vr(
     defect_vr: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
 ):
     """
@@ -77,9 +100,9 @@ def make_band_edge_orbital_infos(
             orb_infos[-1].append([])
             for b_idx in range(lower_idx, upper_idx + 1):
                 e, occ = eigvals[k_idx, b_idx, :]
-                orbitals = calc_orbital_character(orbs, s, spin, k_idx, b_idx)
+                orbitals = make_bes.calc_orbital_character(orbs, s, spin, k_idx, b_idx)
                 if neighbors:
-                    p_ratio = calc_participation_ratio(orbs, spin, k_idx, b_idx, neighbors)
+                    p_ratio = make_bes.calc_participation_ratio(orbs, spin, k_idx, b_idx, neighbors)
                 else:
                     p_ratio = None
                 orb_infos[-1][-1].append(OrbitalInfo(e, orbitals, occ, p_ratio))
@@ -134,27 +157,7 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
 
     # Money patch to set include_on_site = True
     _orig_method = Distances.coordination
-
-    def coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":
-        cutoff_factor = cutoff_factor or defaults.cutoff_distance_factor
-        cutoff = self.shortest_distance * cutoff_factor
-        elements = [element.specie.name for element in self.structure]
-        e_d = zip(elements, self.distances(remove_self=False))
-
-        unsorted_distances = defaultdict(list)
-        neighboring_atom_indices = []
-        for i, (element, distance) in enumerate(e_d):
-            if distance < cutoff and include_on_site:
-                unsorted_distances[element].append(round(distance, 2))
-                neighboring_atom_indices.append(i)
-
-        distance_dict = {}
-        for element, distances in unsorted_distances.items():
-            distance_dict[element] = sorted(distances)
-
-        return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
-
-    Distances.coordination = coordination
+    Distances.coordination = _coordination
 
     dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
         bulk_vr.final_structure,
@@ -168,7 +171,7 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
     # Undo monkey patch in case used in other parts of the code:
     Distances.coordination = _orig_method
 
-    band_orb = make_band_edge_orbital_infos(
+    band_orb = make_band_edge_orbital_infos_vr(
         defect_vr,
         vbm_info.orbital_info.energy,
         cbm_info.orbital_info.energy,
@@ -177,6 +180,64 @@ def get_band_edge_info(defect_vr: Vasprun, bulk_vr: Vasprun, bulk_outcar: Outcar
     )
 
     return band_orb, vbm_info, cbm_info
+
+
+def get_band_edge_info_procar(bulk_procar, bulk_vasprun, bulk_outcar, defect_vasprun, defect_procar):
+    """
+    Load metadata required for performing PHS identification using ``PROCAR``
+    See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+
+    Args:
+        bulk_procar (Procar):
+            Procar object of the bulk supercell calculation
+        bulk_vasprun (Vasprun):
+            Vasprun object of the bulk supercell calculation
+        bulk_outcar (Outcar):
+            Outcar object of the bulk supercell calculation
+        defect_vasprun (Vasprun):
+            Vasprun object of the defect supercell calculation
+        defect_procar (Procar):
+            Procar object of the defect supercell calculation
+    Returns:
+        ``pydefect`` ``EdgeInfo`` object
+    """
+    try:
+        pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vasprun, bulk_outcar)
+        # TODO: Check if this works
+    except AssertionError as exc:
+        v_vise = version("vise")
+        if v_vise <= "0.8.1":
+            raise RuntimeError(
+                f"You have version {v_vise} of the package `vise`, which does not allow the parsing of "
+                f"non-collinear (SOC) calculations. You can install the updated version of `vise` from "
+                f"the GitHub repo for this functionality."
+            ) from exc
+
+        raise exc
+
+    # Money patch to set include_on_site = True
+    _orig_method = Distances.coordination
+    Distances.coordination = _coordination
+
+    dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
+        bulk_vasprun.final_structure,
+        defect_vasprun.final_structure,
+        defect_vasprun.final_structure,
+        symprec=0.1,
+        dist_tol=1.0,
+        neighbor_cutoff_factor=1.3,  # Neighbors are sites within min_dist * neighbor_cutoff_factor
+    )
+
+    band_orb = make_bes.make_band_edge_orbital_infos(
+        defect_procar,
+        defect_vasprun,
+        pbes.vbm_info.orbital_info.energy,
+        pbes.cbm_info.orbital_info.energy,
+        eigval_shift=-pbes.vbm_info.orbital_info.energy,
+        str_info=dsinfo.defect_structure_info,
+    )
+
+    return band_orb, pbes.vbm_info, pbes.cbm_info
 
 
 def get_phs_and_eigenvalue(
