@@ -22,6 +22,7 @@ user_settings.logger.setLevel(logging.CRITICAL)
 
 import pydefect.analyzer.make_band_edge_states
 import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
+from easyunfold.procar import Procar as ProcarEasyunfold
 from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
 from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
 from pydefect.analyzer.make_band_edge_states import make_band_edge_states
@@ -34,7 +35,7 @@ from pydefect.defaults import defaults
 from pydefect.util.structure_tools import Coordination, Distances
 from pymatgen.core import Element, Species
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.io.vasp.outputs import Outcar, Procar, Vasprun
+from pymatgen.io.vasp.outputs import Outcar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
@@ -145,8 +146,8 @@ def get_band_edge_info(
     bulk_vr: Vasprun,
     bulk_outcar: Outcar,
     defect_vr: Vasprun,
-    bulk_procar: Optional[Procar] = None,
-    defect_procar: Optional[Procar] = None,
+    bulk_procar: Optional[ProcarEasyunfold] = None,
+    defect_procar: Optional[ProcarEasyunfold] = None,
 ):
     """
     Load metadata required for performing PHS identification.
