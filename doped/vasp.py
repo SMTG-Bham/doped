@@ -228,8 +228,6 @@ class DopedDictSet(DictSet):
         """
         incar_obj = super().incar
 
-        # TODO: Need to test this! Can remove other KPAR settings in this module so?
-
         if "KPAR" not in incar_obj and self.auto_kpar:  # determine appropriate KPAR setting
             if len(self.kpoints.kpts[0]):  # k-point mesh
                 num_kpts_2_or_4_or_more = sum(i == 2 or i >= 4 for i in self.kpoints.kpts[0])
@@ -874,15 +872,11 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-
         # determine if vasp_std required or only vasp_gam:
         std_defect_set = DefectDictSet(
             self.defect_supercell,
             charge_state=self.defect_entry.charge_state,
-            user_incar_settings=user_incar_settings,
+            user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
@@ -944,7 +938,7 @@ class DefectRelaxSet(MSONable):
                             nkred_dict[nkred_key] = k
                             break
 
-                incar_settings = copy.deepcopy(std_defect_set.user_incar_settings)  # so KPAR also included
+                incar_settings = copy.deepcopy(self.user_incar_settings)
                 if nkred_dict["NKRED"] is not None:
                     incar_settings["NKRED"] = nkred_dict["NKRED"]
                 else:
@@ -1003,23 +997,16 @@ class DefectRelaxSet(MSONable):
         user_incar_settings.update(singleshot_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # likely quicker with this, checked in DefectDictSet
-            # if it's Γ-only vasp_ncl and reset to 1 accordingly
-
-        # ignore warning with "KPAR", in case it's Γ-only
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
-            return DefectDictSet(
-                self.defect_supercell,
-                charge_state=self.defect_entry.charge_state,
-                user_incar_settings=user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=self.poscar_comment,
-                **self.dict_set_kwargs,
-            )
+        return DefectDictSet(
+            self.defect_supercell,
+            charge_state=self.defect_entry.charge_state,
+            user_incar_settings=user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=self.poscar_comment,
+            **self.dict_set_kwargs,
+        )
 
     def _check_bulk_supercell_and_warn(self):
         if self.bulk_supercell is None:
@@ -1128,9 +1115,6 @@ class DefectRelaxSet(MSONable):
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
         user_incar_settings.update(singleshot_incar_settings)
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-
         return self._check_vstd_kpoints(
             DefectDictSet(
                 bulk_supercell,
@@ -1196,8 +1180,6 @@ class DefectRelaxSet(MSONable):
 
         if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
             user_incar_settings = copy.deepcopy(self.user_incar_settings)
-            if "KPAR" not in user_incar_settings:
-                user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
             user_incar_settings.update(singleshot_incar_settings)
             user_incar_settings.update(  # add NKRED settings
                 {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
@@ -1250,23 +1232,16 @@ class DefectRelaxSet(MSONable):
         user_incar_settings.update(singleshot_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # likely quicker with this, checked in DefectDictSet
-            # if it's Γ-only vasp_ncl and reset to 1 accordingly
-
-        # ignore warning with "KPAR", in case it's Γ-only
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
-            return DefectDictSet(
-                bulk_supercell,
-                charge_state=0,
-                user_incar_settings=user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{bulk_supercell.formula} - Bulk",
-                **self.dict_set_kwargs,
-            )
+        return DefectDictSet(
+            bulk_supercell,
+            charge_state=0,
+            user_incar_settings=user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
+            **self.dict_set_kwargs,
+        )
 
     def _get_output_path(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
         if defect_dir is None:
