@@ -528,7 +528,8 @@ class DefectsParser:
                 using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
                 from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
                 from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed.
+                time (30%-70% longer), so set to False if not needed. Loading from ``PROCAR``
+                not supported for non-collinear calculations.
                 Default = True.
 
         Attributes:
@@ -644,7 +645,11 @@ class DefectsParser:
         bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", self.bulk_path)
         if "PROCAR" in bulk_procar_path:
             self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
-            self.bulk_procar = Procar(bulk_procar_path)
+            if self.bulk_vr.parameters.get("LNONCOLLINEAR") is True:
+                self.bulk_procar = None
+                self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+            else:
+                self.bulk_procar = Procar(bulk_procar_path)
         else:
             self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
             self.bulk_procar = None
@@ -1402,7 +1407,8 @@ class DefectParser:
                 using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
                 from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
                 from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed.
+                time (30%-70% longer), so set to False if not needed. Loading from ``PROCAR``
+                not supported for non-collinear calculations.
                 Default = True.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
@@ -1436,8 +1442,12 @@ class DefectParser:
                     bulk_procar_path, multiple = _get_output_files_and_check_if_multiple(
                         "PROCAR", bulk_path
                     )
-                    bulk_procar = Procar(bulk_procar_path)
                     bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+                    if bulk_vr.parameters.get("LNONCOLLINEAR") is True:
+                        bulk_procar = None
+                        bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
+                    else:
+                        bulk_procar = Procar(bulk_procar_path)
                 except (FileNotFoundError, IsADirectoryError):
                     bulk_procar = None
                     bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
@@ -1468,11 +1478,15 @@ class DefectParser:
             )
         if load_phs_data:
             try:
-                defect_procar_path, multiple = _get_output_files_and_check_if_multiple(
-                    "PROCAR", defect_path
-                )
-                defect_procar = Procar(defect_procar_path)
-                defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+                if bulk_procar is not None:
+                    defect_procar_path, multiple = _get_output_files_and_check_if_multiple(
+                        "PROCAR", defect_path
+                    )
+                    defect_procar = Procar(defect_procar_path)
+                    defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+                else:
+                    defect_procar = None
+                    defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
             except (FileNotFoundError, IsADirectoryError):
                 defect_procar = None
                 defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
@@ -1730,22 +1744,25 @@ class DefectParser:
                 if bulk_outcar_phs is None:
                     defect_entry.calculation_metadata["phs_data"] = None
 
-                elif defect_procar and bulk_procar:
-                    band_orb, vbm_info, cbm_info = get_band_edge_info(
-                        bulk_vr,
-                        bulk_outcar_phs,
-                        defect_vr,
-                        bulk_procar,
-                        defect_procar,
-                    )
                 else:
-                    band_orb, vbm_info, cbm_info = get_band_edge_info(bulk_vr, bulk_outcar_phs, defect_vr)
+                    if defect_procar and bulk_procar:
+                        band_orb, vbm_info, cbm_info = get_band_edge_info(
+                            bulk_vr,
+                            bulk_outcar_phs,
+                            defect_vr,
+                            bulk_procar,
+                            defect_procar,
+                        )
+                    else:
+                        band_orb, vbm_info, cbm_info = get_band_edge_info(
+                            bulk_vr, bulk_outcar_phs, defect_vr
+                        )
 
-                defect_entry.calculation_metadata["phs_data"] = {
-                    "band_orb": band_orb,
-                    "vbm_info": vbm_info,
-                    "cbm_info": cbm_info,
-                }
+                    defect_entry.calculation_metadata["phs_data"] = {
+                        "band_orb": band_orb,
+                        "vbm_info": vbm_info,
+                        "cbm_info": cbm_info,
+                    }
 
             except Exception as exc:
                 warnings.warn(f"PHS data parsing failed with error: {exc!r}")
