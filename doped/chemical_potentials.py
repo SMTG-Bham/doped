@@ -19,20 +19,12 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import Vasprun
-from pymatgen.io.vasp.sets import DictSet
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple
-from doped.vasp import (
-    MODULE_DIR,
-    _test_potcar_functional_choice,
-    deep_dict_update,
-    default_HSE_set,
-    default_potcar_dict,
-    default_relax_set,
-)
+from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
-pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
+pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
 
 # globally ignore:
 _ignore_pmg_warnings()
@@ -287,10 +279,11 @@ class CompetingPhases:
     # analyze_GGA_chempots code for example.
     # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
     # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
-    # TODO: DictSet initialisation and writing here can be a little slow. Could be made more
-    #  efficient by just editing the kpoints in each loop (not reinitialising) for the convergence test
-    #  generation, and using the POTCAR hashing function from `doped.vasp`. Also should dynamically set
-    #  KPAR based on the (default) number of KPOINTS for each material
+
+    # TODO: Is the Materials Project entry structure always the primitive structure? Should check,
+    #  and if not then use something like this:
+    #  sga = SpacegroupAnalyzer(e.structure)
+    #  struct = sym.get_primitive_standard_structure() -> output this structure
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
@@ -479,7 +472,6 @@ class CompetingPhases:
             )
         )
 
-    # TODO: Similar refactor to work mainly off config dict object here as well (as vasp_input)?
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
     def convergence_setup(
@@ -523,17 +515,8 @@ class CompetingPhases:
         min_nm, max_nm, step_nm = kpoints_nonmetals
         min_m, max_m, step_m = kpoints_metals
 
-        potcar_dict = copy.deepcopy(default_potcar_dict)
-        if user_potcar_settings:
-            potcar_dict["POTCAR"].update(user_potcar_settings)
-        if user_potcar_functional:
-            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
-        # test potcar choice:
-        if not kwargs.get("potcar_spec", False):
-            potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(
-                potcar_dict["POTCAR_FUNCTIONAL"]
-            )
-        pbesol_convrg_set.update(potcar_dict)
+        base_user_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
+        base_user_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
         # separate metals and non-metals
         self.nonmetals = []
@@ -546,23 +529,22 @@ class CompetingPhases:
                 self.nonmetals.append(e)
             else:
                 self.metals.append(e)
+
         for e in self.nonmetals:
-            uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
-                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
-                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
+            uis = copy.deepcopy(base_user_incar_settings)  # don't overwrite base_user_incar_settings
+            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
+
+            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                structure=e.structure,
+                user_incar_settings=uis,
+                user_kpoints_settings={"reciprocal_density": min_nm},
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
+                force_gamma=True,
+            )
 
             for kpoint in range(min_nm, max_nm, step_nm):
-                dict_set = DictSet(
-                    e.structure,
-                    pbesol_convrg_set,
-                    user_kpoints_settings={"reciprocal_density": kpoint},
-                    user_incar_settings=uis,
-                    force_gamma=True,
-                )
-
+                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
                 kname = (
                     "k"
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
@@ -577,24 +559,21 @@ class CompetingPhases:
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
-            uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
-            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
+            uis = copy.deepcopy(base_user_incar_settings)  # don't overwrite base_user_incar_settings
+            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
+            self._set_default_metal_smearing(uis, user_incar_settings or {})
 
-            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
-                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
-                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
+            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                structure=e.structure,
+                user_kpoints_settings={"reciprocal_density": min_m},
+                user_incar_settings=uis,
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
+                force_gamma=True,
+            )
 
             for kpoint in range(min_m, max_m, step_m):
-                dict_set = DictSet(
-                    e.structure,
-                    pbesol_convrg_set,
-                    user_kpoints_settings={"reciprocal_density": kpoint},
-                    user_incar_settings=uis,
-                    force_gamma=True,
-                )
-
+                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
                 kname = (
                     "k"
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
@@ -645,27 +624,15 @@ class CompetingPhases:
                 ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for the default settings.
             **kwargs: Additional kwargs to pass to ``DictSet.write_input()``
         """
-        # TODO: Update this to use:
-        #  sym = SpacegroupAnalyzer(e.structure)
-        #  struct = sym.get_primitive_standard_structure() -> output this structure
-        relax_set = copy.deepcopy(default_relax_set)
+        base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
+
         lhfcalc = (
             True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
-        )  # True (hybrid) by default
+        )  # True (hybrid) by default for vasp_std relaxations
         if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
-            relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
+            base_incar_settings.update(default_HSE_set["INCAR"])
 
-        potcar_dict = copy.deepcopy(default_potcar_dict)
-        if user_potcar_settings:
-            potcar_dict["POTCAR"].update(user_potcar_settings)
-        if user_potcar_functional:
-            potcar_dict["POTCAR_FUNCTIONAL"] = user_potcar_functional
-        # test potcar choice:
-        if not kwargs.get("potcar_spec", False):
-            potcar_dict["POTCAR_FUNCTIONAL"] = _test_potcar_functional_choice(
-                potcar_dict["POTCAR_FUNCTIONAL"]
-            )
-        relax_set.update(potcar_dict)
+        base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
         # separate metals, non-metals and molecules
         self.nonmetals = []
@@ -680,18 +647,15 @@ class CompetingPhases:
                 self.metals.append(e)
 
         for e in self.nonmetals:
-            uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
-                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
-                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
+            uis = copy.deepcopy(base_incar_settings or {})
+            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
-            dict_set = DictSet(
-                e.structure,
-                relax_set,
-                user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
+            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                structure=e.structure,
                 user_incar_settings=uis,
+                user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
                 force_gamma=True,
             )
 
@@ -699,51 +663,64 @@ class CompetingPhases:
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
-            uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-            uis["ISMEAR"] = uis.get("ISMEAR", 2)  # set ISMEAR to 2 if not already set
-            uis["SIGMA"] = uis.get("SIGMA", 0.2)  # set SIGMA to 0.2 if not already set
+            uis = copy.deepcopy(base_incar_settings or {})
+            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
+            self._set_default_metal_smearing(uis, user_incar_settings or {})
 
-            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                uis["ISPIN"] = uis.get("ISPIN", 2)  # set ISPIN to 2 if not already set
-                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
-                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
-
-            dict_set = DictSet(
-                e.structure,
-                relax_set,
-                user_kpoints_settings={"reciprocal_density": kpoints_metals},
+            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                structure=e.structure,
                 user_incar_settings=uis,
+                user_kpoints_settings={"reciprocal_density": kpoints_metals},
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
                 force_gamma=True,
             )
+
             fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
-            uis = copy.deepcopy(user_incar_settings) if user_incar_settings is not None else {}
-
+            uis = copy.deepcopy(base_incar_settings or {})
             uis["ISIF"] = 2  # can't change the volume
             uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
+            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
-            if e.data["total_magnetization"] > 0.1:  # account for magnetic moment
-                if "ISPIN" not in uis:
-                    uis["ISPIN"] = 2
-                if "NUPDOWN" not in uis and int(e.data["total_magnetization"]) > 0:
-                    uis["NUPDOWN"] = int(e.data["total_magnetization"])
-
-            dict_set = DictSet(
-                e.structure,
-                relax_set,
+            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                structure=e.structure,
+                user_incar_settings=uis,
                 user_kpoints_settings=Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
                         "generation_style": "Gamma",
                     }
                 ),
-                user_incar_settings=uis,
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
                 force_gamma=True,
             )
             fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
+
+    def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
+        """
+        If the entry has a non-zero total magnetisation (greater than the
+        default tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin
+        polarisation) and ``NUPDOWN`` equal to the integer-rounded total
+        magnetisation.
+        """
+        if entry.data["total_magnetization"] > 0.1:  # account for magnetic moment
+            incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
+            if "NUPDOWN" not in incar_settings and int(entry.data["total_magnetization"]) > 0:
+                incar_settings["NUPDOWN"] = int(entry.data["total_magnetization"])
+
+    def _set_default_metal_smearing(self, incar_settings, user_incar_settings):
+        """
+        Set the smearing parameters to the ``doped`` defaults for metallic
+        phases (i.e. ``ISMEAR`` = 2 (Methfessel-Paxton) and ``SIGMA`` = 0.2
+        eV).
+        """
+        incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
+        incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
 
 
 # TODO: Add full_sub_approach option
