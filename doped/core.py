@@ -510,9 +510,9 @@ class DefectEntry(thermo.DefectEntry):
 
     def get_perturbed_host_state(self, filename: Optional[str] = None, plot: bool = True, **kwargs):
         """
-        Determines if the defect is a perturbed host state (PHS) and also
-        returns a plot of the single-particle eigenvalues if ``plot=True``
-        (default).
+        Automatically determines the band edge states of the defect to determine
+        if the defect is a PHS. Also returns single-particle levels and their
+        occupation. cite: https://doi.org/10.1103/PhysRevMaterials.5.123803.
 
         Args:
             filename (str):
