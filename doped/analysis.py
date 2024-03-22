@@ -8,7 +8,6 @@ publication-quality outputs.
 """
 
 import contextlib
-import inspect
 import os
 import warnings
 from multiprocessing import Pool, Queue, cpu_count
@@ -26,7 +25,7 @@ from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
-from doped import _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
@@ -1233,19 +1232,15 @@ class DefectsParser:
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectsParser object.
+        Returns a string representation of the ``DefectsParser`` object.
         """
         formula = next(
             iter(self.defect_dict.values())
         ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectsParser for bulk composition {formula}, with {len(self.defect_dict)} parsed "
-            f"defect entries in self.defect_dict. Available attributes:\n{attrs | properties}\n\n"
+            f"defect entries in self.defect_dict. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 
@@ -2156,17 +2151,13 @@ class DefectParser:
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectParser object.
+        Returns a string representation of the ``DefectParser`` object.
         """
         formula = self.bulk_vr.final_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectParser for bulk composition {formula}. "
-            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )

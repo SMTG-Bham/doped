@@ -4,7 +4,6 @@ Core functions and classes for defects in doped.
 
 import collections
 import contextlib
-import inspect
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
@@ -22,6 +21,8 @@ from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEn
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from scipy.constants import value as constants_value
 from scipy.stats import sem
+
+from doped import _doped_obj_properties_methods
 
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
@@ -809,14 +810,10 @@ class DefectEntry(thermo.DefectEntry):
             formula = self.defect.structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
-            f"{self.defect.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"{self.defect.name}. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 

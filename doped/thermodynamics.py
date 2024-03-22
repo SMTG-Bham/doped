@@ -5,7 +5,6 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 """
 
 import contextlib
-import inspect
 import os
 import warnings
 from copy import deepcopy
@@ -26,6 +25,7 @@ from pymatgen.io.vasp.outputs import Vasprun
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
+from doped import _doped_obj_properties_methods
 from doped.chemical_potentials import get_X_poor_limit, get_X_rich_limit
 from doped.core import DefectEntry, _no_chempots_warning, _orientational_degeneracy_warning
 from doped.generation import _sort_defect_entries
@@ -2829,21 +2829,16 @@ class DefectThermodynamics(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectThermodynamics object.
+        Returns a string representation of the ``DefectThermodynamics`` object.
         """
         formula = _get_bulk_supercell(self.defect_entries[0]).composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectThermodynamics for bulk composition {formula} with {len(self.defect_entries)} "
             f"defect entries (in self.defect_entries). Available attributes:\n"
-            f"{attrs | properties}\n\nAvailable "
-            f"methods:\n{methods}"
+            f"{properties}\n\nAvailable methods:\n{methods}"
         )
 
 
