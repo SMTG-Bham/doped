@@ -15,15 +15,17 @@ from multiprocessing import Pool, Queue, cpu_count
 from typing import Optional, Union
 
 import numpy as np
+from easyunfold.procar import Procar as ProcarEasyunfold
 from filelock import FileLock
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
-from pymatgen.io.vasp.outputs import Procar, Vasprun
+from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
@@ -528,8 +530,7 @@ class DefectsParser:
                 using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
                 from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
                 from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed. Loading from ``PROCAR``
-                not supported for non-collinear calculations.
+                time (30%-70% longer), so set to False if not needed.
                 Default = True.
 
         Attributes:
@@ -644,12 +645,15 @@ class DefectsParser:
         # Checking if PROCAR available to avoid slow loading
         bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", self.bulk_path)
         if "PROCAR" in bulk_procar_path:
+            self.bulk_procar = ProcarEasyunfold(bulk_procar_path, normalise=False)
             self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
             if self.bulk_vr.parameters.get("LNONCOLLINEAR") is True:
-                self.bulk_procar = None
-                self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+                self.bulk_procar.data = {Spin.up: self.bulk_procar.proj_data[0]}
             else:
-                self.bulk_procar = Procar(bulk_procar_path)
+                self.bulk_procar.data = {
+                    Spin.up: self.bulk_procar.proj_data[0],
+                    Spin.down: self.bulk_procar.proj_data[1],
+                }
         else:
             self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
             self.bulk_procar = None
@@ -1338,7 +1342,7 @@ class DefectParser:
         defect_path: str,
         bulk_path: Optional[str] = None,
         bulk_vr: Optional[Vasprun] = None,
-        bulk_procar: Optional[Procar] = None,
+        bulk_procar: Optional[ProcarEasyunfold] = None,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         charge_state: Optional[int] = None,
         initial_defect_structure_path: Optional[str] = None,
@@ -1407,8 +1411,7 @@ class DefectParser:
                 using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
                 from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
                 from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed. Loading from ``PROCAR``
-                not supported for non-collinear calculations.
+                time (30%-70% longer), so set to False if not needed.
                 Default = True.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
@@ -1442,12 +1445,15 @@ class DefectParser:
                     bulk_procar_path, multiple = _get_output_files_and_check_if_multiple(
                         "PROCAR", bulk_path
                     )
+                    bulk_procar = ProcarEasyunfold(bulk_procar_path, normalise=False)
                     bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
                     if bulk_vr.parameters.get("LNONCOLLINEAR") is True:
-                        bulk_procar = None
-                        bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=True)
+                        bulk_procar.data = {Spin.up: bulk_procar.proj_data[0]}
                     else:
-                        bulk_procar = Procar(bulk_procar_path)
+                        bulk_procar.data = {
+                            Spin.up: bulk_procar.proj_data[0],
+                            Spin.down: bulk_procar.proj_data[1],
+                        }
                 except (FileNotFoundError, IsADirectoryError):
                     bulk_procar = None
                     bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
@@ -1478,15 +1484,18 @@ class DefectParser:
             )
         if load_phs_data:
             try:
-                if bulk_procar is not None:
-                    defect_procar_path, multiple = _get_output_files_and_check_if_multiple(
-                        "PROCAR", defect_path
-                    )
-                    defect_procar = Procar(defect_procar_path)
-                    defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+                defect_procar_path, multiple = _get_output_files_and_check_if_multiple(
+                    "PROCAR", defect_path
+                )
+                defect_procar = ProcarEasyunfold(defect_procar_path, normalise=False)
+                defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+                if defect_vr.parameters.get("LNONCOLLINEAR") is True:
+                    defect_procar.data = {Spin.up: defect_procar.proj_data[0]}
                 else:
-                    defect_procar = None
-                    defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
+                    defect_procar.data = {
+                        Spin.up: defect_procar.proj_data[0],
+                        Spin.down: defect_procar.proj_data[1],
+                    }
             except (FileNotFoundError, IsADirectoryError):
                 defect_procar = None
                 defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)

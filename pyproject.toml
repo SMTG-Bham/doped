@@ -30,6 +30,7 @@ dependencies = [
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
     "vise>=0.8.1",  # for PHS analysis
+    "easyunfold",  # for PROCAR parsing
 ]
 
 [project.urls]
