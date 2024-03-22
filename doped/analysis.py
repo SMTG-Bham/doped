@@ -1431,19 +1431,25 @@ class DefectParser:
                     bulk_vr_path,
                     dir_type="bulk",
                 )
-            try:
-                bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", bulk_path)
-                bulk_procar = Procar(bulk_procar_path)
-                bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
-            except (FileNotFoundError, IsADirectoryError):
-                bulk_procar = None
-                bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
-                if bulk_vr.projected_eigenvalues is None:
-                    load_phs_data = False  # can't load PHS data without projected eigenvalues
-                    warnings.warn(
-                        "No bulk 'PROCAR' file found or 'vasprun.xml' with projected orbitals. "
-                        "Skipping loading of data required of PHS analysis."
+            if load_phs_data:
+                try:
+                    bulk_procar_path, multiple = _get_output_files_and_check_if_multiple(
+                        "PROCAR", bulk_path
                     )
+                    bulk_procar = Procar(bulk_procar_path)
+                    bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+                except (FileNotFoundError, IsADirectoryError):
+                    bulk_procar = None
+                    bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
+                    if bulk_vr.projected_eigenvalues is None:
+                        load_phs_data = False  # can't load PHS data without projected eigenvalues
+                        warnings.warn(
+                            "No bulk 'PROCAR' file found or 'vasprun.xml' with projected orbitals. "
+                            "Skipping loading of data required of PHS analysis."
+                        )
+            else:
+                bulk_vr = get_vasprun(bulk_vr_path)
+
         elif bulk_vr is None:
             raise ValueError("Either `bulk_path` or `bulk_vr` must be provided!")
         bulk_supercell = bulk_vr.final_structure.copy()
@@ -1740,6 +1746,7 @@ class DefectParser:
             except Exception as exc:
                 warnings.warn(f"PHS data parsing failed with error: {exc!r}")
                 defect_entry.calculation_metadata["phs_data"] = None
+                print(exc)
 
         else:
             defect_entry.calculation_metadata["phs_data"] = None
