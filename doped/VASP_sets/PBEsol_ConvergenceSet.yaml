@@ -1,7 +1,6 @@
 INCAR:
   ALGO: "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered"
-  EDIFF: 1.0e-06
-  EDIFFG: -0.01
+  EDIFF_PER_ATOM: 2.0e-07  # capped at a max EDIFF of 1e-4 for large structures (N(atoms) > 500)
   ENCUT: 350
   GGA: PS
   ISMEAR: 0
@@ -12,5 +11,3 @@ INCAR:
   NSW: 0
   PREC: Accurate
   SIGMA: 0.05
-KPOINTS:
-  reciprocal_density: 45
