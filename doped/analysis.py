@@ -50,7 +50,7 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
-from doped.utils.phs import get_band_edge_info, get_band_edge_info_procar
+from doped.utils.phs import get_band_edge_info
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
@@ -1731,11 +1731,15 @@ class DefectParser:
                     defect_entry.calculation_metadata["phs_data"] = None
 
                 elif defect_procar and bulk_procar:
-                    band_orb, vbm_info, cbm_info = get_band_edge_info_procar(
-                        bulk_procar, bulk_vr, bulk_outcar_phs, defect_vr, defect_procar
+                    band_orb, vbm_info, cbm_info = get_band_edge_info(
+                        bulk_vr,
+                        bulk_outcar_phs,
+                        defect_vr,
+                        bulk_procar,
+                        defect_procar,
                     )
                 else:
-                    band_orb, vbm_info, cbm_info = get_band_edge_info(defect_vr, bulk_vr, bulk_outcar_phs)
+                    band_orb, vbm_info, cbm_info = get_band_edge_info(bulk_vr, bulk_outcar_phs, defect_vr)
 
                 defect_entry.calculation_metadata["phs_data"] = {
                     "band_orb": band_orb,
