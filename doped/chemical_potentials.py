@@ -1420,19 +1420,18 @@ class CompetingPhasesAnalyzer:
                     {"formula": d["formula"], "formation_energy": d["formation_energy"]}
                 )
 
-        if len(bulk_pde_list) == 0:
-            if len(intrinsic_phase_diagram_entries) == 0:
-                pass
-            else:
+        if not bulk_pde_list:
+            intrinsic_phase_diagram_compositions = (
                 {e.composition.reduced_formula for e in intrinsic_phase_diagram_entries}
-            raise ValueError(
-                f"Could not find bulk phase for "
-                f"{self.bulk_composition.reduced_formula} in the supplied data. "
-                f"Found phases: {intrinsic_phase_diagram_entries}"
+                if intrinsic_phase_diagram_entries
+                else None
             )
-        if len(bulk_pde_list) > 0:
-            # lowest energy bulk phase
-            self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
+            raise ValueError(
+                f"Could not find bulk phase for {self.bulk_composition.reduced_formula} in the supplied "
+                f"data. Found intrinsic phase diagram entries for: {intrinsic_phase_diagram_compositions}"
+            )
+        # lowest energy bulk phase
+        self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
@@ -1448,12 +1447,10 @@ class CompetingPhasesAnalyzer:
             )
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
-        # remove Element to make it jsonable
-        no_element_chem_lims = {}
+
+        no_element_chem_lims = {}  # remove Element to make it JSONable
         for k, v in chem_lims.items():
-            temp_dict = {}
-            for kk, vv in v.items():
-                temp_dict[str(kk)] = vv
+            temp_dict = {str(kk): vv for kk, vv in v.items()}
             no_element_chem_lims[k] = temp_dict
 
         if sort_by is not None:
@@ -1490,71 +1487,11 @@ class CompetingPhasesAnalyzer:
         extrinsic_chempots_df = pd.DataFrame(chemical_potentials, columns=phase_name_columns)
 
         if self.extrinsic_species is not None:
-            if verbose:
-                print(f"Calculating chempots for {self.extrinsic_species}")
-            for e in extrinsic_formation_energies:
-                for el in self.elemental:  # TODO: This code (in all this module) should be rewritten to
-                    # be more readable (re-used and uninformative variable names, missing informative
-                    # comments...)
-                    e[el] = Composition(e["formula"]).as_dict().get(el, 0)
-
-            # gets the df into a slightly more convenient dict
-            cpd = extrinsic_chempots_df.to_dict(orient="records")
-            mins = []
-            mins_formulas = []
-            df3 = pd.DataFrame(extrinsic_formation_energies)
-            # print(f"df3: {df3}")  # debugging
-            for i, c in enumerate(cpd):
-                name = f"mu_{self.extrinsic_species}_{i}"
-                df3[name] = df3["formation_energy"]
-                for k, v in c.items():
-                    df3[name] -= df3[k] * v
-                df3[name] /= df3[self.extrinsic_species]
-                # find min at that chempot
-                mins.append(df3[name].min())
-                mins_formulas.append(df3.iloc[df3[name].idxmin()]["formula"])
-
-            extrinsic_chempots_df[self.extrinsic_species] = mins
-            col_name = f"{self.extrinsic_species}_limiting_phase"
-            extrinsic_chempots_df[col_name] = mins_formulas
-
-            # 1. work out the formation energies of all dopant competing
-            #    phases using the elemental energies
-            # 2. for each of the chempots already calculated work out what
-            #    the chemical potential of the dopant would be from
-            #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
-            # 3. find the most negative mu_dopant which then becomes the new
-            #    canonical chemical potential for that dopant species and the
-            #    competing phase is the 'limiting phase' right
-            # 4. update the chemical potential limits table to reflect this
-
-            # reverse engineer chem lims for extrinsic
-            df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
-            cl2 = {
-                "elemental_refs": self.elemental_energies,
-                "limits_wrt_el_refs": {},
-                "limits": {},
-            }
-            # print(f"df4: {df4}")  # debugging
-
-            for i, d in enumerate(df4):
-                key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
-                # print(f"key: {key}")  # debugging
-                new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
-                new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
-                cl2["limits_wrt_el_refs"][key] = new_vals
-            # print(f"cl2: {cl2}")  # debugging
-
-            # relate the limits to the elemental
-            # energies but in reverse this time
-            for limit, chempot_dict in cl2["limits_wrt_el_refs"].items():
-                relative_chempot_dict = copy.deepcopy(chempot_dict)
-                for e in relative_chempot_dict:
-                    relative_chempot_dict[e] += cl2["elemental_refs"][e]
-                cl2["limits"].update({limit: relative_chempot_dict})
-
-            self._chempots = cl2
-
+            self._calculate_extrinsic_chempot_lims(  # updates self._chempots
+                extrinsic_formation_energies=extrinsic_formation_energies,
+                extrinsic_chempots_df=extrinsic_chempots_df,
+                verbose=verbose,
+            )
         else:  # intrinsic only
             self._chempots = self._intrinsic_chempots
 
@@ -1569,6 +1506,74 @@ class CompetingPhasesAnalyzer:
             print(extrinsic_chempots_df)
 
         return extrinsic_chempots_df
+
+    def _calculate_extrinsic_chempot_lims(
+        self, extrinsic_formation_energies, extrinsic_chempots_df, verbose=False
+    ):
+        if verbose:
+            print(f"Calculating chempots for {self.extrinsic_species}")
+        for e in extrinsic_formation_energies:
+            for el in self.elemental:  # TODO: This code (in all this module) should be rewritten to
+                # be more readable (re-used and uninformative variable names, missing informative
+                # comments...)
+                e[el] = Composition(e["formula"]).as_dict().get(el, 0)
+
+        # gets the df into a slightly more convenient dict
+        cpd = extrinsic_chempots_df.to_dict(orient="records")
+        mins = []
+        mins_formulas = []
+        df3 = pd.DataFrame(extrinsic_formation_energies)
+        # print(f"df3: {df3}")  # debugging
+        for i, c in enumerate(cpd):
+            name = f"mu_{self.extrinsic_species}_{i}"
+            df3[name] = df3["formation_energy"]
+            for k, v in c.items():
+                df3[name] -= df3[k] * v
+            df3[name] /= df3[self.extrinsic_species]
+            # find min at that chempot
+            mins.append(df3[name].min())
+            mins_formulas.append(df3.iloc[df3[name].idxmin()]["formula"])
+
+        extrinsic_chempots_df[self.extrinsic_species] = mins
+        col_name = f"{self.extrinsic_species}_limiting_phase"
+        extrinsic_chempots_df[col_name] = mins_formulas
+
+        # 1. work out the formation energies of all dopant competing
+        #    phases using the elemental energies
+        # 2. for each of the chempots already calculated work out what
+        #    the chemical potential of the dopant would be from
+        #       mu_dopant = Hf(dopant competing phase) - sum(mu_elements)
+        # 3. find the most negative mu_dopant which then becomes the new
+        #    canonical chemical potential for that dopant species and the
+        #    competing phase is the 'limiting phase' right
+        # 4. update the chemical potential limits table to reflect this
+
+        # reverse engineer chem lims for extrinsic
+        df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
+        cl2 = {
+            "elemental_refs": self.elemental_energies,
+            "limits_wrt_el_refs": {},
+            "limits": {},
+        }
+        # print(f"df4: {df4}")  # debugging
+
+        for i, d in enumerate(df4):
+            key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+            # print(f"key: {key}")  # debugging
+            new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
+            new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
+            cl2["limits_wrt_el_refs"][key] = new_vals
+        # print(f"cl2: {cl2}")  # debugging
+
+        # relate the limits to the elemental
+        # energies but in reverse this time
+        for limit, chempot_dict in cl2["limits_wrt_el_refs"].items():
+            relative_chempot_dict = copy.deepcopy(chempot_dict)
+            for e in relative_chempot_dict:
+                relative_chempot_dict[e] += cl2["elemental_refs"][e]
+            cl2["limits"].update({limit: relative_chempot_dict})
+
+        self._chempots = cl2
 
     @property
     def chempots(self) -> dict:
