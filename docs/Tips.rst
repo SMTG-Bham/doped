@@ -12,7 +12,7 @@ their specific needs/system.
     (based on the literature and our experience), there is no substitute for the user's own judgement.
     Defect behaviour can be incredibly system-dependent, and so it is `always` important to question and
     consider the choices and approximations made in the workflow (such as supercell choice, charge state
-    ranges, interstitial site pruning, `MAGMOM` initialisation etc.) in the context of your specific
+    ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
 
 
@@ -91,7 +91,7 @@ underlying calculation and/or extreme forces.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed `SnB` structure-seaerching), convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed ``SnB`` structure-seaerching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -131,8 +131,8 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 .. code-block::
 
         Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which is
-        greater than the `error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction by
-        plotting the site potential differences (using `defect_entry.get_kumagai_correction()` with `plot=True`).
+        greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the correction by
+        plotting the site potential differences (using ``defect_entry.get_kumagai_correction()`` with ``plot=True``).
         Large errors are often due to unstable or shallow defect charge states (which can't be accurately modelled
         with the supercell approach). If this error is not acceptable, you may need to use a larger supercell
         for more accurate energies.
@@ -195,6 +195,99 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :width: 320px
     :align: right
 
+
+Spin Polarisation
+-----------------
+Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
+analysis. For defect species with odd numbers of electrons (and thus being open-shell), they will adopt
+non-zero integer spin states, while defect species with even numbers of electrons can be either
+closed-shell (spin-paired) or open-shell (spin-active), depending on the defect species and its electronic
+structure. As such, defect calculations should typically be performed with spin polarisation allowed in all
+cases (i.e. with ``ISPIN = 2`` in VASP).
+
+.. tip::
+
+    If we have (nearly) converged the geometry relaxation for an even-electron defect species and there is
+    no non-zero magnetic moments on any site (given by the ``magnetization`` output in the ``OUTCAR`` file)
+    – and so adopting a closed-shell electronic structure, then we can set ``ISPIN = 1`` (turning off
+    spin polarisation) for subsequent calculations to reduce the computational cost.
+
+    The ``snb-mag --verbose`` CLI command from ``ShakeNBreak`` can be used to automatically check the
+    magnetisation of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
+    set ``ISPIN = 1`` for continued ``ShakeNBreak`` relaxations of any closed-shell defect calculations,
+    if it is being used to manage the structure-searching calculations).
+
+    .. code-block::
+
+        ❯ snb-mag -h
+        Usage: snb-mag [OPTIONS]
+
+          Checks if the magnetisation (spin polarisation) values of all atoms in the
+          VASP calculation are below a certain threshold, by pulling this data from
+          the OUTCAR. Returns a shell exit status of 0 if magnetisation is below the
+          threshold and 1 if above.
+
+        Options:
+          -o, --outcar FILE      Path to OUTCAR(.gz) file
+          -t, --threshold FLOAT  Atoms with absolute magnetisation below this value
+                                 are considered un-magnetised / non-spin-polarised.
+                                 The threshold for total magnetisation is 10x this
+                                 value.  [default: 0.01]
+          -v, --verbose          Print information about the magnetisation of the
+                                 system.
+          -h, --help             Show this message and exit.
+
+
+In most cases and particularly for `s`/`p` orbital systems, odd electron defects will adopt a doublet spin
+state (`S` = 1/2, one unpaired electron), while even electron defects will tend to adopt a closed-shell
+singlet spin state (`S` = 0, no unpaired electrons), as a consequence of the Aufbau principle and Hund's
+rule. This is the default logic assumed in ``doped`` (and ``ShakeNBreak``), where the expected spin state
+is enforced by setting ``NUPDOWN`` (number of unpaired electrons) to ``0`` for even-electron and ``1`` for
+odd-electron defect species.
+
+However, this is not always the case and often we can have open-shell triplet states for even-electron
+defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects (with `S` = 3/2,
+three unpaired electrons). Such cases are most common when the defect species adopts a
+bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
+`CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__), a molecular dimer-like state (such as
+O\ :sub:`2` species in oxides, or
+`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__) or with
+orbital-degenerate/correlated defects where Hund's rule implies open-shell solutions (such as the
+highly-studied `NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
+or `transition metal impurities in silicon <https://journals.aps.org/prmaterials/abstract/10.1103/PhysRevMaterials.6.L053201>`__).
+If you encounter defect states like these and/or suspect that alternative spin configurations may be
+possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
+discussed below) accordingly – ideally performing the full structure-searching calculations for these
+species with these settings, as the potential energy surface can differ significantly under different spin
+states.
+
+.. note::
+
+    In general, it is best to explicitly specify the system spin state (i.e. with ``NUPDOWN``) in DFT
+    calculations, rather than leaving this as a free parameter, as not enforcing this constraint can often
+    lead to erroneous and unphysical results in the form of partial orbital occupation and spins. This
+    can occur because the DFT self-interaction error initially favours delocalisation of the unpaired
+    electron density, and converges to this unphysical result.
+
+As well as setting the total spin state of our supercell with ``NUPDOWN``, another parameter that can be
+important in certain cases is the individual site magnetic moments, which can be initialised with the
+``MAGMOM`` tag in the ``INCAR`` (see the `VASPwiki page <https://www.vasp.at/wiki/index.php/MAGMOM>`__).
+This tag is not set by default in ``doped``, using the ``VASP`` default initialisation of
+``MAGMOM = NIONS*1``.
+This tag is particularly important for magnetic materials (as discussed in the
+`Magnetism <https://shakenbreak.readthedocs.io/en/latest/Tips.html#magnetism>`__ section of the
+``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
+(as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
+YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
+``doped.vasp`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
+for multiple defects.
+
+.. note::
+
+    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
+    automatically set ``NUPDOWN`` according to the magnetisation output from the ``Materials Project``
+    calculation of the competing phase, but ``MAGMOM`` may also need to be set to induce a specific spin
+    configuration.
 
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------

@@ -397,6 +397,9 @@ class DefectDictSet(DopedDictSet):
         """
         Returns the ``Incar`` object generated from ``DopedDictSet``, with
         ``NELECT`` and ``NUPDOWN`` set accordingly.
+
+        See https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
+        for discussion about appropriate ``NUPDOWN``/``MAGMOM`` settings.
         """
         incar_obj = super(self.__class__, self).incar
 
@@ -407,8 +410,7 @@ class DefectDictSet(DopedDictSet):
             else:
                 # when writing VASP just resets this to 0 anyway:
                 incar_obj["NUPDOWN"] = (
-                    "0  # If defect has multiple spin-polarised states (e.g. bipolarons) could "
-                    "also have triplet (NUPDOWN=2), but energy diff typically small."
+                    "0  # see https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation"
                 )
 
         except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
@@ -427,8 +429,10 @@ class DefectDictSet(DopedDictSet):
                 f"https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
                 f"this up). As this is a neutral supercell, the INCAR file will be written without this "
                 f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
-                f"unphysical solutions, and POTCARs are also needed to set the charge state (i.e. "
-                f"NELECT) of charged defect supercells. Got error:\n{e!r}"
+                f"unphysical solutions (see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation), and POTCARs are "
+                f"also needed to set the charge state (i.e. NELECT) of charged defect supercells. "
+                f"Got error:\n{e!r}"
             )
 
         return incar_obj

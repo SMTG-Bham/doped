@@ -36,7 +36,6 @@
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
     with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
     and/or if it's known from other work for your chosen functional etc.)
-  - Add notes about polaron finding (use SnB and/or MAGMOMs. Any other advice to add? See Abdullah/Dan chat and YouTube tutorial, should have note about setting `MAGMOM`s for defects somewhere). `doped` can't do automatically because far too much defect/material-specific dependence.
   - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples. Should also note that the dielectric should be in the same xyz Cartesian basis as the supercell calculations (likely but not necessarily the same as the raw output of a VASP dielectric calculation if an oddly-defined primitive cell is used)
   - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
@@ -45,11 +44,6 @@
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `vise`, `CarrierCapture`, and give some
     quick examples? Add as optional dependencies.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
-  - Note about `ISPIN = 1` for even no. of electrons defect species, **if you're sure there's no
-    magnetic ordering!** – which you can check in the `OUTCAR` by looking at `magnetization (x)` `y`
-    and `z`, and checking that everything is zero (not net magnetisation, as could have opposing spin
-    bipolaron). This is automatically handled in `SnB_replace_mag.py` (to be added to ShakeNBreak) and
-    will be added to `doped` VASP calc scripts.
   - Setting `LREAL = Auto` can sometimes be worth doing if you have a very large supercell for speed up, _but_ it's important to do a final calculation with `LREAL = False` for accurate energies/forces, so only do if you're a power user and have a very large supercell.
   - Show usage of `get_conv_cell_site` in notebooks/docs (in an advanced analysis tutorial with other possibly useful functions being showcased?)
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
@@ -59,7 +53,6 @@
     this to their docs as example use cases as well. Also include examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
-  - Worth adding a very short example showing how to set `MAGMOM`s for AFM/FM systems (see Dan & Abdullah chat)
   - Note about SOC for chemical potential calculations ([FERE paper](https://doi.org/10.1103/PhysRevB.
     85.115104) suggests that the SOC effects on total energy cancel out for chemical potential
     calculations, but only the case when the occupation of the SOC-affected orbitals is constant
