@@ -709,6 +709,9 @@ class CompetingPhases:
         default tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin
         polarisation) and ``NUPDOWN`` equal to the integer-rounded total
         magnetisation.
+
+        See
+        https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
         """
         if entry.data["total_magnetization"] > 0.1:  # account for magnetic moment
             incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
