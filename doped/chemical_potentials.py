@@ -608,9 +608,11 @@ class CompetingPhases:
 
         Args:
             kpoints_metals (int):
-                Kpoint density per inverse volume (Å^-3) for metals
+                Kpoint density per inverse volume (Å^-3) for metals.
+                Default is 200.
             kpoints_nonmetals (int):
                 Kpoint density per inverse volume (Å^-3) for nonmetals
+                (default is 64, the default for ``MPRelaxSet``).
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
