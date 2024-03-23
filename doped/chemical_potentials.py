@@ -1331,8 +1331,8 @@ class CompetingPhasesAnalyzer:
 
     def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
         """
-        Write parsed competing phases data to csv. Can be re-loaded with
-        CompetingPhasesAnalyzer.from_csv().
+        Write parsed competing phases data to ``csv``. Can be re-loaded with
+        ``CompetingPhasesAnalyzer.from_csv()``.
 
         Args:
             csv_path (str): Path to csv file to write to.
@@ -1484,12 +1484,12 @@ class CompetingPhasesAnalyzer:
             chemical_potentials.append(phase_energy_list)
 
         # make df, will need it in next step
-        extrinsic_chempots_df = pd.DataFrame(chemical_potentials, columns=phase_name_columns)
+        chempots_df = pd.DataFrame(chemical_potentials, columns=phase_name_columns)
 
         if self.extrinsic_species is not None:
             self._calculate_extrinsic_chempot_lims(  # updates self._chempots
                 extrinsic_formation_energies=extrinsic_formation_energies,
-                extrinsic_chempots_df=extrinsic_chempots_df,
+                chempots_df=chempots_df,
                 verbose=verbose,
             )
         else:  # intrinsic only
@@ -1497,19 +1497,17 @@ class CompetingPhasesAnalyzer:
 
         # save and print
         if csv_path is not None:
-            extrinsic_chempots_df.to_csv(csv_path, index=False)
+            chempots_df.to_csv(csv_path, index=False)
             if verbose:
                 print("Saved chemical potential limits to csv file: ", csv_path)
 
         if verbose:
             print("Calculated chemical potential limits: \n")
-            print(extrinsic_chempots_df)
+            print(chempots_df)
 
-        return extrinsic_chempots_df
+        return chempots_df
 
-    def _calculate_extrinsic_chempot_lims(
-        self, extrinsic_formation_energies, extrinsic_chempots_df, verbose=False
-    ):
+    def _calculate_extrinsic_chempot_lims(self, extrinsic_formation_energies, chempots_df, verbose=False):
         if verbose:
             print(f"Calculating chempots for {self.extrinsic_species}")
         for e in extrinsic_formation_energies:
@@ -1519,7 +1517,7 @@ class CompetingPhasesAnalyzer:
                 e[el] = Composition(e["formula"]).as_dict().get(el, 0)
 
         # gets the df into a slightly more convenient dict
-        cpd = extrinsic_chempots_df.to_dict(orient="records")
+        cpd = chempots_df.to_dict(orient="records")
         mins = []
         mins_formulas = []
         df3 = pd.DataFrame(extrinsic_formation_energies)
@@ -1534,9 +1532,9 @@ class CompetingPhasesAnalyzer:
             mins.append(df3[name].min())
             mins_formulas.append(df3.iloc[df3[name].idxmin()]["formula"])
 
-        extrinsic_chempots_df[self.extrinsic_species] = mins
+        chempots_df[self.extrinsic_species] = mins
         col_name = f"{self.extrinsic_species}_limiting_phase"
-        extrinsic_chempots_df[col_name] = mins_formulas
+        chempots_df[col_name] = mins_formulas
 
         # 1. work out the formation energies of all dopant competing
         #    phases using the elemental energies
@@ -1549,7 +1547,7 @@ class CompetingPhasesAnalyzer:
         # 4. update the chemical potential limits table to reflect this
 
         # reverse engineer chem lims for extrinsic
-        df4 = extrinsic_chempots_df.copy().to_dict(orient="records")
+        df4 = chempots_df.copy().to_dict(orient="records")
         cl2 = {
             "elemental_refs": self.elemental_energies,
             "limits_wrt_el_refs": {},

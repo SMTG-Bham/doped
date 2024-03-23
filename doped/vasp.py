@@ -1977,7 +1977,7 @@ class DefectsSet(MSONable):
                 set, then by default is only generated for systems with a max atomic
                 number (Z) >= 31 (i.e. further down the periodic table than Zn).
             json_obj (Union[Dict, DefectsGenerator]):
-                Either the DefectsGenerator object if input ``defect_entries`` is a
+                Either the ``DefectsGenerator`` object if input ``defect_entries`` is a
                 ``DefectsGenerator`` object, otherwise the ``defect_entries`` dictionary,
                 which will be written to file when ``write_files()`` is called, to
                 aid calculation provenance.

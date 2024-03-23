@@ -610,8 +610,8 @@ class DefectThermodynamics(MSONable):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the DefectThermodynamics object as a json file, which can be
-        reloaded with the DefectThermodynamics.from_json() class method.
+        Save the ``DefectThermodynamics`` object as a json file, which can be
+        reloaded with the ``DefectThermodynamics.from_json()`` class method.
 
         Args:
             filename (str): Filename to save json file as. If None, the filename will be

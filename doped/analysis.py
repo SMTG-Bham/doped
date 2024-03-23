@@ -516,8 +516,7 @@ class DefectsParser:
                 to in ``output_path``, to avoid having to re-parse defects when later analysing
                 further and aiding calculation provenance. Can be reloaded using the ``loadfn``
                 function from ``monty.serialization`` (and then input to ``DefectThermodynamics``
-                etc). If None (default), set as "{Chemical Formula}_defect_dict.json" where
-                {Chemical Formula} is the chemical formula of the host material.
+                etc). If None (default), set as ``{Host Chemical Formula}_defect_dict.json``.
                 If False, no json file is saved.
 
         Attributes:
