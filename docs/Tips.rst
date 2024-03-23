@@ -196,6 +196,87 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :align: right
 
 
+Serialization & Data Provenance (``JSON``/``csv``)
+--------------------------------------------------
+To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
+stages of the defect workflow, ``doped`` objects have been made fully serializable, meaning they can be
+easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
+various stages in the tutorials, this can be achieved using the ``dumpfn``/``loadfn`` functions from
+``monty.serialization``, or with the ``to_json``/``from_json`` methods provided for ``Defect``,
+``DefectEntry``, ``DefectsGenerator`` and ``DefectThermodynamics`` objects:
+
+.. code-block:: python
+
+    # save a DefectThermodynamics object to a JSON file
+    defect_thermo.to_json("MgO_DefectThermodynamics.json")
+
+    # then later in a different python session or notebook, we can reload the
+    # DefectThermodynamics object from the JSON file, containing all the associated info
+    from doped.thermodynamics import DefectThermodynamics
+    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json")
+
+    # alternatively, we can directly use the monty dumpfn/loadfn functions
+    # directly on any doped object, e.g. with our ``DefectsSet`` object
+    # containing all the info on the generated VASP input files:
+    from monty.serialization import dumpfn, loadfn
+    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json")
+
+    # and again later reload the object from the JSON file
+    defects_set = loadfn("MgO_DefectsSet.json")
+
+.. note::
+
+        While these JSON files tend to have relatively small file sizes anyway, we can further reduce their
+        size by saving to / loading from ``gzip`` or ``bz2`` compressed JSON files, by specifying
+        ``.json.gz``/``.json.z``/``.json.bz2`` as the file extension in the serialization functions.
+
+In the typical defect calculation workflow with ``doped`` (exemplified in the tutorials), the following
+``JSON`` files are automatically written to file:
+
+- The ``DefectsGenerator`` object or ``defect_entries`` dictionary that is input to ``DefectsSet``, when
+  writing ``VASP`` input files with ``DefectsSet.write_files(output_path=".")`` – written to
+  ``output_path``. Additionally, for each calculation directory generated, the corresponding
+  ``DefectEntry`` object is written to a ``{DefectEntry.name}.json`` file in the directory so that all
+  information on the generated defect structure, charge state etc. is preserved in the calculation
+  directory.
+- The parsed defect entries dict (``DefectsParser.defect_dict``) when defect calculations are parsed with
+  ``DefectsParser(output_path=".")`` – written to ``output_path``. The JSON filename can be set with e.g.
+  ``DefectsParser(json_filename="custom_name.json")``, but the default is
+  ``{Host Chemical Formula}_defect_dict.json``.
+    - Additionally, a ``voronoi_nodes.json`` file is saved to the bulk supercell calculation directory if
+      any interstitial defects are parsed. This contains information about the Voronoi tessellation nodes
+      in the host structure, which are used for analysing interstitial positions but can be somewhat costly
+      to calculate – so are automatically saved to file once initially computed to reduce parsing times.
+- Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
+  the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
+  containing distortion information about all defects) and to each defect directory (containing just the
+  distortion information for that defect) when running ``Dist.write_vasp_files(output_path=".")``.
+
+In most cases it is also recommended to save the ``DefectThermodynamics`` object to file once generated
+(using ``DefectThermodynamics.to_json()``), to avoid having to re-parse at any later stage, however this
+is not done automatically.
+
+``DataFrame`` Outputs
+^^^^^^^^^^^^^^^^^^^^^
+Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
+``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
+``get_quenched_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
+``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
+attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
+tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the
+``pandas`` API docs `here <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__) using
+the ``to_csv``/``to_json`` methods:
+
+.. code-block:: python
+
+    # save the formation energies DataFrame to a csv file
+    defect_thermo.get_formation_energies().to_csv("MgO_formation_energies.csv")
+
+These ``csv`` files can easily be used as data tables when writing up results, by directly importing to
+Microsoft Word or converting to LaTeX format using `Tables Generator <https://www.tablesgenerator.com>`__.
+``CompetingPhasesAnalyzer`` can also be reinitialised from a saved ``csv`` formation energies file with the
+``from_csv()`` method.
+
 .. note::
 
     Have any tips for users from using ``doped``? Please share it with the developers and we'll add them here!
