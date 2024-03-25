@@ -289,6 +289,21 @@ for multiple defects.
     calculation of the competing phase, but ``MAGMOM`` may also need to be set to induce a specific spin
     configuration.
 
+Symmetry Precision (``symprec``)
+--------------------------------
+When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
+structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and
+``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
+``DefectsParser``, ``DefectParser``, all ``DefectThermodynamics`` symmetry/concentration functions,
+``get_orientational_degeneracy()``, ``point_symmetry_from_defect_entry()`` and others).
+
+By default, ``doped`` uses a value of ``symprec = 0.01`` for unrelaxed/bulk structures (matching the
+``pymatgen`` default), and a larger ``symprec = 0.1`` for determining the point symmetries (and thus
+orientational degeneracies) of relaxed defect structures to account for residual structural noise.
+This ``symprec`` value of ``0.1`` also matches that used by the ``Materials Project``.
+You may want to adjust ``symprec`` for your system (e.g. if there are very slight octahedral distortions
+etc.).
+
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------
 To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
