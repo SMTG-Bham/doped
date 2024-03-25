@@ -346,7 +346,7 @@ def defect_name_from_structures(bulk_structure, defect_structure):
         str: Defect name.
     """
     # set oxi_state to avoid wasting time trying to auto-determine when unnecessary here
-    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state=0)
+    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state="Undetermined")
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
     # approach will only be valid if the defect structure is a diagonal expansion of the primitive...

@@ -73,13 +73,16 @@ class DefectEntry(thermo.DefectEntry):
             A dictionary of degeneracy factors contributing to the total degeneracy
             of the defect species (such as spin and configurational degeneracy etc).
             This is an important factor in the defect concentration equation (see
-            discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E),
-            and so affects the output of the defect concentration / Fermi level
-            functions. This can be edited by the user if the doped defaults are not
-            appropriate (e.g. doped assumes singlet (S=0) state for even-electron
-            defects and doublet (S=1/2) state for odd-electron defects, which is
-            typically the case but can have triplets (S=1) or other multiplets for
-            e.g. bipolarons, quantum / d-orbital / magnetic defects etc).
+            discussion in https://doi.org/10.1039/D2FD00043A and
+            https://doi.org/10.1039/D3CS00432E), and so affects the output of the
+            defect concentration / Fermi level functions. This can be edited by the
+            user if the ``doped`` defaults are not appropriate (e.g. ``doped`` assumes
+            singlet (S=0) state for even-electron defects and doublet (S=1/2) state
+            for odd-electron defects, which is typically the case but can have
+            triplets (S=1) or other multiplets for e.g. bipolarons, quantum /
+            d-orbital / magnetic defects etc.); see
+            https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation for
+            discussion.
 
     Generation Attributes:
         name:
@@ -707,10 +710,11 @@ class DefectEntry(thermo.DefectEntry):
         docstring for more information, and discussion in 10.1039/D3CS00432E).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
-        doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
-        of magnitude. This factor is taken from the product of the
-        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
+        concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A and
+        https://doi.org/10.1039/D3CS00432E), affecting the final concentration by up to
+        2 orders of magnitude. This factor is taken from the product of the
+        ``defect_entry.defect.multiplicity`` and ``defect_entry.degeneracy_factors``
+        attributes.
 
         Args:
             chempots (dict):
