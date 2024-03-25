@@ -95,7 +95,7 @@ class DefectEntry(thermo.DefectEntry):
             Symmetry-equivalent defect positions in fractional coordinates of
             the conventional cell.
         _BilbaoCS_conv_cell_vector_mapping:
-            A vector mapping the lattice vectors of the spglib-defined
+            A vector mapping the lattice vectors of the ``spglib``-defined
             conventional cell to that of the Bilbao Crystallographic Server
             definition (for most space groups the definitions are the same).
         wyckoff:
@@ -599,18 +599,42 @@ class DefectEntry(thermo.DefectEntry):
 
         return formation_energy
 
-    def _parse_and_set_degeneracies(self):
+    def _parse_and_set_degeneracies(
+        self,
+        symprec: Optional[float] = None,
+    ):
         """
         Check if degeneracy info is present in self.calculation_metadata, and
         attempt to (re)-parse if not.
 
         e.g. if the ``DefectEntry`` was generated with older versions of ``doped``,
         manually, or with ``pymatgen-analysis-defects`` etc.
+
+        Args:
+            symprec (float):
+                Symmetry tolerance for ``spglib`` to use when determining
+                relaxed defect point symmetries and thus orientational
+                degeneracies. Default is ``0.1`` which matches that used by
+                the ``Materials Project`` and is larger than the ``pymatgen``
+                default of ``0.01`` (which is used by ``doped`` for
+                unrelaxed/bulk structures) to account for residual structural
+                noise in relaxed defect supercells.
+                You may want to adjust for your system (e.g. if there are
+                very slight octahedral distortions etc.). If ``symprec`` is
+                set, then the point symmetries and corresponding orientational
+                degeneracy will be re-parsed/computed even if already present
+                in the ``DefectEntry`` object ``calculation_metadata``.
         """
         from doped.utils.parsing import get_orientational_degeneracy, simple_spin_degeneracy_from_charge
         from doped.utils.symmetry import point_symmetry_from_defect_entry
 
-        if "relaxed point symmetry" not in self.calculation_metadata:
+        if symprec is None:
+            symprec = 0.1  # Materials Project default, found to be best with residual structural noise
+            reparse = False
+        else:
+            reparse = True
+
+        if "relaxed point symmetry" not in self.calculation_metadata or reparse:
             try:
                 (
                     self.calculation_metadata["relaxed point symmetry"],
@@ -620,13 +644,14 @@ class DefectEntry(thermo.DefectEntry):
                     relaxed=True,
                     return_periodicity_breaking=True,
                     verbose=False,
+                    symprec=symprec,
                 )  # relaxed so defect symm_ops
 
             except Exception as e:
                 warnings.warn(
                     f"Unable to determine relaxed point group symmetry for {self.name}, got error:\n{e!r}"
                 )
-        if "bulk site symmetry" not in self.calculation_metadata:
+        if "bulk site symmetry" not in self.calculation_metadata or reparse:
             try:
                 self.calculation_metadata["bulk site symmetry"] = point_symmetry_from_defect_entry(
                     self, relaxed=False, symprec=0.01
@@ -637,12 +662,11 @@ class DefectEntry(thermo.DefectEntry):
         if (
             all(x in self.calculation_metadata for x in ["relaxed point symmetry", "bulk site symmetry"])
             and "orientational degeneracy" not in self.degeneracy_factors
-        ):
+        ) or reparse:
             try:
                 self.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                     relaxed_point_group=self.calculation_metadata["relaxed point symmetry"],
                     bulk_site_point_group=self.calculation_metadata["bulk site symmetry"],
-                    defect_type=self.defect.defect_type,
                 )
             except Exception as e:
                 warnings.warn(
@@ -666,6 +690,7 @@ class DefectEntry(thermo.DefectEntry):
         fermi_level: float = 0,
         vbm: Optional[float] = None,
         per_site: bool = False,
+        symprec: Optional[float] = None,
     ) -> float:
         r"""
         Compute the `equilibrium` concentration (in cm^-3) for the
@@ -740,11 +765,22 @@ class DefectEntry(thermo.DefectEntry):
             per_site (bool):
                 Whether to return the concentration as fractional concentration per site,
                 rather than the default of per cm^3. (default: False)
+            symprec (float):
+                Symmetry tolerance for ``spglib`` to use when determining relaxed defect
+                point symmetries and thus orientational degeneracies. Default is ``0.1``
+                which matches that used by the ``Materials Project`` and is larger than
+                the ``pymatgen`` default of ``0.01`` (which is used by ``doped`` for
+                unrelaxed/bulk structures) to account for residual structural noise in
+                relaxed defect supercells. You may want to adjust for your system (e.g.
+                if there are very slight octahedral distortions etc.).
+                If ``symprec`` is set, then the point symmetries and corresponding
+                orientational degeneracy will be re-parsed/computed even if already
+                present in the ``DefectEntry`` object ``calculation_metadata``.
 
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
         """
-        self._parse_and_set_degeneracies()
+        self._parse_and_set_degeneracies(symprec=symprec)
 
         if "spin degeneracy" not in self.degeneracy_factors:
             warnings.warn(

@@ -1233,8 +1233,8 @@ class DefectThermodynamics(MSONable):
                 strings (and keep as ints and floats instead). (default: False)
 
         Returns:
-            pandas DataFrame of defect concentrations (and formation energies) for each
-            defect entry in the DefectThermodynamics object.
+            ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
+            for each ``DefectEntry`` in the ``DefectThermodynamics`` object.
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
@@ -1870,7 +1870,7 @@ class DefectThermodynamics(MSONable):
                 (Default: None)
 
         Returns:
-            pandas DataFrame of dopability limits, with columns:
+            ``pandas`` ``DataFrame`` of dopability limits, with columns:
             "limit", "Compensating Defect", "Dopability Limit" for both p/n-type
             where 'Dopability limit' are the corresponding Fermi level positions in
             eV, relative to the VBM.
@@ -2044,7 +2044,7 @@ class DefectThermodynamics(MSONable):
                 (Default: None)
 
         Returns:
-            pandas DataFrame of doping windows, with columns:
+            ``pandas`` ``DataFrame`` of doping windows, with columns:
             "limit", "Compensating Defect", "Doping Window" for both p/n-type
             where 'Doping Window' are the corresponding doping windows in eV.
         """
@@ -2561,7 +2561,7 @@ class DefectThermodynamics(MSONable):
                 (default: False)
 
         Returns:
-            pandas DataFrame or list of DataFrames
+            ``pandas`` ``DataFrame`` or list of ``DataFrame``\s
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
@@ -2652,7 +2652,7 @@ class DefectThermodynamics(MSONable):
                 (default: False)
 
         Returns:
-            pandas DataFrame sorted by formation energy
+            ``pandas`` ``DataFrame`` sorted by formation energy
         """
         table = []
 
@@ -2705,7 +2705,11 @@ class DefectThermodynamics(MSONable):
         # round all floats to 3dp:
         return formation_energy_df.round(3)
 
-    def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
+    def get_symmetries_and_degeneracies(
+        self,
+        skip_formatting: bool = False,
+        symprec: Optional[float] = None,
+    ) -> pd.DataFrame:
         r"""
         Generates a table of the bulk-site & relaxed defect point group
         symmetries, spin/orientational/total degeneracies and (bulk-)site
@@ -2778,14 +2782,27 @@ class DefectThermodynamics(MSONable):
                 Whether to skip formatting the defect charge states as
                 strings (and keep as ints and floats instead).
                 (default: False)
+            symprec (float):
+                Symmetry tolerance for ``spglib`` to use when determining
+                relaxed defect point symmetries and thus orientational
+                degeneracies. Default is ``0.1`` which matches that used by
+                the ``Materials Project`` and is larger than the ``pymatgen``
+                default of ``0.01`` (which is used by ``doped`` for
+                unrelaxed/bulk structures) to account for residual structural
+                noise in relaxed defect supercells.
+                You may want to adjust for your system (e.g. if there are
+                very slight octahedral distortions etc.). If ``symprec`` is
+                set, then the point symmetries and corresponding orientational
+                degeneracy will be re-parsed/computed even if already present
+                in the ``DefectEntry`` object ``calculation_metadata``.
 
         Returns:
-            pandas DataFrame
+            ``pandas`` ``DataFrame``
         """
         table_list = []
 
         for defect_entry in self.defect_entries:
-            defect_entry._parse_and_set_degeneracies()
+            defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
                     len(defect_entry.defect.structure.get_primitive_structure())
