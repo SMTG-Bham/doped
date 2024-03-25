@@ -798,6 +798,46 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             row[1] = int(row[1])
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
+    def test_get_symmetries_degeneracies_YTOS(self):
+        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies()
+        # hardcoded tests to ensure symmetry determination working as expected:
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
+        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
+        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.01)
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "Cs", 1.0, 1, 1.0, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
+    def test_get_symmetries_degeneracies_Sb2O5(self):
+        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies()
+        # hardcoded tests to ensure symmetry determination working as expected:
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
+        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
+        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.2)
+        assert any(
+            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "Ci", 0.5, 2, 1.0, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+
     def _check_form_en_df(self, form_en_df, fermi_level=None, defect_thermo=None):
         """
         Check the sum of formation energy terms equals the total formation
