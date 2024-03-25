@@ -208,20 +208,19 @@ as PHS and conclude only `qualitatively` that their transition level is located 
 band edge. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
 
-```{tip}
-Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic model,
-similar to the `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__
-exciton model, which predicts a binding energy given by:
+.. tip::
 
-.. math::
+    Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic model,
+    similar to the `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__
+    exciton model, which predicts a binding energy given by:
+    .. math::
 
-   E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
+       E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
 
-where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
-charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
-(:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant (i.e.
-binding energy of an electron in a hydrogen atom).
-```
+    where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
+    charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
+    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant (i.e.
+    binding energy of an electron in a hydrogen atom).
 
 We employ the methodology of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
 identify potential PHS through an interface with ``pydefect``.
@@ -283,11 +282,15 @@ The plot of the single particle levels is shown below (left), and an example of 
 PHS on the transition level diagram with a clear circle is shown on the right.
 
 .. image:: cu2sise3_phs_plot.png
-    :width: 320px
+    :width: 325px
     :align: left
 .. image:: cu2sise3_phs_tld.png
     :width: 320px
     :align: left
+
+.. raw::  html
+
+    <br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
 
 Spin Polarisation
 -----------------
