@@ -11,7 +11,7 @@ their specific needs/system.
     (based on the literature and our experience), there is no substitute for the user's own judgement.
     Defect behaviour is system-dependent, so it is `always` important to question and
     consider the choices and approximations made in the workflow (such as supercell choice, charge state
-    ranges, interstitial site pruning, `MAGMOM` initialisation etc.) in the context of your specific
+    ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
 
 Interstitials
@@ -89,7 +89,7 @@ underlying calculation and/or extreme forces.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed `SnB` structure-searching), convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed ``SnB`` structure-searching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -127,8 +127,8 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 .. code-block::
 
         Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which is
-        greater than the `error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction by
-        plotting the site potential differences (using `defect_entry.get_kumagai_correction()` with `plot=True`).
+        greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the correction by
+        plotting the site potential differences (using ``defect_entry.get_kumagai_correction()`` with ``plot=True``).
         Large errors are often due to unstable or shallow defect charge states (which can't be accurately modelled
         with the supercell approach). If this error is not acceptable, you may need to use a larger supercell
         for more accurate energies.
@@ -288,6 +288,203 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 .. image:: cu2sise3_phs_tld.png
     :width: 320px
     :align: left
+
+Spin Polarisation
+-----------------
+Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
+analysis. For defect species with odd numbers of electrons (and thus being open-shell), they will adopt
+non-zero integer spin states, while defect species with even numbers of electrons can be either
+closed-shell (spin-paired) or open-shell (spin-active), depending on the defect species and its electronic
+structure. As such, defect calculations should typically be performed with spin polarisation allowed in all
+cases (i.e. with ``ISPIN = 2`` in VASP).
+
+.. tip::
+
+    If we have (nearly) converged the geometry relaxation for an even-electron defect species and there is
+    no non-zero magnetic moments on any site (given by the ``magnetization`` output in the ``OUTCAR`` file)
+    – and so adopting a closed-shell electronic structure, then we can set ``ISPIN = 1`` (turning off
+    spin polarisation) for subsequent calculations to reduce the computational cost.
+
+    The ``snb-mag --verbose`` CLI command from ``ShakeNBreak`` can be used to automatically check the
+    magnetisation of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
+    set ``ISPIN = 1`` for continued ``ShakeNBreak`` relaxations of any closed-shell defect calculations,
+    if it is being used to manage the structure-searching calculations).
+
+    .. code-block::
+
+        ❯ snb-mag -h
+        Usage: snb-mag [OPTIONS]
+
+          Checks if the magnetisation (spin polarisation) values of all atoms in the
+          VASP calculation are below a certain threshold, by pulling this data from
+          the OUTCAR. Returns a shell exit status of 0 if magnetisation is below the
+          threshold and 1 if above.
+
+        Options:
+          -o, --outcar FILE      Path to OUTCAR(.gz) file
+          -t, --threshold FLOAT  Atoms with absolute magnetisation below this value
+                                 are considered un-magnetised / non-spin-polarised.
+                                 The threshold for total magnetisation is 10x this
+                                 value.  [default: 0.01]
+          -v, --verbose          Print information about the magnetisation of the
+                                 system.
+          -h, --help             Show this message and exit.
+
+
+In most cases and particularly for `s`/`p` orbital systems, odd electron defects will adopt a doublet spin
+state (`S` = 1/2, one unpaired electron), while even electron defects will tend to adopt a closed-shell
+singlet spin state (`S` = 0, no unpaired electrons), as a consequence of the Aufbau principle and Hund's
+rule. This is the default logic assumed in ``doped`` (and ``ShakeNBreak``), where the expected spin state
+is enforced by setting ``NUPDOWN`` (number of unpaired electrons) to ``0`` for even-electron and ``1`` for
+odd-electron defect species.
+
+However, this is not always the case and often we can have open-shell triplet states for even-electron
+defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects (with `S` = 3/2,
+three unpaired electrons). Such cases are most common when the defect species adopts a
+bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
+`CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__), a molecular dimer-like state (such as
+O\ :sub:`2` species in oxides, or
+`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__) or with
+orbital-degenerate/correlated defects where Hund's rule implies open-shell solutions (such as the
+highly-studied `NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
+or `transition metal impurities in silicon <https://journals.aps.org/prmaterials/abstract/10.1103/PhysRevMaterials.6.L053201>`__).
+If you encounter defect states like these and/or suspect that alternative spin configurations may be
+possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
+discussed below) accordingly – ideally performing the full structure-searching calculations for these
+species with these settings, as the potential energy surface can differ significantly under different spin
+states.
+
+.. note::
+
+    In general, it is best to explicitly specify the system spin state (i.e. with ``NUPDOWN``) in DFT
+    calculations, rather than leaving this as a free parameter, as not enforcing this constraint can often
+    lead to erroneous and unphysical results in the form of partial orbital occupation and spins. This
+    can occur because the DFT self-interaction error initially favours delocalisation of the unpaired
+    electron density, and converges to this unphysical result.
+
+As well as setting the total spin state of our supercell with ``NUPDOWN``, another parameter that can be
+important in certain cases is the individual site magnetic moments, which can be initialised with the
+``MAGMOM`` tag in the ``INCAR`` (see the `VASPwiki page <https://www.vasp.at/wiki/index.php/MAGMOM>`__).
+This tag is not set by default in ``doped``, using the ``VASP`` default initialisation of
+``MAGMOM = NIONS*1``.
+This tag is particularly important for magnetic materials (as discussed in the
+`Magnetism <https://shakenbreak.readthedocs.io/en/latest/Tips.html#magnetism>`__ section of the
+``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
+(as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
+YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
+``doped.vasp`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
+for multiple defects.
+
+.. note::
+
+    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
+    automatically set ``NUPDOWN`` according to the magnetisation output from the ``Materials Project``
+    calculation of the competing phase, but ``MAGMOM`` may also need to be set to induce a specific spin
+    configuration.
+
+Symmetry Precision (``symprec``)
+--------------------------------
+When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
+structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and
+``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
+``DefectsParser``, ``DefectParser``, all ``DefectThermodynamics`` symmetry/concentration functions,
+``get_orientational_degeneracy()``, ``point_symmetry_from_defect_entry()`` and others).
+
+By default, ``doped`` uses a value of ``symprec = 0.01`` for unrelaxed/bulk structures (matching the
+``pymatgen`` default), and a larger ``symprec = 0.1`` for determining the point symmetries (and thus
+orientational degeneracies) of relaxed defect structures to account for residual structural noise.
+This ``symprec`` value of ``0.1`` also matches that used by the ``Materials Project``.
+You may want to adjust ``symprec`` for your system (e.g. if there are very slight octahedral distortions
+etc.).
+
+.. tip::
+
+    Note that you can directly use the ``point_symmetry`` function from ``doped.utils.symmetry`` (see the
+    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry>`__
+    in the python API docs) to obtain the relaxed or unrelaxed (bulk site) point symmetries of a given
+    defect supercell, directly from just the relaxed structures, regardless of whether these defects were
+    generated/parsed with ``doped``.
+
+Serialization & Data Provenance (``JSON``/``csv``)
+--------------------------------------------------
+To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
+stages of the defect workflow, ``doped`` objects have been made fully serializable, meaning they can be
+easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
+various stages in the tutorials, this can be achieved using the ``dumpfn``/``loadfn`` functions from
+``monty.serialization``, or with the ``to_json``/``from_json`` methods provided for ``Defect``,
+``DefectEntry``, ``DefectsGenerator`` and ``DefectThermodynamics`` objects:
+
+.. code-block:: python
+
+    # save a DefectThermodynamics object to a JSON file
+    defect_thermo.to_json("MgO_DefectThermodynamics.json")
+
+    # then later in a different python session or notebook, we can reload the
+    # DefectThermodynamics object from the JSON file, containing all the associated info
+    from doped.thermodynamics import DefectThermodynamics
+    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json")
+
+    # alternatively, we can directly use the monty dumpfn/loadfn functions
+    # directly on any doped object, e.g. with our ``DefectsSet`` object
+    # containing all the info on the generated VASP input files:
+    from monty.serialization import dumpfn, loadfn
+    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json")
+
+    # and again later reload the object from the JSON file
+    defects_set = loadfn("MgO_DefectsSet.json")
+
+.. note::
+
+        While these JSON files tend to have relatively small file sizes anyway, we can further reduce their
+        size by saving to / loading from ``gzip`` or ``bz2`` compressed JSON files, by specifying
+        ``.json.gz``/``.json.z``/``.json.bz2`` as the file extension in the serialization functions.
+
+In the typical defect calculation workflow with ``doped`` (exemplified in the tutorials), the following
+``JSON`` files are automatically written to file:
+
+- The ``DefectsGenerator`` object or ``defect_entries`` dictionary that is input to ``DefectsSet``, when
+  writing ``VASP`` input files with ``DefectsSet.write_files(output_path=".")`` – written to
+  ``output_path``. Additionally, for each calculation directory generated, the corresponding
+  ``DefectEntry`` object is written to a ``{DefectEntry.name}.json`` file in the directory so that all
+  information on the generated defect structure, charge state etc. is preserved in the calculation
+  directory.
+- The parsed defect entries dict (``DefectsParser.defect_dict``) when defect calculations are parsed with
+  ``DefectsParser(output_path=".")`` – written to ``output_path``. The JSON filename can be set with e.g.
+  ``DefectsParser(json_filename="custom_name.json")``, but the default is
+  ``{Host Chemical Formula}_defect_dict.json``.
+    - Additionally, a ``voronoi_nodes.json`` file is saved to the bulk supercell calculation directory if
+      any interstitial defects are parsed. This contains information about the Voronoi tessellation nodes
+      in the host structure, which are used for analysing interstitial positions but can be somewhat costly
+      to calculate – so are automatically saved to file once initially computed to reduce parsing times.
+- Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
+  the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
+  containing distortion information about all defects) and to each defect directory (containing just the
+  distortion information for that defect) when running ``Dist.write_vasp_files(output_path=".")``.
+
+In most cases it is also recommended to save the ``DefectThermodynamics`` object to file once generated
+(using ``DefectThermodynamics.to_json()``), to avoid having to re-parse at any later stage, however this
+is not done automatically.
+
+``DataFrame`` Outputs
+^^^^^^^^^^^^^^^^^^^^^
+Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
+``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
+``get_quenched_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
+``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
+attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
+tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the
+``pandas`` API docs `here <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__) using
+the ``to_csv``/``to_json`` methods:
+
+.. code-block:: python
+
+    # save the formation energies DataFrame to a csv file
+    defect_thermo.get_formation_energies().to_csv("MgO_formation_energies.csv")
+
+These ``csv`` files can easily be used as data tables when writing up results, by directly importing to
+Microsoft Word or converting to LaTeX format using `Tables Generator <https://www.tablesgenerator.com>`__.
+``CompetingPhasesAnalyzer`` can also be reinitialised from a saved ``csv`` formation energies file with the
+``from_csv()`` method.
 
 .. note::
 

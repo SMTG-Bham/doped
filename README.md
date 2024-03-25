@@ -37,6 +37,7 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
 
 ```bash
   conda install -c conda-forge doped
+  pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
 ```
 
 If you haven't done so already, you will need to set up your VASP `POTCAR` files and `Materials Project` API with `pymatgen` using the `.pmgrc.yaml` file, in order for `doped` to automatically generate VASP input files for defect calculations and determine competing phases for chemical potentials.
@@ -53,7 +54,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - X. Wang et al. **_Upper efficiency limit of Sb<sub>2</sub>Se<sub>3</sub> solar cells_** [_arXiv_](https://arxiv.org/abs/2402.04434) 2024
 - I. Mosquera-Lois et al. **_Machine-learning structural reconstructions for accelerated point defect calculations_** [_arXiv_](https://doi.org/10.48550/arXiv.2401.12127) 2024
 - W. Dou et al. **_Giant Band Degeneracy via Orbital Engineering Enhances Thermoelectric Performance from Sb<sub>2</sub>Si<sub>2</sub>Te<sub>6</sub> to Sc<sub>2</sub>Si<sub>2</sub>Te<sub>6</sub>_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-hm6vh) 2024
-- K. Li et al. **_Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb<sub>2</sub>O<sub>5</sub>_** [_ChemRxiv_](https://chemrxiv.org/engage/chemrxiv/article-details/65846b8366c1381729bc5f23) 2023
+- K. Li et al. **_Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb<sub>2</sub>O<sub>5</sub>_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.3c03257) 2023
 - X. Wang et al. **_Four-electron negative-U vacancy defects in antimony selenide_** [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
 - Y. Kumagai et al. **_Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation_** [_PRX Energy_](http://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **_Mixed-Cation Vacancy-Ordered Perovskites (Cs<sub>2</sub>Ti<sub>1–x</sub>Sn<sub>x</sub>X<sub>6</sub>; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability_*** [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.3c05204) 2023

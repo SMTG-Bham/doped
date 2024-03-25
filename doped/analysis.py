@@ -8,7 +8,6 @@ publication-quality outputs.
 """
 
 import contextlib
-import inspect
 import os
 import warnings
 from multiprocessing import Pool, Queue, cpu_count
@@ -28,7 +27,7 @@ from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Vasprun
 from tqdm import tqdm
 
-from doped import _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
@@ -350,7 +349,7 @@ def defect_name_from_structures(bulk_structure, defect_structure):
         str: Defect name.
     """
     # set oxi_state to avoid wasting time trying to auto-determine when unnecessary here
-    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state=0)
+    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state="Undetermined")
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
     # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
@@ -414,7 +413,9 @@ def defect_entry_from_paths(
         **kwargs:
             Keyword arguments to pass to ``DefectParser()`` methods
             (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-            such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc.
+            ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+            including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+            ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``.
 
     Return:
         Parsed ``DefectEntry`` object.
@@ -446,6 +447,7 @@ class DefectsParser:
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
         load_phs_data: Optional[bool] = True,
+        **kwargs,
     ):
         r"""
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -521,8 +523,7 @@ class DefectsParser:
                 to in ``output_path``, to avoid having to re-parse defects when later analysing
                 further and aiding calculation provenance. Can be reloaded using the ``loadfn``
                 function from ``monty.serialization`` (and then input to ``DefectThermodynamics``
-                etc). If None (default), set as "{Chemical Formula}_defect_dict.json" where
-                {Chemical Formula} is the chemical formula of the host material.
+                etc). If None (default), set as ``{Host Chemical Formula}_defect_dict.json``.
                 If False, no json file is saved.
             load_phs_data (bool):
                 Load the projected eigenvalues and sets up a ``pydefect`` ``BandEdgeOrbitalInfos``
@@ -532,6 +533,14 @@ class DefectsParser:
                 from ``vasprun.xml``.This can cause a significant increase in the parsing
                 time (30%-70% longer), so set to False if not needed.
                 Default = True.
+            **kwargs:
+                Keyword arguments to pass to ``DefectParser()`` methods
+                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
 
         Attributes:
             defect_dict (dict):
@@ -551,6 +560,7 @@ class DefectsParser:
         self.json_filename = json_filename
         self.load_phs_data = load_phs_data
         self.bulk_vr = None  # loaded later
+        self.kwargs = kwargs
 
         possible_defect_folders = [
             dir
@@ -1131,6 +1141,7 @@ class DefectsParser:
 
     def _parse_single_defect(self, defect_folder):
         try:
+            self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
@@ -1140,10 +1151,10 @@ class DefectsParser:
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
                 bulk_band_gap_path=self.bulk_band_gap_path,
+                oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
                 load_phs_data=self.load_phs_data,
-                **self.bulk_corrections_data,
                 **self.phs_data,
-                oxi_state=None if self._bulk_oxi_states else "Undetermined",
+                **self.kwargs,
             )
 
             if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
@@ -1273,19 +1284,15 @@ class DefectsParser:
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectsParser object.
+        Returns a string representation of the ``DefectsParser`` object.
         """
         formula = next(
             iter(self.defect_dict.values())
         ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectsParser for bulk composition {formula}, with {len(self.defect_dict)} parsed "
-            f"defect entries in self.defect_dict. Available attributes:\n{attrs | properties}\n\n"
+            f"defect entries in self.defect_dict. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 
@@ -1325,9 +1332,11 @@ class DefectParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
-                used by DefectsParser to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
         """
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
@@ -1416,9 +1425,11 @@ class DefectParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
-                used by DefectsParser to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
 
         Return:
             ``DefectParser`` object.
@@ -1690,7 +1701,11 @@ class DefectParser:
 
         # get orientational degeneracy
         relaxed_point_group, periodicity_breaking = point_symmetry_from_defect_entry(
-            defect_entry, relaxed=True, verbose=False, return_periodicity_breaking=True
+            defect_entry,
+            relaxed=True,
+            verbose=False,
+            return_periodicity_breaking=True,
+            symprec=kwargs.get("symprec"),
         )  # relaxed so defect symm_ops
         bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,
@@ -1702,7 +1717,6 @@ class DefectParser:
             defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                 relaxed_point_group=relaxed_point_group,
                 bulk_site_point_group=bulk_site_point_group,
-                defect_type=defect.defect_type,
             )
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
@@ -2311,17 +2325,13 @@ class DefectParser:
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectParser object.
+        Returns a string representation of the ``DefectParser`` object.
         """
         formula = self.bulk_vr.final_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectParser for bulk composition {formula}. "
-            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
