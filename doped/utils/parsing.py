@@ -12,7 +12,6 @@ from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
-from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
@@ -464,10 +463,14 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     # suppress pydefect INFO messages
     import logging
 
-    from vise import user_settings
+    try:
+        from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+        user_settings.logger.setLevel(logging.CRITICAL)
+        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+
+    except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
+        return
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")
@@ -885,8 +888,7 @@ def get_orientational_degeneracy(
     bulk_site_point_group: Optional[str] = None,
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
-    symprec: float = 0.2,
-    defect_type: Optional[Union[DefectType, str]] = None,
+    symprec: float = 0.1,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
@@ -942,8 +944,8 @@ def get_orientational_degeneracy(
     while for interstitials it is the point symmetry of the `final relaxed` interstitial
     site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
-    and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
-    doi.org/10.1039/D3CS00432E).
+    and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
+    https://doi.org/10.1039/D3CS00432E).
 
     Args:
         defect_entry (DefectEntry): DefectEntry object. (Default = None)
@@ -966,15 +968,13 @@ def get_orientational_degeneracy(
             structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.2, which is larger than
-            that used for only unrelaxed structures in doped (0.01), to account for
-            residual structural noise in relaxed supercells. You may want to adjust
-            for your system (e.g. if there are very slight octahedral distortions etc).
-        defect_type (DefectType or str):
-            The type of defect (e.g. Vacancy/"vacancy", Substitution/"substitution",
-            Interstitial/"interstitial") to check if the output orientational
-            degeneracy is reasonable (i.e. can only be less than 1 for interstitials).
-            Default is None (no check).
+            Symmetry tolerance for ``spglib`` to use when determining point
+            symmetries and thus orientational degeneracies. Default is ``0.1``
+            which matches that used by the ``Materials Project`` and is larger
+            than the ``pymatgen`` default of ``0.01`` to account for residual
+            structural noise in relaxed defect supercells.
+            You may want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
 
     Returns:
         float: orientational degeneracy factor for the defect.
@@ -993,9 +993,6 @@ def get_orientational_degeneracy(
             "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
             "(i.e. must be a parsed DefectEntry)"
         )
-
-    else:
-        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
@@ -1088,6 +1085,7 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
             bulk_supercell,
             _get_defect_supercell(defect_entry),
             return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
         )
         return unrelaxed_defect_structure
 
@@ -1132,7 +1130,12 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
             _bulk_voronoi_node_dict,
-        ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_supercell,
+            return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
+        )
 
         # update any missing calculation_metadata:
         defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (

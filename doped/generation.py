@@ -239,7 +239,7 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
             List of symmetry operations of ``defect.structure``, to avoid
             re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01.
+            Symmetry tolerance for ``spglib``. Default is 0.01.
 
     Returns:
         str: Defect name.
@@ -294,7 +294,7 @@ def get_defect_name_from_entry(
             structure (if relaxed=False) or defect_entry.defect_supercell (if
             relaxed=True), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
+            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
             0.2 for relaxed (to account for residual structural noise). You may
             want to adjust for your system (e.g. if there are very slight
             octahedral distortions etc).
@@ -1989,8 +1989,8 @@ class DefectsGenerator(MSONable):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the DefectsGenerator object as a json file, which can be reloaded
-        with the DefectsGenerator.from_json() class method.
+        Save the ``DefectsGenerator`` object as a json file, which can be
+        reloaded with the ``DefectsGenerator.from_json()`` class method.
 
         Args:
             filename (str): Filename to save json file as. If None, the filename will be

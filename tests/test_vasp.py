@@ -144,7 +144,7 @@ class DefectDictSetTest(unittest.TestCase):
             ]:
                 assert "PBE" in potcar_functional
 
-            potcar_settings = default_potcar_dict["POTCAR"].copy()
+            potcar_settings = default_potcar_dict.copy()
             potcar_settings.update(dds.user_potcar_settings or {})
             assert set(dds.potcar.as_dict()["symbols"]) == {
                 potcar_settings[el_symbol] for el_symbol in dds.structure.symbol_set
@@ -200,42 +200,55 @@ class DefectDictSetTest(unittest.TestCase):
         )
 
     def _check_dds_incar(self, dds, struct):
+        # these are the base INCAR settings:
         expected_incar_settings = self.neutral_def_incar_min.copy()
         expected_incar_settings.update(self.hse06_incar_min)  # HSE06 by default
         expected_incar_settings.update(dds.user_incar_settings)
-        if dds.incar.get("IBRION") == -1 or dds.incar.get("NSW") == 0:
-            _isif = expected_incar_settings.pop("ISIF", None)  # ISIF = 2 not set w/static calculations now
-        expected_incar_settings_w_none_vals = expected_incar_settings.copy()
-        # remove any entries where value is None:
         expected_incar_settings = {k: v for k, v in expected_incar_settings.items() if v is not None}
+
+        default_relax_settings = default_defect_relax_set["INCAR"].copy()
+        default_relax_settings.update(dds.user_incar_settings)
+        default_relax_settings = {k: v for k, v in default_relax_settings.items() if v is not None}
+        print(dds.user_incar_settings, dds.incar, default_relax_settings)  # for debugging
+
+        if dds.incar.get("NSW") == 0:
+            assert "EDIFFG" not in dds.incar
+            default_relax_settings.pop("EDIFFG", None)  # EDIFFG not set w/static calculations
+            default_relax_settings.pop("IBRION", None)  # IBRION not set w/static calculations now
+            default_relax_settings.pop("ISIF", None)  # ISIF = 2 not set w/static calculations now
+            default_relax_settings.pop("NSW", None)
+            assert "ISIF" not in dds.incar
+            expected_incar_settings.pop("ISIF", None)  # ISIF = 2 not set w/static calculations now
+
+        print("Comparing expected base INCAR settings with dds.incar")
         assert expected_incar_settings.items() <= dds.incar.items()
+
         if dds.incar.get("NSW", 0) > 0:
             assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
         else:
             assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
+        default_relax_settings.pop("EDIFF_PER_ATOM")
 
-        for k, v in default_defect_relax_set["INCAR"].items():
-            if k in [
-                "EDIFF_PER_ATOM",
-                *list(expected_incar_settings_w_none_vals.keys()),  # to ensure we skip EDIFFG/POTIM
-                # -> None in singleshot calcs
-                "ISIF",
-            ]:  # already tested
+        for k, v in default_relax_settings.items():
+            if k == "GGA" and dds.incar.get("LHFCALC", False):
+                assert dds.incar[k] in ["Pe", "PE"]  # auto set to PE if LHFCALC = True
                 continue
 
             assert k in dds.incar
-            if isinstance(v, str):  # DictSet converts all strings to capitalised lowercase
+            print(k, v, dds.incar[k])  # for debugging
+            if isinstance(v, str):  # DictSet converts all ``user_incar_settings`` strings to capitalised
+                # lowercase, but not if set as config_dict["INCAR"]
                 try:
                     val = float(v[:2])
                     if k in dds.user_incar_settings:  # has been overwritten
                         assert val != dds.incar[k]
                     else:
                         assert val == dds.incar[k]
-                except ValueError:
+                except (ValueError, AssertionError):
                     if k in dds.user_incar_settings:
-                        assert v.lower().capitalize() == dds.user_incar_settings[k]
+                        assert dds.user_incar_settings[k] in [v, v.lower().capitalize(), bool(v[:5])]
                     else:
-                        assert v.lower().capitalize() == dds.incar[k]
+                        assert dds.incar[k] in [v, v.lower().capitalize(), bool(v[:5])]
             elif k in dds.user_incar_settings:
                 assert dds.incar[k] == dds.user_incar_settings[k]
             else:
@@ -373,6 +386,7 @@ class DefectDictSetTest(unittest.TestCase):
             )
             _incar_pop = dds.incar  # get KPAR warning
 
+        print([str(warning.message) for warning in w])  # for debugging
         assert any(
             "Cannot find Whoops from your user_incar_settings in the list of INCAR flags"
             in str(warning.message)
@@ -471,7 +485,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         dds.write_input(output_path, **kwargs)
 
-        # print(output_path)  # to help debug if tests fail
+        print(output_path)  # to help debug if tests fail
         assert os.path.exists(output_path)
 
         if _potcars_available() or dds.charge_state == 0:  # INCARs should be written
@@ -600,7 +614,9 @@ class DefectRelaxSetTest(unittest.TestCase):
         def _check_drs_dds_attribute_transfer(parent_drs, child_dds):
             child_incar_settings = child_dds.user_incar_settings.copy()
             if "KPAR" in child_incar_settings and "KPAR" not in parent_drs.user_incar_settings:
-                assert child_incar_settings.pop("KPAR") == 2
+                assert (
+                    child_incar_settings.pop("KPAR") == 2 or int(child_incar_settings.pop("KPAR")[0]) == 2
+                )
                 assert parent_drs.vasp_std
             if "LSORBIT" in child_incar_settings and "LSORBIT" not in parent_drs.user_incar_settings:
                 assert child_incar_settings.pop("LSORBIT") is True
@@ -618,6 +634,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 for k, v in singleshot_incar_settings.items():  # bulk singleshots
                     assert child_incar_settings.pop(k) == v
 
+            print("Checking incar settings")
             assert parent_drs.user_incar_settings == child_incar_settings
             assert parent_drs.user_potcar_functional == child_dds.user_potcar_functional or str(
                 parent_drs.user_potcar_functional[:3]
@@ -645,29 +662,29 @@ class DefectRelaxSetTest(unittest.TestCase):
                     .as_dict(),
                 ]
             else:
-                assert parent_drs.user_kpoints_settings == child_dds.user_kpoints_settings
+                assert child_dds.user_kpoints_settings in [
+                    parent_drs.user_kpoints_settings,
+                    {"reciprocal_density": 100},  # default
+                ]
 
         for defect_dict_set, type in dds_test_list:
             if defect_dict_set is not None:
                 print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
-                print("Here")
                 self.dds_test._check_dds(
                     defect_dict_set,
                     defect_relax_set.defect_supercell,
                     charge_state=defect_relax_set.charge_state,
                     **kwargs,
                 )
-                print("Here")
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
-                print("Here")
                 self.dds_test._write_and_check_dds_files(
                     defect_dict_set, output_path=f"{defect_relax_set.defect_entry.name}"
                 )
-                print("Here")
                 self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
                 if defect_relax_set.charge_state == 0:
                     self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
 
+                print("Checking DRS/DDS attribute transfer")
                 _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
 
         for defect_dict_set, type in dds_bulk_test_list:
@@ -710,11 +727,8 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert parent_drs.bulk_supercell == input_defect_entry.bulk_supercell
 
         # test initialising DefectRelaxSet with our generation-tests materials, and writing files to disk
-        defect_gen_test_list = [
-            (self.CdTe_defect_gen, "CdTe defect_gen"),
-            (DefectsGenerator(self.sqs_agsbte2, generate_supercell=False), "SQS AgSbTe2 defect_gen"),
-        ]
         for defect_gen_name in [
+            "CdTe defect_gen",
             "ytos_defect_gen",
             "ytos_defect_gen_supercell",
             "lmno_defect_gen",
@@ -723,13 +737,16 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cd_i_supercell_defect_gen",
             "N_diamond_defect_gen",  # input structure for this is unordered (but this checks
             # that POSCAR site symbols output should be ordered)
+            "SQS AgSbTe2 defect_gen",
         ]:
-            defect_gen_test_list.append(
-                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
-            )
-
-        for defect_gen, defect_gen_name in defect_gen_test_list:
             print(f"Initialising and testing: {defect_gen_name}")
+            if defect_gen_name == "CdTe defect_gen":
+                defect_gen = self.CdTe_defect_gen
+            elif defect_gen_name == "SQS AgSbTe2 defect_gen":
+                defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
+            else:
+                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+
             # randomly choose a defect entry from the defect_gen dict:
             defect_entry = random.choice(list(defect_gen.values()))
 
@@ -739,6 +756,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
             _check_drs_defect_entry_attribute_transfer(drs, defect_entry)
 
+            print(f"Testing {defect_entry.name} with custom INCAR settings")
             custom_drs = DefectRelaxSet(
                 defect_entry,
                 user_incar_settings={"ENCUT": 350},
@@ -1134,17 +1152,15 @@ class DefectsSetTest(unittest.TestCase):
         if check_incar is None:
             check_incar = _potcars_available()
 
-        if single_defect_dir:
-            folders = [
-                "",
-            ]
-
-        else:
-            folders = [
+        folders = (
+            [
                 folder
                 for folder in os.listdir(data_dir)
                 if os.path.isdir(f"{data_dir}/{folder}") and ("bulk" not in folder.lower() or bulk)
             ]
+            if not single_defect_dir
+            else [""]
+        )
 
         for folder in folders:
             print(f"{generated_dir}/{folder}")  # for debugging

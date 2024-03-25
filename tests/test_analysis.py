@@ -30,9 +30,11 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
 )
+from doped.utils.symmetry import point_symmetry
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -80,6 +82,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
         self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
         self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
+        self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
+        self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -91,6 +95,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json"))
+        if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json"))
+        if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json"))
 
         for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
             if "json" in i:
@@ -960,6 +966,11 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert len(dp.defect_dict) == 3
         self._check_DefectsParser(dp)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["vac_O_2"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["vac_O_1"].calculation_metadata["relaxed point symmetry"] == "Cs"
+        assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
         thermo = dp.get_defect_thermodynamics()
 
         print(thermo.get_symmetries_and_degeneracies())
@@ -1048,6 +1059,72 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert list(symm_df["Defect_Symm"].unique()) == ["C1"]
         assert list(symm_df["g_Orient"].unique()) == [1.0]
         assert list(symm_df["g_Spin"].unique()) == [2]
+
+    @custom_mpl_image_compare(filename="CaO_v_Ca.png")
+    def test_CaO_symmetry_determination(self):
+        """
+        Test parsing CaO defect calculations, and confirming the correct point
+        group symmetries are being determined (previously failed with old
+        relaxed symmetry determination scheme with old default of
+        ``symprec=0.2``).
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.CaO_DATA_DIR, skip_corrections=True)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 4
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        for name, vacancy_defect_entry in dp.defect_dict.items():
+            print(
+                name,
+                vacancy_defect_entry.calculation_metadata["relaxed point symmetry"],
+                vacancy_defect_entry.calculation_metadata["bulk site symmetry"],
+            )
+            assert vacancy_defect_entry.calculation_metadata["bulk site symmetry"] == "Oh"
+        assert dp.defect_dict["v_Ca_+1"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["v_Ca_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["v_Ca_-1"].calculation_metadata["relaxed point symmetry"] == "C4v"
+        assert dp.defect_dict["v_Ca_-2"].calculation_metadata["relaxed point symmetry"] == "Oh"
+
+        thermo = dp.get_defect_thermodynamics()
+
+        return thermo.plot()
+
+    def test_BiOI_v_Bi_symmetry_determination(self):
+        """
+        Test parsing v_Bi_+1 from BiOI defect calculations, and confirming the
+        correct point group symmetry of Cs is determined.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 1
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
+
+        # test setting symprec during parsing
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True, symprec=0.01)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 1
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "C1"
+
+        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
+        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0
 
 
 class DopedParsingTestCase(unittest.TestCase):
@@ -2085,13 +2162,19 @@ class DopedParsingTestCase(unittest.TestCase):
     def test_tricky_relaxed_interstitial_corrections_kumagai(self):
         """
         Test the eFNV correction performance with tricky-to-locate relaxed
-        interstitial sites (Te_i^+1 ground-state and metastable from Kavanagh
-        et al.
+        interstitial sites.
 
-        2022 doi.org/10.1039/D2FD00043A).
+        In this test case, we look at Te_i^+1 ground-state and metastable
+        structures from Kavanagh et al. 2022 doi.org/10.1039/D2FD00043A.
         """
-        from pydefect.analyzer.calc_results import CalcResults
-        from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+        try:
+            from pydefect.analyzer.calc_results import CalcResults
+            from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+        except ImportError as exc:
+            raise ImportError(
+                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+                "You can do this by running `pip install pydefect`."
+            ) from exc
 
         def _make_calc_results(directory) -> CalcResults:
             vasprun = get_vasprun(f"{directory}/vasprun.xml.gz")
@@ -2271,6 +2354,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         defect_entry.bulk_supercell,
                         rattled_defect_supercell,
                         return_all_info=True,
+                        oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
                 if stdev >= 0.5:
@@ -2346,6 +2430,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         defect_entry.defect_supercell,
                         return_all_info=True,
+                        oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
                 if stdev >= 0.5:
@@ -2366,6 +2451,58 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 )
                 assert defect_site_index == defect_entry.calculation_metadata["defect_site_index"]
                 assert bulk_site_index == defect_entry.calculation_metadata["bulk_site_index"]
+
+    def test_point_symmetry_periodicity_breaking(self):
+        """
+        Test the periodicity-breaking warning with the ``point_symmetry``
+        function from ``doped.utils.symmetry``.
+
+        Note that this warning & symmetry handling is mostly tested through
+        the ``DefectThermodynamics.get_symmetries_and_degeneracies()`` tests
+        in ``test_thermodynamics.py``.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.ZnS_DATA_DIR, dielectric=8.9)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(dp.defect_dict) == 17
+
+        with warnings.catch_warnings(record=True) as w:
+            point_symm, periodicity_breaking = point_symmetry(
+                dp.defect_dict["vac_1_Zn_0"].defect_supercell,
+                bulk_structure=dp.defect_dict["vac_1_Zn_0"].bulk_supercell,
+                return_periodicity_breaking=True,
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert (
+            str(w[0].message)
+            == "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
+            "that the defect supercell is likely a non-scalar matrix expansion which could be "
+            "breaking the cell periodicity and possibly preventing the correct _relaxed_ point group "
+            "symmetry from being automatically determined. You can set relaxed=False to instead get "
+            "the (unrelaxed) bulk site symmetry, and/or manually check/set/edit the point symmetries "
+            "and corresponding orientational degeneracy factors by inspecting/editing the "
+            "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
+            "degeneracy_factors['orientational degeneracy'] attributes."
+        )
+        assert periodicity_breaking
+        assert point_symm == "C1"
+
+        for name, defect_entry in dp.defect_dict.items():
+            print(f"Checking symmetry for {name}")
+            with warnings.catch_warnings(record=True) as w:
+                assert point_symmetry(defect_entry.defect_supercell) == "C1"
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w  # no warnings with just defect supercell as can't determine periodicity breaking
+            with warnings.catch_warnings(record=True) as w:
+                assert point_symmetry(
+                    defect_entry.defect_supercell, defect_entry.bulk_supercell, relaxed=False
+                ) in ["Td", "C3v", "Cs", "C1"]
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w  # no periodicity breaking warning with `relaxed=False`
+            with pytest.raises(RuntimeError) as excinfo:
+                point_symmetry(defect_entry.defect_supercell, relaxed=False)
+            assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
 
     def test_bulk_defect_compatibility_checks(self):
         """

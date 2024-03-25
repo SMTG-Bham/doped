@@ -3087,15 +3087,10 @@ Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
             warnings.resetwarnings()
             # suggested check function in `get_defect_name_from_entry`:
             for defect_name, defect_entry in sb2se3_defect_gen.items():
-                print(
-                    defect_name,
-                    get_defect_name_from_entry(defect_entry, relaxed=False),
-                    get_defect_name_from_entry(defect_entry),
-                    "\n",
-                )
-                assert get_defect_name_from_entry(
-                    defect_entry, relaxed=False
-                ) == get_defect_name_from_entry(defect_entry)
+                unrelaxed_name = get_defect_name_from_entry(defect_entry, relaxed=False)
+                relaxed_name = get_defect_name_from_entry(defect_entry)
+                print(defect_name, unrelaxed_name, relaxed_name, "\n")
+                assert unrelaxed_name == relaxed_name
 
         non_ignored_warnings = [  # warning about calculation_metadata with relaxed=True,
             # but no other warnings
