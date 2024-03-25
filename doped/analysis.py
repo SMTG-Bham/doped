@@ -443,6 +443,7 @@ class DefectsParser:
         bulk_band_gap_path: Optional[str] = None,
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
+        **kwargs,
     ):
         r"""
         A class for rapidly parsing multiple VASP defect supercell calculations
@@ -520,6 +521,14 @@ class DefectsParser:
                 function from ``monty.serialization`` (and then input to ``DefectThermodynamics``
                 etc). If None (default), set as ``{Host Chemical Formula}_defect_dict.json``.
                 If False, no json file is saved.
+            **kwargs:
+                Keyword arguments to pass to ``DefectParser()`` methods
+                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
 
         Attributes:
             defect_dict (dict):
@@ -538,6 +547,7 @@ class DefectsParser:
         self.processes = processes
         self.json_filename = json_filename
         self.bulk_vr = None  # loaded later
+        self.kwargs = kwargs
 
         possible_defect_folders = [
             dir
@@ -1100,6 +1110,7 @@ class DefectsParser:
 
     def _parse_single_defect(self, defect_folder):
         try:
+            self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
@@ -1108,8 +1119,8 @@ class DefectsParser:
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
                 bulk_band_gap_path=self.bulk_band_gap_path,
-                **self.bulk_corrections_data,
-                oxi_state=None if self._bulk_oxi_states else "Undetermined",
+                oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
+                **self.kwargs,
             )
 
             if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
