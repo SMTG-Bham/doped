@@ -29,6 +29,7 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.parsing import (
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_orientational_degeneracy,
     get_outcar,
     get_vasprun,
 )
@@ -86,6 +87,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json"))
+        if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json"))
+        if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json"))
 
         for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
             if "json" in i:
@@ -1006,9 +1009,21 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
 
-        thermo = dp.get_defect_thermodynamics()
+        # test setting symprec during parsing
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True, symprec=0.01)
 
-        return thermo.plot()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 1
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "C1"
+
+        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
+        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0
 
 
 class DopedParsingTestCase(unittest.TestCase):
