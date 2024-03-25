@@ -1046,6 +1046,7 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
             bulk_supercell,
             _get_defect_supercell(defect_entry),
             return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
         )
         return unrelaxed_defect_structure
 
@@ -1090,7 +1091,12 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
             _bulk_voronoi_node_dict,
-        ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_supercell,
+            return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
+        )
 
         # update any missing calculation_metadata:
         defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
