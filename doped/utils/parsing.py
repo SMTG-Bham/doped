@@ -10,7 +10,6 @@ from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
-from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
@@ -850,8 +849,7 @@ def get_orientational_degeneracy(
     bulk_site_point_group: Optional[str] = None,
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
-    symprec: float = 0.2,
-    defect_type: Optional[Union[DefectType, str]] = None,
+    symprec: float = 0.1,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
@@ -931,15 +929,13 @@ def get_orientational_degeneracy(
             structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.2, which is larger than
-            that used for only unrelaxed structures in doped (0.01), to account for
-            residual structural noise in relaxed supercells. You may want to adjust
-            for your system (e.g. if there are very slight octahedral distortions etc).
-        defect_type (DefectType or str):
-            The type of defect (e.g. Vacancy/"vacancy", Substitution/"substitution",
-            Interstitial/"interstitial") to check if the output orientational
-            degeneracy is reasonable (i.e. can only be less than 1 for interstitials).
-            Default is None (no check).
+            Symmetry tolerance for ``spglib`` to use when determining point
+            symmetries and thus orientational degeneracies. Default is ``0.1``
+            which matches that used by the ``Materials Project`` and is larger
+            than the ``pymatgen`` default of ``0.01`` to account for residual
+            structural noise in relaxed defect supercells.
+            You may want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
 
     Returns:
         float: orientational degeneracy factor for the defect.
@@ -958,9 +954,6 @@ def get_orientational_degeneracy(
             "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
             "(i.e. must be a parsed DefectEntry)"
         )
-
-    else:
-        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry

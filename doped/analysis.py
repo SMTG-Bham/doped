@@ -410,7 +410,9 @@ def defect_entry_from_paths(
         **kwargs:
             Keyword arguments to pass to ``DefectParser()`` methods
             (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-            such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc.
+            ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+            including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+            ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``.
 
     Return:
         Parsed ``DefectEntry`` object.
@@ -1279,9 +1281,11 @@ class DefectParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
-                used by DefectsParser to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
         """
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
@@ -1356,9 +1360,11 @@ class DefectParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                such as ``bulk_locpot_dict``, ``bulk_site_potentials`` etc. Mainly
-                used by DefectsParser to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
+                for each defect.
 
         Return:
             ``DefectParser`` object.
@@ -1585,7 +1591,11 @@ class DefectParser:
 
         # get orientational degeneracy
         relaxed_point_group, periodicity_breaking = point_symmetry_from_defect_entry(
-            defect_entry, relaxed=True, verbose=False, return_periodicity_breaking=True
+            defect_entry,
+            relaxed=True,
+            verbose=False,
+            return_periodicity_breaking=True,
+            symprec=kwargs.get("symprec"),
         )  # relaxed so defect symm_ops
         bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,
@@ -1597,7 +1607,6 @@ class DefectParser:
             defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                 relaxed_point_group=relaxed_point_group,
                 bulk_site_point_group=bulk_site_point_group,
-                defect_type=defect.defect_type,
             )
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
