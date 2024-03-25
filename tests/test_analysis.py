@@ -73,6 +73,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
         self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
         self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
+        self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
+        self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
@@ -860,6 +862,11 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert len(dp.defect_dict) == 3
         self._check_DefectsParser(dp)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["vac_O_2"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["vac_O_1"].calculation_metadata["relaxed point symmetry"] == "Cs"
+        assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
         thermo = dp.get_defect_thermodynamics()
 
         print(thermo.get_symmetries_and_degeneracies())
@@ -948,6 +955,60 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert list(symm_df["Defect_Symm"].unique()) == ["C1"]
         assert list(symm_df["g_Orient"].unique()) == [1.0]
         assert list(symm_df["g_Spin"].unique()) == [2]
+
+    @custom_mpl_image_compare(filename="CaO_v_Ca.png")
+    def test_CaO_symmetry_determination(self):
+        """
+        Test parsing CaO defect calculations, and confirming the correct point
+        group symmetries are being determined (previously failed with old
+        relaxed symmetry determination scheme with old default of
+        ``symprec=0.2``).
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.CaO_DATA_DIR, skip_corrections=True)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 4
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        for name, vacancy_defect_entry in dp.defect_dict.items():
+            print(
+                name,
+                vacancy_defect_entry.calculation_metadata["relaxed point symmetry"],
+                vacancy_defect_entry.calculation_metadata["bulk site symmetry"],
+            )
+            assert vacancy_defect_entry.calculation_metadata["bulk site symmetry"] == "Oh"
+        assert dp.defect_dict["v_Ca_+1"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["v_Ca_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["v_Ca_-1"].calculation_metadata["relaxed point symmetry"] == "C4v"
+        assert dp.defect_dict["v_Ca_-2"].calculation_metadata["relaxed point symmetry"] == "Oh"
+
+        thermo = dp.get_defect_thermodynamics()
+
+        return thermo.plot()
+
+    def test_BiOI_v_Bi_symmetry_determination(self):
+        """
+        Test parsing v_Bi_+1 from BiOI defect calculations, and confirming the
+        correct point group symmetry of Cs is determined.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert len(dp.defect_dict) == 1
+        self._check_DefectsParser(dp, skip_corrections=True)
+
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
+
+        thermo = dp.get_defect_thermodynamics()
+
+        return thermo.plot()
 
 
 class DopedParsingTestCase(unittest.TestCase):
