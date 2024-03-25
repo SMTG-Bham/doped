@@ -33,6 +33,7 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
+from doped.utils.symmetry import point_symmetry
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -2308,6 +2309,58 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 )
                 assert defect_site_index == defect_entry.calculation_metadata["defect_site_index"]
                 assert bulk_site_index == defect_entry.calculation_metadata["bulk_site_index"]
+
+    def test_point_symmetry_periodicity_breaking(self):
+        """
+        Test the periodicity-breaking warning with the ``point_symmetry``
+        function from ``doped.utils.symmetry``.
+
+        Note that this warning & symmetry handling is mostly tested through
+        the ``DefectThermodynamics.get_symmetries_and_degeneracies()`` tests
+        in ``test_thermodynamics.py``.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectsParser(self.ZnS_DATA_DIR, dielectric=8.9)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(dp.defect_dict) == 17
+
+        with warnings.catch_warnings(record=True) as w:
+            point_symm, periodicity_breaking = point_symmetry(
+                dp.defect_dict["vac_1_Zn_0"].defect_supercell,
+                bulk_structure=dp.defect_dict["vac_1_Zn_0"].bulk_supercell,
+                return_periodicity_breaking=True,
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert (
+            str(w[0].message)
+            == "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
+            "that the defect supercell is likely a non-scalar matrix expansion which could be "
+            "breaking the cell periodicity and possibly preventing the correct _relaxed_ point group "
+            "symmetry from being automatically determined. You can set relaxed=False to instead get "
+            "the (unrelaxed) bulk site symmetry, and/or manually check/set/edit the point symmetries "
+            "and corresponding orientational degeneracy factors by inspecting/editing the "
+            "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
+            "degeneracy_factors['orientational degeneracy'] attributes."
+        )
+        assert periodicity_breaking
+        assert point_symm == "C1"
+
+        for name, defect_entry in dp.defect_dict.items():
+            print(f"Checking symmetry for {name}")
+            with warnings.catch_warnings(record=True) as w:
+                assert point_symmetry(defect_entry.defect_supercell) == "C1"
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w  # no warnings with just defect supercell as can't determine periodicity breaking
+            with warnings.catch_warnings(record=True) as w:
+                assert point_symmetry(
+                    defect_entry.defect_supercell, defect_entry.bulk_supercell, relaxed=False
+                ) in ["Td", "C3v", "Cs", "C1"]
+            print([str(warning.message) for warning in w])  # for debugging
+            assert not w  # no periodicity breaking warning with `relaxed=False`
+            with pytest.raises(RuntimeError) as excinfo:
+                point_symmetry(defect_entry.defect_supercell, relaxed=False)
+            assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
 
     def test_bulk_defect_compatibility_checks(self):
         """
