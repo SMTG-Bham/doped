@@ -171,12 +171,11 @@ def get_band_edge_info(
     # Check in the correct version of vise installed if a non-collinear calculation is parsed.
     # TODO: Remove this check when ``vise 0.8.2`` is released on PyPi.
     try:
-        if bulk_procar is None:
-            band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
-        else:
-            pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
-        if defect_vr.parameters.get("LNONCOLLINEAR") is True:
+        band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
+        if bulk_vr.parameters.get("LNONCOLLINEAR") is True:
             assert band_edge_prop._ho_band_index(Spin.up) == int(bulk_vr.parameters.get("NELECT")) - 1
+        if bulk_procar is not None:
+            pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
     except AssertionError as exc:
         v_vise = version("vise")
         if v_vise <= "0.8.1":
