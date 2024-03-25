@@ -2214,6 +2214,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         defect_entry.bulk_supercell,
                         rattled_defect_supercell,
                         return_all_info=True,
+                        oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
                 if stdev >= 0.5:
@@ -2289,6 +2290,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         defect_entry.defect_supercell,
                         return_all_info=True,
+                        oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
                 if stdev >= 0.5:
