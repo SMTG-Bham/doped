@@ -304,6 +304,14 @@ This ``symprec`` value of ``0.1`` also matches that used by the ``Materials Proj
 You may want to adjust ``symprec`` for your system (e.g. if there are very slight octahedral distortions
 etc.).
 
+.. tip::
+
+    Note that you can directly use the ``point_symmetry`` function from ``doped.utils.symmetry`` (see the
+    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry>`__
+    in the python API docs) to obtain the relaxed or unrelaxed (bulk site) point symmetries of a given
+    defect supercell, directly from just the relaxed structures, regardless of whether these defects were
+    generated/parsed with ``doped``.
+
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------
 To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
