@@ -317,10 +317,10 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     ``{defect name without charge: [DefectEntry]}``, where the values are lists
     of DefectEntry objects with the same defect name (excluding charge state).
 
-    The DefectEntry.name attributes are used to get the defect names.
+    The ``DefectEntry.name`` attributes are used to get the defect names.
     These should be in the format:
     "{defect_name}_{optional_site_info}_{charge_state}".
-    If the DefectEntry.name attribute is not defined or does not end with the
+    If the ``DefectEntry.name`` attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
     for the `unrelaxed` defect (i.e. using the point symmetry of the defect
     site in the bulk cell).
@@ -389,7 +389,7 @@ class DefectThermodynamics(MSONable):
         can also be initialised with a list or dict of DefectEntry objects (e.g.
         from DefectsParser.defect_dict).
 
-        Note that the DefectEntry.name attributes are used to label the defects in
+        Note that the ``DefectEntry.name`` attributes are used to label the defects in
         plots.
 
         Args:
@@ -397,7 +397,7 @@ class DefectThermodynamics(MSONable):
                 A list or dict of DefectEntry objects. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
-                If the DefectEntry.name attribute is not defined or does not end with
+                If the ``DefectEntry.name`` attribute is not defined or does not end with
                 the charge state, then the entry will be renamed with the doped
                 default name.
             chempots (dict):
@@ -962,7 +962,7 @@ class DefectThermodynamics(MSONable):
                 DefectThermodynamics.defect_entries list. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
-                If the DefectEntry.name attribute is not defined or does not end with
+                If the ``DefectEntry.name`` attribute is not defined or does not end with
                 the charge state, then the entry will be renamed with the doped
                 default name.
             check_compatibility (bool):
@@ -1171,10 +1171,11 @@ class DefectThermodynamics(MSONable):
         docstring for more information).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
-        doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
-        of magnitude. This factor is taken from the product of the
-        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
+        concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A
+        and https://doi.org/10.1039/D3CS00432E), affecting the final concentration by
+        up to ~2 orders of magnitude. This factor is taken from the product of the
+        ``defect_entry.defect.multiplicity`` and ``defect_entry.degeneracy_factors``
+        attributes.
 
         Args:
             chempots (dict):
@@ -1361,10 +1362,10 @@ class DefectThermodynamics(MSONable):
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
-        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
-        final concentration by up to 2 orders of magnitude. This factor is taken from
-        the product of the defect_entry.defect.multiplicity and
-        defect_entry.degeneracy_factors attributes.
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This factor
+        is taken from the product of the ``defect_entry.defect.multiplicity`` and
+        ``defect_entry.degeneracy_factors`` attributes.
 
         Args:
             bulk_dos_vr (str or Vasprun or FermiDos):
@@ -1486,8 +1487,9 @@ class DefectThermodynamics(MSONable):
         total concentration of each defect is fixed to this value, but that the
         relative populations of defect charge states (and the Fermi level) can
         re-equilibrate at the lower (room) temperature. See discussion in
-        doi.org/10.1039/D3CS00432E (brief), doi.org/10.1016/j.cpc.2019.06.017 (detailed)
-        and ``doped``/``py-sc-fermi`` tutorials for more information.
+        https://doi.org/10.1039/D3CS00432E (brief),
+        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
+        ``doped``/``py-sc-fermi`` tutorials for more information.
         In certain cases (such as Li-ion battery materials or extremely slow charge
         capture/emission), these approximations may have to be adjusted such that some
         defects/charge states are considered fixed and some are allowed to
@@ -1511,10 +1513,10 @@ class DefectThermodynamics(MSONable):
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
-        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
-        final concentration by up to 2 orders of magnitude. This factor is taken from
-        the product of the defect_entry.defect.multiplicity and
-        defect_entry.degeneracy_factors attributes.
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to 2 orders of magnitude. This factor
+        is taken from the product of the ``defect_entry.defect.multiplicity`` and
+        ``defect_entry.degeneracy_factors`` attributes.
 
         If you use this code in your work, please also cite:
         Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
@@ -1741,7 +1743,7 @@ class DefectThermodynamics(MSONable):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. The VBM value is taken from
-                DefectEntry.calculation_metadata if present, otherwise
+                ``DefectEntry.calculation_metadata`` if present, otherwise
                 from self.vbm.
                 If None (default), set to the mid-gap Fermi level (E_g/2).
 
@@ -2335,7 +2337,7 @@ class DefectThermodynamics(MSONable):
         levels (i.e. those visible on the defect formation energy diagram),
         not including metastable defect states (which can be important for
         recombination, migration, degeneracy/concentrations etc, see e.g.
-        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
@@ -2438,7 +2440,7 @@ class DefectThermodynamics(MSONable):
         levels (i.e. those visible on the defect formation energy diagram),
         not including metastable defect states (which can be important for
         recombination, migration, degeneracy/concentrations etc, see e.g.
-        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
@@ -2499,7 +2501,7 @@ class DefectThermodynamics(MSONable):
             Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
         - 'qE_F':
             Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in DefectEntry.calculation_metadata)
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
         - 'Σμ_ref':
             Sum of reference energies of the elemental phases in the chemical potentials sum.
         - 'Σμ_formal':
@@ -2622,7 +2624,7 @@ class DefectThermodynamics(MSONable):
             Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
         - 'qE_F':
             Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in DefectEntry.calculation_metadata)
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
         - 'Σμ_ref':
             Sum of reference energies of the elemental phases in the chemical potentials sum.
         - 'Σμ_formal':
@@ -2774,8 +2776,8 @@ class DefectThermodynamics(MSONable):
         while for interstitials it is the point symmetry of the `final relaxed` interstitial
         site when placed in the (unrelaxed) bulk structure.
         The degeneracy factor is used in the calculation of defect/carrier concentrations
-        and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
-        doi.org/10.1039/D3CS00432E).
+        and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
+        https://doi.org/10.1039/D3CS00432E).
 
         Args:
             skip_formatting (bool):
