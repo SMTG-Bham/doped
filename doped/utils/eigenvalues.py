@@ -5,33 +5,35 @@ Contains modified versions of functions from pydefect (https://github.com/kumaga
 and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``s).
 """
 
+# suppress pydefect INFO messages
+import logging
 import os
+import warnings
 from collections import defaultdict
 from importlib.metadata import version
 from itertools import zip_longest
-from typing import Any, Optional, Union
-import warnings
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-
 from pymatgen.core import Element, Species
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.io.vasp.outputs import Outcar, Vasprun, Procar
 from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.io.vasp.outputs import Outcar, Procar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 
-from doped.utils.plotting import _get_backend
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.utils.parsing import get_procar
+from doped.utils.plotting import _get_backend
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-# suppress pydefect INFO messages
-import logging
+    from easyunfold.procar import Procar as EasyunfoldProcar
+    from pydefect.analyzer.make_defect_structure_info import DefectStructureInfo
 
 try:
-    from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
     import pydefect.analyzer.make_band_edge_states
     import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
     from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
@@ -45,6 +47,8 @@ try:
     from pydefect.defaults import defaults
     from pydefect.util.structure_tools import Coordination, Distances
     from vise import user_settings
+    from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
+
     user_settings.logger.setLevel(logging.CRITICAL)
 
 except ImportError as exc:
@@ -190,8 +194,8 @@ def get_band_edge_info(
 ):
     """
     Generate metadata required for performing eigenvalue & orbital analysis,
-    specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
-    for the bulk VBM and CBM.
+    specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo``
+    objects for the bulk VBM and CBM.
 
     See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
 
@@ -224,6 +228,7 @@ def get_band_edge_info(
             calculation. Not required if the supplied ``bulk_vr`` was
             parsed with ``parse_projected_eigen = True``.
             Default is ``None``.
+
     Returns:
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
         for the bulk VBM and CBM.
@@ -269,6 +274,7 @@ def get_band_edge_info(
     Distances.distances = _orig_method_dist
 
     from pydefect.analyzer.band_edge_states import logger
+
     logger.setLevel(logging.CRITICAL)  # quieten unnecessary eigenvalue shift INFO message
 
     if bulk_procar is not None:
@@ -314,7 +320,7 @@ def get_eigenvalue_analysis(
     bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
     force_reparse: bool = False,
 ):
-    """
+    r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
     for the band edge and in-gap electronic states for the input defect entry /
     calculation outputs, as well as a plot of the single-particle electronic
@@ -415,9 +421,12 @@ def get_eigenvalue_analysis(
     """
     if defect_entry is None:
         if not all([bulk_vr, defect_vr, bulk_procar, defect_procar]):
-            raise ValueError("If `defect_entry` is not provided, then all of `bulk_vr`, `defect_vr`, "
-                                "`bulk_procar`, and `defect_procar` must be provided!")
+            raise ValueError(
+                "If `defect_entry` is not provided, then all of `bulk_vr`, `defect_vr`, "
+                "`bulk_procar`, and `defect_procar` must be provided!"
+            )
         from doped.analysis import defect_from_structures
+
         (
             defect,
             defect_site,

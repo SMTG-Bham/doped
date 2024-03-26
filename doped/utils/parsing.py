@@ -8,7 +8,7 @@ import os
 import re
 import warnings
 from collections import defaultdict
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
@@ -16,11 +16,14 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, _parse_vasp_array, Procar
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -126,11 +129,12 @@ def get_outcar(outcar_path: Union[str, "Path"]):
         ) from None
     return outcar
 
+
 def get_procar(procar_path: Union[str, "Path"]):
     """
-    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar``
-    object (if ``easyunfold`` installed), else a ``pymatgen`` ``Procar``
-    object (doesn't support SOC).
+    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
+    ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
+    support SOC).
 
     If ``easyunfold`` installed, the ``Procar`` will be parsed with
     ``easyunfold`` and then the ``proj_data`` attribute will be converted
@@ -145,7 +149,7 @@ def get_procar(procar_path: Union[str, "Path"]):
     easyunfold_installed = True  # first try loading with easyunfold
     try:
         from easyunfold.procar import Procar as EasyunfoldProcar
-    except ImportError as exc:
+    except ImportError:
         easyunfold_installed = False
 
     if easyunfold_installed:
@@ -160,9 +164,9 @@ def get_procar(procar_path: Union[str, "Path"]):
             procar = Procar(procar_path)
         except IndexError as exc:  # SOC error
             raise ValueError(
-                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and `pymatgen` "
-                "does not support SOC PROCAR parsing! Please install `easyunfold` with `pip install "
-                "easyunfold`."
+                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and "
+                "`pymatgen` does not support SOC PROCAR parsing! Please install `easyunfold` with `pip "
+                "install easyunfold`."
             ) from exc
 
     return procar
