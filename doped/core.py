@@ -18,7 +18,7 @@ from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.io.vasp.outputs import Locpot, Outcar
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, Procar
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
@@ -223,8 +223,13 @@ class DefectEntry(thermo.DefectEntry):
         """
         # ignore warning about oxidation states not summing to Structure charge:
         warnings.filterwarnings("ignore", message=".*unset_charge.*")
+        self_dict = asdict(self)
+        if self.calculation_metadata and self.calculation_metadata.get("eigenvalue_data"):
+            for key in list(self.calculation_metadata["eigenvalue_data"].keys()):
+                self_dict["calculation_metadata"]["eigenvalue_data"][key] = self.calculation_metadata[
+                    "eigenvalue_data"][key].as_dict()
 
-        return asdict(self)
+        return self_dict
 
     def _check_correction_error_and_return_output(
         self,
@@ -287,17 +292,17 @@ class DefectEntry(thermo.DefectEntry):
                 then the dielectric constant is taken from the ``defect_entry``
                 ``calculation_metadata`` if available.
             defect_locpot:
-                Path to the output VASP LOCPOT file from the defect supercell
-                calculation, or the corresponding ``pymatgen`` Locpot object, or
-                a dictionary of the planar-averaged potential in the form:
-                {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
+                Path to the output VASP ``LOCPOT`` file from the defect supercell
+                calculation, or the corresponding ``pymatgen`` ``Locpot``
+                object, or a dictionary of the planar-averaged potential in the
+                form: ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
                 If None, will try to use ``defect_locpot`` from the
                 ``defect_entry`` ``calculation_metadata`` if available.
             bulk_locpot:
-                Path to the output VASP LOCPOT file from the bulk supercell
-                calculation, or the corresponding ``pymatgen`` Locpot object, or
-                a dictionary of the planar-averaged potential in the form:
-                {i: Locpot.get_average_along_axis(i) for i in [0,1,2]}.
+                Path to the output VASP ``LOCPOT`` file from the bulk supercell
+                calculation, or the corresponding ``pymatgen`` ``Locpot``
+                object, or a dictionary of the planar-averaged potential in the
+                form: ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
                 If None, will try to use ``bulk_locpot`` from the
                 ``defect_entry`` ``calculation_metadata`` if available.
             plot (bool):
@@ -512,34 +517,292 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance=error_tolerance,
         )
 
-    def get_eigenvalue_analysis(self, filename: Optional[str] = None, plot: bool = True, **kwargs):
+    def _load_and_parse_eigenvalue_data(
+        self,
+        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
+        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
+        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
+        force_reparse: bool = False,
+    ):
         """
-        Automatically determines the band edge states of the defect to determine
-        if the defect is a PHS. Also returns single-particle levels and their
-        occupation. Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
+        Load and parse the eigenvalue data for the defect entry, if not already
+        present in the ``calculation_metadata``.
 
         Args:
-            filename (str):
-                Filename to save the Kumagai site potential plots to.
-                If None (default), plots are not saved.
+            bulk_vr (str, Path, Vasprun):
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+                or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
+                supercell calculation. If ``None`` (default), tries to load
+                the ``Vasprun`` object from
+                ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
+                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                ``self.calculation_metadata["bulk_path"]``.
+            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+                ``pymatgen`` ``Procar`` object, for the reference bulk supercell
+                calculation. Not required, but speeds up parsing (~50%) if present.
+                If ``None`` (default), tries to load from a ``PROCAR(.gz)``
+                file at ``self.calculation_metadata["bulk_path"]``.
+            defect_vr (str, Path, Vasprun):
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+                or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+                calculation. If ``None`` (default), tries to load the ``Vasprun``
+                object from
+                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
+                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                ``self.calculation_metadata["defect_path"]``.
+            defect_procar (str, Path, EasyunfoldProcar, Procar):
+                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+                ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
+                Not required, but speeds up parsing (~50%) if present. If ``None``
+                (default), tries to load from a ``PROCAR(.gz)`` file at
+                ``self.calculation_metadata["defect_path"]``.
+            bulk_outcar (str, Path, Outcar):
+                Either a path to the ``VASP`` ``OUTCAR`` output file or a
+                ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
+                calculation. If ``None`` (default), tries to load from an
+                ``OUTCAR`` file at ``self.calculation_metadata["bulk_path"]``.
+            force_reparse (bool):
+                Whether to force re-parsing of the eigenvalue data, even if
+                already present in the ``calculation_metadata``.
+        """
+        if self.calculation_metadata.get("eigenvalue_data") is not None and not force_reparse:
+            return
+
+        from doped.utils.parsing import (
+            get_procar,
+            get_vasprun,
+            _get_output_files_and_check_if_multiple,
+            _multiple_files_warning,
+            get_outcar,
+        )
+        from doped.utils.eigenvalues import _parse_procar, get_band_edge_info
+
+        parsed_vr_procar_dict = {}
+        for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
+            path = self.calculation_metadata.get(f"{label}_path")
+
+            # first try load procar data, to see if projected eigenvalues are available:
+            if procar is not None:
+                procar = _parse_procar(procar)
+
+            if procar is None and path is not None and (
+                    not isinstance(vr, Vasprun) or vr.projected_eigenvalues is None):
+                # no defect procar, try parse from defect directory:
+                try:
+                    procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", path)
+                    if multiple:
+                        _multiple_files_warning(
+                            "PROCAR",
+                            path,
+                            procar_path,
+                            dir_type=label,
+                        )
+                    procar = get_procar(procar_path)
+
+                except (FileNotFoundError, IsADirectoryError):
+                    procar = None
+
+            if vr is not None and not isinstance(vr, Vasprun):
+                vr = get_vasprun(vr, parse_projected_eigen=procar is None)
+
+            if procar is not None and vr is None:  # then try take from vasprun dict:
+                with contextlib.suppress(Exception):
+                    vr = Vasprun.from_dict(
+                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"])
+
+            if vr is None or (procar is None and vr.projected_eigenvalues is None):  # try load from path:
+                (
+                    vr_path,
+                    multiple,
+                ) = _get_output_files_and_check_if_multiple("vasprun.xml", path)
+                if multiple:
+                    _multiple_files_warning(
+                        "vasprun.xml",
+                        path,
+                        vr_path,
+                        dir_type=label,
+                    )
+                vr = get_vasprun(vr_path, parse_projected_eigen=procar is None)
+
+            if procar is None and vr.projected_eigenvalues is None:
+                raise FileNotFoundError(
+                    f"No {label} 'PROCAR' or 'vasprun.xml(.gz)' file found (and successfully parsed) with "
+                    f"projected orbitals in path: {path}. Required for eigenvalue analysis!"
+                )
+
+            parsed_vr_procar_dict[label] = (vr, procar)
+
+        bulk_vr, bulk_procar = parsed_vr_procar_dict["bulk"]
+        defect_vr, defect_procar = parsed_vr_procar_dict["defect"]
+
+        if bulk_outcar is not None and not isinstance(bulk_outcar, Outcar):
+            bulk_outcar = get_outcar(bulk_outcar)
+
+        if bulk_outcar is None:  # try parsing from bulk path
+            bulk_path = self.calculation_metadata["bulk_path"]
+            try:
+                bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
+                if multiple:
+                    _multiple_files_warning(
+                        "OUTCAR",
+                        bulk_path,
+                        bulk_outcar_path,
+                        dir_type="bulk",
+                    )
+                bulk_outcar = get_outcar(bulk_outcar_path)
+
+            except (FileNotFoundError, IsADirectoryError) as exc:
+                raise FileNotFoundError(
+                    f"No `OUTCAR` file found in bulk path {bulk_path}. Required for eigenvalue "
+                    f"analysis!"
+                ) from exc  # TODO: Update this so that bulk OUTCAR not required!
+
+        if defect_procar and bulk_procar:
+            band_orb, vbm_info, cbm_info = get_band_edge_info(
+                bulk_vr,
+                bulk_outcar,
+                defect_vr,
+                bulk_procar,
+                defect_procar,
+            )
+        else:
+            band_orb, vbm_info, cbm_info = get_band_edge_info(bulk_vr, bulk_outcar, defect_vr)
+
+        self.calculation_metadata["eigenvalue_data"] = {
+            "band_orb": band_orb,
+            "vbm_info": vbm_info,
+            "cbm_info": cbm_info,
+        }
+
+        # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
+        # collection and thus reduce memory:
+        defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
+
+    def get_eigenvalue_analysis(
+        self,
+        plot: bool = True,
+        filename: Optional[str] = None,
+        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
+        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
+        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
+        force_reparse: bool = False,
+        **kwargs,
+    ):
+        """
+        Returns information about the band edge and in-gap electronic states
+        and their orbital character / localisation degree for the defect
+        entry, as well as a plot of the single-particle electronic eigenvalues
+        and their occupation (if ``plot=True``).
+
+        Can be used to determine if a defect is adopting a perturbed host
+        state (PHS / shallow state), see
+        https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+
+        If eigenvalue data has not already been parsed for ``DefectEntry``
+        (default in ``doped`` is to parse this data with ``DefectsParser``/
+        ``DefectParser``, as controlled by the ``parse_projected_eigen`` flag),
+        then this function will attempt to load the eigenvalue data from either
+        the input ``Vasprun``/``PROCAR`` objects or files, or from the
+        ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
+        If so, will initially try to load orbital projections from ``PROCAR(.gz)``
+        files if present, otherwise will attempt to load from ``vasprun.xml(.gz)``
+        (typically slower).
+
+        This function uses code from ``pydefect``:
+        Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
+
+        Args:
             plot (bool):
                 Whether to plot the single-particle eigenvalues.
                 (Default: True)
+            filename (str):
+                Filename to save the eigenvalue plot to (if ``plot = True``).
+                If ``None`` (default), plots are not saved.
+            bulk_vr (str, Path, Vasprun):
+                Not required if eigenvalue data has already been parsed for
+                ``DefectEntry`` (default behaviour when parsing with ``doped``,
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+                or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
+                supercell calculation. If ``None`` (default), tries to load
+                the ``Vasprun`` object from
+                ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
+                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                ``self.calculation_metadata["bulk_path"]``.
+            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+                Not required if eigenvalue data has already been parsed for
+                ``DefectEntry`` (default behaviour when parsing with ``doped``,
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+                ``pymatgen`` ``Procar`` object, for the reference bulk supercell
+                calculation. Not required, but speeds up parsing (~50%) if present.
+                If ``None`` (default), tries to load from a ``PROCAR(.gz)``
+                file at ``self.calculation_metadata["bulk_path"]``.
+            defect_vr (str, Path, Vasprun):
+                Not required if eigenvalue data has already been parsed for
+                ``DefectEntry`` (default behaviour when parsing with ``doped``,
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+                or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+                calculation. If ``None`` (default), tries to load the ``Vasprun``
+                object from
+                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
+                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                ``self.calculation_metadata["defect_path"]``.
+            defect_procar (str, Path, EasyunfoldProcar, Procar):
+                Not required if eigenvalue data has already been parsed for
+                ``DefectEntry`` (default behaviour when parsing with ``doped``,
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+                ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
+                Not required, but speeds up parsing (~50%) if present. If ``None``
+                (default), tries to load from a ``PROCAR(.gz)`` file at
+                ``self.calculation_metadata["defect_path"]``.
+            bulk_outcar (str, Path, Outcar):
+                Not required if eigenvalue data has already been parsed for
+                ``DefectEntry`` (default behaviour when parsing with ``doped``,
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                Either a path to the ``VASP`` ``OUTCAR`` output file or a
+                ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
+                calculation. If ``None`` (default), tries to load from an
+                ``OUTCAR`` file at ``self.calculation_metadata["bulk_path"]``.
+            force_reparse (bool):
+                Whether to force re-parsing of the eigenvalue data, even if
+                already present in the ``calculation_metadata``.
             **kwargs:
                 Additional kwargs to pass to
                 ``doped.utils.eigenvalues.get_eigenvalue_analysis``,
                 such as ``style_file``, ``ks_levels``
 
         Returns:
-            ``pydefect`` ``BandEdgeStates`` object and ``matplotlib`` ``Figure`` object
-            (if ``plot=True``).
+            ``pydefect`` ``BandEdgeStates`` object and ``matplotlib``
+            ``Figure`` object (if ``plot=True``).
         """
         from doped.utils.eigenvalues import get_eigenvalue_analysis
 
+        self._load_and_parse_eigenvalue_data(
+            bulk_vr=bulk_vr,
+            bulk_procar=bulk_procar,
+            defect_vr=defect_vr,
+            defect_procar=defect_procar,
+            bulk_outcar=bulk_outcar,
+            force_reparse=force_reparse,
+        )
+
         if self.calculation_metadata.get("eigenvalue_data") is None:
             raise ValueError(
-                "No projected eigenvalues/orbitals loaded for DefectEntry. "
-                "Please parse with parse_projected_eigen = True."
+                "No projected eigenvalues/orbitals loaded for DefectEntry. Please parse your defects with "
+                "parse_projected_eigen = True (with `DefectsParser`/`DefectParser`) or provide the "
+                "necessary VASP output files for the defect and bulk supercells (see docstring)."
             )
 
         with warnings.catch_warnings():
