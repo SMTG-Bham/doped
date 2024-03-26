@@ -31,6 +31,7 @@ from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.eigenvalues import get_band_edge_info
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -51,7 +52,6 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
-from doped.utils.eigenvalues import get_band_edge_info
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
@@ -1510,7 +1510,7 @@ class DefectParser:
                 defect_procar = None
                 defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
                 if defect_vr.projected_eigenvalues is None:
-                    parse_projected_eigen = False 
+                    parse_projected_eigen = False
                     warnings.warn(
                         "No defect 'PROCAR' or 'vasprun.xml(.gz)' file found with projected orbitals. "
                         "Skipping loading of projected eigenvalues & orbitals (required for shallow "

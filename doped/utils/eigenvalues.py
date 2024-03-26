@@ -55,10 +55,7 @@ def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordinati
             unsorted_distances[element].append(round(distance, 2))
             neighboring_atom_indices.append(i)
 
-    distance_dict = {
-        element: sorted(distances)
-        for element, distances in unsorted_distances.items()
-    }
+    distance_dict = {element: sorted(distances) for element, distances in unsorted_distances.items()}
     return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
 
 
@@ -241,9 +238,9 @@ def get_eigenvalue_analysis(
     style_file: Optional[str] = None,
 ):
     """
-    Get eigenvalue & orbital info (with automated classification of PHS
-    states) with corresponding single-particle eigenvalues plot (if
-    ``plot = True``; default) for a given ``DefectEntry``.
+    Get eigenvalue & orbital info (with automated classification of PHS states)
+    with corresponding single-particle eigenvalues plot (if ``plot = True``;
+    default) for a given ``DefectEntry``.
 
     Args:
         DefectEntry: ``DefectEntry`` object
@@ -274,10 +271,7 @@ def get_eigenvalue_analysis(
         orb_1, orb_2 = defaultdict(list, orbital_1), defaultdict(list, orbital_2)
         result = 0
         for e in element_set:
-            result += sum(
-                abs(i - j)
-                for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0)
-            )
+            result += sum(abs(i - j) for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0))
         return round(result, 3)
 
     pydefect.analyzer.make_band_edge_states.orbital_diff = _orbital_diff
