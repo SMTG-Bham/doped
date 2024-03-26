@@ -11,7 +11,7 @@ import contextlib
 import os
 import warnings
 from multiprocessing import Pool, Queue, cpu_count
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 from filelock import FileLock
@@ -22,7 +22,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
-from pymatgen.io.vasp.outputs import Vasprun, Procar, Outcar
+from pymatgen.io.vasp.outputs import Outcar, Procar, Vasprun
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -47,8 +47,8 @@ from doped.utils.parsing import (
     get_locpot,
     get_orientational_degeneracy,
     get_outcar,
-    get_vasprun,
     get_procar,
+    get_vasprun,
 )
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
@@ -57,6 +57,9 @@ from doped.utils.symmetry import (
     _get_sga,
     point_symmetry_from_defect_entry,
 )
+
+if TYPE_CHECKING:
+    from easyunfold.procar import Procar as EasyunfoldProcar
 
 
 def _custom_formatwarning(
@@ -909,12 +912,15 @@ class DefectsParser:
             if parsing_warnings:
                 warnings.warn("\n".join(parsing_warnings))
 
-            for warning, defect_list in duplicate_warnings.items():
+            for warning, defect_name_list in duplicate_warnings.items():
                 defect_list = [
                     defect_name
-                    for defect_name in defect_list
-                    if defect_name and all(defect_name not in defects_with_errors for
-                                           defects_with_errors in parsing_errors_dict.values())
+                    for defect_name in defect_name_list
+                    if defect_name
+                    and all(
+                        defect_name not in defects_with_errors
+                        for defects_with_errors in parsing_errors_dict.values()
+                    )
                 ]  # remove None and don't warn if later encountered parsing error (already warned)
                 if defect_list:
                     warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
@@ -1411,7 +1417,7 @@ class DefectParser:
                 ``easyunfold``/``pymatgen`` ``Procar`` object, for the reference bulk
                 supercell calculation if already loaded (can be supplied to expedite
                 parsing). Default is ``None``.
-            bulk_procar (Outcar):
+            bulk_outcar (Outcar):
                 ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
                 calculation if already loaded (can be supplied to expedite parsing).
                 Default is ``None``.

@@ -184,11 +184,11 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 ``excluded_indices`` on the right):
 
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_region_radius.png
-    :width: 320px
+    :height: 320px
     :align: left
 
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
-    :width: 320px
+    :height: 320px
     :align: right
 
 Perturbed Host States (Shallow Defects)
@@ -246,7 +246,7 @@ supercells and plotting the charge density. Important terms include:
 1. ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1 indicates a localised state.
 2. ``Occupation``: Occupation of the electronic state / orbital.
 3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified. Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)`` refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a PHS (but you should use your own judgement of course).
-4. ``Localized Orbital(s)``: Information about the localised defects states.
+4. ``Localized Orbital(s)``: Information about localised defect states, if present.
 
 .. code-block:: python
 

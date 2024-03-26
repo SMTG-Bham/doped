@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from functools import reduce
 from itertools import combinations_with_replacement
 from multiprocessing import Process, Queue, current_process
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -18,11 +18,16 @@ from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, Procar
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped import _doped_obj_properties_methods
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from easyunfold.procar import Procar as EasyunfoldProcar
 
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
@@ -227,7 +232,8 @@ class DefectEntry(thermo.DefectEntry):
         if self.calculation_metadata and self.calculation_metadata.get("eigenvalue_data"):
             for key in list(self.calculation_metadata["eigenvalue_data"].keys()):
                 self_dict["calculation_metadata"]["eigenvalue_data"][key] = self.calculation_metadata[
-                    "eigenvalue_data"][key].as_dict()
+                    "eigenvalue_data"
+                ][key].as_dict()
 
         return self_dict
 
@@ -573,14 +579,14 @@ class DefectEntry(thermo.DefectEntry):
         if self.calculation_metadata.get("eigenvalue_data") is not None and not force_reparse:
             return
 
+        from doped.utils.eigenvalues import _parse_procar, get_band_edge_info
         from doped.utils.parsing import (
-            get_procar,
-            get_vasprun,
             _get_output_files_and_check_if_multiple,
             _multiple_files_warning,
             get_outcar,
+            get_procar,
+            get_vasprun,
         )
-        from doped.utils.eigenvalues import _parse_procar, get_band_edge_info
 
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
@@ -588,10 +594,13 @@ class DefectEntry(thermo.DefectEntry):
 
             # first try load procar data, to see if projected eigenvalues are available:
             if procar is not None:
-                procar = _parse_procar(procar)
+                procar = _parse_procar(procar)  # noqa: PLW2901
 
-            if procar is None and path is not None and (
-                    not isinstance(vr, Vasprun) or vr.projected_eigenvalues is None):
+            if (
+                procar is None
+                and path is not None
+                and (not isinstance(vr, Vasprun) or vr.projected_eigenvalues is None)
+            ):
                 # no defect procar, try parse from defect directory:
                 try:
                     procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", path)
@@ -602,20 +611,23 @@ class DefectEntry(thermo.DefectEntry):
                             procar_path,
                             dir_type=label,
                         )
-                    procar = get_procar(procar_path)
+                    procar = get_procar(procar_path)  # noqa: PLW2901
 
                 except (FileNotFoundError, IsADirectoryError):
-                    procar = None
+                    procar = None  # noqa: PLW2901
 
             if vr is not None and not isinstance(vr, Vasprun):
-                vr = get_vasprun(vr, parse_projected_eigen=procar is None)
+                vr = get_vasprun(vr, parse_projected_eigen=procar is None)  # noqa: PLW2901
 
             if procar is not None and vr is None:  # then try take from vasprun dict:
                 with contextlib.suppress(Exception):
-                    vr = Vasprun.from_dict(
-                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"])
+                    vr = Vasprun.from_dict(  # noqa: PLW2901
+                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"]
+                    )
 
-            if vr is None or (procar is None and vr.projected_eigenvalues is None):  # try load from path:
+            if vr is None or (
+                procar is None and isinstance(vr, Vasprun) and vr.projected_eigenvalues is None
+            ):  # try load from path:
                 (
                     vr_path,
                     multiple,
@@ -627,7 +639,7 @@ class DefectEntry(thermo.DefectEntry):
                         vr_path,
                         dir_type=label,
                     )
-                vr = get_vasprun(vr_path, parse_projected_eigen=procar is None)
+                vr = get_vasprun(vr_path, parse_projected_eigen=procar is None)  # noqa: PLW2901
 
             if procar is None and vr.projected_eigenvalues is None:
                 raise FileNotFoundError(
@@ -695,11 +707,11 @@ class DefectEntry(thermo.DefectEntry):
         force_reparse: bool = False,
         **kwargs,
     ):
-        """
+        r"""
         Returns information about the band edge and in-gap electronic states
-        and their orbital character / localisation degree for the defect
-        entry, as well as a plot of the single-particle electronic eigenvalues
-        and their occupation (if ``plot=True``).
+        and their orbital character / localisation degree for the defect entry,
+        as well as a plot of the single-particle electronic eigenvalues and
+        their occupation (if ``plot=True``).
 
         Can be used to determine if a defect is adopting a perturbed host
         state (PHS / shallow state), see
@@ -807,7 +819,7 @@ class DefectEntry(thermo.DefectEntry):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            bes, fig = get_eigenvalue_analysis(self, filename, **kwargs)
+            bes, fig = get_eigenvalue_analysis(self, filename=filename, **kwargs)
 
         return (bes, fig) if plot else bes
 
