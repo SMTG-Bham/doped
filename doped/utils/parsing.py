@@ -16,7 +16,7 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, _parse_vasp_array
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun, _parse_vasp_array, Procar
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
@@ -75,9 +75,9 @@ def parse_projected_eigen_no_mag(elem):
 Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
 
 
-def get_vasprun(vasprun_path, **kwargs):
+def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
     """
-    Read the vasprun.xml(.gz) file as a pymatgen Vasprun object.
+    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
@@ -91,40 +91,81 @@ def get_vasprun(vasprun_path, **kwargs):
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
-            f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
-            f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
+            f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "
+            f"output!"
         ) from exc
     return vasprun
 
 
-def get_locpot(locpot_path):
+def get_locpot(locpot_path: Union[str, "Path"]):
     """
-    Read the LOCPOT(.gz) file as a pymatgen Locpot object.
+    Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
     """
     locpot_path = str(locpot_path)  # convert to string if Path object
     try:
         locpot = Locpot.from_file(find_archived_fname(locpot_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"LOCPOT or compressed version not found at (.gz/.xz/.bz/.lzma) not found at {locpot_path}("
-            f".gz/.xz/.bz/.lzma). Needed for calculating the Freysoldt (FNV) image charge correction!"
+            f"LOCPOT file not found at {locpot_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Freysoldt (FNV) image charge correction!"
         ) from None
     return locpot
 
 
-def get_outcar(outcar_path):
+def get_outcar(outcar_path: Union[str, "Path"]):
     """
-    Read the OUTCAR(.gz) file as a pymatgen Outcar object.
+    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
     """
     outcar_path = str(outcar_path)  # convert to string if Path object
     try:
         outcar = Outcar(find_archived_fname(outcar_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
-            f"image charge correction."
+            f"OUTCAR file not found at {outcar_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Kumagai (eFNV) image charge correction."
         ) from None
     return outcar
+
+def get_procar(procar_path: Union[str, "Path"]):
+    """
+    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar``
+    object (if ``easyunfold`` installed), else a ``pymatgen`` ``Procar``
+    object (doesn't support SOC).
+
+    If ``easyunfold`` installed, the ``Procar`` will be parsed with
+    ``easyunfold`` and then the ``proj_data`` attribute will be converted
+    to a ``data`` attribute (to be compatible with ``pydefect``, which uses
+    the ``pymatgen`` format).
+    """
+    try:
+        procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
+    except FileNotFoundError:
+        raise FileNotFoundError(f"PROCAR file not found at {procar_path}(.gz/.xz/.bz/.lzma)!") from None
+
+    easyunfold_installed = True  # first try loading with easyunfold
+    try:
+        from easyunfold.procar import Procar as EasyunfoldProcar
+    except ImportError as exc:
+        easyunfold_installed = False
+
+    if easyunfold_installed:
+        procar = EasyunfoldProcar(procar_path, normalise=False)
+        if procar._is_soc:
+            procar.data = {Spin.up: procar.proj_data[0]}
+        else:
+            procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
+        del procar.proj_data  # reduce space
+    else:
+        try:  # try parsing with ``pymatgen`` instead, but doesn't support SOC!
+            procar = Procar(procar_path)
+        except IndexError as exc:  # SOC error
+            raise ValueError(
+                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and `pymatgen` "
+                "does not support SOC PROCAR parsing! Please install `easyunfold` with `pip install "
+                "easyunfold`."
+            ) from exc
+
+    return procar
 
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
