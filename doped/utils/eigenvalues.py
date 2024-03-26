@@ -5,41 +5,59 @@ Contains modified versions of functions from pydefect (https://github.com/kumaga
 and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``s).
 """
 
-import logging
 import os
 from collections import defaultdict
 from importlib.metadata import version
 from itertools import zip_longest
-from typing import Any, Optional
+from typing import Any, Optional, Union
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-# ruff: noqa: E402
-from vise import user_settings
-
-user_settings.logger.setLevel(logging.CRITICAL)
-
-import pydefect.analyzer.make_band_edge_states
-import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
-from easyunfold.procar import Procar as ProcarEasyunfold
-from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
-from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
-from pydefect.analyzer.make_band_edge_states import make_band_edge_states
-from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
-from pydefect.cli.vasp.make_perfect_band_edge_state import (
-    get_edge_info,
-    make_perfect_band_edge_state_from_vasp,
-)
-from pydefect.defaults import defaults
-from pydefect.util.structure_tools import Coordination, Distances
 from pymatgen.core import Element, Species
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.io.vasp.outputs import Outcar, Vasprun
+from pymatgen.io.vasp.outputs import Outcar, Vasprun, Procar
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from shakenbreak.plotting import _install_custom_font
-from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
 
 from doped.utils.plotting import _get_backend
+from doped import _ignore_pmg_warnings
+from doped.core import DefectEntry
+from doped.utils.parsing import get_procar
+
+
+# suppress pydefect INFO messages
+import logging
+
+try:
+    from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
+    import pydefect.analyzer.make_band_edge_states
+    import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
+    from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
+    from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
+    from pydefect.analyzer.make_band_edge_states import make_band_edge_states
+    from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
+    from pydefect.cli.vasp.make_perfect_band_edge_state import (
+        get_edge_info,
+        make_perfect_band_edge_state_from_vasp,
+    )
+    from pydefect.defaults import defaults
+    from pydefect.util.structure_tools import Coordination, Distances
+    from vise import user_settings
+    user_settings.logger.setLevel(logging.CRITICAL)
+
+except ImportError as exc:
+    raise ImportError(
+        "To perform eigenvalue & orbital analysis, you need to install pydefect. "
+        "You can do this by running `pip install pydefect`."
+    ) from exc
+
+# vise suppresses `UserWarning`s, so need to reset
+warnings.simplefilter("default")
+warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+_ignore_pmg_warnings()
 
 
 def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":
@@ -81,20 +99,20 @@ def _distances(self, remove_self=True, specie=None) -> list[float]:
 
 
 def _make_band_edge_orbital_infos_vr(
-    defect_vr: Vasprun, vbm: float, cbm: float, str_info, eigval_shift: float = 0.0
+    defect_vr: Vasprun, vbm: float, cbm: float, str_info: "DefectStructureInfo", eigval_shift: float = 0.0
 ):
     """
-    Make ``BandEdgeOrbitalInfos`` from ``vasprun.xml``.
+    Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
 
-    Modified from ``pydefect`` to use projected
-    orbitals stored in ``vasprun.xml``.
+    Modified from ``pydefect`` to use projected orbitals
+    stored in the ``Vasprun`` object.
 
     Args:
-        defect_vr: defect ``Vasprun`` object
-        vbm: VBM eigenvalue in eV
-        cbm: CBM eigenvalue in eV
-        str_info: ``pydefect`` ``DefectStructureInfo``
-        eigval_shift (float): Shift eigenvalues by E-E_VBM to set VBM at 0 eV
+        defect_vr (Vasprun): Defect ``Vasprun`` object.
+        vbm (float): VBM eigenvalue in eV.
+        cbm (float): CBM eigenvalue in eV.
+        str_info (DefectStructureInfo): ``pydefect`` ``DefectStructureInfo``.
+        eigval_shift (float): Shift eigenvalues down by this value (to set VBM at 0 eV).
 
     Returns:
         ``BandEdgeOrbitalInfos `` object
@@ -139,40 +157,88 @@ def _make_band_edge_orbital_infos_vr(
     )
 
 
+def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
+    """
+    Parse a ``procar`` input to a ``Procar`` object in the correct format.
+
+    Args:
+        procar (str, Path, EasyunfoldProcar, Procar):
+            Either a path to the ``VASP`` ``PROCAR``` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/``pymatgen``
+            ``Procar`` object.
+    """
+    if not hasattr(procar, "data"):  # not a parsed Procar object
+        if hasattr(procar, "proj_data"):  # un-parsed easyunfold Procar
+            if procar._is_soc:
+                procar.data = {Spin.up: procar.proj_data[0]}
+            else:
+                procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
+            del procar.proj_data
+
+        else:  # path to PROCAR file
+            procar = get_procar(procar)
+
+    return procar
+
+
 def get_band_edge_info(
     bulk_vr: Vasprun,
     bulk_outcar: Outcar,
     defect_vr: Vasprun,
-    bulk_procar: Optional[ProcarEasyunfold] = None,
-    defect_procar: Optional[ProcarEasyunfold] = None,
+    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
 ):
     """
-    Load metadata required for performing eigenvalue & orbital analysis.
+    Generate metadata required for performing eigenvalue & orbital analysis,
+    specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
+    for the bulk VBM and CBM.
 
-    See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states
+    See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
 
     Args:
         bulk_vr (Vasprun):
-            ``Vasprun`` object of the bulk supercell calculation
+            ``Vasprun`` object of the bulk supercell calculation.
+            If ``bulk_procar`` is not provided, then this must have the
+            ``projected_eigenvalues`` attribute (i.e. from a calculation
+            with ``LORBIT > 10`` in the ``INCAR`` and parsed with
+            ``parse_projected_eigen = True``).
         bulk_outcar (Outcar):
-            ``Outcar`` object of
+            ``Outcar`` object of the bulk supercell calculation.
         defect_vr (Vasprun):
-            ``Vasprun`` object of the defect supercell calculation
-        bulk_procar (Procar):
-            ``Procar`` object of the bulk supercell calculation
-        defect_procar (Procar):
-            ``Procar`` object of the defect supercell calculation
+            ``Vasprun`` object of the defect supercell calculation.
+            If ``defect_procar`` is not provided, then this must have the
+            ``projected_eigenvalues`` attribute (i.e. from a calculation
+            with ``LORBIT > 10`` in the ``INCAR`` and parsed with
+            ``parse_projected_eigen = True``).
+        bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            Either a path to the ``VASP`` ``PROCAR`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+            ``pymatgen`` ``Procar`` object, for the bulk supercell
+            calculation. Not required if the supplied ``bulk_vr`` was
+            parsed with ``parse_projected_eigen = True``.
+            Default is ``None``.
+        defect_procar (str, Path, EasyunfoldProcar, Procar):
+            Either a path to the ``VASP`` ``PROCAR`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+            ``pymatgen`` ``Procar`` object, for the defect supercell
+            calculation. Not required if the supplied ``bulk_vr`` was
+            parsed with ``parse_projected_eigen = True``.
+            Default is ``None``.
     Returns:
-        ``pydefect`` ``EdgeInfo`` class
+        ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
+        for the bulk VBM and CBM.
     """
-    # Check in the correct version of vise installed if a non-collinear calculation is parsed.
+    # Check if the correct version of vise installed if a non-collinear calculation is parsed.
     # TODO: Remove this check when ``vise 0.8.2`` is released on PyPi.
     try:
         band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
         if bulk_vr.parameters.get("LNONCOLLINEAR") is True:
             assert band_edge_prop._ho_band_index(Spin.up) == int(bulk_vr.parameters.get("NELECT")) - 1
+
         if bulk_procar is not None:
+            bulk_procar = _parse_procar(bulk_procar)
             pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
+
     except AssertionError as exc:
         v_vise = version("vise")
         if v_vise <= "0.8.1":
@@ -202,9 +268,18 @@ def get_band_edge_info(
     Distances.coordination = _orig_method_coor
     Distances.distances = _orig_method_dist
 
-    if bulk_procar:
-        vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
+    from pydefect.analyzer.band_edge_states import logger
+    logger.setLevel(logging.CRITICAL)  # quieten unnecessary eigenvalue shift INFO message
 
+    if bulk_procar is not None:
+        vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
+    else:
+        orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
+        vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
+        cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
+
+    if defect_procar is not None:
+        defect_procar = _parse_procar(defect_procar)
         band_orb = make_bes.make_band_edge_orbital_infos(
             defect_procar,
             defect_vr,
@@ -215,10 +290,6 @@ def get_band_edge_info(
         )
 
     else:
-        orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
-        vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
-        cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
-
         band_orb = _make_band_edge_orbital_infos_vr(
             defect_vr,
             vbm_info.orbital_info.energy,
@@ -231,39 +302,165 @@ def get_band_edge_info(
 
 
 def get_eigenvalue_analysis(
-    DefectEntry,
-    filename: Optional[str] = None,
+    defect_entry: Optional[DefectEntry] = None,
     plot: bool = True,
+    filename: Optional[str] = None,
     ks_labels: bool = False,
     style_file: Optional[str] = None,
+    bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
+    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
+    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
+    force_reparse: bool = False,
 ):
     """
     Get eigenvalue & orbital info (with automated classification of PHS states)
-    with corresponding single-particle eigenvalues plot (if ``plot = True``;
-    default) for a given ``DefectEntry``.
+    for the band edge and in-gap electronic states for the input defect entry /
+    calculation outputs, as well as a plot of the single-particle electronic
+    eigenvalues and their occupation (if ``plot=True``).
+
+    Can be used to determine if a defect is adopting a perturbed host
+    state (PHS / shallow state), see
+    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+
+    Either a ``doped`` ``DefectEntry`` object can be provided, or the required
+    VASP output files/objects for the bulk and defect supercell calculations
+    (``Vasprun``\s and ``Procar``\s).
+    If a ``DefectEntry`` is provided but eigenvalue data has not already been
+    parsed (default in ``doped`` is to parse this data with ``DefectsParser``/
+    ``DefectParser``, as controlled by the ``parse_projected_eigen`` flag),
+    then this function will attempt to load the eigenvalue data from either
+    the input ``Vasprun``/``PROCAR`` objects or files, or from the
+    ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
+    If so, will initially try to load orbital projections from ``PROCAR(.gz)``
+    files if present, otherwise will attempt to load from ``vasprun.xml(.gz)``
+    (typically slower).
+
+    This function uses code from ``pydefect``:
+    Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
 
     Args:
-        DefectEntry: ``DefectEntry`` object
-        filename (str):
-            Filename to save the Kumagai site potential plots to.
-            If None (default), plots are not saved.
-        ks_labels (bool):
-            Add the band index to the KS levels.
-            (Default: False)
+        defect_entry (DefectEntry):
+            ``doped`` ``DefectEntry`` object. Default is ``None``.
         plot (bool):
             Whether to plot the single-particle eigenvalues.
             (Default: True)
+        filename (str):
+            Filename to save the eigenvalue plot to (if ``plot = True``).
+            If ``None`` (default), plots are not saved.
+        ks_labels (bool):
+            Whether to add band index labels to the KS levels.
+            (Default: False)
         style_file (str):
             Path to a ``mplstyle`` file to use for the plot. If None
             (default), uses the ``doped`` displacement plot style
             (``doped/utils/displacement.mplstyle``).
+        bulk_vr (str, Path, Vasprun):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``,
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+            or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
+            supercell calculation. If ``None`` (default), tries to load
+            the ``Vasprun`` object from
+            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
+            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            ``defect_entry.calculation_metadata["bulk_path"]``.
+        bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``,
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``PROCAR`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+            ``pymatgen`` ``Procar`` object, for the reference bulk supercell
+            calculation. Not required, but speeds up parsing (~50%) if present.
+            If ``None`` (default), tries to load from a ``PROCAR(.gz)``
+            file at ``defect_entry.calculation_metadata["bulk_path"]``.
+        defect_vr (str, Path, Vasprun):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``,
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
+            or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+            calculation. If ``None`` (default), tries to load the ``Vasprun``
+            object from
+            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
+            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            ``defect_entry.calculation_metadata["defect_path"]``.
+        defect_procar (str, Path, EasyunfoldProcar, Procar):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``,
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``PROCAR`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
+            ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
+            Not required, but speeds up parsing (~50%) if present. If ``None``
+            (default), tries to load from a ``PROCAR(.gz)`` file at
+            ``defect_entry.calculation_metadata["defect_path"]``.
+        bulk_outcar (str, Path, Outcar):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``,
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``OUTCAR`` output file or a
+            ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
+            calculation. If ``None`` (default), tries to load from an
+            ``OUTCAR`` file at ``defect_entry.calculation_metadata["bulk_path"]``.
+        force_reparse (bool):
+            Whether to force re-parsing of the eigenvalue data, even if
+            already present in the ``calculation_metadata``.
 
     Returns:
         ``pydefect`` ``PerfectBandEdgeState`` class
     """
-    band_orb = DefectEntry.calculation_metadata["eigenvalue_data"]["band_orb"]
-    vbm_info = DefectEntry.calculation_metadata["eigenvalue_data"]["vbm_info"]
-    cbm_info = DefectEntry.calculation_metadata["eigenvalue_data"]["cbm_info"]
+    if defect_entry is None:
+        if not all([bulk_vr, defect_vr, bulk_procar, defect_procar]):
+            raise ValueError("If `defect_entry` is not provided, then all of `bulk_vr`, `defect_vr`, "
+                                "`bulk_procar`, and `defect_procar` must be provided!")
+        from doped.analysis import defect_from_structures
+        (
+            defect,
+            defect_site,
+            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
+            defect_site_index,  # in this initial_defect_structure
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_vr.final_structure,
+            defect_vr.final_structure,
+            oxi_state="Undetermined",
+            return_all_info=True,
+        )
+        defect_entry = DefectEntry(
+            # pmg attributes:
+            defect=defect,  # this corresponds to _unrelaxed_ defect
+            charge_state=0,
+            sc_entry=ComputedStructureEntry(
+                structure=defect_vr.final_structure,
+                energy=0.0,  # needs to be set, so set to 0.0
+            ),
+            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+            bulk_entry=None,
+            # doped attributes:
+            defect_supercell_site=defect_site,  # _relaxed_ defect site
+            defect_supercell=defect_vr.final_structure,
+            bulk_supercell=bulk_vr.final_structure,
+        )
+
+    defect_entry._load_and_parse_eigenvalue_data(
+        bulk_vr=bulk_vr,
+        defect_vr=defect_vr,
+        bulk_procar=bulk_procar,
+        defect_procar=defect_procar,
+        bulk_outcar=bulk_outcar,
+        force_reparse=force_reparse,
+    )
+
+    band_orb = defect_entry.calculation_metadata["eigenvalue_data"]["band_orb"]
+    vbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["vbm_info"]
+    cbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["cbm_info"]
 
     # Ensures consistent number of sig. fig. so test work 100% of the time
     def _orbital_diff(orbital_1: dict, orbital_2: dict) -> float:
