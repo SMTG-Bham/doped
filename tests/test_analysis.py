@@ -350,7 +350,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
-                output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, processes=1, parse_projected_eigen=False
+                output_path=self.CdTe_EXAMPLE_DIR,
+                dielectric=9.13,
+                processes=1,
+                parse_projected_eigen=False,
             )
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w)
@@ -364,7 +367,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False)
+            dp = DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False
+            )
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w, multiple_outcars_warning=False)
         warnings.filterwarnings("default", "Multiple")
@@ -377,14 +382,18 @@ class DefectsParsingTestCase(unittest.TestCase):
         # test with reduced dist_tol:
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False)
+            dp = DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False
+            )
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
 
     def test_DefectsParser_CdTe_no_dielectric_json(self):
         # test no dielectric and no JSON:
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, json_filename=False, parse_projected_eigen=False)
+            dp = DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR, json_filename=False, parse_projected_eigen=False
+            )
         print([warn.message for warn in w])  # for debugging
         assert any(
             "The dielectric constant (`dielectric`) is needed to compute finite-size charge "
@@ -435,7 +444,9 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
         with pytest.raises(FileNotFoundError) as exc:
-            DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_std", parse_projected_eigen=False)
+            DefectsParser(
+                output_path=self.CdTe_EXAMPLE_DIR, subfolder="vasp_std", parse_projected_eigen=False
+            )
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
             f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std - please ensure `vasprun.xml(.gz)` "
@@ -444,7 +455,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def test_DefectsParser_CdTe_skip_corrections(self):
         # skip_corrections:
-        dp = DefectsParser(output_path=self.CdTe_EXAMPLE_DIR, skip_corrections=True, parse_projected_eigen=False)
+        dp = DefectsParser(
+            output_path=self.CdTe_EXAMPLE_DIR, skip_corrections=True, parse_projected_eigen=False
+        )
         self._check_DefectsParser(dp, skip_corrections=True)
 
     def test_DefectsParser_CdTe_aniso_dielectric(self):
@@ -452,7 +465,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         fake_aniso_dielectric = [1, 2, 3]
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
-                output_path=self.CdTe_EXAMPLE_DIR, dielectric=fake_aniso_dielectric, parse_projected_eigen=False
+                output_path=self.CdTe_EXAMPLE_DIR,
+                dielectric=fake_aniso_dielectric,
+                parse_projected_eigen=False,
             )
         print([warn.message for warn in w])  # for debugging
         assert any(
@@ -661,7 +676,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def test_DefectsParser_no_defects_parsed_error(self):
         with pytest.raises(ValueError) as exc:
-            DefectsParser(output_path=self.YTOS_EXAMPLE_DIR, subfolder="vasp_gam", parse_projected_eigen=False)
+            DefectsParser(
+                output_path=self.YTOS_EXAMPLE_DIR, subfolder="vasp_gam", parse_projected_eigen=False
+            )
         assert (
             f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
             f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "

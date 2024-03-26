@@ -763,8 +763,8 @@ def _compare_incar_tags(
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
-    Determine the number of electrons (``NELECT``) from a ``Vasprun``
-    object, corresponding to a neutral charge state for the structure.
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
+    corresponding to a neutral charge state for the structure.
     """
     from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
 
