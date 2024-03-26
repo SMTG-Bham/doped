@@ -89,7 +89,7 @@ underlying calculation and/or extreme forces.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed ``SnB`` structure-searching), convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed SnB structure-searching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -191,61 +191,62 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :width: 320px
     :align: right
 
-Perturbed Host States
---------------------------------------
+Perturbed Host States (Shallow Defects)
+---------------------------------------
 
 Certain point defects form shallow (hydrogen-like) donor or acceptor states, known as perturbed host
 states (PHS). These states typically have wavefunctions distributed over many unit cells in real space,
 requiring exceptionally large supercells or dense reciprocal space sampling to properly capture their
-physics (`see this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
+physics (see `this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
 This weak attraction of the electron/hole to the defect site corresponds to a relatively small
 donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
 the nearby band edge), which is typically <100 meV.
 
 Current supercell correction schemes can not accurately account for finite-size errors obtained when
-calculating the energies of PHS in moderate supercells, so it is recommended to denote such shallow defects
-as PHS and conclude only `qualitatively` that their transition level is located near the corresponding
-band edge. An example of this is given in `Kikuchi et al. Chem. Mater. 2020
-<https://doi.org/10.1021/acs.chemmater.1c00075>`_.
+calculating the energies of PHS (shallow defect states) in moderate supercells, so it is recommended to
+denote such shallow defects as PHS and conclude only `qualitatively` that their transition level is
+located near the corresponding band edge. An example of this is given in
+`Kikuchi et al. Chem. Mater. 2020 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
 
 .. tip::
 
-    Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic model,
-    similar to the `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__
-    exciton model, which predicts a binding energy given by:
+    Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic
+    model, similar to the
+    `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__ exciton model,
+    which predicts a binding energy given by:
+
     .. math::
 
        E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
 
     where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
     charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
-    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant (i.e.
-    binding energy of an electron in a hydrogen atom).
+    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant
+    (i.e. binding energy of an electron in a hydrogen atom).
 
 We employ the methodology of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
-identify potential PHS through an interface with ``pydefect``.
+analyse the orbital character and localisation of single-particle eigenstates from the underlying
+electronic structure calculations to identify potential PHS, through an interface with ``pydefect``.
 
-The optional argument ``load_phs_data`` in ``DefectsParser`` (``True`` by default) controls whether to
-load the projected orbitals, and in combination with ``defect_entry.get_perturbed_host_state()`` returns
-additional information about the nature of the band edges, allowing defect states (and whether they are
-deep or shallow (PHS)) to be automatically identified.
-Furthermore, a plot for the single particle levels is returned. It is however recommended to manually
-check the real-space charge density (i.e. ``PARCHG``) of the defect state to confirm the identification of
-a PHS. Your ``INCAR`` file needs to include ``LORBIT > 10`` to obtain the projected orbitals and your
-bulk calculation folder must contain the ``OUTCAR(.gz)`` file.
+The optional argument ``parse_projected_eigen`` in ``DefectsParser`` (``True`` by default) controls whether
+to load the projected eigenvalues & orbitals, which then allows ``DefectEntry.get_eigenvalue_analysis()``
+to be called – returning information about the nature of the band edge and in-gap states, allowing defect
+states (and whether they are deep or shallow/PHS) to be automatically identified and characterised.
+Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
+default). It is however recommended to additionally manually check the real-space charge density
+(i.e. ``PARCHG``) of the defect state to confirm the identification of a PHS.
+For VASP to output the necessary data for this analysis, your ``INCAR`` file needs to include
+``LORBIT > 10`` (to obtain the projected orbitals) and your bulk calculation folder must contain the
+``OUTCAR(.gz)`` file.
 
 In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
 determined to be a PHS. This was additionally confirmed by performing calculations in larger
 supercells and plotting the charge density. Important terms include:
-1) ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites
-to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1
-indicates a localised state.
-2) ``Occupation``: Occupation of the electronic state / orbital.
-3) ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified.
-Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)``
-refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a
-PHS (but you should use your own judgement of course).
-4) ``Localized Orbital(s)``: Information about the localised defects states.
+
+1. ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1 indicates a localised state.
+2. ``Occupation``: Occupation of the electronic state / orbital.
+3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified. Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)`` refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a PHS (but you should use your own judgement of course).
+4. ``Localized Orbital(s)``: Information about the localised defects states.
 
 .. code-block:: python
 
@@ -254,8 +255,10 @@ PHS (but you should use your own judgement of course).
     dielectric = [[8.73, 0, -0.48],[0., 7.78, 0],[-0.48, 0, 10.11]]
 
     defect_entry = DefectParser.from_paths(defect, bulk, dielectric).defect_entry
-    bes, fig = defect_entry.get_perturbed_host_state()
+    bes, fig = defect_entry.get_eigenvalue_analysis()
     print(bes)  # print information about the defect state
+
+.. code-block::
 
      -- band-edge states info
     Spin-up

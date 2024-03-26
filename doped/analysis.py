@@ -51,7 +51,7 @@ from doped.utils.parsing import (
     get_outcar,
     get_vasprun,
 )
-from doped.utils.phs import get_band_edge_info
+from doped.utils.eigenvalues import get_band_edge_info
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
@@ -446,7 +446,7 @@ class DefectsParser:
         bulk_band_gap_path: Optional[str] = None,
         processes: Optional[int] = None,
         json_filename: Optional[Union[str, bool]] = None,
-        load_phs_data: Optional[bool] = True,
+        parse_projected_eigen: Optional[bool] = True,
         **kwargs,
     ):
         r"""
@@ -485,7 +485,7 @@ class DefectsParser:
                 Ionic + static contributions to the dielectric constant, in the same xyz
                 Cartesian basis as the supercell calculations. If not provided, charge
                 corrections cannot be computed and so ``skip_corrections`` will be set to
-                true.
+                ``True``.
             subfolder (str):
                 Name of subfolder(s) within each defect calculation folder (in the
                 ``output_path`` directory) containing the VASP calculation files to
@@ -511,10 +511,10 @@ class DefectsParser:
                 occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure
                 calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
-                entries in DefectParser.defect_entry.calculation_metadata to match the
+                entries in ``DefectParser.defect_entry.calculation_metadata`` to match the
                 correct (eigen)values.
-                If None, will calculate "gap"/"vbm" using the outputs at:
-                DefectParser.defect_entry.calculation_metadata["bulk_path"]
+                If ``None`` (default), will calculate "gap"/"vbm" using the outputs at:
+                ``DefectParser.defect_entry.calculation_metadata["bulk_path"]``
             processes (int):
                 Number of processes to use for multiprocessing for expedited parsing.
                 If not set, defaults to one less than the number of CPUs available.
@@ -523,16 +523,15 @@ class DefectsParser:
                 to in ``output_path``, to avoid having to re-parse defects when later analysing
                 further and aiding calculation provenance. Can be reloaded using the ``loadfn``
                 function from ``monty.serialization`` (and then input to ``DefectThermodynamics``
-                etc). If None (default), set as ``{Host Chemical Formula}_defect_dict.json``.
-                If False, no json file is saved.
-            load_phs_data (bool):
-                Load the projected eigenvalues and sets up a ``pydefect`` ``BandEdgeOrbitalInfos``
-                object with the required information for determining the band edge states
-                using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
-                from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
-                from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed.
-                Default = True.
+                etc.). If ``None`` (default), set as ``{Host Chemical Formula}_defect_dict.json``.
+                If ``False``, no json file is saved.
+            parse_projected_eigen (bool):
+                Whether to parse the projected eigenvalues & orbitals from the bulk and defect
+                calculations, allowing ``DefectEntry.get_eigenvalue_analysis()`` to be used.
+                Will initially try to load from ``PROCAR`` files in the bulk/defect directories
+                if present, otherwise will attempt to load from ``vasprun.xml(.gz)`` (~50%
+                slower). Parsing this data increases total parsing time by ~30-70%, so set to
+                ``False`` if not needed. Default = True.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -558,7 +557,7 @@ class DefectsParser:
         self.bulk_band_gap_path = bulk_band_gap_path
         self.processes = processes
         self.json_filename = json_filename
-        self.load_phs_data = load_phs_data
+        self.parse_projected_eigen = parse_projected_eigen
         self.bulk_vr = None  # loaded later
         self.kwargs = kwargs
 
@@ -665,7 +664,7 @@ class DefectsParser:
                     Spin.down: self.bulk_procar.proj_data[1],
                 }
         else:
-            self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
+            self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=parse_projected_eigen)
             self.bulk_procar = None
             # parsing projected eigenvalues makes Vasprun loading much slower...
 
@@ -689,9 +688,9 @@ class DefectsParser:
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
         }
-        self.phs_data = {  # so we only need to load bulk data for PHS once
+        self.eigenvalue_data = {  # so we only need to load bulk data for eigenvalue/orbital analysis once
             "bulk_outcar": None,
-            "phs_warning": None,
+            "eigen_warning": None,
         }
         parsed_defect_entries = []
         parsing_warnings = []
@@ -1152,8 +1151,8 @@ class DefectsParser:
                 error_tolerance=self.error_tolerance,
                 bulk_band_gap_path=self.bulk_band_gap_path,
                 oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
-                load_phs_data=self.load_phs_data,
-                **self.phs_data,
+                parse_projected_eigen=self.parse_projected_eigen,
+                **self.eigenvalue_data,
                 **self.kwargs,
             )
 
@@ -1178,10 +1177,10 @@ class DefectsParser:
                 )["bulk_site_potentials"]
 
             if dp.kwargs.get("bulk_outcar", None) is not None:
-                self.phs_data["bulk_outcar"] = dp.kwargs["bulk_outcar"]
+                self.eigenvalue_data["bulk_outcar"] = dp.kwargs["bulk_outcar"]
 
-            if dp.kwargs.get("phs_warning", None) is not None:
-                self.phs_data["phs_warning"] = dp.kwargs["phs_warning"]
+            if dp.kwargs.get("eigen_warning", None) is not None:
+                self.eigenvalue_data["eigen_warning"] = dp.kwargs["eigen_warning"]
 
         except Exception as exc:
             warnings.warn(
@@ -1358,7 +1357,7 @@ class DefectParser:
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         bulk_band_gap_path: Optional[str] = None,
-        load_phs_data: Optional[bool] = True,
+        parse_projected_eigen: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -1374,9 +1373,9 @@ class DefectParser:
 
         Args:
             defect_path (str):
-                Path to defect supercell folder (containing at least vasprun.xml(.gz)).
+                Path to defect supercell folder (containing at least ``vasprun.xml(.gz)``).
             bulk_path (str):
-                Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+                Path to bulk supercell folder (containing at least ``vasprun.xml(.gz)``).
                 Not required if ``bulk_vr`` is provided.
             bulk_vr (Vasprun):
                 ``pymatgen`` ``Vasprun`` object for the reference bulk supercell calculation,
@@ -1397,31 +1396,30 @@ class DefectParser:
             initial_defect_structure_path (str):
                 Path to the initial/unrelaxed defect structure. Only recommended for use
                 if structure matching with the relaxed defect structure(s) fails (rare).
-                Default is None.
+                Default is ``None``.
             skip_corrections (bool):
                 Whether to skip the calculation and application of finite-size charge
                 corrections to the defect energy (not recommended in most cases).
-                Default = False.
+                Default = ``False``.
             error_tolerance (float):
                 If the estimated error in the defect charge correction is greater
                 than this value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_band_gap_path (str):
-                Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
+                Path to bulk ``OUTCAR`` file for determining the band gap. If the VBM/CBM
                 occur at reciprocal space points not included in the bulk supercell
                 calculation, you should use this tag to point to a bulk bandstructure
                 calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
-                entries in DefectParser.defect_entry.calculation_metadata to match the
+                entries in ``DefectParser.defect_entry.calculation_metadata`` to match the
                 correct (eigen)values.
-                If None, will calculate "gap"/"vbm" using the outputs at:
-                DefectParser.defect_entry.calculation_metadata["bulk_path"]
-            load_phs_data (bool):
-                Load the projected eigenvalues and sets up a ``pydefect`` ``BandEdgeOrbitalInfos``
-                object with the required information for determining the band edge states
-                using ``DefectEntry.get_perturbed_host_state()``. Will initially try to load
-                from ``PROCAR`` files, otherwise will fall back on loading project eigenvalues
-                from ``vasprun.xml``.This can cause a significant increase in the parsing
-                time (30%-70% longer), so set to False if not needed.
-                Default = True.
+                If ``None``, will calculate "gap"/"vbm" using the outputs at:
+                ``DefectParser.defect_entry.calculation_metadata["bulk_path"]``
+            parse_projected_eigen (bool):
+                Whether to parse the projected eigenvalues & orbitals from the bulk and defect
+                calculations, allowing ``DefectEntry.get_eigenvalue_analysis()`` to be used.
+                Will initially try to load from ``PROCAR`` files in the bulk/defect directories
+                if present, otherwise will attempt to load from ``vasprun.xml(.gz)`` (~50%
+                slower). Parsing this data increases total parsing time by ~30-70%, so set to
+                ``False`` if not needed. Default = True.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -1451,7 +1449,7 @@ class DefectParser:
                     bulk_vr_path,
                     dir_type="bulk",
                 )
-            if load_phs_data:
+            if parse_projected_eigen:
                 try:
                     bulk_procar_path, multiple = _get_output_files_and_check_if_multiple(
                         "PROCAR", bulk_path
@@ -1467,12 +1465,13 @@ class DefectParser:
                         }
                 except (FileNotFoundError, IsADirectoryError):
                     bulk_procar = None
-                    bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=load_phs_data)
+                    bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=parse_projected_eigen)
                     if bulk_vr.projected_eigenvalues is None:
-                        load_phs_data = False  # can't load PHS data without projected eigenvalues
+                        parse_projected_eigen = False
                         warnings.warn(
-                            "No bulk 'PROCAR' file found or 'vasprun.xml' with projected orbitals. "
-                            "Skipping loading of data required of PHS analysis."
+                            "No bulk 'PROCAR' or 'vasprun.xml(.gz)' file found with projected orbitals. "
+                            "Skipping loading of projected eigenvalues & orbitals (required for shallow "
+                            "defect / PHS analysis)."
                         )
             else:
                 bulk_vr = get_vasprun(bulk_vr_path)
@@ -1493,7 +1492,7 @@ class DefectParser:
                 defect_vr_path,
                 dir_type="defect",
             )
-        if load_phs_data:
+        if parse_projected_eigen:
             try:
                 defect_procar_path, multiple = _get_output_files_and_check_if_multiple(
                     "PROCAR", defect_path
@@ -1511,10 +1510,11 @@ class DefectParser:
                 defect_procar = None
                 defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=True)
                 if defect_vr.projected_eigenvalues is None:
-                    load_phs_data = False  # can't load PHS data without projected eigenvalues
+                    parse_projected_eigen = False 
                     warnings.warn(
-                        "No defect 'PROCAR' file found or 'vasprun.xml' with projected orbitals. "
-                        "Skipping loading of data required of PHS analysis."
+                        "No defect 'PROCAR' or 'vasprun.xml(.gz)' file found with projected orbitals. "
+                        "Skipping loading of projected eigenvalues & orbitals (required for shallow "
+                        "defect / PHS analysis)."
                     )
         else:
             defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
@@ -1742,58 +1742,59 @@ class DefectParser:
             **kwargs,
         )
 
-        if load_phs_data:
+        if parse_projected_eigen:
             try:
-                bulk_outcar_phs = dp.kwargs.get("bulk_outcar", None)
+                bulk_outcar_eigen = dp.kwargs.get("bulk_outcar", None)
 
-                if bulk_outcar_phs is None and dp.kwargs.get("phs_warning", None) is None:
+                if bulk_outcar_eigen is None and dp.kwargs.get("eigen_warning", None) is None:
                     try:
                         bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple(
                             "OUTCAR", dp.defect_entry.calculation_metadata["bulk_path"]
                         )
-                        bulk_outcar_phs = get_outcar(bulk_outcar_path)
-                        dp.kwargs["bulk_outcar"] = bulk_outcar_phs
-                        dp.kwargs["phs_warning"] = None
+                        bulk_outcar_eigen = get_outcar(bulk_outcar_path)
+                        dp.kwargs["bulk_outcar"] = bulk_outcar_eigen
+                        dp.kwargs["eigen_warning"] = None
 
                     except IsADirectoryError:
-                        # Save warning, so can be used for future defects to skip the loading of PHS file
+                        # Save warning, so can be used for future defects to skip eigenvalue parsing
                         path_bulk = dp.defect_entry.calculation_metadata["bulk_path"]
-                        dp.kwargs["phs_warning"] = (
-                            f"No `OUTCAR` file found in bulk path {path_bulk}. Skipping automated PHS "
-                            f"data loading for all defects."
+                        dp.kwargs["eigen_warning"] = (
+                            f"No `OUTCAR` file found in bulk path {path_bulk}.  Skipping loading of "
+                            f"projected eigenvalues & orbitals (required for shallow defect / PHS "
+                            f"analysis) for all defects."
                         )
-                        warnings.warn(dp.kwargs["phs_warning"])
+                        warnings.warn(dp.kwargs["eigen_warning"])
 
-                if bulk_outcar_phs is None:
-                    defect_entry.calculation_metadata["phs_data"] = None
+                if bulk_outcar_eigen is None:
+                    defect_entry.calculation_metadata["eigenvalue_data"] = None
 
                 else:
                     if defect_procar and bulk_procar:
                         band_orb, vbm_info, cbm_info = get_band_edge_info(
                             bulk_vr,
-                            bulk_outcar_phs,
+                            bulk_outcar_eigen,
                             defect_vr,
                             bulk_procar,
                             defect_procar,
                         )
                     else:
                         band_orb, vbm_info, cbm_info = get_band_edge_info(
-                            bulk_vr, bulk_outcar_phs, defect_vr
+                            bulk_vr, bulk_outcar_eigen, defect_vr
                         )
 
-                    defect_entry.calculation_metadata["phs_data"] = {
+                    defect_entry.calculation_metadata["eigenvalue_data"] = {
                         "band_orb": band_orb,
                         "vbm_info": vbm_info,
                         "cbm_info": cbm_info,
                     }
 
             except Exception as exc:
-                warnings.warn(f"PHS data parsing failed with error: {exc!r}")
-                defect_entry.calculation_metadata["phs_data"] = None
+                warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
+                defect_entry.calculation_metadata["eigenvalue_data"] = None
                 print(exc)
 
         else:
-            defect_entry.calculation_metadata["phs_data"] = None
+            defect_entry.calculation_metadata["eigenvalue_data"] = None
 
         # delete projected_eigenvalues attribute from defect_vr, no longer needed
         defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used

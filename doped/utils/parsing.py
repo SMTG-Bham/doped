@@ -44,7 +44,7 @@ def find_archived_fname(fname, raise_error=True):
 @staticmethod  # type: ignore[misc]
 def parse_projected_eigen_no_mag(elem):
     """
-    Parse the projected eigenvalues from a Vasprun object (used during
+    Parse the projected eigenvalues from a ``Vasprun`` object (used during
     initialisation), but excluding the projected magnetisation for efficiency.
 
     This is a modified version of ``_parse_projected_eigen``
@@ -763,8 +763,8 @@ def _compare_incar_tags(
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
-    Determine the number of electrons (NELECT) from a Vasprun object,
-    corresponding to a neutral charge state for the structure.
+    Determine the number of electrons (``NELECT``) from a ``Vasprun``
+    object, corresponding to a neutral charge state for the structure.
     """
     from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
 

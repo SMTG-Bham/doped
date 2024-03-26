@@ -55,10 +55,10 @@ def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordinati
             unsorted_distances[element].append(round(distance, 2))
             neighboring_atom_indices.append(i)
 
-    distance_dict = {}
-    for element, distances in unsorted_distances.items():
-        distance_dict[element] = sorted(distances)
-
+    distance_dict = {
+        element: sorted(distances)
+        for element, distances in unsorted_distances.items()
+    }
     return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
 
 
@@ -150,21 +150,21 @@ def get_band_edge_info(
     defect_procar: Optional[ProcarEasyunfold] = None,
 ):
     """
-    Load metadata required for performing PHS identification.
+    Load metadata required for performing eigenvalue & orbital analysis.
 
     See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states
 
     Args:
         bulk_vr (Vasprun):
-            Vasprun object of the bulk supercell calculation
+            ``Vasprun`` object of the bulk supercell calculation
         bulk_outcar (Outcar):
-            Outcar object of
+            ``Outcar`` object of
         defect_vr (Vasprun):
-            Vasprun object of the defect supercell calculation
+            ``Vasprun`` object of the defect supercell calculation
         bulk_procar (Procar):
-            Procar object of the bulk supercell calculation
+            ``Procar`` object of the bulk supercell calculation
         defect_procar (Procar):
-            Procar object of the defect supercell calculation
+            ``Procar`` object of the defect supercell calculation
     Returns:
         ``pydefect`` ``EdgeInfo`` class
     """
@@ -233,7 +233,7 @@ def get_band_edge_info(
     return band_orb, vbm_info, cbm_info
 
 
-def get_phs_and_eigenvalue(
+def get_eigenvalue_analysis(
     DefectEntry,
     filename: Optional[str] = None,
     plot: bool = True,
@@ -241,8 +241,9 @@ def get_phs_and_eigenvalue(
     style_file: Optional[str] = None,
 ):
     """
-    Get PHS info and eigenvalue plot (if ``plot = True``; default) for a given
-    ``DefectEntry``.
+    Get eigenvalue & orbital info (with automated classification of PHS
+    states) with corresponding single-particle eigenvalues plot (if
+    ``plot = True``; default) for a given ``DefectEntry``.
 
     Args:
         DefectEntry: ``DefectEntry`` object
@@ -263,9 +264,9 @@ def get_phs_and_eigenvalue(
     Returns:
         ``pydefect`` ``PerfectBandEdgeState`` class
     """
-    band_orb = DefectEntry.calculation_metadata["phs_data"]["band_orb"]
-    vbm_info = DefectEntry.calculation_metadata["phs_data"]["vbm_info"]
-    cbm_info = DefectEntry.calculation_metadata["phs_data"]["cbm_info"]
+    band_orb = DefectEntry.calculation_metadata["eigenvalue_data"]["band_orb"]
+    vbm_info = DefectEntry.calculation_metadata["eigenvalue_data"]["vbm_info"]
+    cbm_info = DefectEntry.calculation_metadata["eigenvalue_data"]["cbm_info"]
 
     # Ensures consistent number of sig. fig. so test work 100% of the time
     def _orbital_diff(orbital_1: dict, orbital_2: dict) -> float:
@@ -273,7 +274,10 @@ def get_phs_and_eigenvalue(
         orb_1, orb_2 = defaultdict(list, orbital_1), defaultdict(list, orbital_2)
         result = 0
         for e in element_set:
-            result += sum([abs(i - j) for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0)])
+            result += sum(
+                abs(i - j)
+                for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0)
+            )
         return round(result, 3)
 
     pydefect.analyzer.make_band_edge_states.orbital_diff = _orbital_diff

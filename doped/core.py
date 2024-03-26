@@ -512,11 +512,11 @@ class DefectEntry(thermo.DefectEntry):
             error_tolerance=error_tolerance,
         )
 
-    def get_perturbed_host_state(self, filename: Optional[str] = None, plot: bool = True, **kwargs):
+    def get_eigenvalue_analysis(self, filename: Optional[str] = None, plot: bool = True, **kwargs):
         """
         Automatically determines the band edge states of the defect to determine
         if the defect is a PHS. Also returns single-particle levels and their
-        occupation. cite: https://doi.org/10.1103/PhysRevMaterials.5.123803.
+        occupation. Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
 
         Args:
             filename (str):
@@ -526,23 +526,25 @@ class DefectEntry(thermo.DefectEntry):
                 Whether to plot the single-particle eigenvalues.
                 (Default: True)
             **kwargs:
-                Additional kwargs to pass to ``doped.utils.phs.get_phs_and_eigenvalue``,
+                Additional kwargs to pass to
+                ``doped.utils.eigenvalues.get_eigenvalue_analysis``,
                 such as ``style_file``, ``ks_levels``
 
         Returns:
             ``pydefect`` ``BandEdgeStates`` object and ``matplotlib`` ``Figure`` object
             (if ``plot=True``).
         """
-        from doped.utils.phs import get_phs_and_eigenvalue
+        from doped.utils.eigenvalues import get_eigenvalue_analysis
 
-        if self.calculation_metadata.get("phs_data") is None:
+        if self.calculation_metadata.get("eigenvalue_data") is None:
             raise ValueError(
-                "No PHS data loaded for defect_entry. Please parse with load_phs_data = True "
+                "No projected eigenvalues/orbitals loaded for DefectEntry. "
+                "Please parse with parse_projected_eigen = True."
             )
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            bes, fig = get_phs_and_eigenvalue(self, filename, **kwargs)
+            bes, fig = get_eigenvalue_analysis(self, filename, **kwargs)
 
         return (bes, fig) if plot else bes
 
