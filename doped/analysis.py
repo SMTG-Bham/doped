@@ -690,7 +690,7 @@ class DefectsParser:
                 self.bulk_procar = get_procar(bulk_procar_path)
                 self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
 
-        if self.bulk_procar is None:  # parsing projected eigenvalues makes Vasprun loading much slower...
+        if self.bulk_vr is None:  # parsing projected eigenvalues makes Vasprun loading much slower...
             self.bulk_vr = get_vasprun(
                 bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
             )
