@@ -812,6 +812,60 @@ def _compare_incar_tags(
     return True
 
 
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the magnetization (number of spin-up vs spin-down electrons) from
+    a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract the total magnetization.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # first check if it's even a spin-polarised calculation:
+    if len(eigenvalues_and_occs) == 1 or not vasprun.is_spin:
+        return 0  # non-spin polarised or SOC calculation
+    # (can't pull SOC magnetization this way and either way isn't needed/desired for magnetization value
+    # in ``VaspBandEdgeProperties``)
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    n_spin_up = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    n_spin_down = np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+
+    return n_spin_up - n_spin_down
+
+
+def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    if len(eigenvalues_and_occs) > 1:
+        nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+    elif not vasprun.parameters.get("LNONCOLLINEAR", False):
+        nelect *= 2  # non-spin-polarised or SOC calc
+
+    return nelect
+
+
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
     Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
@@ -1295,7 +1349,7 @@ def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_sta
 
         else:
             defect_nelect = defect_vr.parameters.get("NELECT")
-            bulk_nelect = get_neutral_nelect_from_vasprun(bulk_vr)
+            bulk_nelect = get_nelect_from_vasprun(bulk_vr)
             neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
 
             if bulk_vr.parameters.get("NELECT", False):
