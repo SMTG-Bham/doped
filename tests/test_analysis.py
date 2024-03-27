@@ -530,6 +530,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=self.CdTe_EXAMPLE_DIR,
                 bulk_path=f"{self.module_path}/data/CdTe",  # vasp_gam bulk vr here
                 dielectric=9.13,
+                parse_projected_eigen=False,
             )
         print([warn.message for warn in w])  # for debugging
         for i in [
@@ -774,39 +775,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             expected = json.load(f)
         assert bes.as_dict() == expected
 
-        # Test warnings for non-collinear calc. with wrong version vise Int_3
+        # Test warning for no projected orbitals: Sb2Se3 data
         with warnings.catch_warnings(record=True) as w:
             DefectParser.from_paths(
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
-                f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl",
+                f"{self.Sb2Se3_DATA_DIR}/defect/O_1",
+                f"{self.Sb2Se3_DATA_DIR}/bulk",
                 skip_corrections=True,
                 parse_projected_eigen=True,
             )
 
         print([str(warning.message) for warning in w])  # for debugging
-        assert any(
-            all(
-                i in str(warning.message)
-                for i in [
-                    "PHS data parsing failed with error:",
-                    "You have version 0.8.1 of the package `vise`, which does not allow the parsing of "
-                    "non-collinear (SOC) calculations.",
-                ]
-            )
-            for warning in w
-        )
-
-        # Test warning for no projected orbitals: Sb2Se3 data
-        # with warnings.catch_warnings(record=True) as w:
-        #     DefectParser.from_paths(
-        #         f"{self.Sb2Se3_DATA_DIR}/defect/O_1",
-        #         f"{self.Sb2Se3_DATA_DIR}/bulk",
-        #         skip_corrections=True,
-        #         parse_projected_eigen=True,
-        #     )
-        #
-        # print([str(warning.message) for warning in w])  # for debugging
-        # assert any("No projected orbitals found in" in str(warning.message) for warning in w)
+        assert any("with projected orbitals in path" in str(warning.message) for warning in w)
 
         return fig
 
@@ -1086,7 +1065,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         ``symprec=0.2``).
         """
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.CaO_DATA_DIR, skip_corrections=True)
+            dp = DefectsParser(
+                output_path=self.CaO_DATA_DIR,
+                skip_corrections=True,
+                parse_projected_eigen=False,
+            )
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
@@ -1116,7 +1099,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         correct point group symmetry of Cs is determined.
         """
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True)
+            dp = DefectsParser(
+                output_path=self.BiOI_DATA_DIR, skip_corrections=True, parse_projected_eigen=False
+            )
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
@@ -1129,7 +1114,12 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test setting symprec during parsing
         with warnings.catch_warnings(record=True) as w:
-            dp = DefectsParser(output_path=self.BiOI_DATA_DIR, skip_corrections=True, symprec=0.01)
+            dp = DefectsParser(
+                output_path=self.BiOI_DATA_DIR,
+                skip_corrections=True,
+                symprec=0.01,
+                parse_projected_eigen=False,
+            )
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
