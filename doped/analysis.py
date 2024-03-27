@@ -157,9 +157,8 @@ def check_and_set_defect_entry_name(
 
     if formatted_defect_name is not None:
         defect_entry.name = defect_name_w_charge_state
-    else:
+    else:  # otherwise use default doped name
         defect_entry.name = defect_entry.calculation_metadata["full_unrelaxed_defect_name"]
-        # otherwise use default doped name
 
 
 def defect_from_structures(
@@ -371,10 +370,13 @@ def defect_entry_from_paths(
 ):
     """
     Parse the defect calculation outputs in ``defect_path`` and return the
-    parsed ``DefectEntry`` object. By default, the ``DefectEntry.name``
-    attribute (later used to label the defects in plots) is set to the
-    defect_path folder name (if it is a recognised defect name), else it is set
-    to the default doped name for that defect.
+    parsed ``DefectEntry`` object.
+
+    By default, the ``DefectEntry.name`` attribute (later used to label the
+    defects in plots) is set to the defect_path folder name (if it is a
+    recognised defect name), else it is set to the default ``doped`` name for
+    that defect (using the estimated `unrelaxed` defect structure, for the point
+    group and neighbour distances).
 
     Note that the bulk and defect supercells should have the same definitions/basis
     sets (for site-matching and finite-size charge corrections to work appropriately).
@@ -459,9 +461,11 @@ class DefectsParser:
         ``doped.vasp``) and parses the defect calculations into a dictionary of:
         ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to the
         defect calculation folder name (`if it is a recognised defect name`),
-        else it is set to the default ``doped`` name for that defect. By default,
-        searches for folders in ``output_path`` with ``subfolder`` containing
-        ``vasprun.xml(.gz)`` files, and tries to parse them as ``DefectEntry``\s.
+        else it is set to the default ``doped`` name for that defect (using the
+        estimated `unrelaxed` defect structure, for the point group and neighbour
+        distances). By default, searches for folders in ``output_path`` with
+        ``subfolder`` containing ``vasprun.xml(.gz)`` files, and tries to parse
+        them as ``DefectEntry``\s.
 
         By default, tries multiprocessing to speed up defect parsing, which can be
         controlled with ``processes``. If parsing hangs, this may be due to memory
@@ -555,7 +559,9 @@ class DefectsParser:
                 Dictionary of parsed defect calculations in the format:
                 ``{"defect_name": DefectEntry}`` where the defect_name is set to the
                 defect calculation folder name (`if it is a recognised defect name`),
-                else it is set to the default ``doped`` name for that defect.
+                else it is set to the default ``doped`` name for that defect (using
+                the estimated `unrelaxed` defect structure, for the point group and
+                neighbour distances).
         """
         self.output_path = output_path
         self.dielectric = dielectric
@@ -1398,7 +1404,8 @@ class DefectParser:
         ``DefectParser.defect_entry.name`` attribute (later used to label
         defects in plots) is set to the defect_path folder name (if it is a
         recognised defect name), else it is set to the default doped name for
-        that defect.
+        that defect (using the estimated `unrelaxed` defect structure, for the
+        point group and neighbour distances).
 
         Note that the bulk and defect supercells should have the same definitions/basis
         sets (for site-matching and finite-size charge corrections to work appropriately).
@@ -1675,6 +1682,7 @@ class DefectParser:
             sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
             bulk_entry=bulk_vr.get_computed_entry(),
             # doped attributes:
+            name=possible_defect_name,  # set later, so set now to avoid guessing in ``__post_init__()``
             defect_supercell_site=defect_site,  # _relaxed_ defect site
             defect_supercell=defect_vr.final_structure,
             bulk_supercell=bulk_vr.final_structure,
