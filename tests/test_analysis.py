@@ -775,6 +775,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             expected = json.load(f)
         assert bes.as_dict() == expected
 
+        # Test non-collinear calculation
+        defect_entry = DefectParser.from_paths(
+            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl",
+            skip_corrections=True,
+            parse_projected_eigen=True,
+        ).defect_entry
+
+        bes = defect_entry.get_eigenvalue_analysis(plot=False)
+        with open(f"{self.CdTe_EXAMPLE_DIR}/CdTe_Int_Te_3_1_band_edge_states.json") as f:
+            expected = json.load(f)
+        assert bes.as_dict() == expected
+
         # Test warning for no projected orbitals: Sb2Se3 data
         with warnings.catch_warnings(record=True) as w:
             DefectParser.from_paths(
