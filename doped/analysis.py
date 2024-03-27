@@ -22,7 +22,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
-from pymatgen.io.vasp.outputs import Outcar, Procar, Vasprun
+from pymatgen.io.vasp.outputs import Procar, Vasprun
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -667,39 +667,38 @@ class DefectsParser:
             )
 
         self.bulk_procar = None
-        self.bulk_outcar = None
+        procar_exc = None
 
         if parse_projected_eigen is not False:
-            # load OUTCAR once if possible:  # TODO: Remove after when OUTCAR no longer needed
-            # TODO: then also remove "bulk calculation folder must contain the ``OUTCAR(.gz)``" from Tips
-            bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", self.bulk_path)
-            if multiple:
-                _multiple_files_warning(
-                    "OUTCAR",
-                    self.bulk_path,
-                    bulk_outcar_path,
-                    dir_type="bulk",
-                )
-            self.bulk_outcar = get_outcar(bulk_outcar_path)
-
             # Checking if PROCAR available to avoid slow loading of projected eigenvalues/orbitals:
             bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", self.bulk_path)
-            if multiple:
-                _multiple_files_warning(
-                    "PROCAR",
-                    self.bulk_path,
-                    bulk_procar_path,
-                    dir_type="bulk",
-                )
-
             if "PROCAR" in bulk_procar_path:
-                self.bulk_procar = get_procar(bulk_procar_path)
-                self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+                try:
+                    self.bulk_procar = get_procar(bulk_procar_path)
+                    self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+
+                except Exception as exc:
+                    procar_exc = exc  # don't throw unless Vasprun projected eigenvalues also fail
 
         if self.bulk_vr is None:  # parsing projected eigenvalues makes Vasprun loading much slower...
-            self.bulk_vr = get_vasprun(
-                bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
-            )
+            try:
+                self.bulk_vr = get_vasprun(
+                    bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
+                )
+            except Exception as exc_2:
+                self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+                if parse_projected_eigen is not None:  # otherwise no warning
+                    warning_message = (
+                        f"Could not parse PROCAR files in bulk folder at {self.bulk_path}, got error:"
+                        f"\n{procar_exc}\n"
+                        f"Then got "
+                        if procar_exc
+                        else "Got "
+                    )
+                    warnings.warn(
+                        f"{warning_message}the following error when attempting to parse projected "
+                        f"eigenvalues from the bulk vasprun.xml(.gz):\n{exc_2}"
+                    )
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
@@ -1189,7 +1188,6 @@ class DefectsParser:
                 bulk_path=self.bulk_path,
                 bulk_vr=self.bulk_vr,
                 bulk_procar=self.bulk_procar,
-                bulk_outcar=self.bulk_outcar,
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
@@ -1388,7 +1386,6 @@ class DefectParser:
         bulk_path: Optional[str] = None,
         bulk_vr: Optional[Vasprun] = None,
         bulk_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
-        bulk_outcar: Optional[Outcar] = None,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         charge_state: Optional[int] = None,
         initial_defect_structure_path: Optional[str] = None,
@@ -1424,10 +1421,6 @@ class DefectParser:
                 ``easyunfold``/``pymatgen`` ``Procar`` object, for the reference bulk
                 supercell calculation if already loaded (can be supplied to expedite
                 parsing). Default is ``None``.
-            bulk_outcar (Outcar):
-                ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
-                calculation if already loaded (can be supplied to expedite parsing).
-                Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Ionic + static contributions to the dielectric constant. If not provided,
                 charge corrections cannot be computed and so ``skip_corrections`` will be
@@ -1756,7 +1749,6 @@ class DefectParser:
                     bulk_procar,
                     defect_vr=defect_vr,
                     defect_procar=defect_procar,
-                    bulk_outcar=bulk_outcar,
                 )
             except Exception as exc:
                 if parse_projected_eigen is not None:  # otherwise no warning

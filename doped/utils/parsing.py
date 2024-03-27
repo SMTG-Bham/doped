@@ -820,6 +820,9 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     Args:
         vasprun (Vasprun):
             The ``Vasprun`` object from which to extract the total magnetization.
+
+    Returns:
+        int or float: The total magnetization of the system.
     """
     # in theory should be able to use vasprun.idos (integrated dos), but this
     # doesn't show spin-polarisation / account for NELECT changes from neutral
@@ -848,6 +851,9 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     Args:
         vasprun (Vasprun):
             The ``Vasprun`` object from which to extract ``NELECT``.
+
+    Returns:
+        int or float: The number of electrons in the system.
     """
     # in theory should be able to use vasprun.idos (integrated dos), but this
     # doesn't show spin-polarisation / account for NELECT changes from neutral
@@ -878,6 +884,10 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             Whether to skip the initialisation of the ``POTCAR`` statistics
             (i.e. the auto-charge determination) and instead try to reverse
             engineer ``NELECT`` using the ``DefectDictSet``.
+
+    Returns:
+        int or float: The number of electrons in the system for a neutral
+        charge state.
     """
     nelect = None
     if not skip_potcar_init:

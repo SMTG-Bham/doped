@@ -235,9 +235,8 @@ states (and whether they are deep or shallow/PHS) to be automatically identified
 Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
 default). It is however recommended to additionally manually check the real-space charge density
 (i.e. ``PARCHG``) of the defect state to confirm the identification of a PHS.
-For VASP to output the necessary data for this analysis, your ``INCAR`` file needs to include
-``LORBIT > 10`` (to obtain the projected orbitals) and your bulk calculation folder must contain the
-``OUTCAR(.gz)`` file.
+Note that for VASP to output the necessary data for this analysis, your ``INCAR`` file needs to include
+``LORBIT > 10`` (to obtain the projected orbitals).
 
 In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
 determined to be a PHS. This was additionally confirmed by performing calculations in larger
