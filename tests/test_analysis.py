@@ -740,9 +740,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     @custom_mpl_image_compare(filename="cu2sise3_phs_plot.png")
-    def test_phs_parsing_and_warnings(self):
+    def test_eigenvalues_parsing_and_warnings(self):
         """
-        Test PHS functions.
+        Test eigenvalues functions.
         """
         # Test loading of MgO using vasprun.xml
         defect_entry = DefectParser.from_paths(
@@ -784,7 +784,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         ).defect_entry
 
         bes = defect_entry.get_eigenvalue_analysis(plot=False)
-        with open(f"{self.CdTe_EXAMPLE_DIR}/CdTe_Int_Te_3_1_band_edge_states.json") as f:
+        with open(f"{self.CdTe_EXAMPLE_DIR}/CdTe_test_soc_band_edge_states.json") as f:
             expected = json.load(f)
         assert bes.as_dict() == expected
 
