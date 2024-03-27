@@ -10,8 +10,8 @@ import logging
 import os
 import warnings
 from collections import defaultdict
-from importlib.metadata import version
 from itertools import zip_longest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import matplotlib.pyplot as plt
@@ -28,8 +28,6 @@ from doped.utils.parsing import get_procar
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from easyunfold.procar import Procar as EasyunfoldProcar
     from pydefect.analyzer.make_defect_structure_info import DefectStructureInfo
 
@@ -172,7 +170,7 @@ def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
             ``Procar`` object.
     """
     if not hasattr(procar, "data"):  # not a parsed Procar object
-        if hasattr(procar, "proj_data"):  # un-parsed easyunfold Procar
+        if hasattr(procar, "proj_data") and not isinstance(procar, (str, Path, Procar)):
             if procar._is_soc:
                 procar.data = {Spin.up: procar.proj_data[0]}
             else:
@@ -233,27 +231,11 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
         for the bulk VBM and CBM.
     """
-    # Check if the correct version of vise installed if a non-collinear calculation is parsed.
-    # TODO: Remove this check when ``vise 0.8.2`` is released on PyPi.
-    try:
-        band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
-        if bulk_vr.parameters.get("LNONCOLLINEAR") is True:
-            assert band_edge_prop._ho_band_index(Spin.up) == int(bulk_vr.parameters.get("NELECT")) - 1
+    band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
 
-        if bulk_procar is not None:
-            bulk_procar = _parse_procar(bulk_procar)
-            pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
-
-    except AssertionError as exc:
-        v_vise = version("vise")
-        if v_vise <= "0.8.1":
-            raise RuntimeError(
-                f"You have version {v_vise} of the package `vise`, which does not allow the parsing of "
-                f"non-collinear (SOC) calculations. You can install the updated version of `vise` from "
-                f"the GitHub repo for this functionality."
-            ) from exc
-
-        raise exc
+    if bulk_procar is not None:
+        bulk_procar = _parse_procar(bulk_procar)
+        pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
 
     _orig_method_coor = Distances.coordination
     Distances.coordination = _coordination
@@ -426,6 +408,9 @@ def get_eigenvalue_analysis(
                 "`bulk_procar`, and `defect_procar` must be provided!"
             )
         from doped.analysis import defect_from_structures
+
+        bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
+        defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
 
         (
             defect,
