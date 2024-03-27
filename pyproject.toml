@@ -29,7 +29,7 @@ dependencies = [
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
-    "vise>=0.8.1",  # for eigenvalue analysis, updated to 0.8.2 (for SOC compatibility) when released
+    "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
     "easyunfold",  # for PROCAR parsing, if any dependency issues arise can make it an optional dependency
 ]
 
