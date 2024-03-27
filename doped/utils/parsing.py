@@ -8,6 +8,7 @@ import os
 import re
 import warnings
 from collections import defaultdict
+from functools import lru_cache
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
@@ -15,7 +16,7 @@ from monty.serialization import loadfn
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.io.vasp.inputs import UnknownPotcarWarning
+from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
@@ -24,6 +25,11 @@ from doped.core import DefectEntry
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+def _get_potcar_summary_stats() -> dict:
+    return loadfn(POTCAR_STATS_PATH)
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -810,15 +816,20 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
     """
     Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
     corresponding to a neutral charge state for the structure.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+        skip_potcar_init (bool):
+            Whether to skip the initialisation of the ``POTCAR`` statistics
+            (i.e. the auto-charge determination) and instead try to reverse
+            engineer ``NELECT`` using the ``DefectDictSet``.
     """
-    from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
-
-    potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
-
     nelect = None
     if not skip_potcar_init:
         with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
             grouped_symbols = [list(group) for key, group in itertools.groupby(vasprun.atomic_symbols)]
+            potcar_summary_stats = _get_potcar_summary_stats()
 
             for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
                 if all(
