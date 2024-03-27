@@ -529,7 +529,6 @@ class DefectEntry(thermo.DefectEntry):
         bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
         defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
         defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
         force_reparse: bool = False,
     ):
         """
@@ -546,7 +545,7 @@ class DefectEntry(thermo.DefectEntry):
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (str, Path, EasyunfoldProcar, Procar):
-                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
                 calculation. Not required, but speeds up parsing (~50%) if present.
@@ -561,17 +560,12 @@ class DefectEntry(thermo.DefectEntry):
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (str, Path, EasyunfoldProcar, Procar):
-                Either a path to the ``VASP`` ``PROCAR`` output file (with
+                Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
                 Not required, but speeds up parsing (~50%) if present. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            bulk_outcar (str, Path, Outcar):
-                Either a path to the ``VASP`` ``OUTCAR`` output file or a
-                ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
-                calculation. If ``None`` (default), tries to load from an
-                ``OUTCAR`` file at ``self.calculation_metadata["bulk_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
@@ -583,7 +577,6 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.parsing import (
             _get_output_files_and_check_if_multiple,
             _multiple_files_warning,
-            get_outcar,
             get_procar,
             get_vasprun,
         )
@@ -652,38 +645,15 @@ class DefectEntry(thermo.DefectEntry):
         bulk_vr, bulk_procar = parsed_vr_procar_dict["bulk"]
         defect_vr, defect_procar = parsed_vr_procar_dict["defect"]
 
-        if bulk_outcar is not None and not isinstance(bulk_outcar, Outcar):
-            bulk_outcar = get_outcar(bulk_outcar)
-
-        if bulk_outcar is None:  # try parsing from bulk path
-            bulk_path = self.calculation_metadata["bulk_path"]
-            try:
-                bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
-                if multiple:
-                    _multiple_files_warning(
-                        "OUTCAR",
-                        bulk_path,
-                        bulk_outcar_path,
-                        dir_type="bulk",
-                    )
-                bulk_outcar = get_outcar(bulk_outcar_path)
-
-            except (FileNotFoundError, IsADirectoryError) as exc:
-                raise FileNotFoundError(
-                    f"No `OUTCAR` file found in bulk path {bulk_path}. Required for eigenvalue "
-                    f"analysis!"
-                ) from exc  # TODO: Update this so that bulk OUTCAR not required!
-
         if defect_procar and bulk_procar:
             band_orb, vbm_info, cbm_info = get_band_edge_info(
-                bulk_vr,
-                bulk_outcar,
-                defect_vr,
-                bulk_procar,
-                defect_procar,
+                bulk_vr=bulk_vr,
+                defect_vr=defect_vr,
+                bulk_procar=bulk_procar,
+                defect_procar=defect_procar,
             )
         else:
-            band_orb, vbm_info, cbm_info = get_band_edge_info(bulk_vr, bulk_outcar, defect_vr)
+            band_orb, vbm_info, cbm_info = get_band_edge_info(bulk_vr=bulk_vr, defect_vr=defect_vr)
 
         self.calculation_metadata["eigenvalue_data"] = {
             "band_orb": band_orb,
@@ -703,7 +673,6 @@ class DefectEntry(thermo.DefectEntry):
         bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
         defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
         defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
         force_reparse: bool = False,
         **kwargs,
     ):
@@ -779,14 +748,6 @@ class DefectEntry(thermo.DefectEntry):
                 Not required, but speeds up parsing (~50%) if present. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            bulk_outcar (str, Path, Outcar):
-                Not required if eigenvalue data has already been parsed for
-                ``DefectEntry`` (default behaviour when parsing with ``doped``,
-                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-                Either a path to the ``VASP`` ``OUTCAR`` output file or a
-                ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
-                calculation. If ``None`` (default), tries to load from an
-                ``OUTCAR`` file at ``self.calculation_metadata["bulk_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
@@ -806,7 +767,6 @@ class DefectEntry(thermo.DefectEntry):
             bulk_procar=bulk_procar,
             defect_vr=defect_vr,
             defect_procar=defect_procar,
-            bulk_outcar=bulk_outcar,
             force_reparse=force_reparse,
         )
 

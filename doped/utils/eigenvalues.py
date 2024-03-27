@@ -19,12 +19,12 @@ import numpy as np
 from pymatgen.core import Element, Species
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.io.vasp.outputs import Outcar, Procar, Vasprun
+from pymatgen.io.vasp.outputs import Procar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.utils.parsing import get_procar
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, get_procar
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
@@ -38,14 +38,11 @@ try:
     from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
     from pydefect.analyzer.make_band_edge_states import make_band_edge_states
     from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
-    from pydefect.cli.vasp.make_perfect_band_edge_state import (
-        get_edge_info,
-        make_perfect_band_edge_state_from_vasp,
-    )
+    from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
     from pydefect.defaults import defaults
     from pydefect.util.structure_tools import Coordination, Distances
     from vise import user_settings
-    from vise.analyzer.vasp.band_edge_properties import VaspBandEdgeProperties
+    from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
 
     user_settings.logger.setLevel(logging.CRITICAL)
 
@@ -98,6 +95,64 @@ def _distances(self, remove_self=True, specie=None) -> list[float]:
             continue
         result.append(distance)
     return result
+
+
+def band_edge_properties_from_vasprun(
+    vasprun: Vasprun, integer_criterion: float = 0.1
+) -> BandEdgeProperties:
+    """
+    Create a ``pydefect`` ``BandEdgeProperties`` object from a ``Vasprun``
+    object.
+
+    Args:
+        vasprun (Vasprun): ``Vasprun`` object.
+        integer_criterion (float):
+            Threshold criterion for determining if a band is unoccupied
+            (< ``integer_criterion``), partially occupied (between
+            ``integer_criterion`` and 1 - ``integer_criterion``), or
+            fully occupied (> 1 - ``integer_criterion``).
+            Default is 0.1.
+
+    Returns:
+        ``BandEdgeProperties`` object.
+    """
+    band_edge_prop = BandEdgeProperties(
+        eigenvalues=eigenvalues_from_vasprun(vasprun),
+        nelect=get_nelect_from_vasprun(vasprun),
+        magnetization=get_magnetization_from_vasprun(vasprun),
+        kpoint_coords=vasprun.actual_kpoints,
+        integer_criterion=integer_criterion,
+    )
+    band_edge_prop.structure = vasprun.final_structure
+    return band_edge_prop
+
+
+def make_perfect_band_edge_state_from_vasp(
+    procar: Procar, vasprun: Vasprun, integer_criterion: float = 0.1
+) -> PerfectBandEdgeState:
+    """
+    Create a ``pydefect`` ``PerfectBandEdgeState`` object from just a
+    ``Vasprun`` and ``Procar`` object, without the need for the ``Outcar``
+    input (as in ``pydefect``).
+
+    Args:
+        procar (Procar): ``Procar`` object.
+        vasprun (Vasprun): ``Vasprun`` object.
+        integer_criterion (float):
+            Threshold criterion for determining if a band is unoccupied
+            (< ``integer_criterion``), partially occupied (between
+            ``integer_criterion`` and 1 - ``integer_criterion``), or
+            fully occupied (> 1 - ``integer_criterion``).
+            Default is 0.1.
+
+    Returns:
+        ``PerfectBandEdgeState`` object.
+    """
+    band_edge_prop = band_edge_properties_from_vasprun(vasprun, integer_criterion)
+    orbs, s = procar.data, vasprun.final_structure
+    vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, vasprun)
+    cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, vasprun)
+    return PerfectBandEdgeState(vbm_info, cbm_info)
 
 
 def _make_band_edge_orbital_infos_vr(
@@ -185,7 +240,6 @@ def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
 
 def get_band_edge_info(
     bulk_vr: Vasprun,
-    bulk_outcar: Outcar,
     defect_vr: Vasprun,
     bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
     defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
@@ -204,8 +258,6 @@ def get_band_edge_info(
             ``projected_eigenvalues`` attribute (i.e. from a calculation
             with ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True``).
-        bulk_outcar (Outcar):
-            ``Outcar`` object of the bulk supercell calculation.
         defect_vr (Vasprun):
             ``Vasprun`` object of the defect supercell calculation.
             If ``defect_procar`` is not provided, then this must have the
@@ -231,11 +283,18 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
         for the bulk VBM and CBM.
     """
-    band_edge_prop = VaspBandEdgeProperties(bulk_vr, bulk_outcar)
+    band_edge_prop = BandEdgeProperties(
+        eigenvalues=eigenvalues_from_vasprun(bulk_vr),
+        nelect=get_nelect_from_vasprun(bulk_vr),
+        magnetization=get_magnetization_from_vasprun(bulk_vr),
+        kpoint_coords=bulk_vr.actual_kpoints,
+        integer_criterion=0.1,  # default value in vise
+    )
+    band_edge_prop.structure = bulk_vr.final_structure
 
     if bulk_procar is not None:
         bulk_procar = _parse_procar(bulk_procar)
-        pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr, bulk_outcar)
+        pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr)
 
     _orig_method_coor = Distances.coordination
     Distances.coordination = _coordination
@@ -299,7 +358,6 @@ def get_eigenvalue_analysis(
     bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
     defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
     defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-    bulk_outcar: Optional[Union[str, "Path", Outcar]] = None,
     force_reparse: bool = False,
 ):
     r"""
@@ -386,14 +444,6 @@ def get_eigenvalue_analysis(
             Not required, but speeds up parsing (~50%) if present. If ``None``
             (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
-        bulk_outcar (str, Path, Outcar):
-            Not required if ``defect_entry`` provided and eigenvalue data
-            already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``OUTCAR`` output file or a
-            ``pymatgen`` ``Outcar`` object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load from an
-            ``OUTCAR`` file at ``defect_entry.calculation_metadata["bulk_path"]``.
         force_reparse (bool):
             Whether to force re-parsing of the eigenvalue data, even if
             already present in the ``calculation_metadata``.
@@ -448,7 +498,6 @@ def get_eigenvalue_analysis(
         defect_vr=defect_vr,
         bulk_procar=bulk_procar,
         defect_procar=defect_procar,
-        bulk_outcar=bulk_outcar,
         force_reparse=force_reparse,
     )
 
