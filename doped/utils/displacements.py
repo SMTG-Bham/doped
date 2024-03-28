@@ -245,8 +245,11 @@ def calc_site_displacements(
     disp_list = list(deepcopy(disp_dict["Displacement"]))
     distance_list = list(deepcopy(disp_dict["Distance to defect"]))
     if defect_entry.defect.defect_type.name == "Vacancy":
-        disp_list.pop(defect_site_index)
-        distance_list.pop(defect_site_index)
+        # get idx of value closest to zero:
+        min_idx = min(range(len(distance_list)), key=lambda i: abs(distance_list[i]))
+        if np.isclose(distance_list[min_idx], 0, atol=1e-2):  # just to be sure
+            disp_list.pop(min_idx)
+            distance_list.pop(min_idx)
     # Store in DefectEntry.calculation_metadata
     defect_entry.calculation_metadata["site_displacements"] = {
         "displacements": disp_list,  # Ordered by site index in defect supercell
