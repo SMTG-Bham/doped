@@ -35,7 +35,7 @@ from doped.utils.parsing import (
     _compare_potcar_symbols,
     _get_bulk_supercell,
     _get_defect_supercell_site,
-    get_neutral_nelect_from_vasprun,
+    get_nelect_from_vasprun,
     get_vasprun,
 )
 from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
@@ -1325,7 +1325,7 @@ class DefectThermodynamics(MSONable):
                 f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
                 f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
             )
-        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr))
+        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(bulk_dos_vr))
 
     def get_equilibrium_fermi_level(
         self,

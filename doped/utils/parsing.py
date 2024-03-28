@@ -5,19 +5,31 @@ Helper functions for parsing VASP supercell defect calculations.
 import contextlib
 import itertools
 import os
+import re
 import warnings
-from typing import Optional, Union
+from collections import defaultdict
+from functools import lru_cache
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.io.vasp.inputs import UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
+from pymatgen.electronic_structure.core import Spin
+from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+def _get_potcar_summary_stats() -> dict:
+    return loadfn(POTCAR_STATS_PATH)
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -36,9 +48,45 @@ def find_archived_fname(fname, raise_error=True):
     return None
 
 
-def get_vasprun(vasprun_path, **kwargs):
+# has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
+# fake custom class:
+@staticmethod  # type: ignore[misc]
+def parse_projected_eigen_no_mag(elem):
     """
-    Read the vasprun.xml(.gz) file as a pymatgen Vasprun object.
+    Parse the projected eigenvalues from a ``Vasprun`` object (used during
+    initialisation), but excluding the projected magnetisation for efficiency.
+
+    This is a modified version of ``_parse_projected_eigen``
+    from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
+    parsing of the projected magnetisation in order to expedite
+    parsing in ``doped``.
+    """
+    root = elem.find("array").find("set")
+    proj_eigen = defaultdict(list)
+    sets = root.findall("set")
+    for s in sets:
+        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
+        if spin == 1 or (spin == 2 and len(sets) == 2):
+            # Force spin to be +1 or -1
+            for ss in s.findall("set"):
+                dk = []
+                for sss in ss.findall("set"):
+                    db = _parse_vasp_array(sss)
+                    dk.append(db)
+                proj_eigen[spin].append(dk)
+    proj_eigen = {spin: np.array(v) for spin, v in proj_eigen.items()}
+    proj_eigen = {Spin.up if k == 1 else Spin.down: v for k, v in proj_eigen.items()}
+    proj_mag = None
+    elem.clear()
+    return proj_eigen, proj_mag
+
+
+Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
+
+
+def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
+    """
+    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
@@ -52,40 +100,82 @@ def get_vasprun(vasprun_path, **kwargs):
         vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
-            f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
-            f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
+            f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "
+            f"output!"
         ) from exc
     return vasprun
 
 
-def get_locpot(locpot_path):
+def get_locpot(locpot_path: Union[str, "Path"]):
     """
-    Read the LOCPOT(.gz) file as a pymatgen Locpot object.
+    Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
     """
     locpot_path = str(locpot_path)  # convert to string if Path object
     try:
         locpot = Locpot.from_file(find_archived_fname(locpot_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"LOCPOT or compressed version not found at (.gz/.xz/.bz/.lzma) not found at {locpot_path}("
-            f".gz/.xz/.bz/.lzma). Needed for calculating the Freysoldt (FNV) image charge correction!"
+            f"LOCPOT file not found at {locpot_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Freysoldt (FNV) image charge correction!"
         ) from None
     return locpot
 
 
-def get_outcar(outcar_path):
+def get_outcar(outcar_path: Union[str, "Path"]):
     """
-    Read the OUTCAR(.gz) file as a pymatgen Outcar object.
+    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
     """
     outcar_path = str(outcar_path)  # convert to string if Path object
     try:
         outcar = Outcar(find_archived_fname(outcar_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
-            f"image charge correction."
+            f"OUTCAR file not found at {outcar_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Kumagai (eFNV) image charge correction."
         ) from None
     return outcar
+
+
+def get_procar(procar_path: Union[str, "Path"]):
+    """
+    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
+    ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
+    support SOC).
+
+    If ``easyunfold`` installed, the ``Procar`` will be parsed with
+    ``easyunfold`` and then the ``proj_data`` attribute will be converted
+    to a ``data`` attribute (to be compatible with ``pydefect``, which uses
+    the ``pymatgen`` format).
+    """
+    try:
+        procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
+    except FileNotFoundError:
+        raise FileNotFoundError(f"PROCAR file not found at {procar_path}(.gz/.xz/.bz/.lzma)!") from None
+
+    easyunfold_installed = True  # first try loading with easyunfold
+    try:
+        from easyunfold.procar import Procar as EasyunfoldProcar
+    except ImportError:
+        easyunfold_installed = False
+
+    if easyunfold_installed:
+        procar = EasyunfoldProcar(procar_path, normalise=False)
+        if procar._is_soc:
+            procar.data = {Spin.up: procar.proj_data[0]}
+        else:
+            procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
+        del procar.proj_data  # reduce space
+    else:
+        try:  # try parsing with ``pymatgen`` instead, but doesn't support SOC!
+            procar = Procar(procar_path)
+        except IndexError as exc:  # SOC error
+            raise ValueError(
+                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and "
+                "`pymatgen` does not support SOC PROCAR parsing! Please install `easyunfold` with `pip "
+                "install easyunfold`."
+            ) from exc
+
+    return procar
 
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
@@ -722,19 +812,88 @@ def _compare_incar_tags(
     return True
 
 
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the magnetization (number of spin-up vs spin-down electrons) from
+    a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract the total magnetization.
+
+    Returns:
+        int or float: The total magnetization of the system.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # first check if it's even a spin-polarised calculation:
+    if len(eigenvalues_and_occs) == 1 or not vasprun.is_spin:
+        return 0  # non-spin polarised or SOC calculation
+    # (can't pull SOC magnetization this way and either way isn't needed/desired for magnetization value
+    # in ``VaspBandEdgeProperties``)
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    n_spin_up = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    n_spin_down = np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+
+    return n_spin_up - n_spin_down
+
+
+def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+
+    Returns:
+        int or float: The number of electrons in the system.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    if len(eigenvalues_and_occs) > 1:
+        nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+    elif not vasprun.parameters.get("LNONCOLLINEAR", False):
+        nelect *= 2  # non-spin-polarised or SOC calc
+
+    return nelect
+
+
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
-    Determine the number of electrons (NELECT) from a Vasprun object,
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
     corresponding to a neutral charge state for the structure.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+        skip_potcar_init (bool):
+            Whether to skip the initialisation of the ``POTCAR`` statistics
+            (i.e. the auto-charge determination) and instead try to reverse
+            engineer ``NELECT`` using the ``DefectDictSet``.
+
+    Returns:
+        int or float: The number of electrons in the system for a neutral
+        charge state.
     """
-    from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
-
-    potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
-
     nelect = None
     if not skip_potcar_init:
         with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
             grouped_symbols = [list(group) for key, group in itertools.groupby(vasprun.atomic_symbols)]
+            potcar_summary_stats = _get_potcar_summary_stats()
 
             for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
                 if all(
@@ -1200,7 +1359,7 @@ def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_sta
 
         else:
             defect_nelect = defect_vr.parameters.get("NELECT")
-            bulk_nelect = get_neutral_nelect_from_vasprun(bulk_vr)
+            bulk_nelect = get_nelect_from_vasprun(bulk_vr)
             neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
 
             if bulk_vr.parameters.get("NELECT", False):
