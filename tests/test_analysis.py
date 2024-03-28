@@ -2978,6 +2978,51 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         return eig_fig
 
+    @custom_mpl_image_compare("CdTe_v_Cd_-1_eigenvalue_plot.png")
+    def test_eigenvalue_criteria(self):
+        """
+        Test eigenvalue plotting for v_Cd_-1 in CdTe, and customising the
+        orbital and energy similarity criteria.
+        """
+        CdTe_defect_thermo = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json"))
+        v_Cd_minus1 = next(
+            defect_entry
+            for defect_entry in CdTe_defect_thermo.defect_entries
+            if defect_entry.name == "v_Cd_-1"
+        )
+        with warnings.catch_warnings(record=True) as w:
+            bes, fig = v_Cd_minus1.get_eigenvalue_analysis()
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert bes.has_unoccupied_localized_state  # with pydefect defaults this hole polaron state isn't
+        # identified as the orbital similarity to the VBM is relatively high, but updated doped defaults
+        # work
+
+        with warnings.catch_warnings(record=True) as w:
+            bes, fig = v_Cd_minus1.get_eigenvalue_analysis(
+                similar_orb_criterion=0.2, similar_energy_criterion=0.5
+            )
+            # pydefect default
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        assert not bes.has_unoccupied_localized_state  # no longer identified
+
+        with warnings.catch_warnings(record=True) as w:
+            bes, fig = v_Cd_minus1.get_eigenvalue_analysis(
+                similar_orb_criterion=0.01, similar_energy_criterion=0.01
+            )
+            # fails so is dynamically updated with a warning
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1
+        assert (
+            "Band-edge state identification failed with the current criteria: "
+            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV. Trying with the pydefect "
+            "defaults of 0.2 and 0.5 eV." in str(w[0].message)
+        )
+        assert not bes.has_unoccupied_localized_state  # no longer identified
+
+        return fig
+
     # no longer warned because actually can have orientational degeneracy < 1 for non-trivial defects
     # like split-vacancies, antisite swaps, split-interstitials etc
     # def test_orientational_degeneracy_error(self):
