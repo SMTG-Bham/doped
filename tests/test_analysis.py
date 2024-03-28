@@ -401,7 +401,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp, skip_corrections=True)
         assert not os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json"))
 
-        return dp.defect_dict["Te_Cd_+1"].get_eigenvalue_analysis(plot=True)[1]
+        bes, fig = dp.defect_dict["Te_Cd_+1"].get_eigenvalue_analysis(plot=True)
+        assert bes.has_unoccupied_localized_state  # has in-gap hole polaron state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_occupied_localized_state, bes.is_shallow]
+        )
+
+        return fig
 
     def test_DefectsParser_CdTe_custom_settings(self):
         # test custom settings:
@@ -1844,6 +1850,10 @@ class DopedParsingTestCase(unittest.TestCase):
         """
         Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV)
         correction.
+
+        Also tests output of eigenvalue analysis for a defect & bulk
+        calculated with ``ISPIN = 1`` (all previous cases are either ``ISPIN = 2``
+        or with SOC).
         """
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
 
@@ -1856,7 +1866,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 parse_projected_eigen=False,
             )
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
-        bes, fig = int_F_minus1_ent.get_eigenvalue_analysis()
+        bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis()
         assert not any(
             [
                 bes.has_acceptor_phs,
@@ -1941,7 +1951,7 @@ class DopedParsingTestCase(unittest.TestCase):
         assert relaxed_defect_name == "F_i_C4v_O2.67"
         assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.67"
 
-        return fig  # test eigenvalue plot for ISPIN = 1 case
+        return eig_fig  # test eigenvalue plot for ISPIN = 1 case
 
     def _check_defect_entry_corrections(self, defect_entry, ediff, correction):
         assert np.isclose(defect_entry.get_ediff(), ediff, atol=0.001)
@@ -2646,7 +2656,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
 
-    @custom_mpl_image_compare(filename="cu2sise3_phs_plot.png")
+    @custom_mpl_image_compare(filename="Cu2SiSe3_v_Cu_0_eigenvalue_plot.png")
     def test_eigenvalues_parsing_and_warnings(self):
         """
         Test eigenvalues functions.
@@ -2667,6 +2677,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         with open(f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_1_band_edge_states.json") as f:
             expected = json.load(f)
         assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        assert bes.has_occupied_localized_state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
+        )
 
         # Test loading using ``PROCAR`` and ``DefectsParser``
         print("Testing Cu2SiSe3 eigenvalue analysis with PROCARs")
@@ -2677,6 +2691,11 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
             expected = json.load(f)
         assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        assert bes.has_acceptor_phs
+        assert bes.is_shallow
+        assert not any(
+            [bes.has_donor_phs, bes.has_occupied_localized_state, bes.has_unoccupied_localized_state]
+        )
 
         print("Testing v_Cu_0 with plot = False")
         bes2 = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis(
@@ -2685,12 +2704,21 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert _remove_metadata_keys_from_dict(bes2.as_dict()) == _remove_metadata_keys_from_dict(
             bes.as_dict()
         )
+        assert bes.has_acceptor_phs
+        assert bes.is_shallow
+        assert not any(
+            [bes.has_donor_phs, bes.has_occupied_localized_state, bes.has_unoccupied_localized_state]
+        )
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
         with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
             expected = json.load(f)
         assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        assert bes.has_occupied_localized_state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
+        )
 
         # test parses fine without PROCARs:
         print("Testing Cu2SiSe3 parsing and eigenvalue analysis without bulk PROCAR")
@@ -2767,6 +2795,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         with open(f"{self.CdTe_EXAMPLE_DIR}/CdTe_test_soc_band_edge_states.json") as f:
             expected = json.load(f)
         assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        assert bes.has_unoccupied_localized_state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_occupied_localized_state, bes.is_shallow]
+        )
 
         # Test warning for no projected orbitals: Sb2Se3 data
         print("Testing Sb2Se3 parsing and warning; no projected orbital data")
@@ -2796,12 +2828,6 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         # TODO: `gzip` PROCARs when new `easyunfold` released to save repo space and test compressed file
         #  parsing
-        # TODO: Add these checks for one of each case here:
-        # assert ... bes.has_acceptor_phs,
-        #                         bes.has_donor_phs,
-        #                         bes.has_occupied_localized_state,
-        #                         bes.has_unoccupied_localized_state,
-        #                         bes.is_shallow])
 
         # test parsing fine when eigenvalue data not originally parsed, but then
         # ``DefectEntry.get_eigenvalue_analysis()`` later called:
@@ -2853,6 +2879,14 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
             expected = json.load(f)
         assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+
+        # test error when not providing defect_entry or bulk_vr:
+        with pytest.raises(ValueError) as exc:
+            get_eigenvalue_analysis()
+        assert (
+            "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum must be "
+            "provided!" in str(exc.value)
+        )
 
         # test all fine when saving and reloading from JSON (previously didn't, but fixed)
         dumpfn(dp.defect_dict, "test.json")

@@ -122,6 +122,7 @@ def band_edge_properties_from_vasprun(
         magnetization=get_magnetization_from_vasprun(vasprun),
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,
+        is_non_collinear=vasprun.parameters.get("LNONCOLLINEAR", False),
     )
     band_edge_prop.structure = vasprun.final_structure
     return band_edge_prop
@@ -283,14 +284,7 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
         for the bulk VBM and CBM.
     """
-    band_edge_prop = BandEdgeProperties(
-        eigenvalues=eigenvalues_from_vasprun(bulk_vr),
-        nelect=get_nelect_from_vasprun(bulk_vr),
-        magnetization=get_magnetization_from_vasprun(bulk_vr),
-        kpoint_coords=bulk_vr.actual_kpoints,
-        integer_criterion=0.1,  # default value in vise
-    )
-    band_edge_prop.structure = bulk_vr.final_structure
+    band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
 
     if bulk_procar is not None:
         bulk_procar = _parse_procar(bulk_procar)
@@ -503,10 +497,10 @@ def get_eigenvalue_analysis(
         ``pydefect`` ``PerfectBandEdgeState`` class
     """
     if defect_entry is None:
-        if not all([bulk_vr, defect_vr, bulk_procar, defect_procar]):
+        if not all([bulk_vr, defect_vr]):
             raise ValueError(
-                "If `defect_entry` is not provided, then all of `bulk_vr`, `defect_vr`, "
-                "`bulk_procar`, and `defect_procar` must be provided!"
+                "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum "
+                "must be provided!"
             )
         from doped.analysis import defect_from_structures
 
@@ -637,11 +631,14 @@ def get_eigenvalue_analysis(
                 text_obj.remove()
 
         fig = emp.plt.gcf()
-        fig.add_subplot(111, frameon=False)
+        sub_ax = fig.add_subplot(111, frameon=False)
         # hide tick and tick label of the big axis:
-        plt.tick_params(labelcolor="none", which="both", top=False, bottom=False, left=False, right=False)
-        plt.xlabel("$k$-point coords", fontsize=12)
-
+        sub_ax.tick_params(
+            labelcolor="none", which="both", top=False, bottom=False, left=False, right=False
+        )
+        bbox = sub_ax.get_position()
+        x_center = bbox.x0 + bbox.width / 2  # Calculate the x position for the center of the subplot
+        fig.text(x_center, 0, "$k$-point coords", ha="center", size=12)
         ax = fig.gca()
 
         ax.set_ylim([ymin - 0.25, ymax + 0.75])
