@@ -2898,6 +2898,89 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         return fig
 
+    @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ylim.png")
+    def test_eigenvalue_ylim_customisation(self):
+        """
+        Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV)
+        correction, then outputting the eigenvalue plot with a custom ylim
+        setting.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+                dielectric=self.ytos_dielectric,
+            )
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
+        bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(ylims=(-5, 5))
+        assert not any(
+            [
+                bes.has_acceptor_phs,
+                bes.has_donor_phs,
+                bes.has_occupied_localized_state,
+                bes.has_unoccupied_localized_state,
+                bes.is_shallow,
+            ]
+        )
+
+        return eig_fig
+
+    @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_legend.png")
+    def test_eigenvalue_legend_customisation(self):
+        """
+        Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV)
+        correction, then outputting the eigenvalue plot with a custom ylim
+        setting.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+                dielectric=self.ytos_dielectric,
+            )
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
+        bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(
+            legend_kwargs={"loc": "lower left", "ncol": 2, "fontsize": 12}
+        )
+        assert not any(
+            [
+                bes.has_acceptor_phs,
+                bes.has_donor_phs,
+                bes.has_occupied_localized_state,
+                bes.has_unoccupied_localized_state,
+                bes.is_shallow,
+            ]
+        )
+
+        return eig_fig
+
+    @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_no_legend.png")
+    def test_eigenvalue_no_legend(self):
+        """
+        Test parsing of extrinsic F in YTOS interstitial and Kumagai-Oba (eFNV)
+        correction, then outputting the eigenvalue plot with a custom ylim
+        setting.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            int_F_minus1_ent = defect_entry_from_paths(
+                defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
+                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+                dielectric=self.ytos_dielectric,
+            )
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
+        bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(legend_kwargs=False)
+        assert not any(
+            [
+                bes.has_acceptor_phs,
+                bes.has_donor_phs,
+                bes.has_occupied_localized_state,
+                bes.has_unoccupied_localized_state,
+                bes.is_shallow,
+            ]
+        )
+
+        return eig_fig
+
     # no longer warned because actually can have orientational degeneracy < 1 for non-trivial defects
     # like split-vacancies, antisite swaps, split-interstitials etc
     # def test_orientational_degeneracy_error(self):
