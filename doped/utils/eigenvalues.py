@@ -348,6 +348,57 @@ def get_band_edge_info(
     return band_orb, vbm_info, cbm_info
 
 
+def _add_eigenvalues(
+    self,
+    occupied_color=(0.22, 0.325, 0.643),
+    unoccupied_color=(0.98, 0.639, 0.086),
+    partial_color=(0.0, 0.5, 0.0),
+):
+    """
+    Add eigenvalues to plot.
+
+    Refactored from implementation in ``pydefect`` to avoid calling
+    ``ax.scatter`` individually many times when we have many kpoints
+    and bands, which can make the plotting quite slow (>10 seconds),
+    and allow setting custom colors for occupied, unoccupied, and
+    partially occupied states.
+    """
+    for _spin_idx, (eo_by_spin, ax) in enumerate(zip(self._energies_and_occupations, self.axs)):
+        kpt_indices = []
+        energies = []
+        color_list = []
+        annotations = []
+        for kpt_idx, eo_by_k_idx in enumerate(eo_by_spin):
+            for band_idx, eo_by_band in enumerate(eo_by_k_idx):
+                energy, occup = eo_by_band
+                color_list.append(
+                    occupied_color if occup > 0.9 else unoccupied_color if occup < 0.1 else partial_color
+                )
+                kpt_indices.append(kpt_idx)
+                energies.append(energy)
+
+                try:
+                    higher_band_e = eo_by_k_idx[band_idx + 1][0]
+                    lower_band_e = eo_by_k_idx[band_idx - 1][0]
+                except IndexError:
+                    continue
+
+                if self._add_band_idx(energy, higher_band_e, lower_band_e):
+                    annotations.append((kpt_idx + 0.05, energy, band_idx + self._lowest_band_idx + 1))
+
+        ax.scatter(kpt_indices, energies, c=color_list, s=self._mpl_defaults.circle_size)
+        for annotation in annotations:
+            ax.annotate(
+                annotation[2],
+                (annotation[0], annotation[1]),
+                va="center",
+                fontsize=self._mpl_defaults.tick_label_size,
+            )
+
+
+EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues
+
+
 def get_eigenvalue_analysis(
     defect_entry: Optional[DefectEntry] = None,
     plot: bool = True,
@@ -505,7 +556,7 @@ def get_eigenvalue_analysis(
     vbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["vbm_info"]
     cbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["cbm_info"]
 
-    # Ensures consistent number of sig. fig. so test work 100% of the time
+    # Ensures consistent number of sig. fig. so tests work 100% of the time
     def _orbital_diff(orbital_1: dict, orbital_2: dict) -> float:
         element_set = set(list(orbital_1.keys()) + list(orbital_2.keys()))
         orb_1, orb_2 = defaultdict(list, orbital_1), defaultdict(list, orbital_2)
@@ -541,29 +592,24 @@ def get_eigenvalue_analysis(
         plt.rcParams["axes.titlesize"] = 12
         plt.rc("axes", unicode_minus=False)
 
-        emp.construct_plot()
-        partial = None
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*glyph.*")
+            emp.construct_plot()
 
-        # Change colors to match sumo and doped conventions
-        for a in range(len(emp.axs)):
-            for i in range(len(emp.axs[a].get_children())):
-                if hasattr(emp.axs[a].get_children()[i], "get_facecolor"):
-                    if np.array_equal(
-                        emp.axs[a].get_children()[i].get_facecolor(), [[1, 0, 0, 1]]
-                    ):  # Check for red color
-                        emp.axs[a].get_children()[i].set_facecolor((0.22, 0.325, 0.643))
-                        emp.axs[a].get_children()[i].set_edgecolor((0.22, 0.325, 0.643))
-                    elif np.array_equal(emp.axs[a].get_children()[i].get_facecolor(), [[0, 0, 1, 1]]):
-                        emp.axs[a].get_children()[i].set_facecolor((0.98, 0.639, 0.086))
-                        emp.axs[a].get_children()[i].set_edgecolor((0.98, 0.639, 0.086))
-                    elif np.array_equal(emp.axs[a].get_children()[i].get_facecolor(), [[0, 0.5, 0, 1]]):
-                        partial = True
-
+        partial = False
         for axes in emp.axs:
-            annotations = [child for child in axes.get_children() if isinstance(child, plt.Annotation)]
+            children = axes.get_children()
+            annotations = [child for child in children if isinstance(child, plt.Annotation)]
             for annotation in annotations:
                 if (ks_labels and annotation.get_position()[0] > 1) or not ks_labels:
                     annotation.remove()
+
+            for child in children:
+                if hasattr(child, "get_facecolor"):
+                    partial = partial or any(
+                        np.array_equal(child.get_facecolor()[i], [0, 0.5, 0, 1])
+                        for i in range(len(child.get_facecolor()))
+                    )
 
         if len(emp.axs) > 1:
             emp.axs[0].set_title("Spin Down")
@@ -586,7 +632,16 @@ def get_eigenvalue_analysis(
                     labels[i] = r"$\Gamma$"
             ax.set_xticklabels(labels)
 
+        for text_obj in emp.fig.texts:  # fix x-label alignment
+            if text_obj.get_text() == "K-point coords":
+                text_obj.remove()
+
         fig = emp.plt.gcf()
+        fig.add_subplot(111, frameon=False)
+        # hide tick and tick label of the big axis:
+        plt.tick_params(labelcolor="none", which="both", top=False, bottom=False, left=False, right=False)
+        plt.xlabel("$k$-point coords", fontsize=12)
+
         ax = fig.gca()
 
         ax.set_ylim([ymin - 0.25, ymax + 0.75])

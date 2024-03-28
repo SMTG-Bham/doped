@@ -441,7 +441,7 @@ class DefectsParser:
     def __init__(
         self,
         output_path: str = ".",
-        dielectric: Optional[Union[float, int, np.ndarray]] = None,
+        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         subfolder: Optional[str] = None,
         bulk_path: Optional[str] = None,
         skip_corrections: bool = False,
