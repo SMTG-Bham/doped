@@ -1,6 +1,20 @@
 Change Log
 ==========
 
+v.2.4.0
+----------
+- Electronic structure analysis by @adair-nicolson & @kavanase:
+    - Adds ``DefectEntry.get_eigenvalue_analysis()`` method to plot single-particle eigenvalues and
+      analyse orbital character and localisation; usage and examples shown on the
+      `docs Tips <https://doped.readthedocs.io/en/latest/Tips.html#eigenvalue-electronic-structure-analysis>`__
+      page and the `advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__.
+    - Projected eigenvalues can be parsed from ``PROCAR(.gz)`` files in calculation directories, or from
+      ``vasprun.xml(.gz)`` files (with expedited parsing compared to ``pymatgen`` methods). Compatible with
+      spin-polarised, unpolarised and SOC calculations.
+- More efficient defect calculation parsing
+- Add ``get_magnetization_from_vasprun`` and ``get_nelect_from_vasprun`` functions to ``doped.utils.parsing``,
+  as these attributes are not available from ``pymatgen.io.vasp.outputs.Vasprun``.
+
 v.2.3.3
 ----------
 - General robustness updates:
