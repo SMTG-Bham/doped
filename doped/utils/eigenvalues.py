@@ -404,6 +404,8 @@ def get_eigenvalue_analysis(
     defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
     defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
     force_reparse: bool = False,
+    ylims: Optional[tuple[float, float]] = None,
+    legend_kwargs: Optional[dict] = None,
 ):
     r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
@@ -492,6 +494,14 @@ def get_eigenvalue_analysis(
         force_reparse (bool):
             Whether to force re-parsing of the eigenvalue data, even if
             already present in the ``calculation_metadata``.
+        ylims (tuple[float, float]):
+            Custom y-axis limits for the eigenvalue plot. If ``None`` (default),
+            the y-axis limits are automatically set to +/-5% of the eigenvalue
+            range.
+        legend_kwargs (dict):
+            Custom keyword arguments to pass to the ``ax.legend`` call in the
+            eigenvalue plot (e.g. "loc", "fontsize", "framealpha" etc.). If set
+            to ``False``, then no legend is shown. Default is ``None``.
 
     Returns:
         ``pydefect`` ``PerfectBandEdgeState`` class
@@ -611,12 +621,6 @@ def get_eigenvalue_analysis(
         else:
             emp.axs[0].set_title("KS levels")
 
-        ymin, ymax = 0, 0
-        for spin in emp._energies_and_occupations:
-            for kpoint in spin:
-                ymin = min(ymin, *(x[0] for x in kpoint))
-                ymax = max(ymax, *(x[0] for x in kpoint))
-
         gamma_check = "\N{GREEK CAPITAL LETTER GAMMA}"
         for ax in emp.axs:
             labels = ax.get_xticklabels()
@@ -626,11 +630,36 @@ def get_eigenvalue_analysis(
                     labels[i] = r"$\Gamma$"
             ax.set_xticklabels(labels)
 
+        fig = emp.plt.gcf()
+        ax = fig.gca()
+        if ylims is None:
+            ymin, ymax = 0, 0
+            for spin in emp._energies_and_occupations:
+                for kpoint in spin:
+                    ymin = min(ymin, *(x[0] for x in kpoint))
+                    ymax = max(ymax, *(x[0] for x in kpoint))
+            y_range = ymax - ymin
+            ax.set_ylim([ymin - 0.05 * y_range, ymax + 0.05 * y_range])  # match default mpl +/-5% y-range
+        else:
+            ax.set_ylim(ylims)
+
+        # add a point at 0,-25 with the color range and label unoccupied states
+        ax.scatter(0, -25, label="Unoccupied", color=(0.98, 0.639, 0.086))
+        ax.scatter(0, -25, label="Occupied", color=(0.22, 0.325, 0.643))
+        if partial:
+            ax.scatter(0, -25, label="Partially Occupied", color=(0, 0.5, 0))
+        ax.axhline(-25, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band Edges")
+
+        if legend_kwargs is not False:  # otherwise no legend
+            legend_kwargs = legend_kwargs or {}
+            legend_kwargs["fontsize"] = legend_kwargs.get("fontsize", 7)
+            legend_kwargs["framealpha"] = legend_kwargs.get("framealpha", 0.5)
+            ax.legend(**legend_kwargs)
+
         for text_obj in emp.fig.texts:  # fix x-label alignment
             if text_obj.get_text() == "K-point coords":
                 text_obj.remove()
 
-        fig = emp.plt.gcf()
         sub_ax = fig.add_subplot(111, frameon=False)
         # hide tick and tick label of the big axis:
         sub_ax.tick_params(
@@ -639,16 +668,6 @@ def get_eigenvalue_analysis(
         bbox = sub_ax.get_position()
         x_center = bbox.x0 + bbox.width / 2  # Calculate the x position for the center of the subplot
         fig.text(x_center, 0, "$k$-point coords", ha="center", size=12)
-        ax = fig.gca()
-
-        ax.set_ylim([ymin - 0.25, ymax + 0.75])
-        # add a point at 0,-5 with the color range and label unoccopied states
-        ax.scatter(0, -5, label="Unoccupied", color=(0.98, 0.639, 0.086))
-        ax.scatter(0, -5, label="Occupied", color=(0.22, 0.325, 0.643))
-        if partial:
-            ax.scatter(0, -5, label="Partially Occupied", color=(0, 0.5, 0))
-        ax.axhline(-5, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band Edges")
-        ax.legend(loc="upper right", fontsize=7)
 
     if filename:
         emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
