@@ -2826,9 +2826,6 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
-        # TODO: `gzip` PROCARs when new `easyunfold` released to save repo space and test compressed file
-        #  parsing
-
         # test parsing fine when eigenvalue data not originally parsed, but then
         # ``DefectEntry.get_eigenvalue_analysis()`` later called:
         # Test loading using ``PROCAR`` and ``DefectsParser``
