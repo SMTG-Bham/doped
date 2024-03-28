@@ -237,6 +237,27 @@ class DefectEntry(thermo.DefectEntry):
 
         return self_dict
 
+    @classmethod
+    def from_dict(cls, d: dict):
+        """
+        Class method to create a ``DefectEntry`` object from a dictionary.
+
+        Defined to avoid unnecessary ``vise``/``pydefect`` INFO messages.
+
+        Args:
+            d (dict):
+                Dictionary representation of the ``DefectEntry`` object.
+
+        Returns:
+            ``DefectEntry`` object
+        """
+        with contextlib.suppress(ImportError):
+            import logging
+
+            logging.disable(logging.CRITICAL)
+
+        return super().from_dict(d)
+
     def _check_correction_error_and_return_output(
         self,
         correction_output,
