@@ -191,9 +191,46 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :height: 320px
     :align: right
 
-Perturbed Host States (Shallow Defects)
----------------------------------------
+Eigenvalue / Electronic Structure Analysis
+------------------------------------------
+In ``doped``, we can use the ``DefectEntry.get_eigenvalue_analysis()`` method to analyse the orbital
+character and localisation of single-particle eigenstates from the underlying electronic structure
+calculations. For this, we employ the methodology of
+`Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ (through an interface with
+``pydefect``), which allows in-depth analysis of localised/deep in-gap defect states and their effects on
+the band edges, as well as the automated identification of shallow / perturbed host states (PHS) – see
+the following section for an example of this analysis. The
+`easyunfold <https://smtg-bham.github.io/easyunfold/>`__ package for band structure unfolding can also be
+quite useful for extending this electronic structure analysis.
 
+The optional argument ``parse_projected_eigen`` in ``DefectsParser`` (``True`` by default) controls whether
+to load the projected eigenvalues & orbitals, which then allows ``DefectEntry.get_eigenvalue_analysis()``
+to be called – returning information about the nature of the band edge and in-gap states, allowing defect
+states (and whether they are deep or shallow/PHS) to be automatically identified and characterised.
+Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
+default). Note that for VASP to output the necessary data for this analysis, your ``INCAR`` file needs to
+include ``LORBIT > 10`` (to obtain the projected orbitals).
+
+In the examples below (both of which are shown in the
+`advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__),
+we plot the single particle levels for the
+`cadmium vacancy in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__ (`V`\ :sub:`Cd`) in each of
+its charge states (0, -1 and -2); calculated with spin-orbit coupling (SOC) and a 2x2x2 `k`-point mesh:
+
+.. image:: V_Cd_Eigenvalue_Plots.png
+    :align: center
+
+Here we can see that these plots nicely match the schematic depiction from
+`this paper on vacancies in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__, where we
+have no in-gap states for the fully-ionised `V`\ :sub:`Cd`\ :sup:`-2` as expected, an in-gap hole polaron state for
+`V`\ :sub:`Cd`\ :sup:`-1`, and an anti-bonding dimer state for `V`\ :sub:`Cd`\ :sup:`0` just above the CBM.
+
+
+Perturbed Host States (Shallow Defects)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+One of the most common reasons for performing this electronic structure analysis is to identify and
+analyse shallow defect states.
 Certain point defects form shallow (hydrogen-like) donor or acceptor states, known as perturbed host
 states (PHS). These states typically have wavefunctions distributed over many unit cells in real space,
 requiring exceptionally large supercells or dense reciprocal space sampling to properly capture their
@@ -224,19 +261,10 @@ located near the corresponding band edge. An example of this is given in
     (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant
     (i.e. binding energy of an electron in a hydrogen atom).
 
-We employ the methodology of `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to
-analyse the orbital character and localisation of single-particle eigenstates from the underlying
-electronic structure calculations to identify potential PHS, through an interface with ``pydefect``.
-
-The optional argument ``parse_projected_eigen`` in ``DefectsParser`` (``True`` by default) controls whether
-to load the projected eigenvalues & orbitals, which then allows ``DefectEntry.get_eigenvalue_analysis()``
-to be called – returning information about the nature of the band edge and in-gap states, allowing defect
-states (and whether they are deep or shallow/PHS) to be automatically identified and characterised.
-Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
-default). It is however recommended to additionally manually check the real-space charge density
-(i.e. ``PARCHG``) of the defect state to confirm the identification of a PHS.
-Note that for VASP to output the necessary data for this analysis, your ``INCAR`` file needs to include
-``LORBIT > 10`` (to obtain the projected orbitals).
+As discussed in the section above, we employ the methodology of
+`Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to analyse the orbital character and
+localisation of single-particle eigenstates from the underlying electronic structure calculations, which
+allows the automated identification of shallow states.
 
 In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
 determined to be a PHS. This was additionally confirmed by performing calculations in larger
@@ -283,16 +311,17 @@ supercells and plotting the charge density. Important terms include:
 The plot of the single particle levels is shown below (left), and an example of how you might chose to represent the
 PHS on the transition level diagram with a clear circle is shown on the right.
 
-.. image:: cu2sise3_phs_plot.png
+.. image:: Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
     :width: 325px
     :align: left
-.. image:: cu2sise3_phs_tld.png
+.. image:: Cu2SISe3_TLD.png
     :width: 320px
     :align: left
 
-.. raw::  html
+.. note::
 
-    <br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+    It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
+    the defect state to confirm the identification of a PHS.
 
 Spin Polarisation
 -----------------
