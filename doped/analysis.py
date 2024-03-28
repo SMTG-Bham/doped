@@ -1474,8 +1474,8 @@ class DefectParser:
         _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
         calculation_metadata = {
-            "bulk_path": bulk_path or "bulk Vasprun supplied",
-            "defect_path": defect_path,
+            "bulk_path": os.path.abspath(bulk_path) if bulk_path else "bulk Vasprun supplied",
+            "defect_path": os.path.abspath(defect_path),
         }
 
         if bulk_path is not None and bulk_vr is None:
@@ -1934,9 +1934,9 @@ class DefectParser:
 
         Args:
             bulk_locpot_dict (dict): Planar-averaged potential dictionary
-                for bulk supercell, if already parsed. If None (default),
-                will load from LOCPOT(.gz) file in
-                defect_entry.calculation_metadata["bulk_path"]
+                for bulk supercell, if already parsed. If ``None`` (default),
+                will load from ``LOCPOT(.gz)`` file in
+                ``defect_entry.calculation_metadata["bulk_path"]``
 
         Returns:
             bulk_locpot_dict for reuse in parsing other defect entries

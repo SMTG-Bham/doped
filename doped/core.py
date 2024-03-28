@@ -772,7 +772,9 @@ class DefectEntry(thermo.DefectEntry):
             **kwargs:
                 Additional kwargs to pass to
                 ``doped.utils.eigenvalues.get_eigenvalue_analysis``,
-                such as ``style_file``, ``ks_levels``
+                such as ``style_file``, ``ks_levels``, ``ylims``,
+                ``legend_kwargs``, ``similar_orb_criterion``,
+                ``similar_energy_criterion``.
 
         Returns:
             ``pydefect`` ``BandEdgeStates`` object and ``matplotlib``
