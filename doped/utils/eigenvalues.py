@@ -406,6 +406,8 @@ def get_eigenvalue_analysis(
     force_reparse: bool = False,
     ylims: Optional[tuple[float, float]] = None,
     legend_kwargs: Optional[dict] = None,
+    similar_orb_criterion: Optional[float] = None,
+    similar_energy_criterion: Optional[float] = None,
 ):
     r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
@@ -502,6 +504,18 @@ def get_eigenvalue_analysis(
             Custom keyword arguments to pass to the ``ax.legend`` call in the
             eigenvalue plot (e.g. "loc", "fontsize", "framealpha" etc.). If set
             to ``False``, then no legend is shown. Default is ``None``.
+        similar_orb_criterion (float):
+            Threshold criterion for determining if the orbitals of two eigenstates
+            are similar (for identifying band-edge and defect states). If the
+            summed orbital difference is less than this value, then the orbitals
+            are considered similar. Default is to try with 0.1, then if this fails
+            increase to the ``pydefect`` default of 0.2.
+        similar_energy_criterion (float):
+            Threshold criterion for considering two eigenstates similar in energy,
+            used for identifying band-edge (and defect states). Bands within this
+            energy difference from the VBM/CBM of the bulk are considered potential
+            band-edge states. Default is to try with 0.25 eV, then if this fails
+            increase to the ``pydefect`` default of 0.5 eV.
 
     Returns:
         ``pydefect`` ``PerfectBandEdgeState`` class
@@ -567,12 +581,28 @@ def get_eigenvalue_analysis(
         result = 0
         for e in element_set:
             result += sum(abs(i - j) for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0))
-        return round(result, 3)
+        return round(result, 3) / sum(sum(orb_list) for orb_list in orb_2.values())
 
     pydefect.analyzer.make_band_edge_states.orbital_diff = _orbital_diff
 
     perfect = PerfectBandEdgeState(vbm_info, cbm_info)
-    bes = make_band_edge_states(band_orb, perfect)
+
+    dynamic_criterion_warning = any([similar_orb_criterion, similar_energy_criterion])
+    defaults._similar_orb_criterion = similar_orb_criterion or 0.1
+    defaults._similar_energy_criterion = similar_energy_criterion or 0.25
+    try:
+        bes = make_band_edge_states(band_orb, perfect)
+    except ValueError:  # increase to pydefect defaults:
+        if dynamic_criterion_warning:  # only warn if user has set custom criteria
+            warnings.warn(
+                f"Band-edge state identification failed with the current criteria: "
+                f"similar_orb_criterion={defaults._similar_orb_criterion}, "
+                f"similar_energy_criterion={defaults._similar_energy_criterion} eV. "
+                f"Trying with the pydefect defaults of 0.2 and 0.5 eV."
+            )
+        defaults._similar_orb_criterion = 0.2
+        defaults._similar_energy_criterion = 0.5
+        bes = make_band_edge_states(band_orb, perfect)  # if 2nd round fails, let it raise pydefect error
 
     if not plot:
         return bes
