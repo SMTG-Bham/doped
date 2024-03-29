@@ -22,7 +22,7 @@ powerful and fully-customisable manner.
 
 Tutorials showing the code functionality and usage are provided on the :ref:`Tutorials` page, and an
 overview of the key advances of the package is given in the
-`JOSS paper <https://github.com/openjournals/joss-reviews/issues/6433>`__.
+`JOSS paper <https://arxiv.org/abs/2403.08012>`__.
 
 .. update JOSS paper link when done!
 
@@ -39,16 +39,16 @@ All features and functionality are fully-customisable:
 - **Calculation I/O**: Automatically write inputs & parse calculations (``VASP`` & other DFT/force-field codes).
 - **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
-- **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials etc.
+- **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials, full inclusion of metastable states etc.
 - **Plotting**: Generate publication-quality plots of defect formation energies, chemical potential limits, defect/carrier concentrations, Fermi levels, charge corrections, etc.
 - ``Python`` **Interface**: Fully-customisable and modular ``Python`` API, being plug-and-play with `ShakeNBreak`_ for `defect structure-searching <https://www.nature.com/articles/s41524-023-00973-1>`_, `easyunfold <https://smtg-bham.github.io/easyunfold/>`__ for band unfolding, `CarrierCapture.jl <https://github.com/WMD-group/CarrierCapture.jl>`__/`nonrad <https://nonrad.readthedocs.io/en/latest/>`__ for non-radiative recombination etc.
-- Reproducibility, tabulation, automated compatibility/sanity checking, strain/displacement analysis, shallow defect analysis, high-throughput compatibility, Wyckoff analysis...
+- Reproducibility, tabulation, automated compatibility/sanity checking, strain/displacement analysis, shallow defect / eigenvalue analysis, high-throughput compatibility, Wyckoff analysis...
 
 Performance and Example Outputs
 -------------------------------
 
 .. image:: JOSS/doped_JOSS_figure.png
-   :target: https://github.com/openjournals/joss-reviews/issues/6433
+   :target: https://arxiv.org/abs/2403.08012
 
 **a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison.
 Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram,
