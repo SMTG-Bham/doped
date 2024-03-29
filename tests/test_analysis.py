@@ -56,7 +56,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
+        self.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(self.module_path, "../examples/CdTe"))
         self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
@@ -1087,9 +1087,11 @@ class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
+        self.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(self.module_path, "../examples/CdTe"))
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+        self.CdTe_BULK_DATA_DIR = os.path.abspath(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+        )
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
         self.ytos_dielectric = [  # from legacy Materials Project
@@ -2270,18 +2272,20 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
-        for struct in [
-            self.prim_cdte,
-            self.ytos_bulk_supercell,
-            self.lmno_primitive,
-            self.non_diagonal_ZnS,
+        for defect_gen_name in [
+            "CdTe_defect_gen",
+            "ytos_defect_gen",
+            "lmno_defect_gen",
+            "zns_defect_gen",
         ]:
-            defect_gen = DefectsGenerator(struct)
+            print(f"Testing defect names for: {defect_gen_name}")
+            if defect_gen_name == "zns_defect_gen":
+                defect_gen = DefectsGenerator(self.non_diagonal_ZnS)
+            else:
+                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
-                print(
-                    defect_from_structures(defect_entry.bulk_supercell, defect_entry.defect_supercell),
-                    defect_entry.defect_supercell_site,
-                )
+                print(defect_entry.defect, defect_entry.defect_supercell_site)
                 assert defect_name_from_structures(
                     defect_entry.bulk_supercell, defect_entry.defect_supercell
                 ) == get_defect_name_from_defect(defect_entry.defect)
@@ -2299,8 +2303,6 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         tested indirectly through the defect parsing tests).
         """
         from shakenbreak.distortions import rattle
-
-        from doped.analysis import defect_from_structures
 
         zns_defect_thermo = loadfn(f"{self.ZnS_DATA_DIR}/ZnS_thermo.json")
         v_Zn_0 = next(
