@@ -9,7 +9,7 @@ import operator
 import warnings
 from functools import partial, reduce
 from itertools import chain
-from multiprocessing import Pool, Process, Queue, cpu_count
+from multiprocessing import Pool, Queue, cpu_count
 from typing import Optional, Union, cast
 from unittest.mock import MagicMock
 
@@ -39,7 +39,7 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
-    _guess_and_set_struct_oxi_states,
+    _guess_and_set_oxi_states_with_timeout,
     doped_defect_from_pmg_defect,
 )
 from doped.utils import parsing, supercells, symmetry
@@ -236,10 +236,10 @@ def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, sympre
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
-            List of symmetry operations of defect.structure, to avoid
+            List of symmetry operations of ``defect.structure``, to avoid
             re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01.
+            Symmetry tolerance for ``spglib``. Default is 0.01.
 
     Returns:
         str: Defect name.
@@ -294,7 +294,7 @@ def get_defect_name_from_entry(
             structure (if relaxed=False) or defect_entry.defect_supercell (if
             relaxed=True), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
+            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
             0.2 for relaxed (to account for residual structural noise). You may
             want to adjust for your system (e.g. if there are very slight
             octahedral distortions etc).
@@ -665,13 +665,13 @@ def _charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> list[int]:
+def _get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     """
     Get the possible charge states for a vacancy defect, which is from +/-1 to
     the vacancy oxidation state.
 
     Args:
-        defect (Defect): A doped Vacancy object.
+        vacancy (Defect): A ``doped`` ``Vacancy`` object.
         padding (int):
             Padding for vacancy charge states, such that the vacancy
             charge states are set to range(vacancy oxi state, padding),
@@ -682,10 +682,15 @@ def _get_vacancy_charge_states(defect: Vacancy, padding: int = 1) -> list[int]:
     Returns:
         list[int]: A list of possible charge states for the defect.
     """
-    if defect.oxi_state > 0:
-        return list(range(-padding, int(defect.oxi_state) + 1))  # from -1 to oxi_state
-    if defect.oxi_state < 0:
-        return list(range(int(defect.oxi_state), padding + 1))  # from oxi_state to +1
+    if not isinstance(vacancy.oxi_state, (int, float)):
+        raise ValueError(
+            f"Vacancy oxidation state (= {vacancy.oxi_state}) is not an integer or float (needed for "
+            f"charge state guessing)! Please manually set the vacancy oxidation state."
+        )
+    if vacancy.oxi_state > 0:
+        return list(range(-padding, int(vacancy.oxi_state) + 1))  # from -1 to oxi_state
+    if vacancy.oxi_state < 0:
+        return list(range(int(vacancy.oxi_state), padding + 1))  # from oxi_state to +1
 
     # oxi_state is 0
     return list(range(-padding, padding + 1))  # from -1 to +1 for default
@@ -1339,44 +1344,24 @@ class DefectsGenerator(MSONable):
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
                 queue: Queue = Queue()
-                guess_oxi_process_wout_max_sites = Process(
-                    target=_guess_and_set_struct_oxi_states, args=(self.primitive_structure, True, queue)
-                )  # try without max sites first, if fails, try with max sites
-                guess_oxi_process_wout_max_sites.start()
-                guess_oxi_process_wout_max_sites.join(timeout=10)  # if still going, revert to using max
-                # sites
-
-                if guess_oxi_process_wout_max_sites.is_alive():
-                    guess_oxi_process_wout_max_sites.terminate()
-                    guess_oxi_process_wout_max_sites.join()
-
-                    guess_oxi_process = Process(
-                        target=_guess_and_set_struct_oxi_states,
-                        args=(self.primitive_structure, False, queue),
-                    )
-                    guess_oxi_process.start()
-                    guess_oxi_process.join(timeout=15)  # wait 15 seconds for pymatgen to guess oxi states,
-                    # otherwise revert to all Defect oxi states being set to 0
-
-                    if guess_oxi_process.is_alive():
-                        self._bulk_oxi_states = False  # couldn't guess oxi states, so set to False
-                        warnings.warn(
-                            "\nOxidation states could not be guessed for the input structure. This is "
-                            "required for charge state guessing, so defects will still be generated but "
-                            "all charge states will be set to -1, 0, +1. You can manually edit these "
-                            "with the add/remove_charge_states methods (see tutorials), or you can set "
-                            "the oxidation states of the input structure (e.g. using "
-                            "structure.add_oxidation_state_by_element()) and re-initialize "
-                            "DefectsGenerator()."
-                        )
-                        guess_oxi_process.terminate()
-                        guess_oxi_process.join()
-
-                if self._bulk_oxi_states is not False:
+                self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
+                    self.primitive_structure, queue=queue
+                )
+                if self._bulk_oxi_states:
                     self.primitive_structure = queue.get()
                     self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
+                else:
+                    warnings.warn(
+                        "\nOxidation states could not be guessed for the input structure. This is "
+                        "required for charge state guessing, so defects will still be generated but "
+                        "all charge states will be set to -1, 0, +1. You can manually edit these "
+                        "with the add/remove_charge_states methods (see tutorials), or you can set "
+                        "the oxidation states of the input structure (e.g. using "
+                        "structure.add_oxidation_state_by_element()) and re-initialize "
+                        "DefectsGenerator()."
+                    )
 
             pbar.update(10)  # 15% of progress bar
 
@@ -2004,8 +1989,8 @@ class DefectsGenerator(MSONable):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the DefectsGenerator object as a json file, which can be reloaded
-        with the DefectsGenerator.from_json() class method.
+        Save the ``DefectsGenerator`` object as a json file, which can be
+        reloaded with the ``DefectsGenerator.from_json()`` class method.
 
         Args:
             filename (str): Filename to save json file as. If None, the filename will be

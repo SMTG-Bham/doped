@@ -4,21 +4,46 @@ Helper functions for parsing VASP supercell defect calculations.
 
 import contextlib
 import itertools
+import logging
 import os
+import re
 import warnings
-from typing import Optional, Union
+from collections import defaultdict
+from functools import lru_cache
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
-from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.io.vasp.inputs import UnknownPotcarWarning
-from pymatgen.io.vasp.outputs import Locpot, Outcar, Vasprun
+from pymatgen.electronic_structure.core import Spin
+from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
+from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
 from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+def _get_potcar_summary_stats() -> dict:
+    return loadfn(POTCAR_STATS_PATH)
+
+
+@contextlib.contextmanager
+def suppress_logging(level=logging.CRITICAL):
+    """
+    Context manager to catch and suppress logging messages.
+    """
+    previous_level = logging.root.manager.disable  # store the current logging level
+    logging.disable(level)  # disable logging at the specified level
+    try:
+        yield
+    finally:
+        logging.disable(previous_level)  # restore the original logging level
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -37,9 +62,48 @@ def find_archived_fname(fname, raise_error=True):
     return None
 
 
-def get_vasprun(vasprun_path, **kwargs):
+# has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
+# fake custom class:
+@staticmethod  # type: ignore[misc]
+def parse_projected_eigen_no_mag(elem):
     """
-    Read the vasprun.xml(.gz) file as a pymatgen Vasprun object.
+    Parse the projected eigenvalues from a ``Vasprun`` object (used during
+    initialisation), but excluding the projected magnetisation for efficiency.
+
+    This is a modified version of ``_parse_projected_eigen``
+    from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
+    parsing of the projected magnetisation in order to expedite
+    parsing in ``doped``, as well as some small adjustments to
+    maximise efficiency.
+    """
+    root = elem.find("array/set")
+    proj_eigen = defaultdict(list)
+    sets = root.findall("set")
+
+    for s in sets:
+        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
+        if spin == 1 or (spin == 2 and len(sets) == 2):
+            spin_key = Spin.up if spin == 1 else Spin.down
+            proj_eigen[spin_key] = np.array(
+                [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
+            )
+
+    # here we _could_ round to 3 decimal places (and ensure rounding 0.0005 up to 0.001) to be _mostly_
+    # consistent with PROCAR values (still not 100% the same as e.g. 0.00047 will be rounded to 0.0005
+    # in vasprun, but 0.000 in PROCAR), but this is _reducing_ the accuracy so better not to do this,
+    # and accept that PROCAR results may not be as numerically robust
+    # proj_eigen = {k: np.round(v+0.00001, 3) for k, v in proj_eigen.items()}
+    proj_mag = None
+    elem.clear()
+    return proj_eigen, proj_mag
+
+
+Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
+
+
+def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
+    """
+    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
@@ -49,44 +113,88 @@ def get_vasprun(vasprun_path, **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )  # `message` only needs to match start of message
+    default_kwargs = {"parse_dos": False}
+    default_kwargs.update(kwargs)
     try:
-        vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
+        vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
-            f"vasprun.xml or compressed version (.gz/.xz/.bz/.lzma) not found at {vasprun_path}("
-            f".gz/.xz/.bz/.lzma). Needed for parsing calculation output!"
+            f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "
+            f"output!"
         ) from exc
     return vasprun
 
 
-def get_locpot(locpot_path):
+def get_locpot(locpot_path: Union[str, "Path"]):
     """
-    Read the LOCPOT(.gz) file as a pymatgen Locpot object.
+    Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
     """
     locpot_path = str(locpot_path)  # convert to string if Path object
     try:
         locpot = Locpot.from_file(find_archived_fname(locpot_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"LOCPOT or compressed version not found at (.gz/.xz/.bz/.lzma) not found at {locpot_path}("
-            f".gz/.xz/.bz/.lzma). Needed for calculating the Freysoldt (FNV) image charge correction!"
+            f"LOCPOT file not found at {locpot_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Freysoldt (FNV) image charge correction!"
         ) from None
     return locpot
 
 
-def get_outcar(outcar_path):
+def get_outcar(outcar_path: Union[str, "Path"]):
     """
-    Read the OUTCAR(.gz) file as a pymatgen Outcar object.
+    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
     """
     outcar_path = str(outcar_path)  # convert to string if Path object
     try:
         outcar = Outcar(find_archived_fname(outcar_path))
     except FileNotFoundError:
         raise FileNotFoundError(
-            f"OUTCAR file not found at {outcar_path}. Needed for calculating the Kumagai (eFNV) "
-            f"image charge correction."
+            f"OUTCAR file not found at {outcar_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+            f"Kumagai (eFNV) image charge correction."
         ) from None
     return outcar
+
+
+def get_procar(procar_path: Union[str, "Path"]):
+    """
+    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
+    ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
+    support SOC).
+
+    If ``easyunfold`` installed, the ``Procar`` will be parsed with
+    ``easyunfold`` and then the ``proj_data`` attribute will be converted
+    to a ``data`` attribute (to be compatible with ``pydefect``, which uses
+    the ``pymatgen`` format).
+    """
+    try:
+        procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
+    except FileNotFoundError:
+        raise FileNotFoundError(f"PROCAR file not found at {procar_path}(.gz/.xz/.bz/.lzma)!") from None
+
+    easyunfold_installed = True  # first try loading with easyunfold
+    try:
+        from easyunfold.procar import Procar as EasyunfoldProcar
+    except ImportError:
+        easyunfold_installed = False
+
+    if easyunfold_installed:
+        procar = EasyunfoldProcar(procar_path, normalise=False)
+        if procar._is_soc:
+            procar.data = {Spin.up: procar.proj_data[0]}
+        else:
+            procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
+        del procar.proj_data  # reduce space
+    else:
+        try:  # try parsing with ``pymatgen`` instead, but doesn't support SOC!
+            procar = Procar(procar_path)
+        except IndexError as exc:  # SOC error
+            raise ValueError(
+                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and "
+                "`pymatgen` does not support SOC PROCAR parsing! Please install `easyunfold` with `pip "
+                "install easyunfold`."
+            ) from exc
+
+    return procar
 
 
 def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
@@ -94,14 +202,26 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     Search for all files with filenames matching ``output_file``, case-
     insensitive.
 
-    Returns (output file path, Multiple?) where Multiple is True if multiple
-    matching files are found.
+    Returns (output file path, Multiple?) where ``Multiple`` is
+    ``True`` if multiple matching files are found.
+
+    Args:
+        output_file (str):
+            The filename to search for (case-insensitive).
+            Should be either ``vasprun.xml``, ``OUTCAR``,
+            ``LOCPOT`` or ``PROCAR``.
+        path (str): The path to the directory to search in.
     """
+    if output_file.lower() == "vasprun.xml":
+        search_patterns = ["vasprun", ".xml"]
+    else:
+        search_patterns = [output_file.lower()]
+
     files = os.listdir(path)
     output_files = [
         filename
         for filename in files
-        if output_file.lower() in filename.lower() and not filename.startswith(".")
+        if all(i in filename.lower() for i in search_patterns) and not filename.startswith(".")
     ]
     # sort by direct match to {output_file}, direct match to {output_file}.gz, then alphabetically:
     if output_files := sorted(
@@ -139,7 +259,8 @@ def get_defect_type_and_composition_diff(bulk, defect):
         defect_type = "substitution"
     else:
         raise RuntimeError(
-            "Could not determine defect type from composition difference of bulk and defect structures."
+            f"Could not determine defect type from composition difference of bulk ({bulk_comp}) and "
+            f"defect ({defect_comp}) structures."
         )
 
     return defect_type, composition_diff
@@ -412,10 +533,14 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     # suppress pydefect INFO messages
     import logging
 
-    from vise import user_settings
+    try:
+        from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+        user_settings.logger.setLevel(logging.CRITICAL)
+        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+
+    except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
+        return
 
     # vise suppresses `UserWarning`s, so need to reset
     warnings.simplefilter("default")
@@ -706,19 +831,88 @@ def _compare_incar_tags(
     return True
 
 
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the magnetization (number of spin-up vs spin-down electrons) from
+    a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract the total magnetization.
+
+    Returns:
+        int or float: The total magnetization of the system.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # first check if it's even a spin-polarised calculation:
+    if len(eigenvalues_and_occs) == 1 or not vasprun.is_spin:
+        return 0  # non-spin polarised or SOC calculation
+    # (can't pull SOC magnetization this way and either way isn't needed/desired for magnetization value
+    # in ``VaspBandEdgeProperties``)
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    n_spin_up = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    n_spin_down = np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+
+    return n_spin_up - n_spin_down
+
+
+def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+    """
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+
+    Returns:
+        int or float: The number of electrons in the system.
+    """
+    # in theory should be able to use vasprun.idos (integrated dos), but this
+    # doesn't show spin-polarisation / account for NELECT changes from neutral
+    # apparently
+
+    eigenvalues_and_occs = vasprun.eigenvalues
+    kweights = vasprun.actual_kpoints_weights
+
+    # product of the sum of occupations over all bands, times the k-point weights:
+    nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    if len(eigenvalues_and_occs) > 1:
+        nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
+    elif not vasprun.parameters.get("LNONCOLLINEAR", False):
+        nelect *= 2  # non-spin-polarised or SOC calc
+
+    return nelect
+
+
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
     """
-    Determine the number of electrons (NELECT) from a Vasprun object,
+    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
     corresponding to a neutral charge state for the structure.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to extract ``NELECT``.
+        skip_potcar_init (bool):
+            Whether to skip the initialisation of the ``POTCAR`` statistics
+            (i.e. the auto-charge determination) and instead try to reverse
+            engineer ``NELECT`` using the ``DefectDictSet``.
+
+    Returns:
+        int or float: The number of electrons in the system for a neutral
+        charge state.
     """
-    from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH
-
-    potcar_summary_stats = loadfn(POTCAR_STATS_PATH)  # for auto-charge determination
-
     nelect = None
     if not skip_potcar_init:
         with contextlib.suppress(Exception):  # try determine charge without POTCARs first:
             grouped_symbols = [list(group) for key, group in itertools.groupby(vasprun.atomic_symbols)]
+            potcar_summary_stats = _get_potcar_summary_stats()
 
             for trial_functional in ["PBE_64", "PBE_54", "PBE_52", "PBE", potcar_summary_stats.keys()]:
                 if all(
@@ -833,8 +1027,7 @@ def get_orientational_degeneracy(
     bulk_site_point_group: Optional[str] = None,
     bulk_symm_ops: Optional[list] = None,
     defect_symm_ops: Optional[list] = None,
-    symprec: float = 0.2,
-    defect_type: Optional[Union[DefectType, str]] = None,
+    symprec: float = 0.1,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
@@ -890,8 +1083,8 @@ def get_orientational_degeneracy(
     while for interstitials it is the point symmetry of the `final relaxed` interstitial
     site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
-    and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
-    doi.org/10.1039/D3CS00432E).
+    and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
+    https://doi.org/10.1039/D3CS00432E).
 
     Args:
         defect_entry (DefectEntry): DefectEntry object. (Default = None)
@@ -914,15 +1107,13 @@ def get_orientational_degeneracy(
             structure (used in determining the `relaxed` point symmetry), to
             avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.2, which is larger than
-            that used for only unrelaxed structures in doped (0.01), to account for
-            residual structural noise in relaxed supercells. You may want to adjust
-            for your system (e.g. if there are very slight octahedral distortions etc).
-        defect_type (DefectType or str):
-            The type of defect (e.g. Vacancy/"vacancy", Substitution/"substitution",
-            Interstitial/"interstitial") to check if the output orientational
-            degeneracy is reasonable (i.e. can only be less than 1 for interstitials).
-            Default is None (no check).
+            Symmetry tolerance for ``spglib`` to use when determining point
+            symmetries and thus orientational degeneracies. Default is ``0.1``
+            which matches that used by the ``Materials Project`` and is larger
+            than the ``pymatgen`` default of ``0.01`` to account for residual
+            structural noise in relaxed defect supercells.
+            You may want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
 
     Returns:
         float: orientational degeneracy factor for the defect.
@@ -941,9 +1132,6 @@ def get_orientational_degeneracy(
             "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
             "(i.e. must be a parsed DefectEntry)"
         )
-
-    else:
-        pass
 
     if relaxed_point_group is None:
         # this will throw warning if auto-detected that supercell breaks trans symmetry
@@ -1036,6 +1224,7 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
             bulk_supercell,
             _get_defect_supercell(defect_entry),
             return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
         )
         return unrelaxed_defect_structure
 
@@ -1058,9 +1247,10 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
 
 def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
     if not relaxed:
-        if hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata:
-            site = defect_entry.calculation_metadata.get("bulk_site")
-            if site:
+        if (  # noqa: SIM102
+            hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata
+        ):
+            if site := defect_entry.calculation_metadata.get("bulk_site"):
                 return site
 
         # otherwise need to reparse info:
@@ -1079,7 +1269,12 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
             _bulk_voronoi_node_dict,
-        ) = defect_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_supercell,
+            return_all_info=True,
+            oxi_state="Undefined",  # don't need oxidation states for this
+        )
 
         # update any missing calculation_metadata:
         defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
@@ -1183,7 +1378,7 @@ def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_sta
 
         else:
             defect_nelect = defect_vr.parameters.get("NELECT")
-            bulk_nelect = get_neutral_nelect_from_vasprun(bulk_vr)
+            bulk_nelect = get_nelect_from_vasprun(bulk_vr)
             neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
 
             if bulk_vr.parameters.get("NELECT", False):

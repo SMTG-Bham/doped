@@ -2,6 +2,7 @@
 Utility code and functions for symmetry analysis of structures and defects.
 """
 
+import contextlib
 import os
 import warnings
 from typing import Optional
@@ -11,6 +12,7 @@ from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice, PeriodicSite, Structure
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import pbc_diff
@@ -573,8 +575,8 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     """
     Get the conventional crystal structure of the input structure, according to
     the Bilbao Crystallographic Server (BCS) definition. Also returns the
-    transformation matrix from the spglib (SpaceGroupAnalyzer) conventional
-    structure definition to the BCS definition.
+    transformation matrix from the ``spglib`` (``SpaceGroupAnalyzer``)
+    conventional structure definition to the BCS definition.
 
     Args:
         structure (Structure): pymatgen Structure object for this to
@@ -585,7 +587,7 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     number.
 
     Returns:
-        pymatgen Structure object and spglib -> BCS conv cell transformation matrix.
+        pymatgen Structure object and ``spglib`` -> BCS conv cell transformation matrix.
     """
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
@@ -651,7 +653,7 @@ def get_conv_cell_site(defect_entry):
     structure definition.
 
     Args:
-        defect_entry: DefectEntry object.
+        defect_entry: ``DefectEntry`` object.
     """
     bulk_prim_structure = defect_entry.defect.structure.copy()
     bulk_prim_structure.remove_oxidation_states()  # adding oxidation states adds the
@@ -733,7 +735,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     (https://gitlab.com/ase/ase/-/merge_requests/1035) based on the tabulated
     datasets in https://github.com/xtalopt/randSpg (also found at
     https://github.com/spglib/spglib/blob/develop/database/Wyckoff.csv).
-    By default, doped uses the Wyckoff functionality of spglib (along with
+    By default, doped uses the Wyckoff functionality of ``spglib`` (along with
     symmetry operations in pymatgen) when possible however.
     """
     datafile = _get_wyckoff_datafile()
@@ -1036,15 +1038,15 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Get the defect site point symmetry from a Defect object.
 
     Note that this is intended only to be used for unrelaxed,
-    as-generated Defect objects (rather than parsed defects).
+    as-generated ``Defect`` objects (rather than parsed defects).
 
     Args:
-        defect (Defect): Defect object.
+        defect (Defect): ``Defect`` object.
         symm_ops (list):
-            List of symmetry operations of defect.structure, to avoid
+            List of symmetry operations of ``defect.structure``, to avoid
             re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01.
+            Symmetry tolerance for ``spglib``. Default is 0.01.
 
     Returns:
         str: Defect point symmetry.
@@ -1075,7 +1077,7 @@ def point_symmetry_from_defect_entry(
     return_periodicity_breaking: bool = False,
 ):
     r"""
-    Get the defect site point symmetry from a DefectEntry object.
+    Get the defect site point symmetry from a ``DefectEntry`` object.
 
     Note: If ``relaxed = True`` (default), then this tries to use the
     defect_entry.defect_supercell to determine the site symmetry. This will
@@ -1097,7 +1099,7 @@ def point_symmetry_from_defect_entry(
                   get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on your
-    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
+    parsed `relaxed` ``DefectEntry`` objects should correctly determine the final relaxed
     defect symmetry - otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
@@ -1114,20 +1116,20 @@ def point_symmetry_from_defect_entry(
     while for interstitials it is the point symmetry of the `final relaxed` interstitial
     site when placed in the (unrelaxed) bulk structure.
     The degeneracy factor is used in the calculation of defect/carrier concentrations
-    and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
-    doi.org/10.1039/D3CS00432E).
+    and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
+    https://doi.org/10.1039/D3CS00432E).
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object.
+        defect_entry (DefectEntry): ``DefectEntry`` object.
         symm_ops (list):
             List of symmetry operations of either the defect_entry.bulk_supercell
-            structure (if relaxed=False) or defect_entry.defect_supercell (if
-            relaxed=True), to avoid re-calculating. Default is None (recalculates).
+            structure (if ``relaxed=False``) or defect_entry.defect_supercell (if
+            ``relaxed=True``), to avoid re-calculating. Default is None (recalculates).
         symprec (float):
-            Symmetry tolerance for spglib. Default is 0.01 for unrelaxed structures,
-            0.2 for relaxed (to account for residual structural noise). You may
-            want to adjust for your system (e.g. if there are very slight
-            octahedral distortions etc).
+            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
+            0.1 for relaxed (to account for residual structural noise, matching that
+            used by the ``Materials Project``). You may want to adjust for your system
+            (e.g. if there are very slight octahedral distortions etc.).
         relaxed (bool):
             If False, determines the site symmetry using the defect site `in the
             unrelaxed bulk supercell` (i.e. the bulk site symmetry), otherwise
@@ -1149,9 +1151,18 @@ def point_symmetry_from_defect_entry(
         periodicity).
     """
     if symprec is None:
-        symprec = 0.2 if relaxed else 0.01  # relaxed structures likely have structural noise
-        # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is acc too large as we have very
+        symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
+        # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
         # slight distortions present in the unrelaxed material).
+
+    # from spglib docs: For atomic positions, roughly speaking, two position vectors x and x' in
+    # Cartesian coordinates are considered to be the same if |x' - x| < symprec. The angle distortion
+    # between basis vectors is converted to a length and compared with this distance tolerance.
+    # we _could_ do bulk-bond length dependent symprec, which seems like it would be physically
+    # reasonable (basically being a proxy accounting for larger structural/positional noise for same force
+    # noise in DFT supercell calcs), but from testing this didn't seem to really improve accuracy in
+    # general (e.g. for Sb2O5 split-interstitial seemed like >0.1 best, while <0.12 required for SrTiO3
+    # despite smaller bond length)
 
     if not relaxed and defect_entry.defect.defect_type != DefectType.Interstitial:
         # then easy, can just be taken from symmetry dataset of defect structure
@@ -1161,9 +1172,6 @@ def point_symmetry_from_defect_entry(
         )
 
     supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
-    defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(
-        defect_entry, relaxed=relaxed
-    )
 
     if symm_ops is None:
         symm_ops = _get_sga(supercell).get_symmetry_operations()
@@ -1198,84 +1206,99 @@ def point_symmetry_from_defect_entry(
             )
 
     _failed = False
-    if defect_supercell_bulk_site_coords is not None:
-        try:
-            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                defect_supercell_bulk_site_coords,
-                supercell,
-                symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
-                symprec=symprec,
-                dist_tol=symprec,
+
+    spglib_point_group_symbol = None
+    if relaxed:
+        with contextlib.suppress(Exception):
+            spglib_point_group_symbol = schoenflies_from_hermann(
+                _get_sga(supercell, symprec=symprec).get_point_group_symbol()
             )
 
-            # Note:
-            # This code works to get the site symmetry of a defect site in a periodicity-breaking
-            # supercell, but only when the defect has not yet been relaxed. Still has the issue that once
-            # we have relaxation around the defect site in a periodicity-breaking supercell, then the
-            # (local) point symmetry cannot be easily determined as the whole supercell symmetry is broken.
-            # Future work could try a local structure analysis to determine the local point symmetry to
-            # counteract this.
-            # unique_sites = _get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
-            #     site.frac_coords, bulk_supercell, symm_ops
-            # )
-            # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
-            #     bulk_supercell, unique_sites, symprec=symprec
-            # )
-            # symm_dataset = sga_with_all_X.get_symmetry_dataset()
-        except AttributeError:
-            _failed = True
+    if not relaxed or spglib_point_group_symbol is None:
+        defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(
+            defect_entry, relaxed=relaxed
+        )
+        if defect_supercell_bulk_site_coords is not None:
+            try:
+                symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+                    defect_supercell_bulk_site_coords,
+                    supercell,
+                    symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
+                    symprec=symprec,
+                    dist_tol=symprec,
+                )
 
-    if defect_supercell_bulk_site_coords is None or _failed:
-        point_group = point_symmetry_from_defect(defect_entry.defect, symm_ops=symm_ops, symprec=symprec)
-        # possibly pymatgen DefectEntry object without defect_supercell_site set
-        if relaxed:
-            warnings.warn(
-                "Symmetry determination failed with the standard approach (likely due to this being a "
-                "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ point "
-                "group symmetry cannot be reliably automatically determined."
+                # Note:
+                # This code works to get the site symmetry of a defect site in a periodicity-breaking
+                # supercell, but only when the defect has not yet been relaxed. Still has the issue that
+                # once we have relaxation around the defect site in a periodicity-breaking supercell,
+                # then the (local) point symmetry cannot be easily determined as the whole supercell
+                # symmetry is broken.
+                # Future work could try a local structure analysis to determine the local point symmetry to
+                # counteract this.
+                # unique_sites = _get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
+                #     site.frac_coords, bulk_supercell, symm_ops
+                # )
+                # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
+                #     bulk_supercell, unique_sites, symprec=symprec
+                # )
+                # symm_dataset = sga_with_all_X.get_symmetry_dataset()
+            except AttributeError:
+                _failed = True
+
+        if defect_supercell_bulk_site_coords is None or _failed:
+            point_group = point_symmetry_from_defect(
+                defect_entry.defect, symm_ops=symm_ops, symprec=symprec
             )
-            return (point_group, not matching) if return_periodicity_breaking else point_group
+            # possibly pymatgen DefectEntry object without defect_supercell_site set
+            if relaxed:
+                warnings.warn(
+                    "Symmetry determination failed with the standard approach (likely due to this being a "
+                    "DefectEntry which has not been generated/parsed with doped?). Thus the _relaxed_ "
+                    "point group symmetry cannot be reliably automatically determined."
+                )
+                return (point_group, not matching) if return_periodicity_breaking else point_group
 
-        return point_group
+            return point_group
 
-    if not relaxed:
-        # `site_symmetry_symbols[-1]` should be used (within this equiv sites approach) for unrelaxed
-        # defects (rather than `pointgroup`), as the site symmetry can be lower than the crystal point
-        # group, but not vice versa; so when populating all equivalent sites (of the defect site,
-        # in the bulk supercell) the overall point group is retained and is not necessarily the defect
-        # site symmetry. e.g. consider populating all equivalent sites of a C1 interstitial site in a
-        # structure (such as CdTe), then the overall point group is still the bulk point group,
-        # but the site symmetry is in fact C1.
-        # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
-        # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
-        # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
-        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+        if not relaxed:
+            # `site_symmetry_symbols[-1]` should be used (within this equiv sites approach) for unrelaxed
+            # defects (rather than `pointgroup`), as the site symmetry can be lower than the crystal point
+            # group, but not vice versa; so when populating all equivalent sites (of the defect site,
+            # in the bulk supercell) the overall point group is retained and is not necessarily the defect
+            # site symmetry. e.g. consider populating all equivalent sites of a C1 interstitial site in a
+            # structure (such as CdTe), then the overall point group is still the bulk point group,
+            # but the site symmetry is in fact C1.
+            # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
+            # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
+            # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
 
-        # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
-        # determined using the point group of the unrelaxed defect structure:
-        # unrelaxed_defect_supercell = defect_entry.calculation_metadata.get(
-        #     "unrelaxed_defect_structure", defect_supercell
-        # )
-        # return schoenflies_from_hermann(
-        #     _get_sga(unrelaxed_defect_supercell, symprec=symprec).get_symmetry_dataset()["pointgroup"],
-        # )
-        # But current approach works for all cases with unrelaxed defect structures
+            # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
+            # determined using the point group of the unrelaxed defect structure:
+            # unrelaxed_defect_supercell = defect_entry.calculation_metadata.get(
+            #     "unrelaxed_defect_structure", defect_supercell
+            # )
+            # return schoenflies_from_hermann(
+            #     _get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset()["pointgroup"],
+            # )
+            # But current approach works for all cases with unrelaxed defect structures
 
-    else:
-        # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
-        # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
-        # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
-        # possibility with the equivalent sites, as when relaxed=False)
-        spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+        else:
+            # For relaxed defects the "defect supercell site" is not necessarily the true centre of mass of
+            # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
+            # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
+            # possibility with the equivalent sites, as when relaxed=False)
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
 
-        # This also works (at least for non-periodicity-breaking supercells) for relaxed defects in most
-        # cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the approach
-        # above:
-        # schoenflies_from_hermann(
-        #     _get_sga(
-        #         defect_supercell, symprec=symprec
-        #     ).get_symmetry_dataset()["pointgroup"]
-        # )
+            # This also works (at least for non-periodicity-breaking supercells) for relaxed defects in
+            # most cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the
+            # approach above:
+            # schoenflies_from_hermann(
+            #     _get_sga(
+            #         defect_supercell, symprec=symprec
+            #     ).get_symmetry_dataset()["pointgroup"]
+            # )
 
     if spglib_point_group_symbol is not None:
         return (
@@ -1305,7 +1328,7 @@ def point_symmetry_from_defect_entry(
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
     unrelaxed_defect_structure: Structure = None,
-    symprec: float = 0.2,
+    symprec: float = 0.1,
     verbose: bool = False,
 ):
     defect_supercell_bulk_site_coords = _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False)
@@ -1355,6 +1378,147 @@ def _check_relaxed_defect_symmetry_determination(
         return True
 
     return False  # return False if symmetry couldn't be checked
+
+
+def point_symmetry(
+    structure: Structure,
+    bulk_structure: Optional[Structure] = None,
+    symm_ops: Optional[list] = None,
+    symprec: Optional[float] = None,
+    relaxed: bool = True,
+    verbose: bool = True,
+    return_periodicity_breaking: bool = False,
+):
+    r"""
+    Get the point symmetry of a given structure.
+
+    Note: For certain non-trivial supercell expansions, the broken cell
+    periodicity can break the site symmetry and lead to incorrect point
+    symmetry determination (particularly if using non-scalar supercell
+    matrices with high symmetry materials). If the unrelaxed bulk structure
+    (``bulk_structure``) is also supplied, then ``doped`` will determine
+    the defect site and then automatically check if this is the case,
+    and warn you if so.
+
+    This can also be checked by using this function on your doped `generated` defects:
+
+    .. code-block:: python
+
+        from doped.generation import get_defect_name_from_entry
+        for defect_name, defect_entry in defect_gen.items():
+            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
+                  get_defect_name_from_entry(defect_entry), "\n")
+
+    And if the point symmetries match in each case, then using this function
+    on your parsed `relaxed` ``DefectEntry`` objects should correctly determine
+    the final relaxed defect symmetry - otherwise periodicity-breaking prevents this.
+
+    If ``bulk_structure`` is supplied and ``relaxed`` is set to ``False``,
+    then returns the bulk site symmetry of the defect, which for
+    vacancies/substitutions is the symmetry of the corresponding bulk site,
+    while for interstitials it is the point symmetry of the `final relaxed`
+    interstitial site when placed in the (unrelaxed) bulk structure.
+
+    Args:
+        structure (Structure):
+            ``Structure`` object for which to determine the point symmetry.
+        bulk_structure (Structure):
+            ``Structure`` object of the bulk structure, if known. Default is None.
+            If provided and ``relaxed = True``, will be used to check if the supercell
+            is breaking the crystal periodicity (and thus preventing accurate
+            determination of the relaxed defect point symmetry) and warn you if so.
+        symm_ops (list):
+            List of symmetry operations of either the defect_entry.bulk_supercell
+            structure (if ``relaxed=False``) or defect_entry.defect_supercell (if
+            ``relaxed=True``), to avoid re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
+            0.1 for relaxed (to account for residual structural noise, matching that
+            used by the ``Materials Project``). You may want to adjust for your system
+            (e.g. if there are very slight octahedral distortions etc.).
+        relaxed (bool):
+            If ``False``, determines the site symmetry using the defect site `in the
+            unrelaxed bulk supercell` (i.e. the bulk site symmetry), otherwise
+            tries to determine the point symmetry of the relaxed defect in the
+            defect supercell. Default is True.
+        verbose (bool):
+            If True, prints a warning if the supercell is detected to break
+            the crystal periodicity (and hence not be able to return a reliable
+            `relaxed` point symmetry). Default is True.
+        return_periodicity_breaking (bool):
+            If True, also returns a boolean specifying if the supercell has been
+            detected to break the crystal periodicity (and hence not be able to
+            return a reliable `relaxed` point symmetry) or not. Default is False.
+
+    Returns:
+        str: Structure point symmetry (and if ``return_periodicity_breaking = True``,
+        a boolean specifying if the supercell has been detected to break the crystal
+        periodicity).
+    """
+    if symprec is None:
+        symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
+
+    spglib_point_group_symbol = None
+    if relaxed and bulk_structure is None:
+        with contextlib.suppress(Exception):
+            spglib_point_group_symbol = schoenflies_from_hermann(
+                _get_sga(structure, symprec=symprec).get_point_group_symbol()
+            )
+        if spglib_point_group_symbol is not None:
+            return (
+                (spglib_point_group_symbol, False)
+                if return_periodicity_breaking
+                else spglib_point_group_symbol
+            )
+
+    if bulk_structure is not None:
+        from doped.analysis import defect_from_structures
+
+        (
+            defect,
+            defect_site,
+            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
+            defect_site_index,  # in this initial_defect_structure
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_structure,
+            structure,
+            oxi_state="Undetermined",
+            return_all_info=True,
+        )
+        defect_entry = DefectEntry(
+            # pmg attributes:
+            defect=defect,  # this corresponds to _unrelaxed_ defect
+            charge_state=0,
+            sc_entry=ComputedStructureEntry(
+                structure=structure,
+                energy=0.0,  # needs to be set, so set to 0.0
+            ),
+            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+            bulk_entry=None,
+            # doped attributes:
+            defect_supercell_site=defect_site,  # _relaxed_ defect site
+            defect_supercell=structure,
+            bulk_supercell=bulk_structure,
+        )
+
+        return point_symmetry_from_defect_entry(
+            defect_entry,
+            symm_ops=symm_ops,
+            symprec=symprec,
+            relaxed=relaxed,
+            verbose=verbose,
+            return_periodicity_breaking=return_periodicity_breaking,
+        )
+
+    # else bulk structure is None and normal relaxed structure symmetry determination failed
+    raise RuntimeError(
+        "Target site symmetry could not be determined using just the input structure. Please also supply "
+        "the unrelaxed bulk structure (`bulk_structure`)."
+    )
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
