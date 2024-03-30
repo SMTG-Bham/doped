@@ -1766,6 +1766,7 @@ class DefectParser:
                     warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
 
         defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
+        defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
         dp.load_bulk_gap_data(bulk_band_gap_path=bulk_band_gap_path)  # Load band gap data
 
@@ -2091,11 +2092,18 @@ class DefectParser:
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
             "defect_vasprun_dict": self.defect_vr.as_dict(),  # projected_eigenvalues already removed
-            "bulk_vasprun_dict": {  # projected_eigenvalues may not yet be removed
-                k: v for k, v in self.bulk_vr.as_dict().items() if k != "projected_eigenvalues"
+            "bulk_vasprun_dict": {
+                **{  # projected_eigenvalues may not yet be removed
+                    k: v for k, v in self.bulk_vr.as_dict().items() if k != "output"
+                },
+                "output": {
+                    k: v
+                    for k, v in self.bulk_vr.as_dict()["output"].items()
+                    if k != "projected_eigenvalues"
+                },
             },
         }
-        run_metadata["bulk_vasprun_dict"]["projected_eigenvalues"] = None  # reduce memory demand
+        run_metadata["bulk_vasprun_dict"]["output"]["projected_eigenvalues"] = None  # reduce memory demand
 
         self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = _compare_incar_tags(
             run_metadata["bulk_incar"], run_metadata["defect_incar"]
