@@ -4,6 +4,7 @@ Helper functions for parsing VASP supercell defect calculations.
 
 import contextlib
 import itertools
+import logging
 import os
 import re
 import warnings
@@ -30,6 +31,19 @@ if TYPE_CHECKING:
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
+
+
+@contextlib.contextmanager
+def suppress_logging(level=logging.CRITICAL):
+    """
+    Context manager to catch and suppress logging messages.
+    """
+    previous_level = logging.root.manager.disable  # store the current logging level
+    logging.disable(level)  # disable logging at the specified level
+    try:
+        yield
+    finally:
+        logging.disable(previous_level)  # restore the original logging level
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -59,23 +73,26 @@ def parse_projected_eigen_no_mag(elem):
     This is a modified version of ``_parse_projected_eigen``
     from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
     parsing of the projected magnetisation in order to expedite
-    parsing in ``doped``.
+    parsing in ``doped``, as well as some small adjustments to
+    maximise efficiency.
     """
-    root = elem.find("array").find("set")
+    root = elem.find("array/set")
     proj_eigen = defaultdict(list)
     sets = root.findall("set")
+
     for s in sets:
         spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
         if spin == 1 or (spin == 2 and len(sets) == 2):
-            # Force spin to be +1 or -1
-            for ss in s.findall("set"):
-                dk = []
-                for sss in ss.findall("set"):
-                    db = _parse_vasp_array(sss)
-                    dk.append(db)
-                proj_eigen[spin].append(dk)
-    proj_eigen = {spin: np.array(v) for spin, v in proj_eigen.items()}
-    proj_eigen = {Spin.up if k == 1 else Spin.down: v for k, v in proj_eigen.items()}
+            spin_key = Spin.up if spin == 1 else Spin.down
+            proj_eigen[spin_key] = np.array(
+                [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
+            )
+
+    # here we _could_ round to 3 decimal places (and ensure rounding 0.0005 up to 0.001) to be _mostly_
+    # consistent with PROCAR values (still not 100% the same as e.g. 0.00047 will be rounded to 0.0005
+    # in vasprun, but 0.000 in PROCAR), but this is _reducing_ the accuracy so better not to do this,
+    # and accept that PROCAR results may not be as numerically robust
+    # proj_eigen = {k: np.round(v+0.00001, 3) for k, v in proj_eigen.items()}
     proj_mag = None
     elem.clear()
     return proj_eigen, proj_mag
