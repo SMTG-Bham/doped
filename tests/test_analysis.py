@@ -4,7 +4,6 @@ Tests for the `doped.analysis` module, which also implicitly tests most of the
 """
 
 import gzip
-import json
 import os
 import shutil
 import unittest
@@ -2244,6 +2243,34 @@ def _remove_metadata_keys_from_dict(d: dict) -> dict:
     return d
 
 
+def _compare_band_edge_states_dicts(d1, d2, orb_diff_tol: float = 0.1):
+    """
+    Compare two dictionaries of band edge states, removing metadata keys and
+    allowing a slight difference in the ``vbm/cbm_orbital_diff`` values to
+    account for rounding errors with ``PROCAR``s.
+    """
+    if isinstance(d1, str):
+        d1 = loadfn(d1)
+    if isinstance(d2, str):
+        d2 = loadfn(d2)
+
+    d1 = d1.as_dict()
+    d2 = d2.as_dict()
+
+    cbm_orbital_diffs1 = [subdict.pop("cbm_orbital_diff") for subdict in d1["states"]]
+    cbm_orbital_diffs2 = [subdict.pop("cbm_orbital_diff") for subdict in d2["states"]]
+    for i, j in zip(cbm_orbital_diffs1, cbm_orbital_diffs2):
+        print(f"cbm_orbital_diffs: {i:.3f} vs {j:.3f}")
+        assert np.isclose(i, j, atol=orb_diff_tol)
+    vbm_orbital_diffs1 = [subdict.pop("vbm_orbital_diff") for subdict in d1["states"]]
+    vbm_orbital_diffs2 = [subdict.pop("vbm_orbital_diff") for subdict in d2["states"]]
+    for i, j in zip(vbm_orbital_diffs1, vbm_orbital_diffs2):
+        print(f"vbm_orbital_diffs: {i:.3f} vs {j:.3f}")
+        assert np.isclose(i, j, atol=orb_diff_tol)
+
+    assert _remove_metadata_keys_from_dict(d1) == _remove_metadata_keys_from_dict(d2)
+
+
 class DopedParsingFunctionsTestCase(unittest.TestCase):
     def setUp(self):
         DopedParsingTestCase.setUp(self)  # get attributes from DopedParsingTestCase
@@ -2264,10 +2291,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         if_present_rm("./vasprun.xml")
 
         for dir in ["bulk", "v_Cu_0", "Si_i_-1"]:
-            if os.path.exists(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_prcr"):
+            if os.path.exists(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz"):
                 shutil.move(
-                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_prcr",
-                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/PROCAR",
+                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz",
+                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/vasprun.xml.gz",
                 )
 
     def test_defect_name_from_structures(self):
@@ -2676,23 +2703,23 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         print("Testing MgO eigenvalue analysis")
         bes, fig = defect_entry.get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_1_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        Mg_O_1_bes_path = f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_1_band_edge_states.json"
+        # dumpfn(bes, Mg_O_1_bes_path)  # for saving test data
+        _compare_band_edge_states_dicts(bes, Mg_O_1_bes_path, orb_diff_tol=0.001)
         assert bes.has_occupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
         )
 
-        # Test loading using ``PROCAR`` and ``DefectsParser``
+        # Test loading using ``DefectsParser``
         print("Testing Cu2SiSe3 eigenvalue analysis with PROCARs")
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        v_Cu_0_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json"
+        # dumpfn(bes, v_Cu_0_bes_path)  # for saving test data
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
         assert bes.has_acceptor_phs
         assert bes.is_shallow
         assert not any(
@@ -2703,9 +2730,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         bes2 = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis(
             plot=False,
         )  # Test getting BES and not plot
-        assert _remove_metadata_keys_from_dict(bes2.as_dict()) == _remove_metadata_keys_from_dict(
-            bes.as_dict()
-        )
+        _compare_band_edge_states_dicts(bes, bes2, orb_diff_tol=0.001)
         assert bes.has_acceptor_phs
         assert bes.is_shallow
         assert not any(
@@ -2714,74 +2739,76 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        Si_i_m1_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json"
+        # dumpfn(bes, Si_i_m1_bes_path)  # for saving test data
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
         assert bes.has_occupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
         )
 
-        # test parses fine without PROCARs:
-        print("Testing Cu2SiSe3 parsing and eigenvalue analysis without bulk PROCAR")
+        # test parses fine without projected eigenvalues from vaspruns:
+        print("Testing Cu2SiSe3 parsing and eigenvalue analysis with bulk vr, no projected eigenvalues")
         # first without bulk:
         shutil.move(
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR",
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/hidden_prcr",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/hidden_vr.gz",
+        )
+        shutil.copy(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/no_eig_vr.xml.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz",
         )
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.1)
 
-        # then without defect PROCAR (in one case):
-        print("Testing Cu2SiSe3 parsing and eigenvalue analysis without v_Cu_0 PROCAR or bulk PROCAR")
+        # then without defect vasprun (in one case):
+        print(
+            "Testing Cu2SiSe3 parsing and eigenvalue analysis without v_Cu_0 vasprun with projected "
+            "eigenvalues, or bulk vasprun with projected eigenvalues (but with PROCARs)"
+        )
         shutil.move(
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR",
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/hidden_prcr",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/hidden_vr.gz",
+        )
+        shutil.copy(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/no_eig_vr.xml.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
         )
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.1)
 
-        # then without defect PROCAR but with bulk PROCAR:
-        print("Testing Cu2SiSe3 parsing and eigenvalue analysis without v_Cu_0 but with bulk PROCAR")
+        # then without defect vasprun w/eig but with bulk vasprun w/eig:
+        print(
+            "Testing Cu2SiSe3 parsing and eigenvalue analysis without v_Cu_0 vasprun with projected "
+            "eigenvalues, but with bulk vasprun with eigenvalues"
+        )
         shutil.move(
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/hidden_prcr",
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/hidden_vr.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz",
         )
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.1)
 
         # Test non-collinear calculation
         print("Testing CdTe parsing and eigenvalue analysis; SOC example case")
@@ -2794,9 +2821,9 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         print("Testing Int_Te_3_1 with plot = True")
         bes = defect_entry.get_eigenvalue_analysis(plot=False)
-        with open(f"{self.CdTe_EXAMPLE_DIR}/CdTe_test_soc_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        Te_i_1_SOC_bes_path = f"{self.CdTe_EXAMPLE_DIR}/CdTe_test_soc_band_edge_states.json"
+        # dumpfn(bes, Te_i_1_SOC_bes_path)  # for saving test data
+        _compare_band_edge_states_dicts(bes, Te_i_1_SOC_bes_path, orb_diff_tol=0.001)
         assert bes.has_unoccupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_occupied_localized_state, bes.is_shallow]
@@ -2839,15 +2866,11 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         # now should still all work fine:
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
 
         # test directly using ``get_eigenvalue_analysis`` with VASP outputs:
         # now should still all work fine:
@@ -2860,11 +2883,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
         )
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
 
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns and procars")
+        self.tearDown()  # ensure PROCARs returned to original state
         bes, fig = get_eigenvalue_analysis(
             bulk_vr=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
@@ -2872,12 +2894,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             defect_vr=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR"),
-            defect_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR"),
+            bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
+            defect_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
         )
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
         # test error when not providing defect_entry or bulk_vr:
         with pytest.raises(ValueError) as exc:
@@ -2891,9 +2911,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         dumpfn(dp.defect_dict, "test.json")
         reloaded_defect_dict = loadfn("test.json")
         bes, fig = reloaded_defect_dict["v_Cu_0"].get_eigenvalue_analysis()
-        with open(f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json") as f:
-            expected = json.load(f)
-        assert _remove_metadata_keys_from_dict(bes.as_dict()) == _remove_metadata_keys_from_dict(expected)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
 
         return fig
 
