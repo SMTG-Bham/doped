@@ -575,7 +575,7 @@ def get_eigenvalue_analysis(
     vbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["vbm_info"]
     cbm_info = defect_entry.calculation_metadata["eigenvalue_data"]["cbm_info"]
 
-    # Ensures consistent number of sig. fig. so tests work 100% of the time
+    # Ensures consistent number of significant figures
     def _orbital_diff(orbital_1: dict, orbital_2: dict) -> float:
         element_set = set(list(orbital_1.keys()) + list(orbital_2.keys()))
         orb_1, orb_2 = defaultdict(list, orbital_1), defaultdict(list, orbital_2)

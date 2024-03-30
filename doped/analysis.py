@@ -1509,9 +1509,10 @@ class DefectParser:
             defect_vr = get_vasprun(
                 defect_vr_path,
                 parse_projected_eigen=parse_projected_eigen is not False,
-            )
+                parse_eigen=parse_projected_eigen is not False,
+            )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
         except Exception as defect_vr_exc:
-            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False, parse_eigen=False)
             defect_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", defect_path)
             if "PROCAR" in defect_procar_path and parse_projected_eigen is not False:
                 try:
@@ -2091,7 +2092,7 @@ class DefectParser:
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
             "defect_vasprun_dict": self.defect_vr.as_dict(),  # projected_eigenvalues already removed
             "bulk_vasprun_dict": {  # projected_eigenvalues may not yet be removed
-                k: v for k, v in self.defect_vr.as_dict().items() if k != "projected_eigenvalues"
+                k: v for k, v in self.bulk_vr.as_dict().items() if k != "projected_eigenvalues"
             },
         }
         run_metadata["bulk_vasprun_dict"]["projected_eigenvalues"] = None  # reduce memory demand
@@ -2110,22 +2111,6 @@ class DefectParser:
         )
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
-
-        # standard defect run metadata
-        self.defect_entry.calculation_metadata.update(
-            {
-                "final_defect_structure": self.defect_vr.final_structure,
-            }
-        )
-
-        # grab defect energy and eigenvalue information for localization analysis
-        eigenvalues = {
-            spincls.value: eigdict.copy() for spincls, eigdict in self.defect_vr.eigenvalues.items()
-        }
-        kpoint_weights = self.defect_vr.actual_kpoints_weights[:]
-        self.defect_entry.calculation_metadata.update(
-            {"eigenvalues": eigenvalues, "kpoint_weights": kpoint_weights}
-        )
 
     def load_bulk_gap_data(self, bulk_band_gap_path=None, use_MP=False, mpid=None, api_key=None):
         """

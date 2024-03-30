@@ -113,8 +113,10 @@ def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )  # `message` only needs to match start of message
+    default_kwargs = {"parse_dos": False}
+    default_kwargs.update(kwargs)
     try:
-        vasprun = Vasprun(find_archived_fname(vasprun_path), **kwargs)
+        vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "
