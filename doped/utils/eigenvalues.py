@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     from pydefect.analyzer.make_defect_structure_info import DefectStructureInfo
 
 try:
+    from vise import user_settings
+
+    user_settings.logger.setLevel(logging.CRITICAL)
     import pydefect.analyzer.make_band_edge_states
     import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
     from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
@@ -41,10 +44,7 @@ try:
     from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
     from pydefect.defaults import defaults
     from pydefect.util.structure_tools import Coordination, Distances
-    from vise import user_settings
     from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
-
-    user_settings.logger.setLevel(logging.CRITICAL)
 
 except ImportError as exc:
     raise ImportError(
@@ -129,7 +129,7 @@ def band_edge_properties_from_vasprun(
 
 
 def make_perfect_band_edge_state_from_vasp(
-    procar: Procar, vasprun: Vasprun, integer_criterion: float = 0.1
+    vasprun: Vasprun, procar: Procar, integer_criterion: float = 0.1
 ) -> PerfectBandEdgeState:
     """
     Create a ``pydefect`` ``PerfectBandEdgeState`` object from just a
@@ -137,8 +137,8 @@ def make_perfect_band_edge_state_from_vasp(
     input (as in ``pydefect``).
 
     Args:
-        procar (Procar): ``Procar`` object.
         vasprun (Vasprun): ``Vasprun`` object.
+        procar (Procar): ``Procar`` object.
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
@@ -288,7 +288,7 @@ def get_band_edge_info(
 
     if bulk_procar is not None:
         bulk_procar = _parse_procar(bulk_procar)
-        pbes = make_perfect_band_edge_state_from_vasp(bulk_procar, bulk_vr)
+        pbes = make_perfect_band_edge_state_from_vasp(vasprun=bulk_vr, procar=bulk_procar)
 
     _orig_method_coor = Distances.coordination
     Distances.coordination = _coordination
@@ -421,16 +421,16 @@ def get_eigenvalue_analysis(
 
     Either a ``doped`` ``DefectEntry`` object can be provided, or the required
     VASP output files/objects for the bulk and defect supercell calculations
-    (``Vasprun``\s and ``Procar``\s).
+    (``Vasprun``\s, or ``Vasprun``\s and ``Procar``\s).
     If a ``DefectEntry`` is provided but eigenvalue data has not already been
     parsed (default in ``doped`` is to parse this data with ``DefectsParser``/
     ``DefectParser``, as controlled by the ``parse_projected_eigen`` flag),
     then this function will attempt to load the eigenvalue data from either
     the input ``Vasprun``/``PROCAR`` objects or files, or from the
     ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
-    If so, will initially try to load orbital projections from ``PROCAR(.gz)``
-    files if present, otherwise will attempt to load from ``vasprun.xml(.gz)``
-    (typically slower).
+    If so, will initially try to load orbital projections from ``vasprun.xml(.gz)``
+    files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
+    files if present.
 
     This function uses code from ``pydefect``:
     Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
@@ -465,11 +465,12 @@ def get_eigenvalue_analysis(
         bulk_procar (str, Path, EasyunfoldProcar, Procar):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
+            or if ``bulk_vr`` was parsed with ``parse_projected_eigen = True``.
             Either a path to the ``VASP`` ``PROCAR`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
             ``pymatgen`` ``Procar`` object, for the reference bulk supercell
-            calculation. Not required, but speeds up parsing (~50%) if present.
+            calculation.
             If ``None`` (default), tries to load from a ``PROCAR(.gz)``
             file at ``defect_entry.calculation_metadata["bulk_path"]``.
         defect_vr (str, Path, Vasprun):
@@ -486,13 +487,13 @@ def get_eigenvalue_analysis(
         defect_procar (str, Path, EasyunfoldProcar, Procar):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
+            or if ``defect_vr`` was parsed with ``parse_projected_eigen = True``.
             Either a path to the ``VASP`` ``PROCAR`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
             ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
-            Not required, but speeds up parsing (~50%) if present. If ``None``
-            (default), tries to load from a ``PROCAR(.gz)`` file at
-            ``defect_entry.calculation_metadata["defect_path"]``.
+            If ``None`` (default), tries to load from a ``PROCAR(.gz)``
+            file at ``defect_entry.calculation_metadata["defect_path"]``.
         force_reparse (bool):
             Whether to force re-parsing of the eigenvalue data, even if
             already present in the ``calculation_metadata``.
