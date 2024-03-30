@@ -1,20 +1,18 @@
 Tips & Tricks
 ============================
 
-The development philosophy behind ``doped`` has been to try build a powerful, efficient and flexible code
+The development philosophy behind ``doped`` has been to build a powerful, efficient and flexible code
 for managing and analysing solid-state defect calculations, having reasonable defaults (that work well for
-the majority of materials/defects) but with full flexibility for the user to customise the workflow to
+the majority of materials/defects) with flexibility for the user to customise the workflow to
 their specific needs/system.
 
 .. note::
-    Much of the advice for defect calculations given here and elsewhere centres on the message that, while
-    we try to provide some rough general rules-of-thumb for reasonable choices in the calculation workflow
+    While we provide some general rules-of-thumb for reasonable choices in the calculation workflow
     (based on the literature and our experience), there is no substitute for the user's own judgement.
-    Defect behaviour can be incredibly system-dependent, and so it is `always` important to question and
+    Defect behaviour is system-dependent, so it is `always` important to question and
     consider the choices and approximations made in the workflow (such as supercell choice, charge state
     ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
-
 
 Interstitials
 -------------------
@@ -25,22 +23,22 @@ for this, see note below), and then perform Gamma-point-only relaxations (using 
 charge state of the generated interstitial candidates, and then pruning some of the candidate sites based
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
 generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
-``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively you can generate the
+``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
 ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
-- Are very high energy (~>1 eV above the lowest energy site for each charge state), and so are unlikely to form.
+- Are high energy (~>1 eV above the lowest energy site for each charge state), and so are unlikely to form.
 
 - Relax to the same final structure/energy as other interstitial sites (despite different initial
   positions) in each charge state, and so are unnecessary to calculate. This can happen due to interstitial
   migration within the relaxation calculation, from an unfavourable higher energy site, to a lower energy
-  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple meV of eachother,
+  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
   this is the case.
 
 .. tip::
 
-    As with many steps in the defect calculation workflow, these are only rough general rules-of-thumb and
+    As with many steps in the defect calculation workflow, these are only rough general guidelines and
     you should always critically consider the validity of these choices in the context of your specific
     system (for example, considering the charge-state dependence of the interstitial site formation
     energies here).
@@ -50,10 +48,10 @@ We can then compare the energies of these trial relaxations, and remove candidat
     As mentioned above, by default Voronoi tessellation is used to generate the candidate interstitial
     sites in ``doped``. We have consistently found this approach to be the most robust in identifying all
     stable/low-energy interstitial sites across a wide variety of materials and chemistries. A nice
-    discussion of this is given in
+    discussion is given in
     `Kononov et al. J. Phys.: Condens. Matter 2023 <https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf>`_.
 
-    As with all aspects of the calculation workflow however, interstitial site generation is highly
+    As with all aspects of the calculation workflow, interstitial site generation is
     flexible, and you can explicitly specify the interstitial sites to generate using the
     ``interstitial_coords`` (for instance, if you only want to investigate one specific known interstitial
     site, or input a list of candidate sites generated from a different algorithm), and/or customise the
@@ -63,11 +61,11 @@ We can then compare the energies of these trial relaxations, and remove candidat
     for more details.
 
     Charge-density based approaches for interstitial site generation can be useful in some cases and often
-    output less candidate sites, but we have found that these are primarily suited to ionic materials (and
+    output fewer candidate sites, but we have found that these are primarily suited to ionic materials (and
     with fully-ionised defect charge states) where electrostatics primarily govern the energetics. In
     many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
     hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
-    ..  If you are highly limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+    ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
 
 
 Difficult Structural Relaxations
@@ -85,13 +83,13 @@ underlying calculation and/or extreme forces.
 
     - Often (but not always) this indicates that the structure may be stuck around a `saddle point` or
       shallow local minimum on the potential energy surface (PES), so it's important to make sure
-      that you have performed structure-searching (PES scanning) with
+      that you have performed structure-searching (PES scanning) with an approach such as
       `ShakeNBreak <https://shakenbreak.readthedocs.io>`_ (``SnB``) to avoid this. You may want to try
       'rattling' the structure to break symmetry in case this is an issue, as detailed in
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed ``SnB`` structure-seaerching), convergence of the forces can be aided by:**
+    - **Alternatively (if you have already performed SnB structure-searching), convergence of the forces can be aided by:**
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -115,11 +113,9 @@ underlying calculation and/or extreme forces.
 For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
 
-Layered / Low-Dimensional Materials
+Layered / Low Dimensional Materials
 --------------------------------------
-Layered and low-dimensional materials can add some additional complications when performing defect analysis
-in these systems. One point is that typically such lower symmetry materials exhibit higher rates of
-energy-lowering defect reconstructions (e.g.
+Layered and low-dimensional materials introduce complications for defect analysis. One point is that typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions (e.g.
 `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_), as a result of
 having more complex energy landscapes.
 
@@ -188,13 +184,144 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 ``excluded_indices`` on the right):
 
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_region_radius.png
-    :width: 320px
+    :height: 320px
     :align: left
 
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
-    :width: 320px
+    :height: 320px
     :align: right
 
+Eigenvalue / Electronic Structure Analysis
+------------------------------------------
+In ``doped``, we can use the ``DefectEntry.get_eigenvalue_analysis()`` method to analyse the orbital
+character and localisation of single-particle eigenstates from the underlying electronic structure
+calculations. For this, we employ the methodology of
+`Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ (through an interface with
+``pydefect``), which allows in-depth analysis of localised/deep in-gap defect states and their effects on
+the band edges, as well as the automated identification of shallow / perturbed host states (PHS) – see
+the following section for an example of this analysis. The
+`easyunfold <https://smtg-bham.github.io/easyunfold/>`__ package for band structure unfolding can also be
+quite useful for extending this electronic structure analysis.
+
+The optional argument ``parse_projected_eigen`` in ``DefectsParser`` (``True`` by default) controls whether
+to load the projected eigenvalues & orbitals, which then allows ``DefectEntry.get_eigenvalue_analysis()``
+to be called – returning information about the nature of the band edge and in-gap states, allowing defect
+states (and whether they are deep or shallow/PHS) to be automatically identified and characterised.
+Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
+default). Note that for VASP to output the necessary data for this analysis, your ``INCAR`` file needs to
+include ``LORBIT > 10`` (to obtain the projected orbitals).
+
+In the examples below (both of which are shown in the
+`advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__),
+we plot the single particle levels for the
+`cadmium vacancy in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__ (`V`\ :sub:`Cd`) in each of
+its charge states (0, -1 and -2); calculated with spin-orbit coupling (SOC) and a 2x2x2 `k`-point mesh:
+
+.. image:: V_Cd_Eigenvalue_Plots.png
+    :align: center
+
+Here we can see that these plots nicely match the schematic depiction from
+`this paper on vacancies in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__, where we
+have no in-gap states for the fully-ionised `V`\ :sub:`Cd`\ :sup:`-2` as expected, an in-gap hole polaron state for
+`V`\ :sub:`Cd`\ :sup:`-1`, and an anti-bonding dimer state for `V`\ :sub:`Cd`\ :sup:`0` just above the CBM.
+
+
+Perturbed Host States (Shallow Defects)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+One of the most common reasons for performing this electronic structure analysis is to identify and
+analyse shallow defect states.
+Certain point defects form shallow (hydrogen-like) donor or acceptor states, known as perturbed host
+states (PHS). These states typically have wavefunctions distributed over many unit cells in real space,
+requiring exceptionally large supercells or dense reciprocal space sampling to properly capture their
+physics (see `this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
+This weak attraction of the electron/hole to the defect site corresponds to a relatively small
+donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
+the nearby band edge), which is typically <100 meV.
+
+Current supercell correction schemes can not accurately account for finite-size errors obtained when
+calculating the energies of PHS (shallow defect states) in moderate supercells, so it is recommended to
+denote such shallow defects as PHS and conclude only `qualitatively` that their transition level is
+located near the corresponding band edge. An example of this is given in
+`Kikuchi et al. Chem. Mater. 2020 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
+
+.. tip::
+
+    Typically, the shallow defect binding energy can be reasonably well estimated using the hydrogenic
+    model, similar to the
+    `Wannier-Mott <https://en.wikipedia.org/wiki/Exciton#Wannier%E2%80%93Mott_exciton>`__ exciton model,
+    which predicts a binding energy given by:
+
+    .. math::
+
+       E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
+
+    where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
+    charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
+    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant
+    (i.e. binding energy of an electron in a hydrogen atom).
+
+As discussed in the section above, we employ the methodology of
+`Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to analyse the orbital character and
+localisation of single-particle eigenstates from the underlying electronic structure calculations, which
+allows the automated identification of shallow states.
+
+In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.org/10.1039/D3TA02429F>`_ was
+determined to be a PHS. This was additionally confirmed by performing calculations in larger
+supercells and plotting the charge density. Important terms include:
+
+1. ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1 indicates a localised state.
+2. ``Occupation``: Occupation of the electronic state / orbital.
+3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified. Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)`` refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a PHS (but you should use your own judgement of course).
+4. ``Localized Orbital(s)``: Information about localised defect states, if present.
+
+.. code-block:: python
+
+    bulk = "Cu2SiSe3/bulk/vasp_std"
+    defect = "Cu2SiSe3/v_Cu_0/vasp_std/"
+    dielectric = [[8.73, 0, -0.48],[0., 7.78, 0],[-0.48, 0, 10.11]]
+
+    defect_entry = DefectParser.from_paths(defect, bulk, dielectric).defect_entry
+    bes, fig = defect_entry.get_eigenvalue_analysis()
+    print(bes)  # print information about the defect state
+
+.. code-block::
+
+     -- band-edge states info
+    Spin-up
+         Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
+    VBM  347    3.539   0.05     1.00        0.01     Cu-d: 0.35, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+    CBM  348    5.139   0.03     0.00        0.03     Se-s: 0.20, Se-p: 0.11, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    vbm has acceptor phs: False (0.000 vs. 0.2)
+    cbm has donor phs: False (0.000 vs. 0.2)
+    ---
+    Localized Orbital(s)
+    Index  Energy  P-ratio  Occupation  Orbitals
+
+    Spin-down
+         Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
+    VBM  347    3.677   0.06     0.00        0.01     Cu-d: 0.34, Se-p: 0.35              ( 0.000,  0.000,  0.000)
+    CBM  348    5.142   0.04     0.00        0.03     Se-s: 0.20, Se-p: 0.11, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    vbm has acceptor phs: True (1.000 vs. 0.2)
+    cbm has donor phs: False (0.000 vs. 0.2)
+    ---
+    Localized Orbital(s)
+    Index  Energy  P-ratio  Occupation  Orbitals
+
+The plot of the single particle levels is shown below (left), and an example of how you might chose to represent the
+PHS on the transition level diagram with a clear circle is shown on the right.
+
+.. image:: Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
+    :width: 325px
+    :align: left
+.. image:: Cu2SISe3_TLD.png
+    :width: 320px
+    :align: left
+
+.. note::
+
+    It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
+    the defect state to confirm the identification of a PHS.
 
 Spin Polarisation
 -----------------

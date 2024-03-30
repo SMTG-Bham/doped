@@ -1,8 +1,8 @@
 [project]
 name = "doped"
-version = "2.3.3"
+version = "2.4.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
-authors = [{name = "Seán Kavanagh", email = "sean.kavanagh.19@ucl.ac.uk"}]
+authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [
@@ -27,8 +27,11 @@ dependencies = [
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.1",
     "pandas",
-    "pydefect",  # for Kumagai (eFNV) correction
+    "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
+    "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
+    "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
+    # if any dependency issues arise can make easyunfold an optional dependency
 ]
 
 [project.urls]
