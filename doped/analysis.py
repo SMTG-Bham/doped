@@ -539,12 +539,12 @@ class DefectsParser:
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
                 defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
                 then be used with no further parsing). Will initially try to load orbital
-                projections from ``PROCAR(.gz)`` files in the bulk/defect directories if
-                present, otherwise will attempt to load from ``vasprun.xml(.gz)``
-                (typically slower). Parsing this data can increase total parsing time by
-                anywhere from ~5-70%, so set to ``False`` if not needed. Default is
-                ``None``, which will attempt to load this data but with no warning if it
-                fails (otherwise if ``True`` a warning will be printed).
+                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
+                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
+                bulk/defect directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
+                Default is ``None``, which will attempt to load this data but with no
+                warning if it fails (otherwise if ``True`` a warning will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -667,38 +667,35 @@ class DefectsParser:
             )
 
         self.bulk_procar = None
-        procar_exc = None
+        bulk_vr_exc = None
 
-        if parse_projected_eigen is not False:
-            # Checking if PROCAR available to avoid slow loading of projected eigenvalues/orbitals:
+        try:
+            self.bulk_vr = get_vasprun(
+                bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
+            )
+        except Exception as exc:
+            bulk_vr_exc = exc  # don't throw unless PROCAR also fails
+            self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
+
+        if parse_projected_eigen is not False and self.bulk_vr.projected_eigenvalues is None:
+            # Checking if PROCAR available:
             bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", self.bulk_path)
             if "PROCAR" in bulk_procar_path:
                 try:
                     self.bulk_procar = get_procar(bulk_procar_path)
-                    self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
 
-                except Exception as exc:
-                    procar_exc = exc  # don't throw unless Vasprun projected eigenvalues also fail
-
-        if self.bulk_vr is None:  # parsing projected eigenvalues makes Vasprun loading much slower...
-            try:
-                self.bulk_vr = get_vasprun(
-                    bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
-                )
-            except Exception as exc_2:
-                self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
-                if parse_projected_eigen is not None:  # otherwise no warning
-                    warning_message = (
-                        f"Could not parse PROCAR files in bulk folder at {self.bulk_path}, got error:"
-                        f"\n{procar_exc}\n"
-                        f"Then got "
-                        if procar_exc
-                        else "Got "
-                    )
-                    warnings.warn(
-                        f"{warning_message}the following error when attempting to parse projected "
-                        f"eigenvalues from the bulk vasprun.xml(.gz):\n{exc_2}"
-                    )
+                except Exception as procar_exc:
+                    if parse_projected_eigen is not None:  # otherwise no warning
+                        warning_message = (
+                            f"Could not parse vasprun.xml.gz files in bulk folder at {self.bulk_path}, "
+                            f"got error:\n{bulk_vr_exc}\nThen got "
+                            if bulk_vr_exc
+                            else "Got "
+                        )
+                        warnings.warn(
+                            f"{warning_message}the following error when attempting to parse projected "
+                            f"eigenvalues from the bulk PROCAR(.gz):\n{procar_exc}"
+                        )
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
@@ -1453,12 +1450,12 @@ class DefectParser:
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
                 defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
                 then be used with no further parsing). Will initially try to load orbital
-                projections from ``PROCAR(.gz)`` files in the bulk/defect directories if
-                present, otherwise will attempt to load from ``vasprun.xml(.gz)``
-                (typically slower). Parsing this data can increase total parsing time by
-                anywhere from ~5-70%, so set to ``False`` if not needed. Default is
-                ``None``, which will attempt to load this data but with no warning if it
-                fails (otherwise if ``True`` a warning will be printed).
+                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
+                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
+                bulk/defect directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
+                Default is ``None``, which will attempt to load this data but with no
+                warning if it fails (otherwise if ``True`` a warning will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -1508,15 +1505,28 @@ class DefectParser:
             )
 
         defect_procar = None
-        if "PROCAR" in os.listdir(defect_path) and parse_projected_eigen is not False:
-            defect_procar_path = os.path.join(defect_path, "PROCAR")
-            with contextlib.suppress(Exception):
-                defect_procar = get_procar(defect_procar_path)
+        try:
+            defect_vr = get_vasprun(
+                defect_vr_path,
+                parse_projected_eigen=parse_projected_eigen is not False,
+            )
+        except Exception as defect_vr_exc:
+            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False)
+            defect_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", defect_path)
+            if "PROCAR" in defect_procar_path and parse_projected_eigen is not False:
+                try:
+                    defect_procar = get_procar(defect_procar_path)
 
-        defect_vr = get_vasprun(
-            defect_vr_path,
-            parse_projected_eigen=(parse_projected_eigen is not False and defect_procar is None),
-        )
+                except Exception as procar_exc:
+                    if parse_projected_eigen is not None:  # otherwise no warning
+                        warning_message = (
+                            f"Could not parse vasprun.xml.gz files in defect folder at {defect_path}, "
+                            f"got error:\n{defect_vr_exc}\nThen got "
+                        )
+                        warnings.warn(
+                            f"{warning_message}the following error when attempting to parse projected "
+                            f"eigenvalues from the defect PROCAR(.gz):\n{procar_exc}"
+                        )
 
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name

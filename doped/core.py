@@ -251,12 +251,10 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             ``DefectEntry`` object
         """
-        with contextlib.suppress(ImportError):
-            import logging
+        from doped.utils.parsing import suppress_logging
 
-            logging.disable(logging.CRITICAL)
-
-        return super().from_dict(d)
+        with suppress_logging():
+            return super().from_dict(d)
 
     def _check_correction_error_and_return_output(
         self,
@@ -566,12 +564,13 @@ class DefectEntry(thermo.DefectEntry):
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (str, Path, EasyunfoldProcar, Procar):
+                Not required if projected eigenvalue data available from ``bulk_vr``
+                (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
-                calculation. Not required, but speeds up parsing (~50%) if present.
-                If ``None`` (default), tries to load from a ``PROCAR(.gz)``
-                file at ``self.calculation_metadata["bulk_path"]``.
+                calculation. If ``None`` (default), tries to load from a
+                ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (str, Path, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
@@ -581,11 +580,12 @@ class DefectEntry(thermo.DefectEntry):
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (str, Path, EasyunfoldProcar, Procar):
+                Not required if projected eigenvalue data available from ``defect_vr``
+                (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
-                Not required, but speeds up parsing (~50%) if present. If ``None``
-                (default), tries to load from a ``PROCAR(.gz)`` file at
+                If ``None``(default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
@@ -605,17 +605,43 @@ class DefectEntry(thermo.DefectEntry):
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
             path = self.calculation_metadata.get(f"{label}_path")
+            if vr is not None and not isinstance(vr, Vasprun):  # just try loading from vasprun first
+                with contextlib.suppress(Exception):
+                    vr = get_vasprun(vr, parse_projected_eigen=True)  # noqa: PLW2901
 
-            # first try load procar data, to see if projected eigenvalues are available:
-            if procar is not None:
+            if vr is None or (isinstance(vr, Vasprun) and vr.projected_eigenvalues is None):
+                (  # try load from path:
+                    vr_path,
+                    multiple,
+                ) = _get_output_files_and_check_if_multiple("vasprun.xml", path)
+                if multiple:
+                    _multiple_files_warning(
+                        "vasprun.xml",
+                        path,
+                        vr_path,
+                        dir_type=label,
+                    )
+                with contextlib.suppress(Exception):
+                    vr = get_vasprun(vr_path, parse_projected_eigen=True)  # noqa: PLW2901
+
+            if vr is None and procar is not None:  # then try take from vasprun dict:
+                with contextlib.suppress(Exception):
+                    vr = Vasprun.from_dict(  # noqa: PLW2901
+                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"]
+                    )
+
+            if not isinstance(vr, Vasprun):
+                raise FileNotFoundError(
+                    f"No {label} 'vasprun.xml(.gz)' file found (and successfully parsed) in path: "
+                    f"{path}. Required for eigenvalue analysis!"
+                )
+
+            # try load procar data, to see if projected eigenvalues are available:
+            if procar is not None and vr.projected_eigenvalues is None:
                 procar = _parse_procar(procar)  # noqa: PLW2901
 
-            if (
-                procar is None
-                and path is not None
-                and (not isinstance(vr, Vasprun) or vr.projected_eigenvalues is None)
-            ):
-                # no defect procar, try parse from defect directory:
+            if procar is None and path is not None and vr.projected_eigenvalues is None:
+                # no procar, try parse from directory:
                 try:
                     procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", path)
                     if multiple:
@@ -630,32 +656,7 @@ class DefectEntry(thermo.DefectEntry):
                 except (FileNotFoundError, IsADirectoryError):
                     procar = None  # noqa: PLW2901
 
-            if vr is not None and not isinstance(vr, Vasprun):
-                vr = get_vasprun(vr, parse_projected_eigen=procar is None)  # noqa: PLW2901
-
-            if procar is not None and vr is None:  # then try take from vasprun dict:
-                with contextlib.suppress(Exception):
-                    vr = Vasprun.from_dict(  # noqa: PLW2901
-                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"]
-                    )
-
-            if vr is None or (
-                procar is None and isinstance(vr, Vasprun) and vr.projected_eigenvalues is None
-            ):  # try load from path:
-                (
-                    vr_path,
-                    multiple,
-                ) = _get_output_files_and_check_if_multiple("vasprun.xml", path)
-                if multiple:
-                    _multiple_files_warning(
-                        "vasprun.xml",
-                        path,
-                        vr_path,
-                        dir_type=label,
-                    )
-                vr = get_vasprun(vr_path, parse_projected_eigen=procar is None)  # noqa: PLW2901
-
-            if procar is None and vr.projected_eigenvalues is None:
+            if procar is None and (vr is None or vr.projected_eigenvalues is None):
                 raise FileNotFoundError(
                     f"No {label} 'PROCAR' or 'vasprun.xml(.gz)' file found (and successfully parsed) with "
                     f"projected orbitals in path: {path}. Required for eigenvalue analysis!"
@@ -710,9 +711,9 @@ class DefectEntry(thermo.DefectEntry):
         then this function will attempt to load the eigenvalue data from either
         the input ``Vasprun``/``PROCAR`` objects or files, or from the
         ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
-        If so, will initially try to load orbital projections from ``PROCAR(.gz)``
-        files if present, otherwise will attempt to load from ``vasprun.xml(.gz)``
-        (typically slower).
+        If so, will initially try to load orbital projections from ``vasprun.xml(.gz)``
+        files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
+        files if present.
 
         This function uses code from ``pydefect``:
         Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
@@ -738,13 +739,13 @@ class DefectEntry(thermo.DefectEntry):
             bulk_procar (str, Path, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
-                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
+                or if ``bulk_vr`` was parsed with ``parse_projected_eigen = True``.
                 Either a path to the ``VASP`` ``PROCAR`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
-                calculation. Not required, but speeds up parsing (~50%) if present.
-                If ``None`` (default), tries to load from a ``PROCAR(.gz)``
-                file at ``self.calculation_metadata["bulk_path"]``.
+                calculation. If ``None`` (default), tries to load from a
+                ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (str, Path, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
@@ -759,12 +760,12 @@ class DefectEntry(thermo.DefectEntry):
             defect_procar (str, Path, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
-                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+                data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
+                or if ``defect_vr`` was parsed with ``parse_projected_eigen = True``.
                 Either a path to the ``VASP`` ``PROCAR`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
                 ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
-                Not required, but speeds up parsing (~50%) if present. If ``None``
-                (default), tries to load from a ``PROCAR(.gz)`` file at
+                If ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
