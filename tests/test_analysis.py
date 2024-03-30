@@ -2268,6 +2268,25 @@ def _compare_band_edge_states_dicts(d1, d2, orb_diff_tol: float = 0.1):
         print(f"vbm_orbital_diffs: {i:.3f} vs {j:.3f}")
         assert np.isclose(i, j, atol=orb_diff_tol)
 
+    orb_infos_orbitals1 = [
+        subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]
+    ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]]
+    orb_infos_orbitals2 = [
+        subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]
+    ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]]
+    for i, j in zip(orb_infos_orbitals1, orb_infos_orbitals2):
+        print(f"orbital_info_orbitals: {i} vs {j}")
+        for k, v in i.items():
+            assert np.allclose(v, j[k], atol=orb_diff_tol)
+
+    participation_ratio1 = [
+        subdict["vbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d1["states"]
+    ] + [subdict["cbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d1["states"]]
+    participation_ratio2 = [
+        subdict["vbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d2["states"]
+    ] + [subdict["cbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d2["states"]]
+    assert np.allclose(participation_ratio1, participation_ratio2, atol=orb_diff_tol)
+
     assert _remove_metadata_keys_from_dict(d1) == _remove_metadata_keys_from_dict(d2)
 
 
@@ -2712,7 +2731,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         )
 
         # Test loading using ``DefectsParser``
-        print("Testing Cu2SiSe3 eigenvalue analysis with PROCARs")
+        print("Testing Cu2SiSe3 eigenvalue analysis default, with vaspruns (& PROCARs)")
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
@@ -2859,6 +2878,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         # ``DefectEntry.get_eigenvalue_analysis()`` later called:
         # Test loading using ``PROCAR`` and ``DefectsParser``
         print("Testing Cu2SiSe3 eigenvalue analysis, without parsing eigenvalue data originally")
+        shutil.move(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/hidden_vr.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
+        )
         dp = DefectsParser(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, parse_projected_eigen=False
         )
