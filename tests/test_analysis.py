@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
+from test_generation import _potcars_available
 from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
@@ -1016,7 +1017,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.CaO_DATA_DIR,
                 skip_corrections=True,
-            )
+                parse_projected_eigen=bool(_potcars_available()),
+            )  # only test projected eigenvalues if POTCARs available (i.e. locally) to save time
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
@@ -1136,35 +1138,6 @@ class DopedParsingTestCase(unittest.TestCase):
         Test that the defect charge is correctly auto-determined.
         """
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
-
-        parsed_v_cd_m2 = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=self.CdTe_BULK_DATA_DIR,
-            dielectric=self.CdTe_dielectric,
-        )
-
-        parsed_v_cd_m2_explicit_charge = defect_entry_from_paths(
-            defect_path=defect_path,
-            bulk_path=self.CdTe_BULK_DATA_DIR,
-            dielectric=self.CdTe_dielectric,
-            charge_state=-2,
-        )
-        assert parsed_v_cd_m2.get_ediff() == parsed_v_cd_m2_explicit_charge.get_ediff()
-        assert parsed_v_cd_m2.charge_state == -2
-        assert parsed_v_cd_m2_explicit_charge.charge_state == -2
-
-        # Check that the correct Freysoldt correction is applied
-        correct_correction_dict = {
-            "freysoldt_charge_correction": 0.7376460317828045,
-        }
-        for correction_name, correction_energy in correct_correction_dict.items():
-            for defect_entry in [parsed_v_cd_m2, parsed_v_cd_m2_explicit_charge]:
-                assert np.isclose(
-                    defect_entry.corrections[correction_name],
-                    correction_energy,
-                    atol=1e-3,
-                )
-
         # test warning when specifying the wrong charge:
         with warnings.catch_warnings(record=True) as w:
             parsed_v_cd_m1 = defect_entry_from_paths(
@@ -1185,20 +1158,19 @@ class DopedParsingTestCase(unittest.TestCase):
             )
 
         # test YTOS, has trickier POTCAR symbols with  Y_sv, Ti, S, O
-        ytos_F_O_1 = defect_entry_from_paths(
-            f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
-            f"{self.YTOS_EXAMPLE_DIR}/Bulk",
-            self.ytos_dielectric,
-            skip_corrections=True,
-        )
-        assert ytos_F_O_1.charge_state == 1
-        assert np.isclose(ytos_F_O_1.get_ediff(), -0.0852, atol=1e-3)  # uncorrected energy
-
         ytos_F_O_1 = defect_entry_from_paths(  # with corrections this time
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
         )
+        ytos_F_O_1_explicit = defect_entry_from_paths(  # with corrections this time
+            f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
+            f"{self.YTOS_EXAMPLE_DIR}/Bulk",
+            self.ytos_dielectric,
+            charge_state=1,
+        )
+        assert ytos_F_O_1.charge_state == ytos_F_O_1_explicit.charge_state == 1
+        assert ytos_F_O_1.get_ediff() == ytos_F_O_1_explicit.get_ediff()
         assert np.isclose(ytos_F_O_1.get_ediff(), 0.04176070572680146, atol=1e-3)  # corrected energy
         correction_dict = {
             "kumagai_charge_correction": 0.12699488572686776,
@@ -1402,6 +1374,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 "for this defect." in str(w[0].message)
             )
 
+        assert parsed_v_cd_m2.charge_state == -2
         assert np.isclose(
             parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()), 7.661, atol=3e-3
         )  # uncorrected energy
@@ -1555,6 +1528,10 @@ class DopedParsingTestCase(unittest.TestCase):
         """
         Test that dielectric can be supplied as float or int or 3x1 array/list
         or 3x3 array/list.
+
+        This test currently takes about 5 minutes, which is mainly due to slow-
+        ish parsing of LOCPOT correction files. If we wanted to speed up, could
+        refactor these tests to use an eFNV-corrected defect!
         """
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         # get correct Freysoldt correction energy:
