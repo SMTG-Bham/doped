@@ -8,12 +8,15 @@ v.2.4.0
       analyse orbital character and localisation; usage and examples shown on the
       `docs Tips <https://doped.readthedocs.io/en/latest/Tips.html#eigenvalue-electronic-structure-analysis>`__
       page and the `advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__.
-    - Projected eigenvalues can be parsed from ``PROCAR(.gz)`` files in calculation directories, or from
-      ``vasprun.xml(.gz)`` files (with expedited parsing compared to ``pymatgen`` methods). Compatible with
-      spin-polarised, unpolarised and SOC calculations.
+    - Projected eigenvalues can be parsed from ``vasprun.xml(.gz)`` files (preferred, as more accurate
+      with 4 decimal places; c.f. 3 in ``PROCAR(.gz)``; more convenient and only ~5% slower) or ``PROCAR(.gz)``
+      files in calculation directories (both with significantly expedited parsing compared to ``pymatgen`` methods).
+      Compatible with spin-polarised, unpolarised and SOC calculations. Comes with update by @kavanase to ``easyunfold``
+      ``PROCAR.gz`` parsing.
 - More efficient defect calculation parsing
 - Add ``get_magnetization_from_vasprun`` and ``get_nelect_from_vasprun`` functions to ``doped.utils.parsing``,
   as these attributes are not available from ``pymatgen.io.vasp.outputs.Vasprun``.
+- Improve testing efficiency
 
 v.2.3.3
 ----------
