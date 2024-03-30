@@ -290,8 +290,8 @@ supercells and plotting the charge density. Important terms include:
      -- band-edge states info
     Spin-up
          Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
-    VBM  347    3.539   0.05     1.00        0.04     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
-    CBM  348    5.139   0.04     0.00        0.04     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    VBM  347    3.539   0.05     1.00        0.01     Cu-d: 0.35, Se-p: 0.36              ( 0.000,  0.000,  0.000)
+    CBM  348    5.139   0.03     0.00        0.03     Se-s: 0.20, Se-p: 0.11, Si-s: 0.13  ( 0.000,  0.000,  0.000)
     vbm has acceptor phs: False (0.000 vs. 0.2)
     cbm has donor phs: False (0.000 vs. 0.2)
     ---
@@ -300,8 +300,8 @@ supercells and plotting the charge density. Important terms include:
 
     Spin-down
          Index  Energy  P-ratio  Occupation  OrbDiff  Orbitals                            K-point coords
-    VBM  347    3.677   0.06     0.00        0.03     Cu-d: 0.34, Se-p: 0.36              ( 0.000,  0.000,  0.000)
-    CBM  348    5.142   0.04     0.00        0.04     Se-s: 0.20, Se-p: 0.12, Si-s: 0.13  ( 0.000,  0.000,  0.000)
+    VBM  347    3.677   0.06     0.00        0.01     Cu-d: 0.34, Se-p: 0.35              ( 0.000,  0.000,  0.000)
+    CBM  348    5.142   0.04     0.00        0.03     Se-s: 0.20, Se-p: 0.11, Si-s: 0.13  ( 0.000,  0.000,  0.000)
     vbm has acceptor phs: True (1.000 vs. 0.2)
     cbm has donor phs: False (0.000 vs. 0.2)
     ---
