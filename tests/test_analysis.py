@@ -2717,7 +2717,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        v_Cu_0_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json"
+        v_Cu_0_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vasprun_vac_band_edge_states.json"
         # dumpfn(bes, v_Cu_0_bes_path)  # for saving test data
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
         assert bes.has_acceptor_phs
@@ -2739,7 +2739,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
-        Si_i_m1_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json"
+        Si_i_m1_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vasprun_int_band_edge_states.json"
         # dumpfn(bes, Si_i_m1_bes_path)  # for saving test data
         _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
         assert bes.has_occupied_localized_state
@@ -2784,8 +2784,9 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
+        v_Cu_0_procar_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_pr_vac_band_edge_states.json"
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_procar_bes_path, orb_diff_tol=0.1)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
@@ -2803,8 +2804,11 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
         print("Testing v_Cu_0 with plot = True")
+        v_Cu_0_no_bulk_pr_bes_path = (
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_no_bulk_pr_vac_band_edge_states.json"
+        )
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
-        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
+        _compare_band_edge_states_dicts(bes, v_Cu_0_no_bulk_pr_bes_path, orb_diff_tol=0.1)
 
         print("Testing Si_i_-1 with plot = True")
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
@@ -2859,6 +2863,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         # ``DefectEntry.get_eigenvalue_analysis()`` later called:
         # Test loading using ``PROCAR`` and ``DefectsParser``
         print("Testing Cu2SiSe3 eigenvalue analysis, without parsing eigenvalue data originally")
+        shutil.move(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/hidden_vr.gz",
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
+        )
         dp = DefectsParser(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, parse_projected_eigen=False
         )
@@ -2897,7 +2905,8 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
             defect_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
         )
-        _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
+        v_Cu_0_procar_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_vac_band_edge_states.json"
+        _compare_band_edge_states_dicts(bes, v_Cu_0_procar_bes_path, orb_diff_tol=0.1)
 
         # test error when not providing defect_entry or bulk_vr:
         with pytest.raises(ValueError) as exc:
