@@ -38,12 +38,13 @@ jobs:
 
       - name: Test
         run: |
-          pytest -vv tests  # test everything
+          pytest -vv -m "not mpl_image_compare" tests  # all non-plotting tests
 
       - name: Plotting Tests
+        if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
         run: |
-          pytest --mpl -m "mpl_image_compare" tests  # test everything
+          pytest --mpl -m "mpl_image_compare" tests  # all plotting tests
 
       - name: Generate GH Actions test plots
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
