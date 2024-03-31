@@ -314,7 +314,7 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 .. image:: Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
     :width: 325px
     :align: left
-.. image:: Cu2SISe3_TLD.png
+.. image:: Cu2SiSe3_TLD.png
     :width: 320px
     :align: left
 
