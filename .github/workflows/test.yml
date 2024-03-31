@@ -38,6 +38,7 @@ jobs:
           pytest -vv -m "not mpl_image_compare" tests  # all non-plotting tests
 
       - name: Plotting Tests
+        if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
         run: |
           pytest --mpl -m "mpl_image_compare" tests  # all plotting tests
