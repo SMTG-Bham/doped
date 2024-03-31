@@ -22,9 +22,13 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 
-from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, get_procar
+from doped.utils.parsing import (
+    _reset_warnings,
+    get_magnetization_from_vasprun,
+    get_nelect_from_vasprun,
+    get_procar,
+)
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
@@ -52,11 +56,7 @@ except ImportError as exc:
         "You can do this by running `pip install pydefect`."
     ) from exc
 
-# vise suppresses `UserWarning`s, so need to reset
-warnings.simplefilter("default")
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-_ignore_pmg_warnings()
+_reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
 
 def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":

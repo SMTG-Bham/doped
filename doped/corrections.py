@@ -36,7 +36,6 @@ eFNV) were developed, they should be used here.
 """
 
 import os
-import warnings
 from typing import Optional, Union
 
 import matplotlib.pyplot as plt
@@ -49,21 +48,18 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from shakenbreak.plotting import _install_custom_font
 
-from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_bulk_site_coords,
+    _reset_warnings,
     get_locpot,
     get_outcar,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
 
-warnings.simplefilter("default")
-# `message` only needs to match start of message:
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+_reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
 
 def _monty_decode_nested_dicts(d):
@@ -418,11 +414,7 @@ def get_kumagai_correction(
             "You can do this by running `pip install pydefect`."
         ) from exc
 
-    # vise suppresses `UserWarning`s, so need to reset
-    warnings.simplefilter("default")
-    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    _ignore_pmg_warnings()
+    _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
     def doped_make_efnv_correction(
         charge: float,
