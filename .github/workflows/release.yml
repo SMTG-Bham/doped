@@ -1,16 +1,14 @@
 name: Release and publish
 
 on:
-  workflow_dispatch:
-
   workflow_run:
     workflows: [ "Tests" ]
     branches: [ main ]
     types:
       - completed  # only release when tests have passed
-    paths:
-      - 'setup.py'  # only release when setup.py has been updated
 
+  workflow_dispatch:  # or if manually run
+  
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -20,9 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/setup-python@v1
+      - uses: actions/setup-python@v3
         with:
-          python-version: 3.9
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
@@ -30,26 +28,42 @@ jobs:
           pip install setuptools setuptools_scm wheel
           pip install -e .
 
+      - name: Check if version has changed
+        id: check_version
+        run: |
+          current_pip_version=$(pip index versions doped | grep LATEST | awk '{print $NF}')
+          current_repo_version=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"' | head -1)
+          if [ "$current_pip_version" != "$current_repo_version" ]; then
+            echo "version_changed=true" >> $GITHUB_ENV
+          else
+            echo "version_changed=false" >> $GITHUB_ENV
+          fi
+
       - name: Build packages
+        if: env.version_changed == 'true'
         run: |
           python3 -m pip install --upgrade build
           python3 -m build
 
       - name: Publish
+        if: env.version_changed == 'true'
         uses: pypa/gh-action-pypi-publish@master
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Write release info
+        if: env.version_changed == 'true'
         run: |
           awk 'BEGIN {p = 0} {a = 0 }; /^v\d*.\d*.\d*./ { p += 1; a = 1}; p + a == 1 { print } ' CHANGELOG.rst | sed -e '1,1d' | sed  -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}' > release_info.txt
 
       - name: Get Release Tag
+        if: env.version_changed == 'true'
         run: |
           VERSION=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"' | head -1)
           echo "version=${VERSION}" >> $GITHUB_ENV
 
       - name: Release
+        if: env.version_changed == 'true'
         uses: actions/create-release@v1
         id: create_release
 
