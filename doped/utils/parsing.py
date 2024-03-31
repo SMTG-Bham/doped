@@ -33,6 +33,17 @@ def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
 
 
+def _reset_warnings():
+    """
+    When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
+    we need to reset.
+    """
+    warnings.simplefilter("default")
+    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
+    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
+    _ignore_pmg_warnings()
+
+
 @contextlib.contextmanager
 def suppress_logging(level=logging.CRITICAL):
     """
@@ -542,11 +553,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
         return
 
-    # vise suppresses `UserWarning`s, so need to reset
-    warnings.simplefilter("default")
-    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    _ignore_pmg_warnings()
+    _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
     far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
 

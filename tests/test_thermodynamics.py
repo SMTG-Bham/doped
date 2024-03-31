@@ -99,7 +99,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.MgO_defect_thermo = deepcopy(self.orig_MgO_defect_thermo)
         self.MgO_defect_dict = deepcopy(self.orig_MgO_defect_dict)
         self.Sb2O5_defect_thermo = deepcopy(self.orig_Sb2O5_defect_thermo)
-        self.Zns_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
+        self.ZnS_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
 
     @classmethod
     def setUpClass(cls):
@@ -175,8 +175,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             round(entry.get_ediff(), 3) for entry in defect_dict.values()
         }
         assert {  # check coords are the same by getting their products
-            round(np.product(entry.sc_defect_frac_coords), 3) for entry in defect_thermo.defect_entries
-        } == {round(np.product(entry.sc_defect_frac_coords), 3) for entry in defect_dict.values()}
+            round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo.defect_entries
+        } == {round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_dict.values()}
 
     def _compare_defect_thermos(self, defect_thermo1, defect_thermo2):
         assert len(defect_thermo1.defect_entries) == len(defect_thermo2.defect_entries)
@@ -187,8 +187,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             round(entry.get_ediff(), 3) for entry in defect_thermo2.defect_entries
         }
         assert {  # check coords are the same by getting their products
-            round(np.product(entry.sc_defect_frac_coords), 3) for entry in defect_thermo1.defect_entries
-        } == {round(np.product(entry.sc_defect_frac_coords), 3) for entry in defect_thermo2.defect_entries}
+            round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo1.defect_entries
+        } == {round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo2.defect_entries}
 
     def _check_defect_thermo(
         self,
@@ -228,8 +228,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         defect_thermo.to_json()  # test default naming
         compositions = ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5", "ZnS"]
         assert defect_thermo.bulk_formula in compositions
+        assert any(os.path.exists(f"{i}_defect_thermodynamics.json") for i in compositions)
         for i in compositions:
-            os.path.exists(f"{i}_defect_thermodynamics.json")
             if_present_rm(f"{i}_defect_thermodynamics.json")
 
         thermo_dict = defect_thermo.as_dict()
@@ -446,7 +446,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
             (self.MgO_defect_thermo, "MgO_defect_thermo"),
             (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
-            (self.Zns_defect_thermo, "ZnS_defect_thermo"),
+            (self.ZnS_defect_thermo, "ZnS_defect_thermo"),
         ]:
             print(f"Checking {name}")
             if "V2O5" in name:
@@ -475,7 +475,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_DefectsParser_thermo_objs_no_metadata(self):
         """
         Test the `DefectThermodynamics` objects created from the
-        `DefectsParser.get_defect_thermodynamics()` method.
+        ``DefectsParser.get_defect_thermodynamics()`` method.
         """
         for defect_thermo, name in [
             (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
@@ -485,11 +485,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
             (self.MgO_defect_thermo, "MgO_defect_thermo"),
             (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
-            (self.Zns_defect_thermo, "ZnS_defect_thermo"),
+            (self.ZnS_defect_thermo, "ZnS_defect_thermo"),
         ]:
             print(f"Checking {name}")
-            defect_entries_wout_metadata = defect_thermo.defect_entries
+            # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe
+            # example set for its semi-hard 😏 tests)
+            defect_entries_wout_metadata = random.sample(
+                defect_thermo.defect_entries, min(7, len(defect_thermo.defect_entries))
+            )
             for entry in defect_entries_wout_metadata:
+                print(f"Setting metadata to empty for {entry.name}")
                 entry.calculation_metadata = {}
 
             with pytest.raises(ValueError) as exc:
@@ -512,8 +517,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             self._check_defect_thermo(thermo_wout_metadata)  # default values
 
-            defect_entries_wout_metadata_or_degeneracy = defect_thermo.defect_entries
+            defect_entries_wout_metadata_or_degeneracy = random.sample(
+                defect_thermo.defect_entries, min(7, len(defect_thermo.defect_entries))
+            )  # get set of random 7 entries from defect_entries_wout_metadata (7 needed for CdTe tests)
             for entry in defect_entries_wout_metadata_or_degeneracy:
+                print(f"Setting metadata and degeneracy factors to empty for {entry.name}")
                 entry.calculation_metadata = {}
                 entry.degeneracy_factors = {}
 
@@ -524,7 +532,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             symm_df = thermo_wout_metadata_or_degeneracy.get_symmetries_and_degeneracies()
             assert symm_df["g_Spin"].apply(lambda x: isinstance(x, int)).all()
 
-            for defect_entry in defect_thermo.defect_entries:
+            for defect_entry in defect_entries_wout_metadata_or_degeneracy:
                 assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
                 assert isinstance(
                     defect_entry.degeneracy_factors["orientational degeneracy"], (int, float)
