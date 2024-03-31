@@ -322,7 +322,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 json_filename="CdTe_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)  # saves CdTe_example_thermo.json
 
         # test reloading DefectsParser
         reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
@@ -342,6 +342,10 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_without_multiprocessing(self):
+        shutil.move(  # avoid overwriting
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -355,10 +359,18 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
+        shutil.move(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+        )
         return default_thermo.plot(limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_filterwarnings(self):
+        shutil.move(  # avoid overwriting
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
         with warnings.catch_warnings(record=True) as w:
@@ -372,9 +384,17 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
+        shutil.move(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+        )
         return default_thermo.plot(limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_dist_tol(self):
+        shutil.move(  # avoid overwriting
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )
         # test with reduced dist_tol:
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
         with warnings.catch_warnings(record=True) as w:
@@ -383,6 +403,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
+        shutil.move(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+        )
 
     @custom_mpl_image_compare(filename="CdTe_Te_Cd_+1_eigenvalue_plot.png")
     def test_DefectsParser_CdTe_no_dielectric_json(self):
@@ -410,6 +434,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         return fig
 
     def test_DefectsParser_CdTe_custom_settings(self):
+        shutil.move(  # avoid overwriting
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )
+
         # test custom settings:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -437,6 +466,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         self._check_default_CdTe_DefectsParser_outputs(dp, w, test_attributes=False)  # same energies as
         # above
+
+        shutil.move(
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+        )
 
         # test changed attributes:
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
