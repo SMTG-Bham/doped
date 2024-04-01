@@ -50,11 +50,12 @@ Performance and Example Outputs
 .. image:: JOSS/doped_JOSS_figure.png
    :target: https://arxiv.org/abs/2403.08012
 
-**a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison.
+**(a)** Optimal supercell generation comparison. **(b)** Charge state estimation comparison.
 Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram,
 **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)**
 defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration
-heatmap plots from ``doped``. See the
+heatmap plots from ``doped``. Automated plots of **(i,j)** single-particle eigenvalues and **(k)** site
+displacements from DFT supercell calculations. See the
 `JOSS paper <https://github.com/openjournals/joss-reviews/issues/6433>`__ for more details.
 
 .. Update all JOSS paper links when ready!
