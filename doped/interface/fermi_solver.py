@@ -1,3 +1,13 @@
+"""
+Module for solving the Fermi level and defect concentrations self-consistently
+over various parameter spaces including chemical potentials, temperatures, and
+effective_dopant_concentrations.
+
+This is done using both Doped and py-sc-fermi. The aim of this module is to
+implement a unified interface for both "backends".
+"""
+
+import contextlib
 import functools
 from copy import deepcopy
 from itertools import product
@@ -16,8 +26,6 @@ from scipy.spatial import ConvexHull, Delaunay
 from doped.utils.parsing import get_neutral_nelect_from_vasprun
 
 if TYPE_CHECKING:
-    import contextlib
-
     from doped.thermodynamics import DefectThermodynamics
 
     with contextlib.suppress(ImportError):
@@ -25,7 +33,7 @@ if TYPE_CHECKING:
         from py_sc_fermi.defect_system import DefectSystem
 
 
-def _get_label_and_charge(name: str) -> tuple:
+def _get_label_and_charge(name: str) -> tuple[str, int]:
     """
     Extracts the label and charge from a defect name string.
 
@@ -37,8 +45,16 @@ def _get_label_and_charge(name: str) -> tuple:
     """
     last_underscore = name.rfind("_")
     label = name[:last_underscore] if last_underscore != -1 else name
-    charge = name[last_underscore + 1 :] if last_underscore != -1 else None
-    return label, int(charge)
+    charge_str = name[last_underscore + 1 :] if last_underscore != -1 else None
+
+    # Initialize charge with a default value
+    charge = 0
+    if charge_str is not None:
+        with contextlib.suppress(ValueError):
+            charge = int(charge_str)
+            # If charge_str cannot be converted to int, charge remains its default value
+
+    return label, charge
 
 
 # TODO: Add link to Beth & Jiayi paper in py-sc-fermi tutorial, showing the utility of the effective
@@ -51,21 +67,27 @@ class FermiSolver(MSONable):
     carrier concentrations from ``DefectThermodynamics`` objects.
     """
 
-    def __init__(self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str):
+    def __init__(
+        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str, chemical_potentials: dict
+    ):
+        """
+        Initialize the FermiSolver object.
+        """
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr
+        self.chemical_potentials = chemical_potentials
         self._not_implemented_message = (
             "This method is implemented in the derived class, "
             "use FermiSolverDoped or FermiSolverPyScFermi instead."
         )
 
-    def equilibrium_solve(self) -> None:
+    def equilibrium_solve(self, *args, **kwargs) -> None:
         """
         Not implemented in the base class, implemented in the derived class.
         """
         raise NotImplementedError(self._not_implemented_message)
 
-    def pseudo_equilibrium_solve(self) -> None:
+    def pseudo_equilibrium_solve(self, *args, **kwargs) -> None:
         """
         Not implemented in the base class, implemented in the derived class.
         """
@@ -81,19 +103,35 @@ class FermiSolver(MSONable):
         **kwargs,
     ) -> pd.DataFrame:
         """
-        With a given set of chemical potentials, scan over a range of temperatures
-        and solve for the defect concentrations and Fermi energy at each temperature.
+        Scan over a range of temperatures and solve for the defect
+        concentrations, carrier concentrations, and Fermi energy at each
+        temperature.
 
         Args:
-            chempots (dict): The chemical potentials to solve at.
-            temperature_range (float or list): The range of temperatures to scan over.
-            annealing_temperature_range (float or list): The range of annealing temperatures to scan over.
-            quenching_temperature_range (float or list): The range of quenching temperatures to scan over.
-            processes (int): The number of processes to use for parallelization.
+            chempots (dict[str, float]): chemical potentials to solve at
+            temperature_range (Union[float, list[float]]): temperature range to solve over
+            annealing_temperature_range (Optional[Union[float, list[float]]], optional):
+              annealing temperature range to solve over. Defaults to None.
+            quenching_temperature_range (Optional[Union[float, list[float]]], optional):
+              quenching temperature range to solve over. Defaults to None.
+            processes (int, optional): number of processes to use for parallelization. Defaults to 1.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
+
+        Raises:
+            ValueError: You must specify both annealing and quenching temperature, or just temperature.
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
         """
+        # Ensure temperature ranges are lists
+        if isinstance(temperature_range, float):
+            temperature_range = [temperature_range]
+        if annealing_temperature_range is not None and isinstance(annealing_temperature_range, float):
+            annealing_temperature_range = [annealing_temperature_range]
+        if quenching_temperature_range is not None and isinstance(quenching_temperature_range, float):
+            quenching_temperature_range = [quenching_temperature_range]
+
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
@@ -106,7 +144,7 @@ class FermiSolver(MSONable):
                     quenching_temperature_range, annealing_temperature_range
                 )
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         elif annealing_temperature_range is None and quenching_temperature_range is None:
             all_data = Parallel(n_jobs=processes)(
@@ -115,12 +153,13 @@ class FermiSolver(MSONable):
                 )
                 for temperature in temperature_range
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+        return all_data_df
 
     def scan_chemical_potentials(
         self,
@@ -128,13 +167,12 @@ class FermiSolver(MSONable):
         temperature: float,
         annealing_temperature: float,
         quenching_temperature: float,
-        processes: 1,
+        processes: int = 1,
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Scan over a range of chemical
-        potentials and solve for the defect concentrations and Fermi energy at
-        each set of chemical potentials.
+        Scan over a range of chemical potentials and solve for the defect
+        concentrations and Fermi energy at each set of chemical potentials.
 
         Args:
             chempots (list): The chemical potentials to scan over.
@@ -142,11 +180,12 @@ class FermiSolver(MSONable):
             annealing_temperature (float): The temperature to anneal at.
             quenching_temperature (float): The temperature to quench to.
             processes (int): The number of processes to use for parallelization.
-        
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
+
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
         """
-
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chemical_potentials_pseudo)(
@@ -156,7 +195,7 @@ class FermiSolver(MSONable):
                     **kwargs,
                 )
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
@@ -164,12 +203,14 @@ class FermiSolver(MSONable):
                     chempots=chempots, temperature=temperature, **kwargs
                 )
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+
+        return all_data_df
 
     def scan_dopant_concentration(
         self,
@@ -182,26 +223,31 @@ class FermiSolver(MSONable):
         **kwargs,
     ) -> pd.DataFrame:
         """
-        With a given set of chemical potentials, scan over a range of effective
-        dopant concentrations and solve for the defect concentrations and Fermi
-        energy at each dopant concentration.
-
-        Note: the sign of the effective dopant concentration determines whether
-        the dopant is an acceptor or donor. A negative value corresponds to an
-        acceptor, while a positive value corresponds to a donor.
+        Calculate the defect concentrations under a range of effective dopant
+        concentrations.
 
         Args:
-            chempots (dict): The chemical potentials to solve at.
-            effective_dopant_concentration_range (float or list): The range of
-              effective dopant concentrations to scan over.
-            temperature (float): The temperature to solve at.
-            annealing_temperature (float): The temperature to anneal at.
-            quenching_temperature (float): The temperature to quench to.
+            chempots (dict[str, float]): Chemical potentials for the elements.
+            effective_dopant_concentration_range (Union[float, list[float]]):
+              The range of effective dopant concentrations.
+            temperature (Optional[float]): The temperature to solve at.
+            annealing_temperature (Optional[float]): The temperature to anneal at.
+            quenching_temperature (Optional[float]): The temperature to quench to.
             processes (int): The number of processes to use for parallelization.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
+
+        Raises:
+            ValueError: You must specify both annealing and quenching temperature, or just temperature.
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
         """
+        # Ensure effective_dopant_concentration_range is a list
+        if isinstance(effective_dopant_concentration_range, float):
+            effective_dopant_concentration_range = [effective_dopant_concentration_range]
+
+        # Existing logic here, now correctly handling floats and lists
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._add_effective_dopant_concentration_and_solve_pseudo)(
@@ -213,7 +259,7 @@ class FermiSolver(MSONable):
                 )
                 for effective_dopant_concentration in effective_dopant_concentration_range
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
@@ -225,12 +271,14 @@ class FermiSolver(MSONable):
                 )
                 for effective_dopant_concentration in effective_dopant_concentration_range
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+
+        return all_data_df
 
     def interpolate_chemical_potentials(
         self,
@@ -247,7 +295,6 @@ class FermiSolver(MSONable):
         Interpolate between two sets of chemical potentials and solve for the
         defect concentrations and Fermi energy at each interpolated point.
 
-
         Args:
             chem_pot_start (dict): The starting chemical potentials.
             chem_pot_end (dict): The ending chemical potentials.
@@ -256,6 +303,8 @@ class FermiSolver(MSONable):
             annealing_temperature (float): The temperature to anneal at.
             quenching_temperature (float): The temperature to quench to.
             processes (int): The number of processes to use for parallelization.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
@@ -271,7 +320,7 @@ class FermiSolver(MSONable):
                 )
                 for chem_pots in interpolated_chem_pots
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
@@ -280,12 +329,14 @@ class FermiSolver(MSONable):
                 )
                 for chem_pots in interpolated_chem_pots
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+
+        return all_data_df
 
     def _get_interpolated_chempots(
         self,
@@ -322,23 +373,27 @@ class FermiSolver(MSONable):
         Args:
             chempots (dict): Chemical potentials for the elements.
             temperature (float): Temperature in K.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
               and the self-consistent Fermi energy
         """
-        df = self.equilibrium_solve(chempots, temperature, **kwargs)
+        results_df = self.equilibrium_solve(chempots, temperature, **kwargs)  # type: ignore
         for key, value in chempots.items():
-            df[key] = value
-        return df
+            results_df[key] = value
+        return results_df
 
     def _solve_and_append_chemical_potentials_pseudo(
         self, chempots, quenched_temperature, annealing_temperature, **kwargs
     ):
-        df = self.pseudo_equilibrium_solve(chempots, quenched_temperature, annealing_temperature, **kwargs)
+        results_df = self.pseudo_equilibrium_solve(
+            chempots, quenched_temperature, annealing_temperature, **kwargs
+        )
         for key, value in chempots.items():
-            df[key] = value
-        return df
+            results_df[key] = value
+        return results_df
 
     def _add_effective_dopant_concentration_and_solve(
         self,
@@ -348,11 +403,11 @@ class FermiSolver(MSONable):
     ):
         if "effective_dopant_concentration" not in kwargs:
             raise ValueError("You must specify the effective dopant concentration.")
-        df = self._solve_and_append_chemical_potentials(
+        results_df = self._solve_and_append_chemical_potentials(
             chempots=chempots, temperature=temperature, **kwargs
         )
-        df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
-        return df
+        results_df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
+        return results_df
 
     def _add_effective_dopant_concentration_and_solve_pseudo(
         self,
@@ -363,24 +418,24 @@ class FermiSolver(MSONable):
     ):
         if "effective_dopant_concentration" not in kwargs:
             raise ValueError("You must specify the effective dopant concentration.")
-        df = self._solve_and_append_chemical_potentials_pseudo(
+        results_df = self._solve_and_append_chemical_potentials_pseudo(
             chempots=chempots,
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
             **kwargs,
         )
-        df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
-        return df
+        results_df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
+        return results_df
 
     def scan_chemical_potential_grid(
         self,
         chemical_potentials,
-        dependent_variable,
-        n_points=10,
-        temperature=300,
-        annealing_temperature=None,
-        quenching_temperature=None,
-        processes=1,
+        dependent_variable: str,
+        n_points: int = 10,
+        temperature: float = 300,
+        annealing_temperature: Optional[float] = None,
+        quenching_temperature: Optional[float] = None,
+        processes: int = 1,
         **kwargs,
     ):
         """
@@ -392,6 +447,12 @@ class FermiSolver(MSONable):
             chemical_potentials (dict): chemical potentials to scan
             dependent_variable (str): the dependent variable to scan
             n_points (int): number of points to scan
+            temperature (float): temperature to solve at
+            annealing_temperature (float): temperature to anneal at
+            quenching_temperature (float): temperature to quench to
+            processes (int): number of processes to use for parallelization
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
 
         Returns:
             pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
@@ -410,7 +471,7 @@ class FermiSolver(MSONable):
                 )
                 for chempots in grid.iterrows()
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
@@ -419,12 +480,14 @@ class FermiSolver(MSONable):
                 )
                 for chempots in grid.iterrows()
             )
-            return pd.concat(all_data)
+            all_data_df = pd.concat(all_data)
 
         else:
             raise ValueError(
                 "You must specify both annealing and quenching temperature, or just temperature."
             )
+
+        return all_data_df
 
     def min_max_X(
         self,
@@ -465,7 +528,7 @@ class FermiSolver(MSONable):
                     )
                     for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
                 )
-                df = pd.concat(all_data)
+                results_df = pd.concat(all_data)
 
             elif annealing_temperature is None and quenching_temperature is None:
                 all_data = Parallel(n_jobs=processes)(
@@ -474,7 +537,7 @@ class FermiSolver(MSONable):
                     )
                     for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
                 )
-                df = pd.concat(all_data)
+                results_df = pd.concat(all_data)
 
             else:
                 raise ValueError(
@@ -483,14 +546,18 @@ class FermiSolver(MSONable):
 
             # Find chemical potentials value where target is lowest or highest
             if min_or_max == "min":
-                target_chem_pot = df[df[target] == df[target].min()][chemical_potentials_labels]
-                target_dataframe = df[df[target] == df[target].min()]
+                target_chem_pot = results_df[results_df[target] == results_df[target].min()][
+                    chemical_potentials_labels
+                ]
+                target_dataframe = results_df[results_df[target] == results_df[target].min()]
             elif min_or_max == "max":
-                target_chem_pot = df[df[target] == df[target].max()][chemical_potentials_labels]
-                target_dataframe = df[df[target] == df[target].max()]
+                target_chem_pot = results_df[results_df[target] == results_df[target].max()][
+                    chemical_potentials_labels
+                ]
+                target_dataframe = results_df[results_df[target] == results_df[target].max()]
 
             # Check if the change in the target value is less than the tolerance
-            current_value = df[target].min() if min_or_max == "min" else df[target].max()
+            current_value = results_df[target].min() if min_or_max == "min" else results_df[target].max()
             if (
                 previous_value is not None
                 and abs((current_value - previous_value) / previous_value) < tolerance
@@ -501,12 +568,13 @@ class FermiSolver(MSONable):
 
             new_vertices = []
             for row in target_chem_pot.iterrows():
-                row = row[1]
+                datum = row[1]
                 # get midpoint between current vertices and target_chem_pot
-                new_vertex = (current_vertices + row) / 2
+                new_vertex = (current_vertices + datum) / 2
                 new_vertices.append(new_vertex)
 
-            # Generate a new grid around the target_chem_pot that does not go outside the bounds of the starting grid
+            # Generate a new grid around the target_chem_pot that
+            # does not go outside the bounds of the starting grid
             new_vertices_df = pd.DataFrame(new_vertices[0], columns=chemical_potentials_labels)
             starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
@@ -524,15 +592,31 @@ class FermiSolverDoped(FermiSolver):
         bulk_dos_vr (str): The path to the vasprun.xml file containing the bulk DOS.
     """
 
-    def __init__(self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str):
+    def __init__(
+        self,
+        defect_thermodynamics: "DefectThermodynamics",
+        bulk_dos_vr_path: str,
+        chemical_potentials=None,
+    ):
         """
         Initialize the FermiSolverDoped object.
+
+        Args:
+            defect_thermodynamics (DefectThermodynamics): A DefectThermodynamics object.
+            bulk_dos_vr_path (str): Path to the VASP run XML file (vasprun.xml) for bulk DOS.
+            chemical_potentials (Optional): Chemical potentials, if any.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr)
-        bulk_dos_vr = Vasprun(self.bulk_dos)
+        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chemical_potentials)
+
+        # Load the Vasprun object from the given file path
+        bulk_dos_vr = Vasprun(bulk_dos_vr_path)
+
+        # Now that bulk_dos_vr is correctly an instance of Vasprun, we can access its attributes
         self.bulk_dos = FermiDos(
             bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr)
         )
+
+        self.chemical_potentials = chemical_potentials
 
     def _get_fermi_level_and_carriers(
         self,
@@ -545,7 +629,7 @@ class FermiSolverDoped(FermiSolver):
         chemical potential regime and temperature.
 
         Args:
-            chempots (dict[str, float]) chemical potentials to solve at
+            chempots (dict[str, float]): chemical potentials to solve at
             temperature (float): temperature in to solve at
             effective_dopant_concentration (float):
                 Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
@@ -561,7 +645,7 @@ class FermiSolverDoped(FermiSolver):
             float: electron concentration
             float: hole concentration
         """
-        fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(
+        fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
             bulk_dos_vr=self.bulk_dos,
             chempots=chempots,
             limit=None,
@@ -680,26 +764,23 @@ class FermiSolverDoped(FermiSolver):
         for column, value in new_columns.items():
             concentrations[column] = value
 
-        concentrations.drop(
+        trimmed_concentrations = concentrations.drop(
             columns=[
                 "Charge",
                 "Charge State Population",
                 "Concentration (cm^-3)",
                 "Formation Energy (eV)",
             ],
-            inplace=True,
         )
-        concentrations.drop_duplicates(inplace=True)
+        trimmed_concentrations_sub_duplicates = trimmed_concentrations.drop_duplicates()
         excluded_columns = ["Defect"]
         for column in concentrations.columns.difference(excluded_columns):
             concentrations[column] = concentrations[column].astype(float)
 
-        concentrations.rename(
-            columns={"Total Concentration (cm^-3)": "Concentration (cm^-3)"}, inplace=True
+        renamed_concentrations = trimmed_concentrations_sub_duplicates.rename(
+            columns={"Total Concentration (cm^-3)": "Concentration (cm^-3)"},
         )
-        concentrations.set_index("Defect", inplace=True, drop=True)
-
-        return concentrations
+        return renamed_concentrations.set_index("Defect", drop=True)
 
 
 def _import_py_sc_fermi(cls):
@@ -739,15 +820,20 @@ class FermiSolverPyScFermi(FermiSolver):
     """
 
     def __init__(
-        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str, multiplicity_scaling=None
+        self,
+        defect_thermodynamics: "DefectThermodynamics",
+        bulk_dos_vr: str,
+        multiplicity_scaling=None,
+        chemical_potentials=None,
     ):
         """
         Initialize the FermiSolverPyScFermi object.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr)
+        super().__init__(defect_thermodynamics, bulk_dos_vr, chemical_potentials)
         vr = Vasprun(self.bulk_dos)
         self.bulk_dos = self.DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
+        self.chemical_potentials = chemical_potentials
 
         if multiplicity_scaling is None:
             ms = self.defect_thermodynamics.defect_entries[0].defect.structure.volume / self.volume
@@ -761,12 +847,30 @@ class FermiSolverPyScFermi(FermiSolver):
         else:
             self.multiplicity_scaling = multiplicity_scaling
 
+    def _handle_chemical_potentials(self, chempots: dict[str, float]) -> dict[str, float]:
+        """
+        Handle the chemical potentials for the py-sc-fermi backend.
+
+        Args:
+            chempots (dict): The chemical potentials to solve at.
+
+        Returns:
+            dict: The handled chemical potentials.
+        """
+        return {k: v + self.chemical_potentials["elemental_refs"][k] for k, v in chempots.items()}
+
     def _generate_dopant(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
         Generate a dopant defect charge state object.
 
         Args:
-            effective_dopant_concentration (float): The effective dopant concentration.
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping. (Default: None; no extrinsic dopant)
 
         Returns:
             DefectChargeState: The initialized DefectChargeState.
@@ -795,14 +899,22 @@ class FermiSolverPyScFermi(FermiSolver):
         Args:
             temperature (float): Temperature in K.
             chemical_potentials (dict): Chemical potentials for the elements.
-            effective_dopant_concentration (float): The effective dopant concentration.
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping. (Default: None; no extrinsic dopant)
 
         Returns:
             DefectSystem: The initialized DefectSystem.
         """
         entries = sorted(self.defect_thermodynamics.defect_entries, key=lambda x: x.name)
         labels = {_get_label_and_charge(entry.name)[0] for entry in entries}
+        defect_species: dict[str, Any] = {}
         defect_species = {label: {"charge_states": {}, "nsites": None, "name": label} for label in labels}
+        chemical_potentials = self._handle_chemical_potentials(chemical_potentials)
 
         for entry in entries:
             label, charge = _get_label_and_charge(entry.name)
@@ -844,6 +956,8 @@ class FermiSolverPyScFermi(FermiSolver):
         Args:
             chempots (dict): Chemical potentials for the elements.
             temperature (float): Temperature in K.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
@@ -870,9 +984,8 @@ class FermiSolverPyScFermi(FermiSolver):
                 row.update({"Defect": k, "Concentration (cm^-3)": v})
                 data.append(row)
 
-        df = pd.DataFrame(data)
-        df.set_index("Defect", inplace=True, drop=True)
-        return df
+        results_df = pd.DataFrame(data)
+        return results_df.set_index("Defect", drop=True)
 
     def pseudo_equilibrium_solve(
         self,
@@ -889,6 +1002,8 @@ class FermiSolverPyScFermi(FermiSolver):
             chempots (dict): Chemical potentials for the elements.
             quenched_temperature (float): Temperature to quench to.
             annealing_temperature (float): Temperature to anneal at.
+            kwargs: Additional keyword arguments (e.g. passing free_defects to
+              a py-sc-fermi solver).
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
@@ -918,9 +1033,8 @@ class FermiSolverPyScFermi(FermiSolver):
                 row.update({"Defect": k, "Concentration (cm^-3)": v})
                 data.append(row)
 
-        df = pd.DataFrame(data)
-        df.set_index("Defect", inplace=True, drop=True)
-        return df
+        results_df = pd.DataFrame(data)
+        return results_df.set_index("Defect", drop=True)
 
     def generate_annealed_defect_system(
         self,
@@ -938,12 +1052,12 @@ class FermiSolverPyScFermi(FermiSolver):
         (quenching_temperature).
 
         Args:
-            mu (dict[str, float]):
+            chemical_potentials (dict[str, float]):
                 Set of chemical potentials used to generate the ``DefectSystem``.
             annealing_temperature (float):
                 High temperature at which to generate the initial ``DefectSystem``
                 for concentration fixing.
-            target_temperature (float, optional):
+            quenched_temperature (float, optional):
                 The low temperature (in Kelvin) at which to generate the final
                 ``DefectSystem``. Default is 300.0.
             fix_charge_states (bool):
@@ -951,9 +1065,16 @@ class FermiSolverPyScFermi(FermiSolver):
                 concentrations of individual defect charge states are fixed to
                 their high temperature values (i.e. assuming kinetic trapping of
                 charge states), or whether the total concentrations of inequivalent
-                defects are fixed but with charge states allowed to vary – the latter
+                defects are fixed but with charge states allowed to vary - the latter
                 of which is the typical assumption within the 'frozen defect' model.
                 (Default is False).
+            effective_dopant_concentration (float, optional):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping. (Default: None; no extrinsic dopant)
             free_defects (list):
                 If ``annealing_temperature`` is set, this lists the defects to be
                 excluded from the high-temperature concentration fixing. This may be
@@ -974,6 +1095,7 @@ class FermiSolverPyScFermi(FermiSolver):
             effective_dopant_concentration=effective_dopant_concentration,
         )
         initial_conc_dict = defect_system.concentration_dict()
+        chemical_potentials = self._handle_chemical_potentials(chemical_potentials)
 
         # Exclude the free_defects, carrier concentrations and
         # Fermi energy from fixing
@@ -1053,7 +1175,7 @@ class ChemicalPotentialGrid:
         Returns:
         ChemicalPotentialGrid: The initialized ChemicalPotentialGrid.
         """
-        return cls(chemical_potentials["limits"])
+        return cls(chemical_potentials["limits_wrt_el_refs"])
 
     @staticmethod
     def grid_from_dataframe(
@@ -1073,7 +1195,7 @@ class ChemicalPotentialGrid:
         """
         # Exclude the dependent variable from the vertices
         independent_vars = mu_dataframe.drop(columns=dependent_variable)
-        dependent_var = mu_dataframe[dependent_variable].values
+        dependent_var = mu_dataframe[dependent_variable].to_numpy()
 
         # Generate the complex number for grid spacing
         complex_num = complex(0, n_points)
@@ -1084,7 +1206,7 @@ class ChemicalPotentialGrid:
         # Create a dense grid that covers the entire range of the vertices
         x_min, y_min = independent_vars.min(axis=0)
         x_max, y_max = independent_vars.max(axis=0)
-        grid_x, grid_y = np.mgrid[x_min:x_max:complex_num, y_min:y_max:complex_num]
+        grid_x, grid_y = np.mgrid[x_min:x_max:complex_num, y_min:y_max:complex_num]  # type: ignore
         grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
 
         # Delaunay triangulation to get points inside the hull
@@ -1100,5 +1222,5 @@ class ChemicalPotentialGrid:
 
         return pd.DataFrame(  # convert to DataFrame and set column names
             grid_with_values,
-            columns=list(independent_vars.columns) + [dependent_variable],
+            columns=[*list(independent_vars.columns), *dependent_variable],
         )
