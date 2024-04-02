@@ -429,8 +429,8 @@ class FermiSolver(MSONable):
 
     def scan_chemical_potential_grid(
         self,
-        chemical_potentials,
         dependent_variable: str,
+        chemical_potentials=None,
         n_points: int = 10,
         temperature: float = 300,
         annealing_temperature: Optional[float] = None,
@@ -444,8 +444,8 @@ class FermiSolver(MSONable):
         the grid points.
 
         Args:
-            chemical_potentials (dict): chemical potentials to scan
             dependent_variable (str): the dependent variable to scan
+            chemical_potentials (dict): chemical potentials to scan
             n_points (int): number of points to scan
             temperature (float): temperature to solve at
             annealing_temperature (float): temperature to anneal at
@@ -457,6 +457,9 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
         """
+        if chemical_potentials is None:
+            chemical_potentials = self.chemical_potentials["limits_wrt_el_refs"]
+
         grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials).get_grid(
             dependent_variable, n_points
         )
@@ -491,10 +494,10 @@ class FermiSolver(MSONable):
 
     def min_max_X(
         self,
-        chemical_potentials,
         dependent_chempot,
         target,
         min_or_max,
+        chemical_potentials=None,
         tolerance=0.01,
         n_points=10,
         temperature=300,
@@ -511,6 +514,9 @@ class FermiSolver(MSONable):
         chemical potential that minimizes or maximizes the target variable
         until the target value no longer changes by more than the tolerance.
         """
+        if chemical_potentials is None:
+            chemical_potentials = self.chemical_potentials["limits_wrt_el_refs"]
+
         starting_grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials)
         current_vertices = starting_grid.vertices
         chemical_potentials_labels = list(current_vertices.columns)
