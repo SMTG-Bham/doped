@@ -516,7 +516,10 @@ class DefectDictSetTest(unittest.TestCase):
                 assert any(comment_string in line for line in incar_lines)
 
             if dds.incar.get("ALGO", "normal").lower() == "normal":  # ALGO = Normal default, has comment
-                assert any("change to all if zhegv, fexcp/f or zbrent" in line for line in incar_lines)
+                assert any(
+                    "change to all if zhegv, fexcp/f or zbrent, or poor electronic convergence" in line
+                    for line in incar_lines
+                )
 
         else:
             assert not os.path.exists(f"{output_path}/INCAR")
