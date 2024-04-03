@@ -115,8 +115,10 @@ For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please 
 
 Layered / Low Dimensional Materials
 --------------------------------------
-Layered and low-dimensional materials introduce complications for defect analysis. One point is that typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions (e.g.
-`4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_), as a result of
+Layered and low-dimensional materials introduce complications for defect analysis. One point is that
+typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
+(e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
+`vacancies in low-dimensional chalcogenides <https://arxiv.org/abs/2401.12127>`_ etc), as a result of
 having more complex energy landscapes.
 
 Another is that often the application of charge correction schemes to supercell calculations with layered

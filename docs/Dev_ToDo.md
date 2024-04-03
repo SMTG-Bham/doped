@@ -57,6 +57,8 @@
     85.115104) suggests that the SOC effects on total energy cancel out for chemical potential
     calculations, but only the case when the occupation of the SOC-affected orbitals is constant
     (typically not the case)) Better to do consistently (link Emily SOC work and/or thesis).
+    - But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the same composition (oxidation states), to good accuracy.
+    - Also, can use symmetry with SOC total energy calculations, have tested this. Also `NKRED` possibly useful for expensive (particularly metal) calculations!
   - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
     automatically in `doped`, excited-state degeneracy (e.g. with bipolarons/dimers with single and triplet
     states) are not, so the user should manually account for this if present. Also note that
