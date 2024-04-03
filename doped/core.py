@@ -1739,6 +1739,36 @@ class Defect(core.Defect):
         """
         return loadfn(filename)
 
+    def get_charge_states(self, padding: int = 1) -> list[int]:
+        """
+        Refactored version of ``pymatgen-analysis-defects``'s
+        ``get_charge_states`` to not break when ``oxi_state`` is not set.
+        """
+        if self.user_charges:
+            return self.user_charges
+
+        if self.oxi_state is None or not isinstance(self.oxi_state, (int, float)):
+            self._set_oxi_state()  # try guessing
+
+        if self.oxi_state is None or not isinstance(self.oxi_state, (int, float)):  # still not set
+            warnings.warn(
+                f"Defect oxidation state not set and couldn't be guessed, returning charge"
+                f"state range from -{padding} to +{padding}"
+            )
+            return [*range(-padding, padding + 1)]
+
+        if isinstance(self.oxi_state, int) or self.oxi_state.is_integer():
+            oxi_state = int(self.oxi_state)
+        else:
+            raise ValueError("Oxidation state must be an integer")
+
+        if oxi_state >= 0:
+            charges = [*range(-padding, oxi_state + padding + 1)]
+        else:
+            charges = [*range(oxi_state - padding, padding + 1)]
+
+        return charges
+
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
     """
