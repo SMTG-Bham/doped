@@ -21,6 +21,7 @@ from monty.serialization import dumpfn, loadfn
 
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, scissor_dos
+from doped.utils.parsing import get_vasprun
 from doped.utils.symmetry import _get_sga, point_symmetry
 
 # for pytest-mpl:
@@ -2077,6 +2078,36 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.set_ylim(-0.2, 1.7)
 
         return f
+
+    def test_calculated_fermi_level_k10(self):
+        """
+        Test calculating the Fermi level using a 10x10x10 k-point mesh DOS
+        calculation for primitive CdTe; specifying just the path to the DOS
+        vasprun.xml.
+        """
+        k10_dos_vr_path = os.path.join(self.module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+
+        for i, bulk_dos_vr in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
+            print(f"Testing k10 DOS with thermo for {'str input' if i == 0 else 'DOS object input'}")
+            quenched_fermi_levels = []
+            for anneal_temp in self.anneal_temperatures:
+                gap_shift = belas_linear_fit(anneal_temp) - 1.5
+                (
+                    fermi_level,
+                    e_conc,
+                    h_conc,
+                    conc_df,
+                ) = self.defect_thermo.get_quenched_fermi_level_and_concentrations(
+                    # quenching to 300K (default)
+                    bulk_dos_vr=bulk_dos_vr,
+                    limit="Te-rich",
+                    annealing_temperature=anneal_temp,
+                    delta_gap=gap_shift,
+                )
+                quenched_fermi_levels += [fermi_level]
+
+            # (approx) same result as with k181818 NKRED=2 (0.319104 eV with this dos)
+            assert np.isclose(np.mean(quenched_fermi_levels[12:16]), 0.318674, atol=1e-3)
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations.png")
     def test_calculated_concentrations(self):
