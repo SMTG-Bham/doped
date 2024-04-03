@@ -1310,7 +1310,7 @@ class DefectThermodynamics(MSONable):
             return bulk_dos_vr
 
         if isinstance(bulk_dos_vr, str):
-            bulk_dos_vr = get_vasprun(bulk_dos_vr)
+            bulk_dos_vr = get_vasprun(bulk_dos_vr, parse_dos=True)
 
         fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
         if abs(fermi_dos_vbm - self.vbm) > 0.1:
@@ -2896,7 +2896,7 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     return e_conc, h_conc
 
 
-def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
+def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, verbose: bool = True):
     """
     Given an input Dos/FermiDos object, rigidly shifts the valence and
     conduction bands of the DOS object to give a band gap that is now
@@ -2989,4 +2989,6 @@ def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
     if verbose:
         print(f"Orig gap: {dos.get_gap(tol=tol)}, new gap:{dos.get_gap(tol=tol) + delta_gap}")
     scissored_dos_dict["structure"] = dos.structure.as_dict()
-    return FermiDos.from_dict(scissored_dos_dict)
+    if isinstance(dos, FermiDos):
+        return FermiDos.from_dict(scissored_dos_dict)
+    return Dos.from_dict(scissored_dos_dict)
