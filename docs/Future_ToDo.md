@@ -31,6 +31,7 @@
   workflow which ppl often mess up. Can use modified code from `config-coord-plots` (but actually to
   scale and automatically/sensibly parsed etc.)(also see `CarrierCapture` functionalities)
 - Dielectric/kpoint-sampling weighted supercell generation? (essentially just a vectorised cost function implemented in the generation loop). Would natively optimise e.g. layered materials quite well.
+- `doped`/`SnB`/`easyunfold` (virtual) workshop? Just noting as a possibility, could be MCC-supported.
 
 ## Chemical Potentials
 - Overhaul chemical potentials code, dealing with all `TODO`s in that module. 
