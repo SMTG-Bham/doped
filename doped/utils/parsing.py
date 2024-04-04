@@ -33,6 +33,30 @@ def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
 
 
+def _reapply_warnings(filters: list):
+    """
+    When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
+    we cache warning filters beforehand, then reapply with this function.
+    """
+    warnings.resetwarnings()
+
+    def _get_str_from_warning_message_module(subfilter):
+        if isinstance(subfilter, str):
+            return subfilter
+
+        return subfilter.pattern if isinstance(subfilter, re.Pattern) else ""
+
+    for filter in filters:
+        action, message, category, module, lineno = filter[:5]
+        warnings.filterwarnings(
+            action,
+            _get_str_from_warning_message_module(message),
+            category,
+            _get_str_from_warning_message_module(module),
+            lineno,
+        )
+
+
 def _reset_warnings():
     """
     When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
@@ -541,6 +565,9 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
     """
+    orig_simplefilter = warnings.simplefilter
+    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+
     # suppress pydefect INFO messages
     import logging
 
@@ -553,7 +580,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
         return
 
-    _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
+    warnings.simplefilter = orig_simplefilter  # reset to original
 
     far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
 

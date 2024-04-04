@@ -251,13 +251,15 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             ``DefectEntry`` object
         """
-        from doped.utils.parsing import _reset_warnings, suppress_logging
+        orig_simplefilter = warnings.simplefilter
+        warnings.simplefilter = lambda *args, **kwargs: None  # avoid vise warning suppression
+
+        from doped.utils.parsing import suppress_logging
 
         with suppress_logging():
             obj = super().from_dict(d)
 
-        _reset_warnings()  # vise suppresses ``UserWarning``s (and this initialises ``vise``
-        # ``BandEdgeStates`` objects) so need to reset
+        warnings.simplefilter = orig_simplefilter  # reset to original
 
         return obj
 
@@ -603,12 +605,9 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.parsing import (
             _get_output_files_and_check_if_multiple,
             _multiple_files_warning,
-            _reset_warnings,
             get_procar,
             get_vasprun,
         )
-
-        _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
@@ -790,9 +789,6 @@ class DefectEntry(thermo.DefectEntry):
             ``Figure`` object (if ``plot=True``).
         """
         from doped.utils.eigenvalues import get_eigenvalue_analysis
-        from doped.utils.parsing import _reset_warnings
-
-        _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
         self._load_and_parse_eigenvalue_data(
             bulk_vr=bulk_vr,

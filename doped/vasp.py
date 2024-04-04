@@ -517,10 +517,13 @@ class DefectDictSet(DopedDictSet):
             snb (bool): If input structures are from ShakeNBreak (so POSCARs aren't
                 'unperturbed'). (default: False)
         """
-        if not potcar_spec:
+        if potcar_spec:
+            potcars = True
+
+        elif not unperturbed_poscar and snb:  # otherwise already called with these settings
             potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
         else:
-            potcars = True
+            potcars = self.potcars
 
         if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
             try:
@@ -1182,7 +1185,7 @@ class DefectRelaxSet(MSONable):
         if nkred_defect_dict_set is None:
             return None
 
-        if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
+        if nkred_defect_dict_set.potcars:
             user_incar_settings = copy.deepcopy(self.user_incar_settings)
             user_incar_settings.update(singleshot_incar_settings)
             user_incar_settings.update(  # add NKRED settings
