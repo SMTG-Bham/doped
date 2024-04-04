@@ -23,13 +23,11 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 
 from doped.core import DefectEntry
-from doped.utils.parsing import (
-    _reset_warnings,
-    get_magnetization_from_vasprun,
-    get_nelect_from_vasprun,
-    get_procar,
-)
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, get_procar
 from doped.utils.plotting import _get_backend
+
+orig_simplefilter = warnings.simplefilter
+warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
 
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
@@ -56,7 +54,7 @@ except ImportError as exc:
         "You can do this by running `pip install pydefect`."
     ) from exc
 
-_reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
+warnings.simplefilter = orig_simplefilter  # reset to original
 
 
 def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":

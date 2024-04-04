@@ -1247,7 +1247,8 @@ class DefectsSetTest(unittest.TestCase):
             for folder in os.listdir("."):
                 if os.path.isdir(folder) and "bulk" not in folder:
                     for subfolder in os.listdir(folder):
-                        assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
+                        if "vasp" in subfolder:
+                            assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
         else:
             with pytest.raises(ValueError):

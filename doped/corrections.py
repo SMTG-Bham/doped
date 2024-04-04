@@ -36,6 +36,7 @@ eFNV) were developed, they should be used here.
 """
 
 import os
+import warnings
 from typing import Optional, Union
 
 import matplotlib.pyplot as plt
@@ -53,13 +54,10 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_bulk_site_coords,
-    _reset_warnings,
     get_locpot,
     get_outcar,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
-
-_reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
 
 def _monty_decode_nested_dicts(d):
@@ -392,6 +390,9 @@ def get_kumagai_correction(
         CorrectionResults (summary of the corrections applied and metadata), and
         the matplotlib figure object if ``plot`` is True.
     """
+    orig_simplefilter = warnings.simplefilter
+    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+
     # suppress pydefect INFO messages
     import logging
 
@@ -414,7 +415,7 @@ def get_kumagai_correction(
             "You can do this by running `pip install pydefect`."
         ) from exc
 
-    _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
+    warnings.simplefilter = orig_simplefilter  # reset to original
 
     def doped_make_efnv_correction(
         charge: float,
