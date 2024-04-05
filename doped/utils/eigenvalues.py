@@ -185,7 +185,7 @@ def make_band_edge_orbital_infos(
     )
 
 
-def _parse_procar(procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None):
+def _parse_procar(procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None):
     """
     Parse a ``procar`` input to a ``Procar`` object in the correct format.
 
@@ -212,8 +212,8 @@ def _parse_procar(procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar
 def get_band_edge_info(
     bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    bulk_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
+    defect_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
     defect_supercell_site: Optional[PeriodicSite] = None,
     neighbor_cutoff_factor: float = 1.3,
 ):
@@ -383,10 +383,10 @@ def get_eigenvalue_analysis(
     filename: Optional[str] = None,
     ks_labels: bool = False,
     style_file: Optional[str] = None,
-    bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-    defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    bulk_vr: Optional[Union[str, Path, Vasprun]] = None,
+    bulk_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
+    defect_vr: Optional[Union[str, Path, Vasprun]] = None,
+    defect_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
     force_reparse: bool = False,
     ylims: Optional[tuple[float, float]] = None,
     legend_kwargs: Optional[dict] = None,
