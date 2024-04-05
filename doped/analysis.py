@@ -666,36 +666,16 @@ class DefectsParser:
                 dir_type="bulk",
             )
 
-        self.bulk_procar = None
-        bulk_vr_exc = None
-
-        try:
-            self.bulk_vr = get_vasprun(
-                bulk_vr_path, parse_projected_eigen=parse_projected_eigen is not False
-            )
-        except Exception as exc:
-            bulk_vr_exc = exc  # don't throw unless PROCAR also fails
-            self.bulk_vr = get_vasprun(bulk_vr_path, parse_projected_eigen=False)
-
-        if parse_projected_eigen is not False and self.bulk_vr.projected_eigenvalues is None:
-            # Checking if PROCAR available:
-            bulk_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", self.bulk_path)
-            if "PROCAR" in bulk_procar_path:
-                try:
-                    self.bulk_procar = get_procar(bulk_procar_path)
-
-                except Exception as procar_exc:
-                    if parse_projected_eigen is not None:  # otherwise no warning
-                        warning_message = (
-                            f"Could not parse vasprun.xml.gz files in bulk folder at {self.bulk_path}, "
-                            f"got error:\n{bulk_vr_exc}\nThen got "
-                            if bulk_vr_exc
-                            else "Got "
-                        )
-                        warnings.warn(
-                            f"{warning_message}the following error when attempting to parse projected "
-                            f"eigenvalues from the bulk PROCAR(.gz):\n{procar_exc}"
-                        )
+        self.bulk_vr, self.bulk_procar = _parse_vr_and_poss_procar(
+            bulk_vr_path,
+            parse_projected_eigen=self.parse_projected_eigen,
+            output_path=self.bulk_path,
+            label="bulk",
+            parse_procar=True,
+        )
+        self.parse_projected_eigen = (
+            self.bulk_vr.projected_eigenvalues is not None or self.bulk_procar is not None
+        )
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
@@ -1328,6 +1308,43 @@ class DefectsParser:
         )
 
 
+def _parse_vr_and_poss_procar(
+    vr_path: str,
+    parse_projected_eigen: Optional[bool] = None,
+    output_path: Optional[str] = None,
+    label: str = "bulk",
+    parse_procar: bool = True,
+):
+    procar = None
+    try:
+        vr = get_vasprun(
+            vr_path,
+            parse_projected_eigen=parse_projected_eigen is not False,
+            parse_eigen=(parse_projected_eigen is not False or label == "bulk"),
+        )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
+    except Exception as vr_exc:
+        vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
+
+        if parse_procar:
+            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+            if "PROCAR" in procar_path and parse_projected_eigen is not False:
+                try:
+                    procar = get_procar(procar_path)
+
+                except Exception as procar_exc:
+                    if parse_projected_eigen is not None:  # otherwise no warning
+                        warning_message = (
+                            f"Could not parse eigenvalue data from vasprun.xml.gz files in "
+                            f"{label} folder at {output_path}, got error:\n{vr_exc}\nThen got "
+                        )
+                        warnings.warn(
+                            f"{warning_message}the following error when attempting to parse projected "
+                            f"eigenvalues from the defect PROCAR(.gz):\n{procar_exc}"
+                        )
+
+    return vr, procar if parse_procar else vr
+
+
 class DefectParser:
     def __init__(
         self,
@@ -1336,23 +1353,24 @@ class DefectParser:
         bulk_vr: Optional[Vasprun] = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
+        parse_projected_eigen: Optional[bool] = None,
         **kwargs,
     ):
         """
-        Create a DefectParser object, which has methods for parsing the results
-        of defect supercell calculations.
+        Create a ``DefectParser`` object, which has methods for parsing the
+        results of defect supercell calculations.
 
-        Direct initiation with DefectParser() is typically not recommended. Rather
-        DefectParser.from_paths() or defect_entry_from_paths() are preferred as
+        Direct initiation with ``DefectParser()`` is typically not recommended. Rather
+        ``DefectParser.from_paths()`` or ``defect_entry_from_paths()`` are preferred as
         shown in the doped parsing tutorials.
 
         Args:
             defect_entry (DefectEntry):
-                doped DefectEntry
+                doped ``DefectEntry``
             defect_vr (Vasprun):
-                pymatgen Vasprun object for the defect supercell calculation
+                ``pymatgen`` ``Vasprun`` object for the defect supercell calculation
             bulk_vr (Vasprun):
-                pymatgen Vasprun object for the reference bulk supercell calculation
+                ``pymatgen`` ``Vasprun`` object for the reference bulk supercell calculation
             skip_corrections (bool):
                 Whether to skip calculation and application of finite-size charge
                 corrections to the defect energy (not recommended in most cases).
@@ -1360,6 +1378,16 @@ class DefectParser:
             error_tolerance (float):
                 If the estimated error in the defect charge correction is greater
                 than this value (in eV), then a warning is raised. (default: 0.05 eV)
+            parse_projected_eigen (bool):
+                Whether to parse the projected eigenvalues & orbitals from the bulk and
+                defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
+                then be used with no further parsing). Will initially try to load orbital
+                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
+                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
+                bulk/defect directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
+                Default is ``None``, which will attempt to load this data but with no
+                warning if it fails (otherwise if ``True`` a warning will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -1375,6 +1403,7 @@ class DefectParser:
         self.skip_corrections = skip_corrections
         self.error_tolerance = error_tolerance
         self.kwargs = kwargs or {}
+        self.parse_projected_eigen = parse_projected_eigen
 
     @classmethod
     def from_paths(
@@ -1485,7 +1514,16 @@ class DefectParser:
                     bulk_vr_path,
                     dir_type="bulk",
                 )
-            bulk_vr = get_vasprun(bulk_vr_path)
+            bulk_vr, reparsed_bulk_procar = _parse_vr_and_poss_procar(
+                bulk_vr_path,
+                parse_projected_eigen,
+                bulk_path,
+                label="bulk",
+                parse_procar=bulk_procar is None,
+            )
+            if bulk_procar is None and reparsed_bulk_procar is not None:
+                bulk_procar = reparsed_bulk_procar
+            parse_projected_eigen = bulk_vr.projected_eigenvalues is not None or bulk_procar is not None
 
         elif bulk_vr is None:
             raise ValueError("Either `bulk_path` or `bulk_vr` must be provided!")
@@ -1504,30 +1542,10 @@ class DefectParser:
                 dir_type="defect",
             )
 
-        defect_procar = None
-        try:
-            defect_vr = get_vasprun(
-                defect_vr_path,
-                parse_projected_eigen=parse_projected_eigen is not False,
-                parse_eigen=parse_projected_eigen is not False,
-            )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
-        except Exception as defect_vr_exc:
-            defect_vr = get_vasprun(defect_vr_path, parse_projected_eigen=False, parse_eigen=False)
-            defect_procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", defect_path)
-            if "PROCAR" in defect_procar_path and parse_projected_eigen is not False:
-                try:
-                    defect_procar = get_procar(defect_procar_path)
-
-                except Exception as procar_exc:
-                    if parse_projected_eigen is not None:  # otherwise no warning
-                        warning_message = (
-                            f"Could not parse vasprun.xml.gz files in defect folder at {defect_path}, "
-                            f"got error:\n{defect_vr_exc}\nThen got "
-                        )
-                        warnings.warn(
-                            f"{warning_message}the following error when attempting to parse projected "
-                            f"eigenvalues from the defect PROCAR(.gz):\n{procar_exc}"
-                        )
+        defect_vr, defect_procar = _parse_vr_and_poss_procar(
+            defect_vr_path, parse_projected_eigen, defect_path, label="defect"
+        )
+        parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
 
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
@@ -1538,7 +1556,7 @@ class DefectParser:
         try:
             parsed_charge_state: int = _defect_charge_from_vasprun(bulk_vr, defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
-            # try determine from folder name - must have "-" or "+" at end of name for this
+            # try to determine from folder name - must have "-" or "+" at end of name for this
             try:
                 charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
                 if charge_state_suffix[0] not in ["-", "+"]:
@@ -1750,14 +1768,15 @@ class DefectParser:
             bulk_vr=bulk_vr,
             skip_corrections=skip_corrections,
             error_tolerance=error_tolerance,
+            parse_projected_eigen=parse_projected_eigen,
             **kwargs,
         )
 
         if parse_projected_eigen is not False:
             try:
                 dp.defect_entry._load_and_parse_eigenvalue_data(
-                    bulk_vr,
-                    bulk_procar,
+                    bulk_vr=bulk_vr,
+                    bulk_procar=bulk_procar,
                     defect_vr=defect_vr,
                     defect_procar=defect_procar,
                 )
@@ -2066,7 +2085,12 @@ class DefectParser:
                     bulk_vr_path,
                     dir_type="bulk",
                 )
-            self.bulk_vr = get_vasprun(bulk_vr_path)
+            self.bulk_vr = _parse_vr_and_poss_procar(
+                bulk_vr_path,
+                parse_projected_eigen=False,  # not needed for DefectEntry metadata
+                label="bulk",
+                parse_procar=False,
+            )
 
         if not self.defect_vr:
             defect_vr_path, multiple = _get_output_files_and_check_if_multiple(
@@ -2079,7 +2103,29 @@ class DefectParser:
                     defect_vr_path,
                     dir_type="defect",
                 )
-            self.defect_vr = get_vasprun(defect_vr_path)
+            self.defect_vr = _parse_vr_and_poss_procar(
+                defect_vr_path,
+                parse_projected_eigen=False,  # not needed for DefectEntry metadata
+                label="defect",
+                parse_procar=False,
+            )
+
+        def _get_vr_dict_without_proj_eigenvalues(vr):
+            proj_eigen = vr.projected_eigenvalues
+            vr.projected_eigenvalues = None
+            vr_dict = vr.as_dict()  # only call once
+            vr_dict_wout_proj = {  # projected eigenvalue data might be present, but not needed (v slow
+                # and data-heavy)
+                **{k: v for k, v in vr_dict.items() if k != "output"},
+                "output": {
+                    k: v
+                    for k, v in vr_dict["output"].items()
+                    if k != "projected_eigenvalues"  # reduce memory demand
+                },
+            }
+            vr_dict_wout_proj["output"]["projected_eigenvalues"] = None
+            vr.projected_eigenvalues = proj_eigen  # reset to original value
+            return vr_dict_wout_proj
 
         run_metadata = {
             # incars need to be as dict without module keys otherwise not JSONable:
@@ -2091,19 +2137,9 @@ class DefectParser:
             "bulk_actual_kpoints": self.bulk_vr.actual_kpoints,
             "defect_potcar_symbols": self.defect_vr.potcar_spec,
             "bulk_potcar_symbols": self.bulk_vr.potcar_spec,
-            "defect_vasprun_dict": self.defect_vr.as_dict(),  # projected_eigenvalues already removed
-            "bulk_vasprun_dict": {
-                **{  # projected_eigenvalues may not yet be removed
-                    k: v for k, v in self.bulk_vr.as_dict().items() if k != "output"
-                },
-                "output": {
-                    k: v
-                    for k, v in self.bulk_vr.as_dict()["output"].items()
-                    if k != "projected_eigenvalues"
-                },
-            },
+            "defect_vasprun_dict": _get_vr_dict_without_proj_eigenvalues(self.defect_vr),
+            "bulk_vasprun_dict": _get_vr_dict_without_proj_eigenvalues(self.bulk_vr),
         }
-        run_metadata["bulk_vasprun_dict"]["output"]["projected_eigenvalues"] = None  # reduce memory demand
 
         self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = _compare_incar_tags(
             run_metadata["bulk_incar"], run_metadata["defect_incar"]
@@ -2122,8 +2158,8 @@ class DefectParser:
 
     def load_bulk_gap_data(self, bulk_band_gap_path=None, use_MP=False, mpid=None, api_key=None):
         """
-        Get bulk band gap data from bulk OUTCAR file, or OUTCAR located at
-        ``actual_bulk_path``.
+        Get bulk band gap data from a bulk ``vasprun.xml(.gz)`` file located
+        in/at ``bulk_band_gap_path``.
 
         Alternatively, one can specify query the Materials Project (MP) database
         for the bulk gap data, using ``use_MP = True``, in which case the MP entry
@@ -2134,17 +2170,18 @@ class DefectParser:
 
         Args:
             bulk_band_gap_path (str):
-                Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
-                occur at reciprocal space points not included in the bulk supercell
-                calculation, you should use this tag to point to a bulk bandstructure
-                calculation instead. If None, will use
-                self.defect_entry.calculation_metadata["bulk_path"].
+                Path to bulk ``vasprun.xml(.gz)`` file for determining the band gap.
+                If the VBM/CBM occur at reciprocal space points not included in the bulk
+                supercell calculation, you should use this tag to point to a bulk
+                band-structure calculation instead. If None, will use
+                ``self.defect_entry.calculation_metadata["bulk_path"]``.
             use_MP (bool):
                 If True, will query the Materials Project database for the bulk gap data.
             mpid (str):
                 If provided, will query the Materials Project database for the bulk gap
                 data, using this Materials Project ID.
-            api_key (str): Materials API key to access database.
+            api_key (str):
+                Materials API key to access database.
         """
         if not self.bulk_vr:
             bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
@@ -2156,7 +2193,12 @@ class DefectParser:
                     f"{self.defect_entry.calculation_metadata['bulk_path']}. Using "
                     f"{os.path.basename(bulk_vr_path)} to {_vasp_file_parsing_action_dict['vasprun.xml']}."
                 )
-            self.bulk_vr = get_vasprun(bulk_vr_path)
+            self.bulk_vr = _parse_vr_and_poss_procar(
+                bulk_vr_path,
+                parse_projected_eigen=self.parse_projected_eigen,
+                label="bulk",
+                parse_procar=False,
+            )
 
         bulk_sc_structure = self.bulk_vr.initial_structure
 
@@ -2233,18 +2275,17 @@ class DefectParser:
             gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
         if bulk_band_gap_path:
-            print(f"Using actual bulk path: {bulk_band_gap_path}")
-            actual_bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
+            bulk_gap_vr_path, multiple = _get_output_files_and_check_if_multiple(
                 "vasprun.xml", bulk_band_gap_path
             )
             if multiple:
                 warnings.warn(
                     f"Multiple `vasprun.xml` files found in specified directory: "
-                    f"{bulk_band_gap_path}. Using {os.path.basename(actual_bulk_vr_path)} to "
+                    f"{bulk_band_gap_path}. Using {os.path.basename(bulk_gap_vr_path)} to "
                     f"{_vasp_file_parsing_action_dict['vasprun.xml']}."
                 )
-            actual_bulk_vr = get_vasprun(actual_bulk_vr_path)
-            band_gap, cbm, vbm, _ = actual_bulk_vr.eigenvalue_band_properties
+            bulk_gap_vr = get_vasprun(bulk_gap_vr_path, parse_projected_eigen=False)
+            band_gap, cbm, vbm, _ = bulk_gap_vr.eigenvalue_band_properties
 
         gap_calculation_metadata = {
             "mpid": mpid,
