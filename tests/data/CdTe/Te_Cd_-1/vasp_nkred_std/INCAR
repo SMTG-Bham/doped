@@ -13,7 +13,7 @@ ISIF = 2
 ISMEAR = 0
 ISPIN = 2
 ISYM = 0  # symmetry breaking extremely likely for defects
-KPAR = 2
+KPAR = 4  # 2 or >=4 k-points in at least two directions
 LASPH = True
 LHFCALC = True
 LMAXMIX = 4
