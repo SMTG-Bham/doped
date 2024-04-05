@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
-from test_generation import _potcars_available
 from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
@@ -1051,8 +1050,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.CaO_DATA_DIR,
                 skip_corrections=True,
-                parse_projected_eigen=bool(_potcars_available()),
-            )  # only test projected eigenvalues if POTCARs available (i.e. locally) to save time
+            )
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
