@@ -49,7 +49,6 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from shakenbreak.plotting import _install_custom_font
 
-from doped import _ignore_pmg_warnings
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.utils.parsing import (
     _get_bulk_supercell,
@@ -59,11 +58,6 @@ from doped.utils.parsing import (
     get_outcar,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
-
-warnings.simplefilter("default")
-# `message` only needs to match start of message:
-warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
 
 
 def _monty_decode_nested_dicts(d):
@@ -396,26 +390,32 @@ def get_kumagai_correction(
         CorrectionResults (summary of the corrections applied and metadata), and
         the matplotlib figure object if ``plot`` is True.
     """
+    orig_simplefilter = warnings.simplefilter
+    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+
     # suppress pydefect INFO messages
     import logging
 
-    from vise import user_settings  #
+    try:
+        from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    from pydefect.analyzer.calc_results import CalcResults
-    from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
-    from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-    from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
-    from pydefect.corrections.ewald import Ewald
-    from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
-    from pydefect.defaults import defaults
-    from pydefect.util.error_classes import SupercellError
+        user_settings.logger.setLevel(logging.CRITICAL)
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
+        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+        from pydefect.corrections.ewald import Ewald
+        from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+        from pydefect.defaults import defaults
+        from pydefect.util.error_classes import SupercellError
 
-    # vise suppresses `UserWarning`s, so need to reset
-    warnings.simplefilter("default")
-    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    _ignore_pmg_warnings()
+    except ImportError as exc:
+        raise ImportError(
+            "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+            "You can do this by running `pip install pydefect`."
+        ) from exc
+
+    warnings.simplefilter = orig_simplefilter  # reset to original
 
     def doped_make_efnv_correction(
         charge: float,

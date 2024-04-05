@@ -4,7 +4,6 @@ Code to generate VASP defect calculation input files.
 
 import contextlib
 import copy
-import inspect
 import json
 import os
 import warnings
@@ -24,7 +23,7 @@ from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
 from tqdm import tqdm
 
-from doped import _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
@@ -53,7 +52,7 @@ def deep_dict_update(d: dict, u: dict) -> dict:
 
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))
+default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))["POTCAR"]
 default_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
 default_HSE_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/HSESet.yaml"))
 default_defect_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/DefectSet.yaml"))
@@ -61,9 +60,6 @@ default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
 )  # defect set is just INCAR settings
-default_defect_relax_set = deep_dict_update(
-    default_defect_relax_set, default_potcar_dict
-)  # only POTCAR settings, not set in other *Set.yamls
 singleshot_incar_settings = {
     "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
     "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
@@ -129,70 +125,65 @@ class DopedKpoints(Kpoints):
             return super().__repr__()
 
 
-class DefectDictSet(DictSet):
+class DopedDictSet(DictSet):
     """
-    Extension to pymatgen DictSet object for VASP defect calculations.
+    Modified version of ``pymatgen`` ``DictSet``, to have more robust
+    ``POTCAR`` handling, expedited I/O (particularly for ``POTCAR`` generation,
+    which can be slow when generating many folders), ensure ``POSCAR`` atom
+    sorting, avoid encoding issues with ``KPOINTS`` comments etc.
     """
 
     def __init__(
         self,
         structure: Structure,
-        charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
         user_potcar_functional: UserPotcarFunctional = "PBE",
         user_potcar_settings: Optional[dict] = None,
+        auto_kpar: bool = True,
         poscar_comment: Optional[str] = None,
         **kwargs,
     ):
-        """
+        r"""
         Args:
-            structure (Structure): pymatgen Structure object of the defect supercell
-            charge_state (int): Charge of the defect structure
+            structure (Structure): ``pymatgen`` ``Structure`` object
             user_incar_settings (dict):
                 Dictionary of user INCAR settings (AEXX, NCORE etc.) to override
-                default settings. Highly recommended to look at output INCARs
-                or the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
-                ``doped/VASP_sets`` folder, to see what the default INCAR settings are.
-                Note that any flags that aren't numbers or True/False need to be input
-                as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
+                default ``INCAR`` settings. Note that any flags that aren't
+                numbers or ``True/False`` need to be input as strings with
+                quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet() format) e.g.,
-                {"reciprocal_density": 123}, or a Kpoints object. Default is Gamma-centred,
-                reciprocal_density = 100 [Å⁻³].
+                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``DictSet``
+                format) e.g., ``{"reciprocal_density": 123}``, or a ``Kpoints`` object.
+                Default is Gamma-only.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
+                ``POTCAR`` functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                Override the default ``POTCAR``\s, e.g. {"Li": "Li_sv"}. See
                 ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
+            auto_kpar (bool):
+                If ``True``, and ``KPAR`` is not set in ``user_incar_settings``,
+                attempts to set ``KPAR`` to a reasonable value based on the k-point
+                grid. Specifically, sets ``KPAR`` to 2 if there are 2 or >=4 k-points
+                in any direction, or 4 if there are at least 2 directions with 2 or >=4
+                k-points (otherwise remains as the default of ``1``).
+                Default is ``True``.
             poscar_comment (str):
-                Comment line to use for POSCAR files. Default is defect name,
-                fractional coordinates of initial site and charge state.
-            **kwargs: Additional kwargs to pass to DictSet.
+                Comment line to use for ``POSCAR`` file. Default is structure formula.
+            **kwargs: Additional kwargs to pass to ``DictSet``.
         """
         _ignore_pmg_warnings()
-        self.charge_state = charge_state
-        self.potcars = self._check_user_potcars(unperturbed_poscar=True, snb=False)
-        self.poscar_comment = (
-            poscar_comment
-            if poscar_comment is not None
-            else f"{structure.formula} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
-        )
-
-        # get base config and set EDIFF
-        relax_set = copy.deepcopy(default_defect_relax_set)
-        relax_set["INCAR"]["EDIFF"] = scaled_ediff(len(structure))
-        relax_set["INCAR"].pop("EDIFF_PER_ATOM", None)
-
-        lhfcalc = (
-            True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
-        )  # True (hybrid) by default
-        if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
-            relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
+        self.auto_kpar = auto_kpar
+        self.poscar_comment = poscar_comment or structure.formula
 
         if user_incar_settings is not None:
+            if "EDIFF_PER_ATOM" in user_incar_settings:
+                if "EDIFF" not in user_incar_settings:
+                    user_incar_settings["EDIFF"] = scaled_ediff(len(structure))
+                user_incar_settings.pop("EDIFF_PER_ATOM")  # pop un-used tag
+
             # Load INCAR tag/value check reference file from pymatgen.io.vasp.inputs
             with open(f"{resources.files('pymatgen.io.vasp')}/incar_parameters.json") as json_file:
                 incar_params = json.load(json_file)
@@ -204,21 +195,8 @@ class DefectDictSet(DictSet):
                         f"Cannot find {k} from your user_incar_settings in the list of INCAR flags",
                         BadIncarWarning,
                     )
-            relax_set["INCAR"].update(user_incar_settings)
 
-        # if "length" in user kpoint settings then pop reciprocal_density and use length instead
-        if relax_set["KPOINTS"].get("length") or (
-            user_kpoints_settings is not None
-            and (
-                "length" in user_kpoints_settings
-                if isinstance(user_kpoints_settings, dict)
-                else "length" in user_kpoints_settings.as_dict()
-            )
-        ):
-            relax_set["KPOINTS"].pop("reciprocal_density", None)
-
-        self.config_dict = self.CONFIG = relax_set  # avoid bug in pymatgen 2023.5.10, PR'd and fixed in
-        # later versions
+        potcar_settings = copy.deepcopy(default_potcar_dict)
 
         # check POTCAR settings not in config dict format:
         if isinstance(user_potcar_settings, dict):
@@ -228,13 +206,16 @@ class DefectDictSet(DictSet):
             if "POTCAR" in user_potcar_settings:
                 user_potcar_settings = user_potcar_settings["POTCAR"]
 
-        super(self.__class__, self).__init__(
+        potcar_settings.update(user_potcar_settings or {})
+        base_config_dict = {"POTCAR": potcar_settings}  # needs to be set with ``DictSet``
+        config_dict = deep_dict_update(base_config_dict, kwargs.pop("config_dict", {}))
+        config_dict["INCAR"] = user_incar_settings or {}
+
+        super().__init__(
             structure,
-            config_dict=self.config_dict,
-            user_incar_settings=user_incar_settings,
+            config_dict=config_dict,
             user_kpoints_settings=user_kpoints_settings,
             user_potcar_functional=user_potcar_functional,
-            user_potcar_settings=user_potcar_settings,
             force_gamma=kwargs.pop("force_gamma", True),  # force gamma-centred k-points by default
             **kwargs,
         )
@@ -242,43 +223,20 @@ class DefectDictSet(DictSet):
     @property
     def incar(self):
         """
-        Returns the Incar object generated from the config_dict, with NELECT
-        and NUPDOWN set accordingly.
+        Returns the ``Incar`` object generated from the ``DictSet`` config,
+        with a warning if ``KPAR > 1`` and only one k-point.
         """
-        incar_obj = super(self.__class__, self).incar
+        incar_obj = super().incar
 
-        try:
-            incar_obj["NELECT"] = self.nelect
-            if incar_obj["NELECT"] % 2 != 0:  # odd number of electrons
-                incar_obj["NUPDOWN"] = 1
-            else:
-                # when writing VASP just resets this to 0 anyway:
-                incar_obj["NUPDOWN"] = (
-                    "0  # If defect has multiple spin-polarised states (e.g. bipolarons) could "
-                    "also have triplet (NUPDOWN=2), but energy diff typically small."
-                )
+        if "KPAR" not in incar_obj and self.auto_kpar:  # determine appropriate KPAR setting
+            if len(self.kpoints.kpts[0]):  # k-point mesh
+                num_kpts_2_or_4_or_more = sum(i == 2 or i >= 4 for i in self.kpoints.kpts[0])
+                if num_kpts_2_or_4_or_more == 1:
+                    incar_obj["KPAR"] = "2  # 2 or >=4 k-points in one direction"
+                elif num_kpts_2_or_4_or_more >= 2:
+                    incar_obj["KPAR"] = "4  # 2 or >=4 k-points in at least two directions"
 
-        except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
-            # if it's a neutral defect, then this is ok (warn the user and write files), otherwise break
-            if self.charge_state != 0:
-                raise ValueError(
-                    "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be "
-                    "set due to the non-availability of POTCARs!\n(see the doped docs Installation page: "
-                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                    "this up)."
-                ) from e
-
-            warnings.warn(
-                f"NUPDOWN (i.e. spin state) INCAR flag cannot be set due to the non-availability of "
-                f"POTCARs!\n(see the doped docs Installation page: "
-                f"https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                f"this up). As this is a neutral supercell, the INCAR file will be written without this "
-                f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
-                f"unphysical solutions, and POTCARs are also needed to set the charge state (i.e. "
-                f"NELECT) of charged defect supercells. Got error:\n{e!r}"
-            )
-
-        if "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
+        elif "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
             # check KPAR setting is reasonable for number of KPOINTS
             warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
             incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
@@ -288,11 +246,11 @@ class DefectDictSet(DictSet):
     @property
     def potcar(self) -> Potcar:
         """
-        Potcar object.
+        ``Potcar`` object.
 
-        Redefined to intelligently handle pymatgen POTCAR issues.
+        Redefined to intelligently handle ``pymatgen`` ``POTCAR`` issues.
         """
-        if self.potcars:
+        if any("VASP_PSP_DIR" in i for i in SETTINGS):
             self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
                 self.user_potcar_functional, self.potcar_symbols
             )
@@ -303,7 +261,7 @@ class DefectDictSet(DictSet):
     @property
     def poscar(self) -> Poscar:
         """
-        Return Poscar object with comment.
+        Return ``Poscar`` object with comment, ensuring atom sorting.
         """
         unsorted_poscar = Poscar(self.structure, comment=self.poscar_comment)
 
@@ -317,7 +275,7 @@ class DefectDictSet(DictSet):
     @property
     def kpoints(self):
         """
-        Return kpoints object with comment.
+        Return ``kpoints`` object with comment.
         """
         pmg_kpoints = super().kpoints
         doped_kpoints = DopedKpoints.from_dict(pmg_kpoints.as_dict())
@@ -338,22 +296,163 @@ class DefectDictSet(DictSet):
 
         return doped_kpoints
 
+    def __repr__(self):
+        """
+        Returns a string representation of the ``DopedDictSet`` object.
+        """
+        properties, methods = _doped_obj_properties_methods(self)
+        return (
+            f"doped DopedDictSet with structure composition {self.structure.composition}. "
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
+        )
+
+
+class DefectDictSet(DopedDictSet):
+    """
+    Extension to ``pymatgen`` ``DictSet`` object for ``VASP`` defect
+    calculations.
+    """
+
+    def __init__(
+        self,
+        structure: Structure,
+        charge_state: int = 0,
+        user_incar_settings: Optional[dict] = None,
+        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
+        user_potcar_functional: UserPotcarFunctional = "PBE",
+        user_potcar_settings: Optional[dict] = None,
+        poscar_comment: Optional[str] = None,
+        **kwargs,
+    ):
+        r"""
+        Args:
+            structure (Structure): ``pymatgen`` ``Structure`` object of the defect supercell
+            charge_state (int): Charge of the defect structure
+            user_incar_settings (dict):
+                Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to override
+                default settings. Highly recommended to look at output ``INCAR`` s
+                or the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
+                ``doped/VASP_sets`` folder, to see what the default ``INCAR`` settings are.
+                Note that any flags that aren't numbers or ``True/False`` need to be input
+                as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
+                (default: None)
+            user_kpoints_settings (dict or Kpoints):
+                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``DictSet`` format) e.g.,
+                ``{"reciprocal_density": 123}``, or a ``Kpoints`` object. Default is Gamma-centred,
+                reciprocal_density = 100 [Å⁻³].
+            user_potcar_functional (str):
+                ``POTCAR`` functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
+            poscar_comment (str):
+                Comment line to use for ``POSCAR`` files. Default is defect name,
+                fractional coordinates of initial site and charge state.
+            **kwargs: Additional kwargs to pass to ``DictSet``.
+        """
+        _ignore_pmg_warnings()
+        self.charge_state = charge_state
+        self.poscar_comment = (
+            poscar_comment
+            or f"{structure.formula} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
+        )
+        custom_user_incar_settings = user_incar_settings or {}
+
+        # get base config and set EDIFF
+        relax_set = copy.deepcopy(default_defect_relax_set)
+
+        lhfcalc = (
+            True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
+        )  # True (hybrid) by default
+        if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
+            relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
+
+        relax_set["INCAR"].update(user_incar_settings or {})
+
+        # if "length" in user kpoint settings then pop reciprocal_density and use length instead
+        if user_kpoints_settings is not None and (
+            "length" in user_kpoints_settings
+            if isinstance(user_kpoints_settings, dict)
+            else "length" in user_kpoints_settings.as_dict()
+        ):
+            relax_set["KPOINTS"].pop("reciprocal_density")
+
+        super(self.__class__, self).__init__(
+            structure,
+            user_incar_settings=relax_set["INCAR"],
+            user_kpoints_settings=user_kpoints_settings or relax_set["KPOINTS"] or {},
+            user_potcar_functional=user_potcar_functional,
+            user_potcar_settings=user_potcar_settings,
+            force_gamma=kwargs.pop("force_gamma", True),  # force gamma-centred k-points by default
+            poscar_comment=self.poscar_comment,
+            **kwargs,
+        )
+        self.user_incar_settings = custom_user_incar_settings
+        self.user_potcar_settings = user_potcar_settings
+
+    @property
+    def incar(self):
+        """
+        Returns the ``Incar`` object generated from ``DopedDictSet``, with
+        ``NELECT`` and ``NUPDOWN`` set accordingly.
+
+        See https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
+        for discussion about appropriate ``NUPDOWN``/``MAGMOM`` settings.
+        """
+        incar_obj = super(self.__class__, self).incar
+
+        try:
+            incar_obj["NELECT"] = self.nelect
+            if incar_obj["NELECT"] % 2 != 0:  # odd number of electrons
+                incar_obj["NUPDOWN"] = 1
+            else:
+                # when writing VASP just resets this to 0 anyway:
+                incar_obj["NUPDOWN"] = (
+                    "0  # see https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation"
+                )
+
+        except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
+            # if it's a neutral defect, then this is ok (warn the user and write files), otherwise break
+            if self.charge_state != 0:
+                raise ValueError(
+                    "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be "
+                    "set due to the non-availability of POTCARs!\n(see the doped docs Installation page: "
+                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                    "this up)."
+                ) from e
+
+            warnings.warn(
+                f"NUPDOWN (i.e. spin state) INCAR flag cannot be set due to the non-availability of "
+                f"POTCARs!\n(see the doped docs Installation page: "
+                f"https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                f"this up). As this is a neutral supercell, the INCAR file will be written without this "
+                f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
+                f"unphysical solutions (see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation), and POTCARs are "
+                f"also needed to set the charge state (i.e. NELECT) of charged defect supercells. "
+                f"Got error:\n{e!r}"
+            )
+
+        return incar_obj
+
     @property
     def nelect(self):
-        """
+        r"""
         Number of electrons (``NELECT``) for the given structure and charge
         state.
 
-        This is equal to the sum of valence electrons (ZVAL) of the
-        ``POTCAR``s for each atom in the structure (supercell), minus
+        This is equal to the sum of valence electrons (``ZVAL``) of the
+        ``POTCAR``\s for each atom in the structure (supercell), minus
         the charge state.
         """
         neutral_nelect = super().nelect
         return neutral_nelect - self.charge_state
 
     def _check_user_potcars(self, unperturbed_poscar: bool = False, snb: bool = False) -> bool:
-        """
-        Check and warn the user if POTCARs are not set up with pymatgen.
+        r"""
+        Check and warn the user if ``POTCAR``\s are not set up with
+        ``pymatgen``.
         """
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
@@ -417,10 +516,11 @@ class DefectDictSet(DictSet):
             snb (bool): If input structures are from ShakeNBreak (so POSCARs aren't
                 'unperturbed'). (default: False)
         """
-        if not potcar_spec:
-            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
-        else:
+        if potcar_spec:
             potcars = True
+
+        else:
+            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
 
         if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
             try:
@@ -432,12 +532,14 @@ class DefectDictSet(DictSet):
                     zip_output=zip_output,
                 )
             except ValueError as e:
-                if str(e).startswith("NELECT") and potcar_spec:
-                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
-                        pot_spec_file.write("\n".join(self.potcar_symbols))
+                if not str(e).startswith("NELECT") or not potcar_spec:
+                    raise e
 
-                    self.kpoints.write_file(f"{output_path}/KPOINTS")
-                    self.poscar.write_file(f"{output_path}/POSCAR")
+                with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
+                    pot_spec_file.write("\n".join(self.potcar_symbols))
+
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
+                self.poscar.write_file(f"{output_path}/POSCAR")
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
             os.makedirs(output_path, exist_ok=True)
@@ -461,20 +563,12 @@ class DefectDictSet(DictSet):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectDictet object.
+        Returns a string representation of the ``DefectDictSet`` object.
         """
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = set()
-        for k in dir(self):
-            with contextlib.suppress(Exception):
-                if callable(getattr(self, k)) and not k.startswith("_"):
-                    methods.add(k)
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectDictSet with supercell composition {self.structure.composition}. "
-            f"Available attributes:\n{attrs | properties}\n\nAvailable methods:\n{methods}"
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -577,7 +671,7 @@ class DefectRelaxSet(MSONable):
                 as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
+                Dictionary of user KPOINTS settings (in pymatgen DictSet format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
                 ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` DefectDictSets (Γ-only for
                 ``vasp_gam``). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
@@ -587,7 +681,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR`` set.
-            **kwargs: Additional kwargs to pass to ``DefectDictSet()``.
+            **kwargs: Additional kwargs to pass to ``DefectDictSet``.
 
         Attributes:
             vasp_gam (DefectDictSet):
@@ -784,15 +878,11 @@ class DefectRelaxSet(MSONable):
         be consistent with those used for all defect and competing phase (
         chemical potential) calculations.
         """
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-
         # determine if vasp_std required or only vasp_gam:
         std_defect_set = DefectDictSet(
             self.defect_supercell,
             charge_state=self.defect_entry.charge_state,
-            user_incar_settings=user_incar_settings,
+            user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
@@ -854,7 +944,7 @@ class DefectRelaxSet(MSONable):
                             nkred_dict[nkred_key] = k
                             break
 
-                incar_settings = copy.deepcopy(std_defect_set.user_incar_settings)  # so KPAR also included
+                incar_settings = copy.deepcopy(self.user_incar_settings)
                 if nkred_dict["NKRED"] is not None:
                     incar_settings["NKRED"] = nkred_dict["NKRED"]
                 else:
@@ -913,23 +1003,16 @@ class DefectRelaxSet(MSONable):
         user_incar_settings.update(singleshot_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # likely quicker with this, checked in DefectDictSet
-            # if it's Γ-only vasp_ncl and reset to 1 accordingly
-
-        # ignore warning with "KPAR", in case it's Γ-only
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
-            return DefectDictSet(
-                self.defect_supercell,
-                charge_state=self.defect_entry.charge_state,
-                user_incar_settings=user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=self.poscar_comment,
-                **self.dict_set_kwargs,
-            )
+        return DefectDictSet(
+            self.defect_supercell,
+            charge_state=self.defect_entry.charge_state,
+            user_incar_settings=user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=self.poscar_comment,
+            **self.dict_set_kwargs,
+        )
 
     def _check_bulk_supercell_and_warn(self):
         if self.bulk_supercell is None:
@@ -1038,9 +1121,6 @@ class DefectRelaxSet(MSONable):
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
         user_incar_settings.update(singleshot_incar_settings)
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
-
         return self._check_vstd_kpoints(
             DefectDictSet(
                 bulk_supercell,
@@ -1104,10 +1184,8 @@ class DefectRelaxSet(MSONable):
         if nkred_defect_dict_set is None:
             return None
 
-        if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
+        if any("VASP_PSP_DIR" in i for i in SETTINGS):  # POTCARs available
             user_incar_settings = copy.deepcopy(self.user_incar_settings)
-            if "KPAR" not in user_incar_settings:
-                user_incar_settings["KPAR"] = 2  # multiple k-points, likely quicker with this
             user_incar_settings.update(singleshot_incar_settings)
             user_incar_settings.update(  # add NKRED settings
                 {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
@@ -1160,23 +1238,16 @@ class DefectRelaxSet(MSONable):
         user_incar_settings.update(singleshot_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
-        if "KPAR" not in user_incar_settings:
-            user_incar_settings["KPAR"] = 2  # likely quicker with this, checked in DefectDictSet
-            # if it's Γ-only vasp_ncl and reset to 1 accordingly
-
-        # ignore warning with "KPAR", in case it's Γ-only
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "KPAR")  # `message` only needs to match start of message
-            return DefectDictSet(
-                bulk_supercell,
-                charge_state=0,
-                user_incar_settings=user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=f"{bulk_supercell.formula} - Bulk",
-                **self.dict_set_kwargs,
-            )
+        return DefectDictSet(
+            bulk_supercell,
+            charge_state=0,
+            user_incar_settings=user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=f"{bulk_supercell.formula} - Bulk",
+            **self.dict_set_kwargs,
+        )
 
     def _get_output_path(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
         if defect_dir is None:
@@ -1779,17 +1850,13 @@ class DefectRelaxSet(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectRelaxSet object.
+        Returns a string representation of the ``DefectRelaxSet`` object.
         """
         formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
-            f"{self.defect_entry.name}. Available attributes:\n{attrs | properties}\n\n"
+            f"{self.defect_entry.name}. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 
@@ -1876,7 +1943,7 @@ class DefectsSet(MSONable):
                 with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet() format)
+                Dictionary of user KPOINTS settings (in pymatgen DictSet format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
                 ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` DefectDictSets (Γ-only for
                 ``vasp_gam``). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
@@ -1916,7 +1983,7 @@ class DefectsSet(MSONable):
                 set, then by default is only generated for systems with a max atomic
                 number (Z) >= 31 (i.e. further down the periodic table than Zn).
             json_obj (Union[Dict, DefectsGenerator]):
-                Either the DefectsGenerator object if input ``defect_entries`` is a
+                Either the ``DefectsGenerator`` object if input ``defect_entries`` is a
                 ``DefectsGenerator`` object, otherwise the ``defect_entries`` dictionary,
                 which will be written to file when ``write_files()`` is called, to
                 aid calculation provenance.
@@ -2248,19 +2315,15 @@ class DefectsSet(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectsSet object.
+        Returns a string representation of the ``DefectsSet`` object.
         """
         formula = next(
             iter(self.defect_entries.values())
         ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
-            f"defect entries in self.defect_entries. Available attributes:\n{attrs | properties}\n\n"
+            f"defect entries in self.defect_entries. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 
