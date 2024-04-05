@@ -21,7 +21,6 @@ from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
-from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 
 if TYPE_CHECKING:
@@ -31,41 +30,6 @@ if TYPE_CHECKING:
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
-
-
-def _reapply_warnings(filters: list):
-    """
-    When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
-    we cache warning filters beforehand, then reapply with this function.
-    """
-    warnings.resetwarnings()
-
-    def _get_str_from_warning_message_module(subfilter):
-        if isinstance(subfilter, str):
-            return subfilter
-
-        return subfilter.pattern if isinstance(subfilter, re.Pattern) else ""
-
-    for filter in filters:
-        action, message, category, module, lineno = filter[:5]
-        warnings.filterwarnings(
-            action,
-            _get_str_from_warning_message_module(message),
-            category,
-            _get_str_from_warning_message_module(module),
-            lineno,
-        )
-
-
-def _reset_warnings():
-    """
-    When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
-    we need to reset.
-    """
-    warnings.simplefilter("default")
-    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    _ignore_pmg_warnings()
 
 
 @contextlib.contextmanager
