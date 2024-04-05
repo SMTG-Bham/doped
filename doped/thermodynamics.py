@@ -5,7 +5,6 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 """
 
 import contextlib
-import inspect
 import os
 import warnings
 from copy import deepcopy
@@ -26,6 +25,7 @@ from pymatgen.io.vasp.outputs import Vasprun
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
+from doped import _doped_obj_properties_methods
 from doped.chemical_potentials import get_X_poor_limit, get_X_rich_limit
 from doped.core import DefectEntry, _no_chempots_warning, _orientational_degeneracy_warning
 from doped.generation import _sort_defect_entries
@@ -35,7 +35,7 @@ from doped.utils.parsing import (
     _compare_potcar_symbols,
     _get_bulk_supercell,
     _get_defect_supercell_site,
-    get_neutral_nelect_from_vasprun,
+    get_nelect_from_vasprun,
     get_vasprun,
 )
 from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
@@ -115,21 +115,37 @@ def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
     return limit
 
 
+def _update_old_chempots_dict(chempots: dict) -> dict:
+    """
+    Update a chempots dict in the old ``doped`` format (i.e. with ``facets``
+    rather than ``limits``) to that of the new format.
+    """
+    if "facets" in chempots:
+        chempots["limits"] = chempots.pop("facets")
+
+    if "facets_wrt_el_refs" in chempots:
+        chempots["limits_wrt_el_refs"] = chempots.pop("facets_wrt_el_refs")
+
+    return chempots
+
+
 def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = None):
     """
-    Parse the chemical potentials input, formatting them in the doped format
-    for use in analysis functions.
+    Parse the chemical potentials input, formatting them in the ``doped``
+    format for use in analysis functions.
 
-    Can be either doped format or user-specified format.
+    Can be either ``doped`` format or user-specified format.
 
-    Returns parsed chempots and el_refs
+    Returns parsed ``chempots`` and ``el_refs``
     """
     if chempots is not None and "limits_wrt_elt_refs" in chempots:
-        chempots = {
-            "limits": chempots.get("limits", {}),
-            "elemental_refs": chempots.get("elemental_refs"),
-            "limits_wrt_el_refs": chempots["limits_wrt_elt_refs"],
-        }
+        chempots["limits_wrt_el_refs"] = chempots.pop("limits_wrt_elt_refs")
+
+    if chempots is not None and "facets_wrt_elt_refs" in chempots:
+        chempots["facets_wrt_el_refs"] = chempots.pop("facets_wrt_elt_refs")
+
+    if chempots is not None and ("facets" in chempots or "facets_wrt_el_refs" in chempots):
+        chempots = _update_old_chempots_dict(chempots)
 
     if chempots is None:
         if el_refs is not None:
@@ -301,10 +317,10 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     ``{defect name without charge: [DefectEntry]}``, where the values are lists
     of DefectEntry objects with the same defect name (excluding charge state).
 
-    The DefectEntry.name attributes are used to get the defect names.
+    The ``DefectEntry.name`` attributes are used to get the defect names.
     These should be in the format:
     "{defect_name}_{optional_site_info}_{charge_state}".
-    If the DefectEntry.name attribute is not defined or does not end with the
+    If the ``DefectEntry.name`` attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
     for the `unrelaxed` defect (i.e. using the point symmetry of the defect
     site in the bulk cell).
@@ -373,7 +389,7 @@ class DefectThermodynamics(MSONable):
         can also be initialised with a list or dict of DefectEntry objects (e.g.
         from DefectsParser.defect_dict).
 
-        Note that the DefectEntry.name attributes are used to label the defects in
+        Note that the ``DefectEntry.name`` attributes are used to label the defects in
         plots.
 
         Args:
@@ -381,7 +397,7 @@ class DefectThermodynamics(MSONable):
                 A list or dict of DefectEntry objects. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
-                If the DefectEntry.name attribute is not defined or does not end with
+                If the ``DefectEntry.name`` attribute is not defined or does not end with
                 the charge state, then the entry will be renamed with the doped
                 default name.
             chempots (dict):
@@ -594,8 +610,8 @@ class DefectThermodynamics(MSONable):
 
     def to_json(self, filename: Optional[str] = None):
         """
-        Save the DefectThermodynamics object as a json file, which can be
-        reloaded with the DefectThermodynamics.from_json() class method.
+        Save the ``DefectThermodynamics`` object as a json file, which can be
+        reloaded with the ``DefectThermodynamics.from_json()`` class method.
 
         Args:
             filename (str): Filename to save json file as. If None, the filename will be
@@ -946,7 +962,7 @@ class DefectThermodynamics(MSONable):
                 DefectThermodynamics.defect_entries list. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
-                If the DefectEntry.name attribute is not defined or does not end with
+                If the ``DefectEntry.name`` attribute is not defined or does not end with
                 the charge state, then the entry will be renamed with the doped
                 default name.
             check_compatibility (bool):
@@ -1156,10 +1172,11 @@ class DefectThermodynamics(MSONable):
         docstring for more information).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation (see discussion in doi.org/10.1039/D2FD00043A and
-        doi.org/10.1039/D3CS00432E), affecting the final concentration by up to 2 orders
-        of magnitude. This factor is taken from the product of the
-        defect_entry.defect.multiplicity and defect_entry.degeneracy_factors attributes.
+        concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A
+        and https://doi.org/10.1039/D3CS00432E), affecting the final concentration by
+        up to ~2 orders of magnitude. This factor is taken from the product of the
+        ``defect_entry.defect.multiplicity`` and ``defect_entry.degeneracy_factors``
+        attributes.
 
         Args:
             chempots (dict):
@@ -1222,8 +1239,8 @@ class DefectThermodynamics(MSONable):
                 (default: False)
 
         Returns:
-            pandas DataFrame of defect concentrations (and formation energies) for each
-            defect entry in the DefectThermodynamics object.
+            ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
+            for each ``DefectEntry`` in the ``DefectThermodynamics`` object.
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
@@ -1301,7 +1318,7 @@ class DefectThermodynamics(MSONable):
             return bulk_dos_vr
 
         if isinstance(bulk_dos_vr, str):
-            bulk_dos_vr = get_vasprun(bulk_dos_vr)
+            bulk_dos_vr = get_vasprun(bulk_dos_vr, parse_dos=True)
 
         fermi_dos_band_gap, _cbm, fermi_dos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
         if abs(fermi_dos_vbm - self.vbm) > 0.1:
@@ -1316,7 +1333,7 @@ class DefectThermodynamics(MSONable):
                 f"the predicted Fermi level. Note that the Fermi level will be referenced to the VBM "
                 f"of the bulk supercell (i.e. DefectThermodynamics.vbm)"
             )
-        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr))
+        return FermiDos(bulk_dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(bulk_dos_vr))
 
     def _add_effective_dopant_concentration(
         self, conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
@@ -1387,10 +1404,10 @@ class DefectThermodynamics(MSONable):
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
-        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
-        final concentration by up to 2 orders of magnitude. This factor is taken from
-        the product of the defect_entry.defect.multiplicity and
-        defect_entry.degeneracy_factors attributes.
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This factor
+        is taken from the product of the ``defect_entry.defect.multiplicity`` and
+        ``defect_entry.degeneracy_factors`` attributes.
 
         Args:
             bulk_dos_vr (str or Vasprun or FermiDos):
@@ -1524,8 +1541,9 @@ class DefectThermodynamics(MSONable):
         total concentration of each defect is fixed to this value, but that the
         relative populations of defect charge states (and the Fermi level) can
         re-equilibrate at the lower (room) temperature. See discussion in
-        doi.org/10.1039/D3CS00432E (brief), doi.org/10.1016/j.cpc.2019.06.017 (detailed)
-        and ``doped``/``py-sc-fermi`` tutorials for more information.
+        https://doi.org/10.1039/D3CS00432E (brief),
+        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
+        ``doped``/``py-sc-fermi`` tutorials for more information.
         In certain cases (such as Li-ion battery materials or extremely slow charge
         capture/emission), these approximations may have to be adjusted such that some
         defects/charge states are considered fixed and some are allowed to
@@ -1549,9 +1567,9 @@ class DefectThermodynamics(MSONable):
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
-        doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E), affecting the
-        final concentration by up to 2 orders of magnitude. This factor is taken from
-        the product of the ``defect_entry.defect.multiplicity`` and
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to 2 orders of magnitude. This factor
+        is taken from the product of the ``defect_entry.defect.multiplicity`` and
         ``defect_entry.degeneracy_factors`` attributes.
 
         If you use this code in your work, please also cite:
@@ -1792,7 +1810,7 @@ class DefectThermodynamics(MSONable):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. The VBM value is taken from
-                DefectEntry.calculation_metadata if present, otherwise
+                ``DefectEntry.calculation_metadata`` if present, otherwise
                 from self.vbm.
                 If None (default), set to the mid-gap Fermi level (E_g/2).
 
@@ -1921,7 +1939,7 @@ class DefectThermodynamics(MSONable):
                 (Default: None)
 
         Returns:
-            pandas DataFrame of dopability limits, with columns:
+            ``pandas`` ``DataFrame`` of dopability limits, with columns:
             "limit", "Compensating Defect", "Dopability Limit" for both p/n-type
             where 'Dopability limit' are the corresponding Fermi level positions in
             eV, relative to the VBM.
@@ -2095,7 +2113,7 @@ class DefectThermodynamics(MSONable):
                 (Default: None)
 
         Returns:
-            pandas DataFrame of doping windows, with columns:
+            ``pandas`` ``DataFrame`` of doping windows, with columns:
             "limit", "Compensating Defect", "Doping Window" for both p/n-type
             where 'Doping Window' are the corresponding doping windows in eV.
         """
@@ -2386,7 +2404,7 @@ class DefectThermodynamics(MSONable):
         levels (i.e. those visible on the defect formation energy diagram),
         not including metastable defect states (which can be important for
         recombination, migration, degeneracy/concentrations etc, see e.g.
-        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
@@ -2489,7 +2507,7 @@ class DefectThermodynamics(MSONable):
         levels (i.e. those visible on the defect formation energy diagram),
         not including metastable defect states (which can be important for
         recombination, migration, degeneracy/concentrations etc, see e.g.
-        doi.org/10.1039/D2FD00043A & doi.org/10.1039/D3CS00432E).
+        https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
         If instead all single-electron transition levels are desired, set
@@ -2550,7 +2568,7 @@ class DefectThermodynamics(MSONable):
             Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
         - 'qE_F':
             Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in DefectEntry.calculation_metadata)
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
         - 'Σμ_ref':
             Sum of reference energies of the elemental phases in the chemical potentials sum.
         - 'Σμ_formal':
@@ -2612,7 +2630,7 @@ class DefectThermodynamics(MSONable):
                 (default: False)
 
         Returns:
-            pandas DataFrame or list of DataFrames
+            ``pandas`` ``DataFrame`` or list of ``DataFrame``\s
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
@@ -2673,7 +2691,7 @@ class DefectThermodynamics(MSONable):
             Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
         - 'qE_F':
             Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in DefectEntry.calculation_metadata)
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
         - 'Σμ_ref':
             Sum of reference energies of the elemental phases in the chemical potentials sum.
         - 'Σμ_formal':
@@ -2703,7 +2721,7 @@ class DefectThermodynamics(MSONable):
                 (default: False)
 
         Returns:
-            pandas DataFrame sorted by formation energy
+            ``pandas`` ``DataFrame`` sorted by formation energy
         """
         table = []
 
@@ -2756,7 +2774,11 @@ class DefectThermodynamics(MSONable):
         # round all floats to 3dp:
         return formation_energy_df.round(3)
 
-    def get_symmetries_and_degeneracies(self, skip_formatting: bool = False) -> pd.DataFrame:
+    def get_symmetries_and_degeneracies(
+        self,
+        skip_formatting: bool = False,
+        symprec: Optional[float] = None,
+    ) -> pd.DataFrame:
         r"""
         Generates a table of the bulk-site & relaxed defect point group
         symmetries, spin/orientational/total degeneracies and (bulk-)site
@@ -2821,22 +2843,35 @@ class DefectThermodynamics(MSONable):
         while for interstitials it is the point symmetry of the `final relaxed` interstitial
         site when placed in the (unrelaxed) bulk structure.
         The degeneracy factor is used in the calculation of defect/carrier concentrations
-        and Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A &
-        doi.org/10.1039/D3CS00432E).
+        and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
+        https://doi.org/10.1039/D3CS00432E).
 
         Args:
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states as
                 strings (and keep as ints and floats instead).
                 (default: False)
+            symprec (float):
+                Symmetry tolerance for ``spglib`` to use when determining
+                relaxed defect point symmetries and thus orientational
+                degeneracies. Default is ``0.1`` which matches that used by
+                the ``Materials Project`` and is larger than the ``pymatgen``
+                default of ``0.01`` (which is used by ``doped`` for
+                unrelaxed/bulk structures) to account for residual structural
+                noise in relaxed defect supercells.
+                You may want to adjust for your system (e.g. if there are
+                very slight octahedral distortions etc.). If ``symprec`` is
+                set, then the point symmetries and corresponding orientational
+                degeneracy will be re-parsed/computed even if already present
+                in the ``DefectEntry`` object ``calculation_metadata``.
 
         Returns:
-            pandas DataFrame
+            ``pandas`` ``DataFrame``
         """
         table_list = []
 
         for defect_entry in self.defect_entries:
-            defect_entry._parse_and_set_degeneracies()
+            defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
                     len(defect_entry.defect.structure.get_primitive_structure())
@@ -2880,21 +2915,16 @@ class DefectThermodynamics(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the DefectThermodynamics object.
+        Returns a string representation of the ``DefectThermodynamics`` object.
         """
         formula = _get_bulk_supercell(self.defect_entries[0]).composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )[0]
-        attrs = {k for k in vars(self) if not k.startswith("_")}
-        methods = {k for k in dir(self) if callable(getattr(self, k)) and not k.startswith("_")}
-        properties = {
-            name for name, value in inspect.getmembers(type(self)) if isinstance(value, property)
-        }
+        properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectThermodynamics for bulk composition {formula} with {len(self.defect_entries)} "
             f"defect entries (in self.defect_entries). Available attributes:\n"
-            f"{attrs | properties}\n\nAvailable "
-            f"methods:\n{methods}"
+            f"{properties}\n\nAvailable methods:\n{methods}"
         )
 
 
@@ -2933,7 +2963,7 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     return e_conc, h_conc
 
 
-def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
+def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, verbose: bool = True):
     """
     Given an input Dos/FermiDos object, rigidly shifts the valence and
     conduction bands of the DOS object to give a band gap that is now
@@ -3026,4 +3056,6 @@ def scissor_dos(delta_gap: float, dos: Dos, tol=1e-8, verbose=True):
     if verbose:
         print(f"Orig gap: {dos.get_gap(tol=tol)}, new gap:{dos.get_gap(tol=tol) + delta_gap}")
     scissored_dos_dict["structure"] = dos.structure.as_dict()
-    return FermiDos.from_dict(scissored_dos_dict)
+    if isinstance(dos, FermiDos):
+        return FermiDos.from_dict(scissored_dos_dict)
+    return Dos.from_dict(scissored_dos_dict)

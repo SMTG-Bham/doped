@@ -7,6 +7,8 @@ https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
 
+import contextlib
+import inspect
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
@@ -75,3 +77,20 @@ def _ignore_pmg_warnings():
 
 
 _ignore_pmg_warnings()
+
+
+def _doped_obj_properties_methods(obj):
+    """
+    Return a tuple of the attributes & properties and methods of a given
+    object.
+
+    Used in the ``__repr__()`` methods of ``doped`` objects.
+    """
+    attrs = {k for k in vars(obj) if not k.startswith("_")}
+    methods = set()
+    for k in dir(obj):
+        with contextlib.suppress(Exception):
+            if callable(getattr(obj, k)) and not k.startswith("_"):
+                methods.add(k)
+    properties = {name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)}
+    return attrs | properties, methods
