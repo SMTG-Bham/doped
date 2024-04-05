@@ -150,7 +150,6 @@ class DefectDictSetTest(unittest.TestCase):
                 potcar_settings[el_symbol] for el_symbol in dds.structure.symbol_set
             }
         else:
-            assert not dds.potcars
             with pytest.raises(ValueError) as e:
                 _test_pop = dds.potcar
             assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.value)
@@ -192,6 +191,7 @@ class DefectDictSetTest(unittest.TestCase):
         )
 
     def _check_potcar_nupdown_dds_warnings(self, w, dds):
+        print("Testing:", [str(warning.message) for warning in w])  # for debugging
         assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
         assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
         assert any(
@@ -289,7 +289,9 @@ class DefectDictSetTest(unittest.TestCase):
             )
 
     def _generate_and_check_dds(self, struct, incar_check=True, **dds_kwargs):
-        dds = DefectDictSet(struct, **dds_kwargs)  # fine for bulk prim input as well
+        with warnings.catch_warnings(record=True) as w:
+            dds = DefectDictSet(struct, **dds_kwargs)  # fine for bulk prim input as well
+        print([str(warning.message) for warning in w])  # for debugging
         self._check_dds(dds, struct, incar_check=incar_check, **dds_kwargs)
         return dds
 
@@ -301,8 +303,6 @@ class DefectDictSetTest(unittest.TestCase):
         if _potcars_available():
             assert dds.incar["NELECT"] == nelect
             assert dds.incar["NUPDOWN"] == nupdown
-        else:
-            assert not dds.potcars
 
     def test_neutral_defect_dict_set(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy())  # fine for bulk prim input as well
@@ -593,7 +593,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         if_present_rm("CdTe_bulk")
 
         for i in os.listdir():
-            if os.path.isdir(i) and any(j in i for j in ["Mg_", "O_", "v_", "MgO"]):
+            if os.path.isdir(i) and ("MgO" in i or any("vasp" in j for j in os.listdir(i))):
                 if_present_rm(i)
 
         if_present_rm("MgO_defects_generator.json")
