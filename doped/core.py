@@ -679,6 +679,7 @@ class DefectEntry(thermo.DefectEntry):
             defect_vr=defect_vr,
             bulk_procar=bulk_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
             defect_procar=defect_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
+            defect_supercell_site=self.defect_supercell_site,
         )
 
         self.calculation_metadata["eigenvalue_data"] = {
