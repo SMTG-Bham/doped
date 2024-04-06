@@ -593,7 +593,10 @@ class DefectRelaxSetTest(unittest.TestCase):
         if_present_rm("CdTe_bulk")
 
         for i in os.listdir():
-            if os.path.isdir(i) and ("MgO" in i or any("vasp" in j for j in os.listdir(i))):
+            if os.path.isdir(i) and (
+                "MgO" in i
+                or any("vasp_" in j and os.path.isdir(os.path.join(i, j)) for j in os.listdir(i))
+            ):
                 if_present_rm(i)
 
         if_present_rm("MgO_defects_generator.json")
