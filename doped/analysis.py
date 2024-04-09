@@ -403,8 +403,9 @@ def defect_entry_from_paths(
             corrections to the defect energy (not recommended in most cases).
             Default = False.
         error_tolerance (float):
-            If the estimated error in the defect charge correction is greater
-            than this value (in eV), then a warning is raised. (default: 0.05 eV)
+            If the estimated error in the defect charge correction, based on the
+            variance of the potential in the sampling region is greater than this
+            value (in eV), then a warning is raised. (default: 0.05 eV)
         bulk_band_gap_path (str):
             Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
             occur at reciprocal space points not included in the bulk supercell
@@ -511,7 +512,8 @@ class DefectsParser:
                 corrections to the defect energies (not recommended in most cases).
                 Default = False.
             error_tolerance (float):
-                If the estimated error in any charge correction is greater than
+                If the estimated error in any charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_band_gap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the
@@ -1376,8 +1378,9 @@ class DefectParser:
                 corrections to the defect energy (not recommended in most cases).
                 Default = False.
             error_tolerance (float):
-                If the estimated error in the defect charge correction is greater
-                than this value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based on the
+                variance of the potential in the sampling region is greater than this
+                value (in eV), then a warning is raised. (default: 0.05 eV)
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
                 defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
@@ -1464,8 +1467,9 @@ class DefectParser:
                 corrections to the defect energy (not recommended in most cases).
                 Default = ``False``.
             error_tolerance (float):
-                If the estimated error in the defect charge correction is greater
-                than this value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based on the
+                variance of the potential in the sampling region, is greater than this
+                value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_band_gap_path (str):
                 Path to bulk ``OUTCAR`` file for determining the band gap. If the
                 VBM/CBM occur at reciprocal space points not included in the bulk

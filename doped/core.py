@@ -316,6 +316,11 @@ class DefectEntry(thermo.DefectEntry):
         If this correction is used, please cite Freysoldt's
         original paper; 10.1103/PhysRevLett.102.016402.
 
+        The charge correction error is estimated by computing the average
+        standard deviation of the planar-averaged potential difference in the
+        sampling region, and multiplying by the defect charge. This is expected
+        to be a lower bound estimate of the true charge correction error.
+
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant of the host compound (including both
@@ -354,7 +359,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
@@ -449,7 +455,12 @@ class DefectEntry(thermo.DefectEntry):
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust ``defect_region_radius`` and/or
         ``excluded_indices`` to ensure that only sites in other layers are used for
-        the sampling region (plateau) - see example on doped docs Tips page.
+        the sampling region (plateau) - see example on doped docs ``Tips`` page.
+
+        The correction error is estimated by computing the standard error of the mean
+        of the sampled site potential differences, multiplied by the defect charge.
+        This is expected to be a lower bound estimate of the true charge correction
+        error.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -489,7 +500,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
