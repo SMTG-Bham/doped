@@ -279,10 +279,17 @@ class DefectEntry(thermo.DefectEntry):
         if (
             correction_error > error_tolerance
         ):  # greater than 50 meV error in charge correction, warn the user
+            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+                error_val_string = f"{correction_error:.3f}"
+                error_tol_string = f"{error_tolerance:.3f}"
+            else:  # else give in scientific notation:
+                error_val_string = f"{correction_error:.2e}"
+                error_tol_string = f"{error_tolerance:.2e}"
+
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {correction_error:.3f} eV (i.e. which is "
-                f"greater than the `error_tolerance`: {error_tolerance:.3f} eV). You may want to check "
+                f"charge correction for defect {self.name} is {error_val_string} eV (i.e. which is "
+                f"greater than the `error_tolerance`: {error_tol_string} eV). You may want to check "
                 f"the accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
@@ -315,6 +322,11 @@ class DefectEntry(thermo.DefectEntry):
         (to be used in following formation energy calculations).
         If this correction is used, please cite Freysoldt's
         original paper; 10.1103/PhysRevLett.102.016402.
+
+        The charge correction error is estimated by computing the average
+        standard deviation of the planar-averaged potential difference in the
+        sampling region, and multiplying by the defect charge. This is expected
+        to be a lower bound estimate of the true charge correction error.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -354,7 +366,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
@@ -449,7 +462,12 @@ class DefectEntry(thermo.DefectEntry):
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust ``defect_region_radius`` and/or
         ``excluded_indices`` to ensure that only sites in other layers are used for
-        the sampling region (plateau) - see example on doped docs Tips page.
+        the sampling region (plateau) - see example on doped docs ``Tips`` page.
+
+        The correction error is estimated by computing the standard error of the mean
+        of the sampled site potential differences, multiplied by the defect charge.
+        This is expected to be a lower bound estimate of the true charge correction
+        error.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -489,7 +507,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``

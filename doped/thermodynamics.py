@@ -2931,7 +2931,8 @@ class DefectThermodynamics(MSONable):
 def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> tuple[float, float]:
     """
     Get the corresponding electron and hole concentrations (in cm^-3) for a
-    given Fermi level (in eV) and temperature (in K), for a FermiDos object.
+    given Fermi level (in eV) and temperature (in K), for a ``FermiDos``
+    object.
 
     Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
     level should be the corresponding eigenvalue within the calculation (or in
