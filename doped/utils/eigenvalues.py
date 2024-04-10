@@ -159,7 +159,7 @@ def make_band_edge_orbital_infos(
     lower_idx = np.argwhere(max_energy_by_band > vbm - eigval_range)[0][0]
     upper_idx = np.argwhere(min_energy_by_band < cbm + eigval_range)[-1][-1]
 
-    orbs = defect_vr.projected_eigenvalues if defect_procar is None else defect_procar.proj_data
+    orbs = defect_vr.projected_eigenvalues if defect_procar is None else defect_procar.data
     s = defect_vr.final_structure
     orb_infos: list[Any] = []
     for spin, eigvals in defect_vr.eigenvalues.items():
@@ -631,8 +631,8 @@ def get_eigenvalue_analysis(
                     )
 
         if len(emp.axs) > 1:
-            emp.axs[0].set_title("Spin Down")
-            emp.axs[1].set_title("Spin Up")
+            emp.axs[0].set_title("Spin Up")
+            emp.axs[1].set_title("Spin Down")
         else:
             emp.axs[0].set_title("KS levels")
 
