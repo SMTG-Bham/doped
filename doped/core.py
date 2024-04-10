@@ -279,10 +279,17 @@ class DefectEntry(thermo.DefectEntry):
         if (
             correction_error > error_tolerance
         ):  # greater than 50 meV error in charge correction, warn the user
+            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+                error_val_string = f"{correction_error:.3f}"
+                error_tol_string = f"{error_tolerance:.3f}"
+            else:  # else give in scientific notation:
+                error_val_string = f"{correction_error:.2e}"
+                error_tol_string = f"{error_tolerance:.2e}"
+
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {correction_error:.3f} eV (i.e. which is "
-                f"greater than the `error_tolerance`: {error_tolerance:.3f} eV). You may want to check "
+                f"charge correction for defect {self.name} is {error_val_string} eV (i.e. which is "
+                f"greater than the `error_tolerance`: {error_tol_string} eV). You may want to check "
                 f"the accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("

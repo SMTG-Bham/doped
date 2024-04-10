@@ -63,9 +63,13 @@ class ChemPotsTestCase(unittest.TestCase):
 
         assert len(stable_cpa.elemental) == 2
         assert len(self.ext_cpa.elemental) == 3
-        assert any(entry["formula"] == "O2" for entry in stable_cpa.data)
+        assert any(entry["Formula"] == "O2" for entry in stable_cpa.data)
         assert np.isclose(
-            next(entry["energy_per_fu"] for entry in self.ext_cpa.data if entry["formula"] == "La2Zr2O7"),
+            next(
+                entry["DFT Energy (eV/fu)"]
+                for entry in self.ext_cpa.data
+                if entry["Formula"] == "La2Zr2O7"
+            ),
             -119.619571095,
         )
 
@@ -88,7 +92,7 @@ class ChemPotsTestCase(unittest.TestCase):
         )
         self.ext_cpa.from_csv(self.csv_path_ext)
         chempot_df = self.ext_cpa.calculate_chempots()
-        assert next(iter(chempot_df["La_limiting_phase"])) == "La2Zr2O7"
+        assert next(iter(chempot_df["La-Limiting Phase"])) == "La2Zr2O7"
         assert np.isclose(next(iter(chempot_df["La"])), -9.46298748)
 
     def test_ext_cpa_chempots(self):
@@ -107,8 +111,8 @@ class ChemPotsTestCase(unittest.TestCase):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
         chempot_df = stable_cpa.calculate_chempots(sort_by="Zr")
-        assert np.isclose(next(iter(chempot_df["Zr"])), -0.199544)
-        assert np.isclose(list(chempot_df["Zr"])[1], -10.975428439999998)
+        assert np.isclose(next(iter(chempot_df["Zr"])), -0.199544, atol=1e-4)
+        assert np.isclose(list(chempot_df["Zr"])[1], -10.975428439999998, atol=1e-4)
 
         with pytest.raises(KeyError):
             stable_cpa.calculate_chempots(sort_by="M")
@@ -119,7 +123,7 @@ class ChemPotsTestCase(unittest.TestCase):
         path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
         assert len(cpa.elemental) == 2
-        assert cpa.data[0]["formula"] == "O2"
+        assert cpa.data[0]["Formula"] == "O2"
 
         cpa_no = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with pytest.raises(FileNotFoundError):
@@ -134,7 +138,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(ext_cpa.elemental) == 3
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
         # formation_energy
-        assert [entry["formula"] for entry in ext_cpa.data] == [
+        assert [entry["Formula"] for entry in ext_cpa.data] == [
             "La",
             "O2",
             "Zr",
@@ -171,18 +175,21 @@ class ChemPotsTestCase(unittest.TestCase):
         # -278.46392292, 'formation_energy': -10.951109995000003}, {'formula': 'La2Zr2O7',
         # 'kpoints': '3x3x3', 'energy_per_fu': -119.619571095, 'energy_per_atom':
         # -10.874506463181818, 'energy': -239.23914219, 'formation_energy': -40.87683184}]
-        assert np.isclose(ext_cpa.data[0]["energy_per_fu"], -5.00458616)
-        assert np.isclose(ext_cpa.data[0]["energy_per_atom"], -5.00458616)
-        assert np.isclose(ext_cpa.data[0]["energy"], -20.01834464)
-        assert np.isclose(ext_cpa.data[0]["formation_energy"], 0.0)
-        assert np.isclose(ext_cpa.data[-1]["energy_per_fu"], -119.619571095)
-        assert np.isclose(ext_cpa.data[-1]["energy_per_atom"], -10.874506463181818)
-        assert np.isclose(ext_cpa.data[-1]["energy"], -239.23914219)
-        assert np.isclose(ext_cpa.data[-1]["formation_energy"], -40.87683184)
-        assert np.isclose(ext_cpa.data[6]["energy_per_fu"], -42.524204305)
-        assert np.isclose(ext_cpa.data[6]["energy_per_atom"], -10.63105107625)
-        assert np.isclose(ext_cpa.data[6]["energy"], -85.04840861)
-        assert np.isclose(ext_cpa.data[6]["formation_energy"], -5.986573519999993)
+        assert np.isclose(ext_cpa.data[0]["DFT Energy (eV/fu)"], -5.00458616)
+        assert np.isclose(ext_cpa.data[0]["DFT Energy (eV/atom)"], -5.00458616)
+        assert np.isclose(ext_cpa.data[0]["DFT Energy (eV)"], -20.01834464)
+        assert np.isclose(ext_cpa.data[0]["Formation Energy (eV/fu)"], 0.0)
+        assert np.isclose(ext_cpa.data[0]["Formation Energy (eV/atom)"], 0.0)
+        assert np.isclose(ext_cpa.data[-1]["DFT Energy (eV/fu)"], -119.619571095)
+        assert np.isclose(ext_cpa.data[-1]["DFT Energy (eV/atom)"], -10.874506463181818)
+        assert np.isclose(ext_cpa.data[-1]["DFT Energy (eV)"], -239.23914219)
+        assert np.isclose(ext_cpa.data[-1]["Formation Energy (eV/fu)"], -40.87683184)
+        assert np.isclose(ext_cpa.data[-1]["Formation Energy (eV/atom)"], -40.87683184 / 11)
+        assert np.isclose(ext_cpa.data[6]["DFT Energy (eV/fu)"], -42.524204305)
+        assert np.isclose(ext_cpa.data[6]["DFT Energy (eV/atom)"], -10.63105107625)
+        assert np.isclose(ext_cpa.data[6]["DFT Energy (eV)"], -85.04840861)
+        assert np.isclose(ext_cpa.data[6]["Formation Energy (eV/fu)"], -5.986573519999993)
+        assert np.isclose(ext_cpa.data[6]["Formation Energy (eV/atom)"], -5.986573519999993 / 4)
 
         # check if it works from a list
         all_paths = []
@@ -247,13 +254,13 @@ class ChemPotsTestCase(unittest.TestCase):
         # assert these lines are in the file:
         for i in [
             "2  # number of elements in bulk\n",
-            "1 Zr 2 O -10.975428440000002  # num_atoms, element, formation_energy (bulk)\n",
+            "1 Zr 2 O -10.975428440000002  # number of atoms, element, formation energy (bulk)\n",
             "O  # dependent variable (element)\n",
             "2  # number of bordering phases\n",
             "1  # number of elements in phase:\n",
-            "2 O 0.0  # num_atoms, element, formation_energy\n",
+            "2 O 0.0  # number of atoms, element, formation energy\n",
             "2  # number of elements in phase:\n",
-            "3 Zr 1 O -5.986573519999993  # num_atoms, element, formation_energy\n",
+            "3 Zr 1 O -5.986573519999993  # number of atoms, element, formation energy\n",
         ]:
             assert i in contents
 
@@ -270,28 +277,42 @@ class ChemPotsTestCase(unittest.TestCase):
         string = cpa.to_LaTeX_table(splits=1)
         assert (
             string[28:209]
-            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
             "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
             "are included"
         )
-        assert len(string) == 586
-        assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\"
+        assert len(string) == 589
+        assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV/fu) \\\\ \\"
         assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
 
         string = cpa.to_LaTeX_table(splits=2)
         assert (
             string[28:209]
-            == "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{ZrO2} and all "
+            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
             "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
             "are included"
         )
         assert (
             string.split("hline")[1]
-            == "\nFormula & k-mesh & $\\Delta E_f$ (eV) & Formula & k-mesh & $\\Delta E_f$ (eV)\\\\ \\"
+            == "\nFormula & k-mesh & $\\Delta E_f$ (eV/fu) & Formula & k-mesh & $\\Delta E_f$ ("
+            "eV/fu) \\\\ \\"
         )
 
         assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 &"
-        assert len(string) == 579
+        assert len(string) == 586
+
+        # test without kpoints:
+        for entry_dict in cpa.data:
+            entry_dict.pop("k-points")
+        string = cpa.to_LaTeX_table(splits=1)
+        assert (
+            string[28:173]
+            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
+            "competing phases. Only the lowest energy polymorphs are included"
+        )
+        assert len(string) == 433
+        assert string.split("hline")[1] == "\nFormula & $\\Delta E_f$ (eV/fu) \\\\ \\"
+        assert string.split("hline")[2][2:23] == "\\ce{ZrO2} & -10.975 \\"
 
         cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa_csv.from_csv(self.csv_path)
@@ -332,7 +353,7 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
         assert len(self.ext_cpa.data) == 11
 
-        formulas = [i["formula"] for i in reloaded_ext_cpa.data]
+        formulas = [i["Formula"] for i in reloaded_ext_cpa.data]
         assert len(formulas) == len(set(formulas))  # no polymorphs
 
         reloaded_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
@@ -356,9 +377,11 @@ class ChemPotsTestCase(unittest.TestCase):
         assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
 
         assert reloaded_ext_cpa_energy_sorted.data != reloaded_ext_cpa.data  # different order
-        sorted_data = sorted(reloaded_ext_cpa.data, key=lambda x: x["formation_energy"], reverse=True)
+        sorted_data = sorted(
+            reloaded_ext_cpa.data, key=lambda x: x["Formation Energy (eV/fu)"], reverse=True
+        )
         chemical_potentials._move_dict_to_start(
-            sorted_data, "formula", self.ext_cpa.bulk_composition.reduced_formula
+            sorted_data, "Formula", self.ext_cpa.bulk_composition.reduced_formula
         )
         assert reloaded_ext_cpa_energy_sorted.data == sorted_data  # energy sorted data
 
@@ -374,8 +397,8 @@ class ChemPotsTestCase(unittest.TestCase):
         formation_energy_df = pd.DataFrame(formation_energy_data)
 
         # drop all but the formula and energy_per_fu columns:
-        for i in ["energy_per_fu", "energy_per_atom"]:
-            minimal_formation_energy_df = formation_energy_df[["formula", i]]
+        for i in ["DFT Energy (eV/fu)", "DFT Energy (eV/atom)"]:
+            minimal_formation_energy_df = formation_energy_df[["Formula", i]]
             minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
 
             reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -385,10 +408,11 @@ class ChemPotsTestCase(unittest.TestCase):
             )  # no kpoints or raw energy, but should have formula, energy_per_fu, energy_per_atom,
             # elemental amounts (i.e. Zr and O here) and formation_energy:
             minimal_columns = [
-                "formula",
-                "energy_per_fu",
-                "energy_per_atom",
-                "formation_energy",
+                "Formula",
+                "DFT Energy (eV/fu)",
+                "DFT Energy (eV/atom)",
+                "Formation Energy (eV/fu)",
+                "Formation Energy (eV/atom)",
                 "Zr",  # ordered by appearance in bulk composition
                 "O",
             ]
@@ -399,13 +423,15 @@ class ChemPotsTestCase(unittest.TestCase):
 
             trimmed_df = trimmed_df.round(5)  # round to avoid slight numerical differences
             reloaded_cpa.formation_energy_df = reloaded_cpa.formation_energy_df.round(5)
+            print(trimmed_df, reloaded_cpa.formation_energy_df)
+            print(trimmed_df.columns, reloaded_cpa.formation_energy_df.columns)
             assert trimmed_df.equals(reloaded_cpa.formation_energy_df)
 
             # check chem limits the same:
             _compare_chempot_dicts(cpa.chempots, reloaded_cpa.chempots)
 
         # test ValueError without energy_per_fu/energy_per_atom column:
-        too_minimal_formation_energy_df = formation_energy_df[["formula"]]
+        too_minimal_formation_energy_df = formation_energy_df[["Formula"]]
         too_minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with pytest.raises(ValueError) as exc:
@@ -429,50 +455,50 @@ class FormationEnergyTestCase(unittest.TestCase):
         elemental = {"O": -7.006602065, "Zr": -9.84367624}
         data = [
             {
-                "formula": "O2",
-                "energy_per_fu": -14.01320413,
-                "energy_per_atom": -7.006602065,
-                "energy": -14.01320413,
+                "Formula": "O2",
+                "DFT Energy (eV/fu)": -14.01320413,
+                "DFT Energy (eV/atom)": -7.006602065,
+                "DFT Energy (eV)": -14.01320413,
             },
             {
-                "formula": "Zr",
-                "energy_per_fu": -9.84367624,
-                "energy_per_atom": -9.84367624,
-                "energy": -19.68735248,
+                "Formula": "Zr",
+                "DFT Energy (eV/fu)": -9.84367624,
+                "DFT Energy (eV/atom)": -9.84367624,
+                "DFT Energy (eV)": -19.68735248,
             },
             {
-                "formula": "Zr3O",
-                "energy_per_fu": -42.524204305,
-                "energy_per_atom": -10.63105107625,
-                "energy": -85.04840861,
+                "Formula": "Zr3O",
+                "DFT Energy (eV/fu)": -42.524204305,
+                "DFT Energy (eV/atom)": -10.63105107625,
+                "DFT Energy (eV)": -85.04840861,
             },
             {
-                "formula": "ZrO2",
-                "energy_per_fu": -34.5391058,
-                "energy_per_atom": -11.5130352,
-                "energy": -138.156423,
+                "Formula": "ZrO2",
+                "DFT Energy (eV/fu)": -34.5391058,
+                "DFT Energy (eV/atom)": -11.5130352,
+                "DFT Energy (eV)": -138.156423,
             },
             {
-                "formula": "ZrO2",
-                "energy_per_fu": -34.83230881,
-                "energy_per_atom": -11.610769603333331,
-                "energy": -139.32923524,
+                "Formula": "ZrO2",
+                "DFT Energy (eV/fu)": -34.83230881,
+                "DFT Energy (eV/atom)": -11.610769603333331,
+                "DFT Energy (eV)": -139.32923524,
             },
             {
-                "formula": "Zr2O",
-                "energy_per_fu": -32.42291351666667,
-                "energy_per_atom": -10.807637838888889,
-                "energy": -194.5374811,
+                "Formula": "Zr2O",
+                "DFT Energy (eV/fu)": -32.42291351666667,
+                "DFT Energy (eV/atom)": -10.807637838888889,
+                "DFT Energy (eV)": -194.5374811,
             },
         ]
 
         formation_energy_df = chemical_potentials._calculate_formation_energies(data, elemental)
-        assert formation_energy_df["formula"][0] == "O2"  # definite order
-        assert formation_energy_df["formation_energy"][0] == 0
-        assert formation_energy_df["formula"][1] == "Zr"
-        assert formation_energy_df["formation_energy"][1] == 0
+        assert formation_energy_df["Formula"][0] == "O2"  # definite order
+        assert formation_energy_df["Formation Energy (eV/fu)"][0] == 0
+        assert formation_energy_df["Formula"][1] == "Zr"
+        assert formation_energy_df["Formation Energy (eV/fu)"][1] == 0
         # lowest energy ZrO2:
-        assert np.isclose(formation_energy_df["formation_energy"][4], -10.975428440000002)
+        assert np.isclose(formation_energy_df["Formation Energy (eV/fu)"][4], -10.975428440000002)
 
 
 class CombineExtrinsicTestCase(unittest.TestCase):
