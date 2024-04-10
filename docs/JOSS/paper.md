@@ -77,7 +77,7 @@ Here we report ``doped``, a Python package for the generation, pre-/post-process
 The materials science sub-field of computational defect modelling has seen considerable growth in recent years, driven by the crucial importance of these species in functional materials and the major advances in computational methodologies and resources facilitating their accurate simulation.
 Software which enables researchers to efficiently and accurately perform these calculations, while allowing for in-depth target analyses of the resultant data, is thus of significant value to the community.
 Indeed there are many critical stages in the computational workflow for defects, which when performed manually not only consume significant researcher time and effort but also leave room for human error – particularly for newcomers to the field.
-Moreover, there are growing efforts to perform high-throughput investigations of defects in solids [@xiong_high-throughput_2023,@yuan_discovery_2024,@broberg_high-throughput_2023], necessitating robust, user-friendly and efficient software implementing this calculation workflow.
+Moreover, there are growing efforts to perform high-throughput investigations of defects in solids [@xiong_high-throughput_2023; @yuan_discovery_2024; @broberg_high-throughput_2023], necessitating robust, user-friendly and efficient software implementing this calculation workflow.
 
 [//]: # (By expediting the defect simulation workflow and providing efficient analysis tools, ``doped`` aims to... facilitate the investigation of defects in solids, and to enable the efficient and reproducible calculation of solid-state defect properties.)
 
