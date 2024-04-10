@@ -589,6 +589,27 @@ class DefectsParser:
             and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
         ]
 
+        if not possible_defect_folders:  # user may have specified the defect folder directly, so check
+            # if we can dynamically determine the defect folder:
+            possible_defect_folders = [
+                dir
+                for dir in os.listdir(os.path.join(self.output_path, os.pardir))
+                if any(
+                    "vasprun" in file and ".xml" in file
+                    for file_list in [
+                        tup[2] for tup in os.walk(os.path.join(self.output_path, os.pardir, dir))
+                    ]
+                    for file in file_list
+                )
+                and (
+                    os.path.basename(self.output_path) in dir  # only that defect directory
+                    or "bulk" in str(dir).lower()  # or a bulk directory, for later
+                )
+                and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
+            ]
+            if possible_defect_folders:  # update output path (otherwise will crash with informative error)
+                self.output_path = os.path.join(self.output_path, os.pardir)
+
         if self.subfolder is None:  # determine subfolder to use
             vasp_subfolders = [
                 subdir

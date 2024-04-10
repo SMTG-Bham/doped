@@ -771,7 +771,26 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
 
+        # spot check:
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+
+    def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
+        with warnings.catch_warnings(record=True) as w:  # no warning about negative corrections with
+            # strong anisotropic dielectric:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect/O_-2",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )
+        print([warn.message for warn in w])  # for debugging
+        assert not w  # no warnings
+        self._check_DefectsParser(Sb2Se3_O_dp)
+        Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
+        assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
