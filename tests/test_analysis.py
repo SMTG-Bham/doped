@@ -2008,8 +2008,8 @@ class DopedParsingTestCase(unittest.TestCase):
         print([str(warn.message) for warn in w])
         assert any(
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
-            f"check the accuracy of the correction by plotting the site potential differences (using "
+            f"3.54e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
+            f"to check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
             f"to unstable or shallow defect charge states (which can't be accurately modelled with "
             f"the supercell approach; see "
