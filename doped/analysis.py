@@ -403,8 +403,9 @@ def defect_entry_from_paths(
             corrections to the defect energy (not recommended in most cases).
             Default = False.
         error_tolerance (float):
-            If the estimated error in the defect charge correction is greater
-            than this value (in eV), then a warning is raised. (default: 0.05 eV)
+            If the estimated error in the defect charge correction, based on the
+            variance of the potential in the sampling region is greater than this
+            value (in eV), then a warning is raised. (default: 0.05 eV)
         bulk_band_gap_path (str):
             Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
             occur at reciprocal space points not included in the bulk supercell
@@ -511,7 +512,8 @@ class DefectsParser:
                 corrections to the defect energies (not recommended in most cases).
                 Default = False.
             error_tolerance (float):
-                If the estimated error in any charge correction is greater than
+                If the estimated error in any charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_band_gap_path (str):
                 Path to bulk OUTCAR file for determining the band gap. If the
@@ -997,12 +999,20 @@ class DefectsParser:
 
         def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
             long_name = "Freysoldt" if type == "FNV" else "Kumagai"
-            correction_errors_string = "\n".join(
-                f"{name}: {error:.3f} eV" for name, error in correction_errors
-            )
+            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+                error_tol_string = f"{error_tolerance:.3f}"
+                correction_errors_string = "\n".join(
+                    f"{name}: {error:.3f} eV" for name, error in correction_errors
+                )
+            else:  # else give in scientific notation:
+                error_tol_string = f"{error_tolerance:.2e}"
+                correction_errors_string = "\n".join(
+                    f"{name}: {error:.2e} eV" for name, error in correction_errors
+                )
+
             warnings.warn(
                 f"Estimated error in the {long_name} ({type}) charge correction for certain "
-                f"defects is greater than the `error_tolerance` (= {error_tolerance:.3f} eV):"
+                f"defects is greater than the `error_tolerance` (= {error_tol_string} eV):"
                 f"\n{correction_errors_string}\n"
                 f"You may want to check the accuracy of the corrections by plotting the site "
                 f"potential differences (using `defect_entry.get_{long_name.lower()}_correction()`"
@@ -1316,6 +1326,11 @@ def _parse_vr_and_poss_procar(
     parse_procar: bool = True,
 ):
     procar = None
+
+    failed_eig_parsing_warning_message = (
+        f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
+    )
+
     try:
         vr = get_vasprun(
             vr_path,
@@ -1324,6 +1339,7 @@ def _parse_vr_and_poss_procar(
         )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
     except Exception as vr_exc:
         vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
+        failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
         if parse_procar:
             procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
@@ -1332,15 +1348,14 @@ def _parse_vr_and_poss_procar(
                     procar = get_procar(procar_path)
 
                 except Exception as procar_exc:
-                    if parse_projected_eigen is not None:  # otherwise no warning
-                        warning_message = (
-                            f"Could not parse eigenvalue data from vasprun.xml.gz files in "
-                            f"{label} folder at {output_path}, got error:\n{vr_exc}\nThen got "
-                        )
-                        warnings.warn(
-                            f"{warning_message}the following error when attempting to parse projected "
-                            f"eigenvalues from the defect PROCAR(.gz):\n{procar_exc}"
-                        )
+                    failed_eig_parsing_warning_message += (
+                        f"\nThen got the following error when attempting to parse projected eigenvalues "
+                        f"from the defect PROCAR(.gz):\n{procar_exc}"
+                    )
+
+    if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
+        # only warn if parse_projected_eigen is set to True (not None)
+        warnings.warn(failed_eig_parsing_warning_message)
 
     return vr, procar if parse_procar else vr
 
@@ -1376,8 +1391,9 @@ class DefectParser:
                 corrections to the defect energy (not recommended in most cases).
                 Default = False.
             error_tolerance (float):
-                If the estimated error in the defect charge correction is greater
-                than this value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based on the
+                variance of the potential in the sampling region is greater than this
+                value (in eV), then a warning is raised. (default: 0.05 eV)
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
                 defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
@@ -1464,8 +1480,9 @@ class DefectParser:
                 corrections to the defect energy (not recommended in most cases).
                 Default = ``False``.
             error_tolerance (float):
-                If the estimated error in the defect charge correction is greater
-                than this value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based on the
+                variance of the potential in the sampling region, is greater than this
+                value (in eV), then a warning is raised. (default: 0.05 eV)
             bulk_band_gap_path (str):
                 Path to bulk ``OUTCAR`` file for determining the band gap. If the
                 VBM/CBM occur at reciprocal space points not included in the bulk
@@ -1781,7 +1798,7 @@ class DefectParser:
                     defect_procar=defect_procar,
                 )
             except Exception as exc:
-                if parse_projected_eigen is not None:  # otherwise no warning
+                if parse_projected_eigen is True:  # otherwise no warning
                     warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
 
         defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
