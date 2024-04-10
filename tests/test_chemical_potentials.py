@@ -329,7 +329,9 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         reloaded_cpa.from_csv("competing_phases.csv")
         reloaded_cpa_data = reloaded_cpa._get_and_sort_formation_energy_data()
-        print(pd.DataFrame(stable_cpa_data), pd.DataFrame(reloaded_cpa_data))  # for debugging
+        print(
+            pd.DataFrame(stable_cpa_data).to_dict(), pd.DataFrame(reloaded_cpa_data).to_dict()
+        )  # for debugging
         assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
 
         # check chem limits the same:
