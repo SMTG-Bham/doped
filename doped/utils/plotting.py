@@ -627,7 +627,7 @@ def _get_legends_txt(for_legend, all_entries=False):
 
             while defect_name in legends_txt:
                 i += 1
-                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
+                defect_name = f"{defect_name.rsplit('$_', 1)[0]}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
 
         legends_txt.append(defect_name)
 
@@ -663,7 +663,7 @@ def _rename_key_and_dicts(
 
         while key in output_dict:
             i += 1
-            key = f"{key}_{chr(96 + i)}"  # d, e, f etc
+            key = f"{key.rsplit('_', 1)[0]}_{chr(96 + i)}"  # d, e, f etc
 
     return key, output_dicts
 
