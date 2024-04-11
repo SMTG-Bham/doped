@@ -1,6 +1,6 @@
 # `doped` Development To-Do List
 ## Chemical potential
-- Check through chemical potential TO-DOs. Need to recheck validity of approximations used for extrinsic competing phases (and code for this).
+- Check through chemical potential TO-DOs. Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
 - Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
 - Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?) Also can see https://github.com/materialsproject/pymatgen-analysis-defects/blob/main/pymatgen/analysis/defects/plotting/phases.py for 2D chempot plotting.
@@ -14,8 +14,7 @@
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
   - Don't show transition levels outside of the bandgap (or within a certain range of the band edge, possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
   - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
-  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! 
-  - Also carrier concentration vs Fermi level plots as done in the Kumagai PRX paper? With this, should also mention that DOS calcs should be well converged wrt kpoints for accurate Fermi level prediction. 
+  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!  
   - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
 - Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
@@ -38,9 +37,8 @@
     and/or if it's known from other work for your chosen functional etc.)
   - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
   - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples. Should also note that the dielectric should be in the same xyz Cartesian basis as the supercell calculations (likely but not necessarily the same as the raw output of a VASP dielectric calculation if an oddly-defined primitive cell is used)
-  - Note about cost of `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`,
-    possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
-  - Use `NKRED = 2` for `vasp_ncl` chempot calcs, if even kpoints and over 4. Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
+  - `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`, possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
+  - Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `vise`, `CarrierCapture`, and give some
     quick examples? Add as optional dependencies.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
@@ -58,7 +56,7 @@
     calculations, but only the case when the occupation of the SOC-affected orbitals is constant
     (typically not the case)) Better to do consistently (link Emily SOC work and/or thesis).
     - But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the same composition (oxidation states), to good accuracy.
-    - Also, can use symmetry with SOC total energy calculations, have tested this. Also `NKRED` possibly useful for expensive (particularly metal) calculations!
+    - Also, can use symmetry with SOC total energy calculations, have tested this.
   - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
     automatically in `doped`, excited-state degeneracy (e.g. with bipolarons/dimers with single and triplet
     states) are not, so the user should manually account for this if present. Also note that

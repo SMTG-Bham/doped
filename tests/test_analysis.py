@@ -771,7 +771,26 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
 
+        # spot check:
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+
+    def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
+        with warnings.catch_warnings(record=True) as w:  # no warning about negative corrections with
+            # strong anisotropic dielectric:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect/O_-2",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )
+        print([warn.message for warn in w])  # for debugging
+        assert not w  # no warnings
+        self._check_DefectsParser(Sb2Se3_O_dp)
+        Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
+        assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
@@ -2008,8 +2027,8 @@ class DopedParsingTestCase(unittest.TestCase):
         print([str(warn.message) for warn in w])
         assert any(
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
-            f"check the accuracy of the correction by plotting the site potential differences (using "
+            f"3.54e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
+            f"to check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
             f"to unstable or shallow defect charge states (which can't be accurately modelled with "
             f"the supercell approach; see "
