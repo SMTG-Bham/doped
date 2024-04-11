@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.4.0"
+version = "2.4.1"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
 readme = "README.md"
