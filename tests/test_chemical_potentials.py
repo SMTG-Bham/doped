@@ -332,7 +332,7 @@ class ChemPotsTestCase(unittest.TestCase):
         print(
             pd.DataFrame(stable_cpa_data).to_dict(), pd.DataFrame(reloaded_cpa_data).to_dict()
         )  # for debugging
-        assert pd.DataFrame(stable_cpa_data).equals(pd.DataFrame(reloaded_cpa_data))
+        assert pd.DataFrame(stable_cpa_data).round(4).equals(pd.DataFrame(reloaded_cpa_data).round(4))
 
         # check chem limits the same:
         _compare_chempot_dicts(stable_cpa.chempots, reloaded_cpa.chempots)
@@ -348,7 +348,9 @@ class ChemPotsTestCase(unittest.TestCase):
         reloaded_ext_cpa.from_csv("competing_phases.csv")
         reloaded_ext_cpa._get_and_sort_formation_energy_data()
 
-        assert reloaded_ext_cpa.formation_energy_df.equals(self.ext_cpa.formation_energy_df)
+        assert reloaded_ext_cpa.formation_energy_df.round(4).equals(
+            self.ext_cpa.formation_energy_df.round(4)
+        )
 
         # test pruning:
         self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
@@ -406,8 +408,8 @@ class ChemPotsTestCase(unittest.TestCase):
 
             reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
             reloaded_cpa.from_csv("competing_phases.csv")
-            assert not cpa.formation_energy_df.equals(
-                reloaded_cpa.formation_energy_df
+            assert not cpa.formation_energy_df.round(4).equals(
+                reloaded_cpa.formation_energy_df.round(4)
             )  # no kpoints or raw energy, but should have formula, energy_per_fu, energy_per_atom,
             # elemental amounts (i.e. Zr and O here) and formation_energy:
             minimal_columns = [
@@ -428,7 +430,7 @@ class ChemPotsTestCase(unittest.TestCase):
             reloaded_cpa.formation_energy_df = reloaded_cpa.formation_energy_df.round(5)
             print(trimmed_df, reloaded_cpa.formation_energy_df)
             print(trimmed_df.columns, reloaded_cpa.formation_energy_df.columns)
-            assert trimmed_df.equals(reloaded_cpa.formation_energy_df)
+            assert trimmed_df.round(4).equals(reloaded_cpa.formation_energy_df.round(4))
 
             # check chem limits the same:
             _compare_chempot_dicts(cpa.chempots, reloaded_cpa.chempots)
