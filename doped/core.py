@@ -251,13 +251,15 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             ``DefectEntry`` object
         """
-        from doped.utils.parsing import _reset_warnings, suppress_logging
+        orig_simplefilter = warnings.simplefilter
+        warnings.simplefilter = lambda *args, **kwargs: None  # avoid vise warning suppression
+
+        from doped.utils.parsing import suppress_logging
 
         with suppress_logging():
             obj = super().from_dict(d)
 
-        _reset_warnings()  # vise suppresses ``UserWarning``s (and this initialises ``vise``
-        # ``BandEdgeStates`` objects) so need to reset
+        warnings.simplefilter = orig_simplefilter  # reset to original
 
         return obj
 
@@ -277,10 +279,17 @@ class DefectEntry(thermo.DefectEntry):
         if (
             correction_error > error_tolerance
         ):  # greater than 50 meV error in charge correction, warn the user
+            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+                error_val_string = f"{correction_error:.3f}"
+                error_tol_string = f"{error_tolerance:.3f}"
+            else:  # else give in scientific notation:
+                error_val_string = f"{correction_error:.2e}"
+                error_tol_string = f"{error_tolerance:.2e}"
+
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {correction_error:.3f} eV (i.e. which is "
-                f"greater than the `error_tolerance`: {error_tolerance:.3f} eV). You may want to check "
+                f"charge correction for defect {self.name} is {error_val_string} eV (i.e. which is "
+                f"greater than the `error_tolerance`: {error_tol_string} eV). You may want to check "
                 f"the accuracy of the correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
@@ -313,6 +322,11 @@ class DefectEntry(thermo.DefectEntry):
         (to be used in following formation energy calculations).
         If this correction is used, please cite Freysoldt's
         original paper; 10.1103/PhysRevLett.102.016402.
+
+        The charge correction error is estimated by computing the average
+        standard deviation of the planar-averaged potential difference in the
+        sampling region, and multiplying by the defect charge. This is expected
+        to be a lower bound estimate of the true charge correction error.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -352,7 +366,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
@@ -447,7 +462,12 @@ class DefectEntry(thermo.DefectEntry):
         For example, with layered materials, the defect charge is often localised
         to one layer, so we may want to adjust ``defect_region_radius`` and/or
         ``excluded_indices`` to ensure that only sites in other layers are used for
-        the sampling region (plateau) - see example on doped docs Tips page.
+        the sampling region (plateau) - see example on doped docs ``Tips`` page.
+
+        The correction error is estimated by computing the standard error of the mean
+        of the sampled site potential differences, multiplied by the defect charge.
+        This is expected to be a lower bound estimate of the true charge correction
+        error.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -487,7 +507,8 @@ class DefectEntry(thermo.DefectEntry):
                 (which gives an estimate of the error range of the correction
                 energy). Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction is greater than
+                If the estimated error in the charge correction, based on the
+                variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
             style_file (str):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
@@ -603,12 +624,9 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.parsing import (
             _get_output_files_and_check_if_multiple,
             _multiple_files_warning,
-            _reset_warnings,
             get_procar,
             get_vasprun,
         )
-
-        _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
@@ -680,6 +698,7 @@ class DefectEntry(thermo.DefectEntry):
             defect_vr=defect_vr,
             bulk_procar=bulk_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
             defect_procar=defect_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
+            defect_supercell_site=self.defect_supercell_site,
         )
 
         self.calculation_metadata["eigenvalue_data"] = {
@@ -790,9 +809,6 @@ class DefectEntry(thermo.DefectEntry):
             ``Figure`` object (if ``plot=True``).
         """
         from doped.utils.eigenvalues import get_eigenvalue_analysis
-        from doped.utils.parsing import _reset_warnings
-
-        _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
 
         self._load_and_parse_eigenvalue_data(
             bulk_vr=bulk_vr,
@@ -1738,6 +1754,36 @@ class Defect(core.Defect):
             ``Defect`` object
         """
         return loadfn(filename)
+
+    def get_charge_states(self, padding: int = 1) -> list[int]:
+        """
+        Refactored version of ``pymatgen-analysis-defects``'s
+        ``get_charge_states`` to not break when ``oxi_state`` is not set.
+        """
+        if self.user_charges:
+            return self.user_charges
+
+        if self.oxi_state is None or not isinstance(self.oxi_state, (int, float)):
+            self._set_oxi_state()  # try guessing
+
+        if self.oxi_state is None or not isinstance(self.oxi_state, (int, float)):  # still not set
+            warnings.warn(
+                f"Defect oxidation state not set and couldn't be guessed, returning charge"
+                f"state range from -{padding} to +{padding}"
+            )
+            return [*range(-padding, padding + 1)]
+
+        if isinstance(self.oxi_state, int) or self.oxi_state.is_integer():
+            oxi_state = int(self.oxi_state)
+        else:
+            raise ValueError("Oxidation state must be an integer")
+
+        if oxi_state >= 0:
+            charges = [*range(-padding, oxi_state + padding + 1)]
+        else:
+            charges = [*range(oxi_state - padding, padding + 1)]
+
+        return charges
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):

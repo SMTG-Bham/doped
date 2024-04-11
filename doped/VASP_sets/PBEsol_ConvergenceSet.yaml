@@ -1,5 +1,5 @@
 INCAR:
-  ALGO: "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered"
+  ALGO: "Normal # Change to All if ZHEGV, FEXCP/F or ZBRENT errors encountered, or poor electronic convergence"
   EDIFF_PER_ATOM: 2.0e-07  # capped at a max EDIFF of 1e-4 for large structures (N(atoms) > 500)
   ENCUT: 350
   GGA: PS

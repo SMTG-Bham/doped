@@ -176,47 +176,50 @@ def _calculate_formation_energies(data: list, elemental: dict):
     """
     for d in data:
         for el in elemental:
-            d[el] = Composition(d["formula"]).as_dict().get(el, 0)
+            d[el] = Composition(d["Formula"]).as_dict().get(el, 0)
 
     formation_energy_df = pd.DataFrame(data)
-    formation_energy_df["num_atoms_in_fu"] = formation_energy_df["formula"].apply(
+    formation_energy_df["num_atoms_in_fu"] = formation_energy_df["Formula"].apply(
         lambda x: Composition(x).num_atoms
     )
-    formation_energy_df["num_species"] = formation_energy_df["formula"].apply(
+    formation_energy_df["num_species"] = formation_energy_df["Formula"].apply(
         lambda x: len(Composition(x).as_dict())
     )
 
     # get energy per fu then subtract elemental energies later, to get formation energies
-    if "energy_per_fu" in formation_energy_df.columns:
-        formation_energy_df["formation_energy_calc"] = formation_energy_df["energy_per_fu"]
-        if "energy_per_atom" not in formation_energy_df.columns:
-            formation_energy_df["energy_per_atom"] = formation_energy_df["energy_per_fu"] / (
+    if "DFT Energy (eV/fu)" in formation_energy_df.columns:
+        formation_energy_df["formation_energy_calc"] = formation_energy_df["DFT Energy (eV/fu)"]
+        if "DFT Energy (eV/atom)" not in formation_energy_df.columns:
+            formation_energy_df["DFT Energy (eV/atom)"] = formation_energy_df["DFT Energy (eV/fu)"] / (
                 formation_energy_df["num_atoms_in_fu"]
             )
 
-    elif "energy_per_atom" in formation_energy_df.columns:
+    elif "DFT Energy (eV/atom)" in formation_energy_df.columns:
         formation_energy_df["formation_energy_calc"] = (
-            formation_energy_df["energy_per_atom"] * formation_energy_df["num_atoms_in_fu"]
+            formation_energy_df["DFT Energy (eV/atom)"] * formation_energy_df["num_atoms_in_fu"]
         )
-        formation_energy_df["energy_per_fu"] = formation_energy_df["energy_per_atom"] * (
+        formation_energy_df["DFT Energy (eV/fu)"] = formation_energy_df["DFT Energy (eV/atom)"] * (
             formation_energy_df["num_atoms_in_fu"]
         )
 
     else:
         raise ValueError(
-            "No energy data (energy_per_atom or energy_per_fu) found in input data to calculate "
-            "formation energies!"
+            "No energy data (DFT Energy (eV/atom) or per Formula Unit (eV/fu)) found in input "
+            "data to calculate formation energies!"
         )
 
     for k, v in elemental.items():
         formation_energy_df["formation_energy_calc"] -= formation_energy_df[k] * v
 
-    formation_energy_df["formation_energy"] = formation_energy_df["formation_energy_calc"]
+    formation_energy_df["Formation Energy (eV/fu)"] = formation_energy_df["formation_energy_calc"]
+    formation_energy_df["Formation Energy (eV/atom)"] = (
+        formation_energy_df["formation_energy_calc"] / formation_energy_df["num_atoms_in_fu"]
+    )
     formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
 
     # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
     formation_energy_df = formation_energy_df.sort_values(
-        by=["num_species", "formula", "num_atoms_in_fu", "formation_energy"],
+        by=["num_species", "Formula", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
     )
     # drop num_atoms_in_fu and num_species
     return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
@@ -551,7 +554,8 @@ class CompetingPhases:
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
                 fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
-                # TODO: competing_phases folder name should be an optional parameter
+                # TODO: competing_phases folder name should be an optional parameter, and rename default
+                #  to something that isn't so ugly? CompetingPhases?
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
                 #  out for cases where rounding can give same name (e.g. Te!) - should use
                 #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
@@ -1264,17 +1268,18 @@ class CompetingPhasesAnalyzer:
                     self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
 
             d = {
-                "formula": v["pretty_formula"],
-                "kpoints": kpoints,
-                "energy_per_fu": final_energy / formulas_per_unit,
-                "energy_per_atom": v["output"]["final_energy_per_atom"],
-                "energy": final_energy,
+                "Formula": v["pretty_formula"],
+                "k-points": kpoints,
+                "DFT Energy (eV/fu)": final_energy / formulas_per_unit,
+                "DFT Energy (eV/atom)": v["output"]["final_energy_per_atom"],
+                "DFT Energy (eV)": final_energy,
             }
             temp_data.append(d)
 
         formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
         self.data = formation_energy_df.to_dict(orient="records")
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
+        self.formation_energy_df.set_index("Formula")
 
         if csv_path is not None:
             self.to_csv(csv_path)
@@ -1284,29 +1289,36 @@ class CompetingPhasesAnalyzer:
 
         if prune_polymorphs:  # only keep the lowest energy polymorphs
             formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
-            indices = formation_energy_df.groupby("formula")["energy_per_atom"].idxmin()
+            indices = formation_energy_df.groupby("Formula")["DFT Energy (eV/atom)"].idxmin()
             pruned_df = formation_energy_df.loc[indices]
             data = pruned_df.to_dict(orient="records")
 
         if sort_by_energy:
-            data = sorted(data, key=lambda x: x["formation_energy"], reverse=True)
+            data = sorted(data, key=lambda x: x["Formation Energy (eV/fu)"], reverse=True)
 
         # moves the bulk composition to the top of the list
-        _move_dict_to_start(data, "formula", self.bulk_composition.reduced_formula)
+        _move_dict_to_start(data, "Formula", self.bulk_composition.reduced_formula)
 
         # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
         # energy_per_fu, energy, kpoints, then by order of appearance in bulk_composition dict,
         # then alphabetically for any remaining:
-        data = [
+        copied_data = copy.deepcopy(data)
+        formation_energy_data = [
             {
-                "formula": d["formula"],
-                "formation_energy": d["formation_energy"],
-                "energy_per_atom": d["energy_per_atom"],
-                "energy_per_fu": d["energy_per_fu"],
-                "energy": d.get("energy"),
-                "kpoints": d.get("kpoints"),
+                **{
+                    k: d.pop(k, None)
+                    for k in [
+                        "Formula",
+                        "Formation Energy (eV/fu)",
+                        "Formation Energy (eV/atom)",
+                        "DFT Energy (eV/atom)",
+                        "DFT Energy (eV/fu)",
+                        "DFT Energy (eV)",
+                        "k-points",
+                    ]
+                },
                 **{  # num elts columns, sorted by order of occurrence in bulk composition:
-                    str(elt): d.get(str(elt))
+                    str(elt): d.pop(str(elt), None)
                     for elt in sorted(
                         self.bulk_composition.elements,
                         key=lambda x: self.bulk_composition.reduced_formula.index(str(x)),
@@ -1315,22 +1327,24 @@ class CompetingPhasesAnalyzer:
                 **{
                     k: v
                     for k, v in d.items()
-                    if k
-                    not in [
-                        "formula",
-                        "formation_energy",
-                        "energy_per_atom",
-                        "energy_per_fu",
-                        "energy",
-                        "kpoints",
-                    ]
+                    if not any(
+                        i in k
+                        for i in [
+                            "Formula",
+                            "Formation Energy",
+                            "DFT Energy",
+                            "k-points",
+                        ]
+                    )
                 },
             }
-            for d in data
+            for d in copied_data
         ]
         # if all values are None for a certain key, remove that key from all dicts in list:
-        keys_to_remove = [k for k in data[0] if all(d[k] is None for d in data)]
-        return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in data]
+        keys_to_remove = [
+            k for k in formation_energy_data[0] if all(d[k] is None for d in formation_energy_data)
+        ]
+        return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in formation_energy_data]
 
     def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
         """
@@ -1349,48 +1363,53 @@ class CompetingPhasesAnalyzer:
                 Default is False.
         """
         formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
-        pd.DataFrame(formation_energy_data).to_csv(csv_path, index=False)
-        print(f"Competing phase formation energies have been saved to {csv_path}.")
+        pd.DataFrame(formation_energy_data).set_index("Formula").to_csv(csv_path)
+        print(f"Competing phase formation energies have been saved to {csv_path}")
 
     def from_csv(self, csv_path):
         """
-        Read in data from csv.
+        Read in data from a previously parsed formation energies csv file.
 
         Args:
-            csv_path (str): Path to csv file. Must have columns 'formula',
-                'energy_per_fu', 'energy' and 'formation_energy'
+            csv_path (str): Path to csv file. Must have columns 'Formula',
+            and 'DFT Energy per Formula Unit (ev/fu)' or
+            'DFT Energy per Atom (ev/atom)'
         Returns:
-            None, sets self.data and self.elemental_energies.
+            None, sets ``self.data`` and ``self.elemental_energies``.
         """
         formation_energy_df = pd.read_csv(csv_path)
-        if "formula" not in list(formation_energy_df.columns) or all(
-            x not in list(formation_energy_df.columns) for x in ["energy_per_fu", "energy_per_atom"]
+        if "Formula" not in list(formation_energy_df.columns) or all(
+            x not in list(formation_energy_df.columns)
+            for x in [
+                "DFT Energy (eV/fu)",
+                "DFT Energy (eV/atom)",
+            ]
         ):
             raise ValueError(
-                "Supplied csv does not contain the minimal columns required ('formula', "
-                "and 'energy_per_fu' or 'energy_per_atom'!"
+                "Supplied csv does not contain the minimal columns required ('Formula', and "
+                "'DFT Energy (eV/fu)' or 'DFT Energy (eV/atom)')"
             )
 
         self.data = formation_energy_df.to_dict(orient="records")
-
         self.elemental_energies = {}
         for i in self.data:
-            c = Composition(i["formula"])
+            c = Composition(i["Formula"])
             if len(c.elements) == 1:
                 el = c.chemical_system
-                if "energy_per_atom" in list(formation_energy_df.columns):
-                    el_energy_per_atom = i["energy_per_atom"]
+                if "DFT Energy (eV/atom)" in list(formation_energy_df.columns):
+                    el_energy_per_atom = i["DFT Energy (eV/atom)"]
                 else:
-                    el_energy_per_atom = i["energy_per_fu"] / c.num_atoms
+                    el_energy_per_atom = i["DFT Energy (eV/fu)"] / c.num_atoms
 
                 if el not in self.elemental_energies or el_energy_per_atom < self.elemental_energies[el]:
                     self.elemental_energies[el] = el_energy_per_atom
 
-        if "formation_energy" not in list(formation_energy_df.columns):
+        if "Formation Energy (eV/fu)" not in list(formation_energy_df.columns):
             formation_energy_df = _calculate_formation_energies(self.data, self.elemental_energies)
             self.data = formation_energy_df.to_dict(orient="records")
 
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
+        self.formation_energy_df.set_index("Formula")
 
     def calculate_chempots(self, csv_path=None, verbose=True, sort_by=None):
         """
@@ -1412,15 +1431,15 @@ class CompetingPhasesAnalyzer:
         extrinsic_formation_energies = []
         bulk_pde_list = []
         for d in self.data:
-            e = PDEntry(d["formula"], d["energy_per_fu"])
+            e = PDEntry(d["Formula"], d["DFT Energy (eV/fu)"])
             # checks if the phase is intrinsic
-            if set(Composition(d["formula"]).elements).issubset(self.bulk_composition.elements):
+            if set(Composition(d["Formula"]).elements).issubset(self.bulk_composition.elements):
                 intrinsic_phase_diagram_entries.append(e)
                 if e.composition == self.bulk_composition:  # bulk phase
                     bulk_pde_list.append(e)
             else:
                 extrinsic_formation_energies.append(
-                    {"formula": d["formula"], "formation_energy": d["formation_energy"]}
+                    {k: v for k, v in d.items() if k in ["Formula", "Formation Energy (eV/fu)"]}
                 )
 
         if not bulk_pde_list:
@@ -1483,11 +1502,16 @@ class CompetingPhasesAnalyzer:
             phase_name_columns = []
             for k, v in chempot_dict.items():
                 phase_name_columns.append(str(k))
-                phase_energy_list.append(v)
+                phase_energy_list.append(round(v, 4))
             chemical_potentials.append(phase_energy_list)
 
         # make df, will need it in next step
-        chempots_df = pd.DataFrame(chemical_potentials, columns=phase_name_columns)
+        chempots_df = pd.DataFrame(
+            chemical_potentials,
+            index=list(self._intrinsic_chempots["limits_wrt_el_refs"].keys()),
+            columns=phase_name_columns,
+        )
+        chempots_df.index.name = "Limit"
 
         if self.extrinsic_species is not None:
             self._calculate_extrinsic_chempot_lims(  # updates self._chempots
@@ -1500,12 +1524,12 @@ class CompetingPhasesAnalyzer:
 
         # save and print
         if csv_path is not None:
-            chempots_df.to_csv(csv_path, index=False)
+            chempots_df.to_csv(csv_path)
             if verbose:
                 print("Saved chemical potential limits to csv file: ", csv_path)
 
         if verbose:
-            print("Calculated chemical potential limits: \n")
+            print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
             print(chempots_df)
 
         return chempots_df
@@ -1517,7 +1541,7 @@ class CompetingPhasesAnalyzer:
             for el in self.elemental:  # TODO: This code (in all this module) should be rewritten to
                 # be more readable (re-used and uninformative variable names, missing informative
                 # comments...)
-                e[el] = Composition(e["formula"]).as_dict().get(el, 0)
+                e[el] = Composition(e["Formula"]).as_dict().get(el, 0)
 
         # gets the df into a slightly more convenient dict
         cpd = chempots_df.to_dict(orient="records")
@@ -1527,16 +1551,16 @@ class CompetingPhasesAnalyzer:
         # print(f"df3: {df3}")  # debugging
         for i, c in enumerate(cpd):
             name = f"mu_{self.extrinsic_species}_{i}"
-            df3[name] = df3["formation_energy"]
+            df3[name] = df3["Formation Energy (eV/fu)"]
             for k, v in c.items():
                 df3[name] -= df3[k] * v
             df3[name] /= df3[self.extrinsic_species]
             # find min at that chempot
             mins.append(df3[name].min())
-            mins_formulas.append(df3.iloc[df3[name].idxmin()]["formula"])
+            mins_formulas.append(df3.iloc[df3[name].idxmin()]["Formula"])
 
         chempots_df[self.extrinsic_species] = mins
-        col_name = f"{self.extrinsic_species}_limiting_phase"
+        col_name = f"{self.extrinsic_species}-Limiting Phase"
         chempots_df[col_name] = mins_formulas
 
         # 1. work out the formation energies of all dopant competing
@@ -1621,13 +1645,16 @@ class CompetingPhasesAnalyzer:
                 sub_dict
                 for sub_dict in self.data
                 if self.bulk_composition.reduced_composition
-                == Composition(sub_dict["formula"]).reduced_composition
+                == Composition(sub_dict["Formula"]).reduced_composition
             ]
-            bulk_entry = min(bulk_entries, key=lambda x: x["formation_energy"])
+            bulk_entry = min(bulk_entries, key=lambda x: x["Formation Energy (eV/fu)"])
             print(f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk")
             for k, v in self.bulk_composition.as_dict().items():
                 print(int(v), k, end=" ")
-            print(f"{bulk_entry['formation_energy']}  # num_atoms, element, formation_energy (bulk)")
+            print(
+                f"{bulk_entry['Formation Energy (eV/fu)']}  # number of atoms, element, formation "
+                f"energy (bulk)"
+            )
 
             if dependent_variable is not None:
                 print(f"{dependent_variable}  # dependent variable (element)")
@@ -1640,26 +1667,27 @@ class CompetingPhasesAnalyzer:
             entries_for_cplap = [
                 entry_dict
                 for entry_dict in self.data
-                if entry_dict["formula"] in bordering_phases
-                and Composition(entry_dict["formula"]).reduced_composition
+                if entry_dict["Formula"] in bordering_phases
+                and Composition(entry_dict["Formula"]).reduced_composition
                 != self.bulk_composition.reduced_composition
             ]
             # cull to only the lowest energy entries of each composition
             culled_cplap_entries = {}
             for entry in entries_for_cplap:
-                reduced_comp = Composition(entry["formula"]).reduced_composition
+                reduced_comp = Composition(entry["Formula"]).reduced_composition
                 if (
                     reduced_comp not in culled_cplap_entries
-                    or entry["formation_energy"] < culled_cplap_entries[reduced_comp]["formation_energy"]
+                    or entry["Formation Energy (eV/fu)"]
+                    < culled_cplap_entries[reduced_comp]["Formation Energy (eV/fu)"]
                 ):
                     culled_cplap_entries[reduced_comp] = entry
 
             print(f"{len(culled_cplap_entries)}  # number of bordering phases")
             for i in culled_cplap_entries.values():
-                print(f"{len(Composition(i['formula']).as_dict())}  # number of elements in phase:")
-                for k, v in Composition(i["formula"]).as_dict().items():
+                print(f"{len(Composition(i['Formula']).as_dict())}  # number of elements in phase:")
+                for k, v in Composition(i["Formula"]).as_dict().items():
                     print(int(v), k, end=" ")
-                print(f"{i['formation_energy']}  # num_atoms, element, formation_energy")
+                print(f"{i['Formation Energy (eV/fu)']}  # number of atoms, element, formation energy")
 
     def to_LaTeX_table(self, splits=1, sort_by_energy=False, prune_polymorphs=True):
         """
@@ -1691,67 +1719,70 @@ class CompetingPhasesAnalyzer:
         # done in the pyscfermi report style
         formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
 
-        if any("kpoints" not in item for item in formation_energy_data):  # TODO: this is bad,
-            # should just not have the kpoints column if it's not present, and warn user
-            raise (
-                ValueError(
-                    "kpoints need to be present in data; run CompetingPhasesAnalyzer.from_vaspruns "
-                    "instead of from_csv"
-                )
-            )
+        kpoints_col = any("k-points" in item for item in formation_energy_data)
 
         string = "\\begin{table}[h]\n\\centering\n"
         string += (
-            "\\caption{Formation energies ($\\Delta E_f$) per formula unit of \\ce{"
+            "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{"
             + self.bulk_composition.reduced_formula
-            + "} and all competing phases, with k-meshes used in calculations."
-            + ("}\n" if not prune_polymorphs else " Only the lowest energy polymorphs are included}\n")
+            + "} and all competing phases"
+            + (", with k-meshes used in calculations." if kpoints_col else ".")
+            + (" Only the lowest energy polymorphs are included}\n" if prune_polymorphs else "}\n")
         )
         string += "\\label{tab:competing_phase_formation_energies}\n"
+        column_names_string = "Formula" + (" & k-mesh" if kpoints_col else "") + " & $\\Delta E_f$ (eV/fu)"
+
         if splits == 1:
-            string += "\\begin{tabular}{ccc}\n"
+            string += "\\begin{tabular}" + ("{ccc}" if kpoints_col else "{cc}") + "\n"
             string += "\\hline\n"
-            string += "Formula & k-mesh & $\\Delta E_f$ (eV) \\\\ \\hline \n"
+            string += column_names_string + " \\\\ \\hline \n"
             for i in formation_energy_data:
-                kpoints = i["kpoints"].split("x")
-                fe = i["formation_energy"]
+                kpoints = i.get("k-points", "0x0x0").split("x")
+                fe = i["Formation Energy (eV/fu)"]
                 string += (
                     "\\ce{"
-                    + i["formula"]
-                    + "} & "
-                    + f"{kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}"
-                    " & " + f"{fe:.3f} \\\\ \n"
+                    + i["Formula"]
+                    + "}"
+                    + (f" & {kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}" if kpoints_col else "")
+                    + " & "
+                    + f"{fe:.3f} \\\\ \n"
                 )
 
         elif splits == 2:
-            string += "\\begin{tabular}{ccc|ccc}\n"
+            string += "\\begin{tabular}" + ("{ccc|ccc}" if kpoints_col else "{cc|cc}") + "\n"
             string += "\\hline\n"
-            string += (
-                "Formula & k-mesh & $\\Delta E_f$ (eV) & Formula & k-mesh & $\\Delta E_f$ (eV)\\\\ "
-                "\\hline \n"
-            )
+            string += column_names_string + " & " + column_names_string + " \\\\ \\hline \n"
 
             mid = len(formation_energy_data) // 2
             first_half = formation_energy_data[:mid]
             last_half = formation_energy_data[mid:]
 
             for i, j in zip(first_half, last_half):
-                kpoints = i["kpoints"].split("x")
-                fe = i["formation_energy"]
-                kpoints2 = j["kpoints"].split("x")
-                fe2 = j["formation_energy"]
+                kpoints1 = i.get("k-points", "0x0x0").split("x")
+                fe1 = i["Formation Energy (eV/fu)"]
+                kpoints2 = j.get("k-points", "0x0x0").split("x")
+                fe2 = j["Formation Energy (eV/fu)"]
                 string += (
                     "\\ce{"
-                    + i["formula"]
-                    + "} & "
-                    + f"{kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}"
-                    " & "
-                    + f"{fe:.3f} & "
+                    + i["Formula"]
+                    + "}"
+                    + (
+                        f" & {kpoints1[0]}$\\times${kpoints1[1]}$\\times${kpoints1[2]}"
+                        if kpoints_col
+                        else ""
+                    )
+                    + " & "
+                    + f"{fe1:.3f} & "
                     + "\\ce{"
-                    + j["formula"]
-                    + "} & "
-                    + f"{kpoints2[0]}$\\times${kpoints2[1]}$\\times${kpoints2[2]}"
-                    " & " + f"{fe2:.3f} \\\\ \n"
+                    + j["Formula"]
+                    + "}"
+                    + (
+                        f" & {kpoints2[0]}$\\times${kpoints2[1]}$\\times${kpoints2[2]}"
+                        if kpoints_col
+                        else ""
+                    )
+                    + " & "
+                    + f"{fe2:.3f} \\\\ \n"
                 )
 
         string += "\\hline\n"

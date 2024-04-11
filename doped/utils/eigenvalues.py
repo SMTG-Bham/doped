@@ -16,24 +16,22 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from pymatgen.core import Element, Species
+from pymatgen.core.structure import PeriodicSite
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from shakenbreak.plotting import _install_custom_font
 
+from doped.analysis import defect_from_structures
 from doped.core import DefectEntry
-from doped.utils.parsing import (
-    _reset_warnings,
-    get_magnetization_from_vasprun,
-    get_nelect_from_vasprun,
-    get_procar,
-)
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, get_procar
 from doped.utils.plotting import _get_backend
+
+orig_simplefilter = warnings.simplefilter
+warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
 
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
-    from pydefect.analyzer.make_defect_structure_info import DefectStructureInfo
 
 try:
     from vise import user_settings
@@ -44,10 +42,8 @@ try:
     from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
     from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
     from pydefect.analyzer.make_band_edge_states import make_band_edge_states
-    from pydefect.analyzer.make_defect_structure_info import MakeDefectStructureInfo
     from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
     from pydefect.defaults import defaults
-    from pydefect.util.structure_tools import Coordination, Distances
     from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
 
 except ImportError as exc:
@@ -56,45 +52,7 @@ except ImportError as exc:
         "You can do this by running `pip install pydefect`."
     ) from exc
 
-_reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
-
-
-def _coordination(self, include_on_site=True, cutoff_factor=None) -> "Coordination":
-    cutoff_factor = cutoff_factor or defaults.cutoff_distance_factor
-    cutoff = self.shortest_distance * cutoff_factor
-    elements = [element.specie.name for element in self.structure]
-    e_d = zip(elements, self.distances(remove_self=False))
-
-    unsorted_distances = defaultdict(list)
-    neighboring_atom_indices = []
-    for i, (element, distance) in enumerate(e_d):
-        if distance < cutoff and include_on_site:
-            unsorted_distances[element].append(round(distance, 2))
-            neighboring_atom_indices.append(i)
-
-    distance_dict = {element: sorted(distances) for element, distances in unsorted_distances.items()}
-    return Coordination(distance_dict, round(cutoff, 3), neighboring_atom_indices)
-
-
-def _distances(self, remove_self=True, specie=None) -> list[float]:
-    result = []
-    lattice = self.structure.lattice
-    if isinstance(specie, Element):
-        el = specie.symbol
-    elif specie is None:
-        el = None
-    elif isinstance(specie, Species):
-        el = specie.element
-    for site in self.structure:
-        site_specie = site.specie.element if isinstance(site.specie, Species) else site.specie
-        if el and Element(el) != site_specie:
-            result.append(float("inf"))
-            continue
-        distance, _ = lattice.get_distance_and_image(site.frac_coords, self.coord)
-        if remove_self and distance < 1e-5:
-            continue
-        result.append(distance)
-    return result
+warnings.simplefilter = orig_simplefilter  # reset to original
 
 
 def band_edge_properties_from_vasprun(
@@ -156,8 +114,13 @@ def make_perfect_band_edge_state_from_vasp(
     return PerfectBandEdgeState(vbm_info, cbm_info)
 
 
-def _make_band_edge_orbital_infos_vr(
-    defect_vr: Vasprun, vbm: float, cbm: float, str_info: "DefectStructureInfo", eigval_shift: float = 0.0
+def make_band_edge_orbital_infos(
+    defect_vr: Vasprun,
+    vbm: float,
+    cbm: float,
+    eigval_shift: float = 0.0,
+    neighbor_indices: Optional[list[int]] = None,
+    defect_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
 ):
     """
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
@@ -169,8 +132,15 @@ def _make_band_edge_orbital_infos_vr(
         defect_vr (Vasprun): Defect ``Vasprun`` object.
         vbm (float): VBM eigenvalue in eV.
         cbm (float): CBM eigenvalue in eV.
-        str_info (DefectStructureInfo): ``pydefect`` ``DefectStructureInfo``.
-        eigval_shift (float): Shift eigenvalues down by this value (to set VBM at 0 eV).
+        eigval_shift (float):
+            Shift eigenvalues down by this value (to set VBM at 0 eV).
+            Default is 0.0.
+        neighbor_indices (list[int]):
+            Indices of neighboring atoms to the defect site, for localisation analysis.
+            Default is ``None``.
+        defect_procar (EasyunfoldProcar, Procar):
+            ``EasyunfoldProcar`` or ``Procar`` object, for the defect supercell,
+            if projected eigenvalue/orbitals data is not provided in ``defect_vr``.
 
     Returns:
         ``BandEdgeOrbitalInfos `` object
@@ -178,7 +148,6 @@ def _make_band_edge_orbital_infos_vr(
     eigval_range = defaults.eigval_range
     kpt_coords = [tuple(coord) for coord in defect_vr.actual_kpoints]
     max_energy_by_spin, min_energy_by_spin = [], []
-    neighbors = str_info.neighbor_atom_indices
 
     for e in defect_vr.eigenvalues.values():
         max_energy_by_spin.append(np.amax(e[:, :, 0], axis=0))
@@ -190,7 +159,8 @@ def _make_band_edge_orbital_infos_vr(
     lower_idx = np.argwhere(max_energy_by_band > vbm - eigval_range)[0][0]
     upper_idx = np.argwhere(min_energy_by_band < cbm + eigval_range)[-1][-1]
 
-    orbs, s = defect_vr.projected_eigenvalues, defect_vr.final_structure
+    orbs = defect_vr.projected_eigenvalues if defect_procar is None else defect_procar.data
+    s = defect_vr.final_structure
     orb_infos: list[Any] = []
     for spin, eigvals in defect_vr.eigenvalues.items():
         orb_infos.append([])
@@ -199,8 +169,8 @@ def _make_band_edge_orbital_infos_vr(
             for b_idx in range(lower_idx, upper_idx + 1):
                 e, occ = eigvals[k_idx, b_idx, :]
                 orbitals = make_bes.calc_orbital_character(orbs, s, spin, k_idx, b_idx)
-                if neighbors:
-                    p_ratio = make_bes.calc_participation_ratio(orbs, spin, k_idx, b_idx, neighbors)
+                if neighbor_indices:
+                    p_ratio = make_bes.calc_participation_ratio(orbs, spin, k_idx, b_idx, neighbor_indices)
                 else:
                     p_ratio = None
                 orb_infos[-1][-1].append(OrbitalInfo(e, orbitals, occ, p_ratio))
@@ -215,7 +185,7 @@ def _make_band_edge_orbital_infos_vr(
     )
 
 
-def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
+def _parse_procar(procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None):
     """
     Parse a ``procar`` input to a ``Procar`` object in the correct format.
 
@@ -226,14 +196,14 @@ def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
             ``Procar`` object.
     """
     if not hasattr(procar, "data"):  # not a parsed Procar object
-        if hasattr(procar, "proj_data") and not isinstance(procar, (str, Path, Procar)):
+        if procar and hasattr(procar, "proj_data") and not isinstance(procar, (str, Path, Procar)):
             if procar._is_soc:
                 procar.data = {Spin.up: procar.proj_data[0]}
             else:
                 procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
             del procar.proj_data
 
-        else:  # path to PROCAR file
+        elif isinstance(procar, (str, Path)):  # path to PROCAR file
             procar = get_procar(procar)
 
     return procar
@@ -242,8 +212,10 @@ def _parse_procar(procar: Union[str, "Path", "EasyunfoldProcar", Procar]):
 def get_band_edge_info(
     bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    bulk_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
+    defect_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
+    defect_supercell_site: Optional[PeriodicSite] = None,
+    neighbor_cutoff_factor: float = 1.3,
 ):
     """
     Generate metadata required for performing eigenvalue & orbital analysis,
@@ -279,6 +251,19 @@ def get_band_edge_info(
             calculation. Not required if the supplied ``bulk_vr`` was
             parsed with ``parse_projected_eigen = True``.
             Default is ``None``.
+        defect_supercell_site (PeriodicSite):
+            ``PeriodicSite`` object of the defect site in the defect
+            supercell, from which the defect neighbours are determined
+            for localisation analysis. If ``None`` (default), then the
+            defect site is determined automatically from the defect
+            and bulk supercell structures.
+        neighbor_cutoff_factor (float):
+            Sites within ``min_distance * neighbor_cutoff_factor`` of
+            the defect site in the `relaxed` defect supercell are
+            considered neighbors for localisation analysis, where
+            ``min_distance`` is the minimum distance between sites in
+            the defect supercell. Default is 1.3 (matching the ``pydefect``
+            default).
 
     Returns:
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
@@ -290,23 +275,33 @@ def get_band_edge_info(
         bulk_procar = _parse_procar(bulk_procar)
         pbes = make_perfect_band_edge_state_from_vasp(vasprun=bulk_vr, procar=bulk_procar)
 
-    _orig_method_coor = Distances.coordination
-    Distances.coordination = _coordination
-    _orig_method_dist = Distances.distances
-    Distances.distances = _distances
+    # get defect neighbour indices
+    sorted_distances = np.sort(defect_vr.final_structure.distance_matrix.flatten())
+    min_distance = sorted_distances[sorted_distances > 0.5][0]
 
-    dsinfo = MakeDefectStructureInfo(  # Using default values suggested by pydefect
-        bulk_vr.final_structure,
-        defect_vr.final_structure,
-        defect_vr.final_structure,
-        symprec=0.1,
-        dist_tol=1.0,
-        neighbor_cutoff_factor=1.3,  # Neighbors are sites within min_dist * neighbor_cutoff_factor
-    )
+    if defect_supercell_site is None:
+        (
+            _defect,
+            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            defect_site_in_bulk,  # vacancy site
+            _defect_site_index,
+            _bulk_site_index,
+            _guessed_initial_defect_structure,
+            _unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_vr.final_structure,
+            defect_vr.final_structure.copy(),
+            return_all_info=True,
+            oxi_state="Undetermined",
+        )
+        defect_supercell_site = defect_site or defect_site_in_bulk
 
-    # Undo monkey patch in case used in other parts of the code:
-    Distances.coordination = _orig_method_coor
-    Distances.distances = _orig_method_dist
+    neighbor_indices = [
+        i
+        for i, site in enumerate(defect_vr.final_structure.sites)
+        if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
+    ]
 
     from pydefect.analyzer.band_edge_states import logger
 
@@ -319,25 +314,14 @@ def get_band_edge_info(
         vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
         cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
-    if defect_procar is not None:
-        defect_procar = _parse_procar(defect_procar)
-        band_orb = make_bes.make_band_edge_orbital_infos(
-            defect_procar,
-            defect_vr,
-            vbm_info.orbital_info.energy,
-            cbm_info.orbital_info.energy,
-            eigval_shift=-vbm_info.orbital_info.energy,
-            str_info=dsinfo.defect_structure_info,
-        )
-
-    else:
-        band_orb = _make_band_edge_orbital_infos_vr(
-            defect_vr,
-            vbm_info.orbital_info.energy,
-            cbm_info.orbital_info.energy,
-            eigval_shift=-vbm_info.orbital_info.energy,
-            str_info=dsinfo.defect_structure_info,
-        )
+    band_orb = make_band_edge_orbital_infos(
+        defect_vr,
+        vbm_info.orbital_info.energy,
+        cbm_info.orbital_info.energy,
+        eigval_shift=-vbm_info.orbital_info.energy,
+        neighbor_indices=neighbor_indices,
+        defect_procar=_parse_procar(defect_procar),
+    )
 
     return band_orb, vbm_info, cbm_info
 
@@ -399,10 +383,10 @@ def get_eigenvalue_analysis(
     filename: Optional[str] = None,
     ks_labels: bool = False,
     style_file: Optional[str] = None,
-    bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-    bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-    defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-    defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+    bulk_vr: Optional[Union[str, Path, Vasprun]] = None,
+    bulk_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
+    defect_vr: Optional[Union[str, Path, Vasprun]] = None,
+    defect_procar: Optional[Union[str, Path, "EasyunfoldProcar", Procar]] = None,
     force_reparse: bool = False,
     ylims: Optional[tuple[float, float]] = None,
     legend_kwargs: Optional[dict] = None,
@@ -647,8 +631,8 @@ def get_eigenvalue_analysis(
                     )
 
         if len(emp.axs) > 1:
-            emp.axs[0].set_title("Spin Down")
-            emp.axs[1].set_title("Spin Up")
+            emp.axs[0].set_title("Spin Up")
+            emp.axs[1].set_title("Spin Down")
         else:
             emp.axs[0].set_title("KS levels")
 

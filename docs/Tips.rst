@@ -89,7 +89,7 @@ underlying calculation and/or extreme forces.
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - **Alternatively (if you have already performed SnB structure-searching), convergence of the forces can be aided by:**
+    - `Alternatively (if you have already performed SnB structure-searching), convergence of the forces can be aided by:`
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
@@ -115,8 +115,10 @@ For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please 
 
 Layered / Low Dimensional Materials
 --------------------------------------
-Layered and low-dimensional materials introduce complications for defect analysis. One point is that typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions (e.g.
-`4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_), as a result of
+Layered and low-dimensional materials introduce complications for defect analysis. One point is that
+typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
+(e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
+`vacancies in low-dimensional chalcogenides <https://arxiv.org/abs/2401.12127>`_ etc), as a result of
 having more complex energy landscapes.
 
 Another is that often the application of charge correction schemes to supercell calculations with layered
@@ -132,6 +134,13 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
         Large errors are often due to unstable or shallow defect charge states (which can't be accurately modelled
         with the supercell approach). If this error is not acceptable, you may need to use a larger supercell
         for more accurate energies.
+
+.. note::
+
+    Charge correction errors are estimated by computing the standard error of the mean of the electrostatic
+    potential difference between the bulk and defect supercells, in the sampling region (far from the
+    defect site), and multiplying by the defect charge. This gives a lower bound estimate of the true
+    error in the charge correction for a given supercell.
 
 Following the advice in the warning, we use ``defect_entry.get_kumagai_correction(plot=True)`` to plot the
 site potential differences for the defect supercell (which is used to obtain the eFNV (Kumagai-Oba)
@@ -275,6 +284,11 @@ supercells and plotting the charge density. Important terms include:
 3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified. Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)`` refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a PHS (but you should use your own judgement of course).
 4. ``Localized Orbital(s)``: Information about localised defect states, if present.
 
+Additionally, ``Index`` refers to the band/eigenvalue index in the DFT calculation, ``Energy`` is its
+eigenvalue energy at the given ``K-point coords``, ``Orbitals`` lists the projected orbital contributions
+to that state, and ``OrbDiff`` is the normalised difference in projected orbital contributions to the
+VBM/CBM states between the bulk and defect supercells.
+
 .. code-block:: python
 
     bulk = "Cu2SiSe3/bulk/vasp_std"
@@ -314,7 +328,7 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 .. image:: Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
     :width: 325px
     :align: left
-.. image:: Cu2SISe3_TLD.png
+.. image:: Cu2SiSe3_TLD.png
     :width: 320px
     :align: left
 

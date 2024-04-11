@@ -25,7 +25,8 @@ All features and functionality are fully-customisable:
 
 ### Performance and Example Outputs
 ![https://github.com/openjournals/joss-reviews/issues/6433](docs/JOSS/doped_JOSS_figure.png)
-**a.** Optimal supercell generation comparison. **b.** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. See the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433) for more details.
+**(a)** Optimal supercell generation comparison. **(b)** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. Automated plots of **(i,j)** single-particle eigenvalues and **(k)** site
+displacements from DFT supercell calculations. See the [JOSS paper](https://github.com/openjournals/joss-reviews/issues/6433) for more details.
 <!-- Update this link!! -->
 
 ## Installation
