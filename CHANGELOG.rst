@@ -1,6 +1,13 @@
 Change Log
 ==========
 
+v.2.4.1
+----------
+- Speed up eigenvalue parsing by using the faster ``doped`` site-matching functions rather than ``MakeDefectStructureInfo`` from ``pydefect``
+- Minor efficiency & robustness updates.
+- Minor docs & tutorials updates
+- Minor tests updates
+
 v.2.4.0
 ----------
 - Electronic structure analysis by @adair-nicolson & @kavanase:
