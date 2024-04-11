@@ -23,6 +23,6 @@ run tests and add new tests for any new features whenever submitting pull reques
 
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed on the
-    [Troubleshooting](https://doped.readthedocs.io/en/latest/Troubleshooting.html) page, please contact
+    `Troubleshooting <https://doped.readthedocs.io/en/latest/Troubleshooting.html>`_ page, please contact
     the developers through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or
     by email.

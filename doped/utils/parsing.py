@@ -21,7 +21,6 @@ from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
 
-from doped import _ignore_pmg_warnings
 from doped.core import DefectEntry
 
 if TYPE_CHECKING:
@@ -31,17 +30,6 @@ if TYPE_CHECKING:
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
-
-
-def _reset_warnings():
-    """
-    When importing ``vise``/``pydefect``, ``UserWarning``s are suppressed, so
-    we need to reset.
-    """
-    warnings.simplefilter("default")
-    warnings.filterwarnings("ignore", message="`np.int` is a deprecated alias for the builtin `int`")
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    _ignore_pmg_warnings()
 
 
 @contextlib.contextmanager
@@ -541,6 +529,9 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
     """
+    orig_simplefilter = warnings.simplefilter
+    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+
     # suppress pydefect INFO messages
     import logging
 
@@ -553,7 +544,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
         return
 
-    _reset_warnings()  # vise suppresses `UserWarning`s, so need to reset
+    warnings.simplefilter = orig_simplefilter  # reset to original
 
     far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
 

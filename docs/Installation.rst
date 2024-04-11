@@ -108,4 +108,5 @@ the ``doped`` GitHub repository:
 Requirements
 -------------
 
-``doped`` requires ``pymatgen>=2022.10.22`` and its dependencies.
+The ``doped`` dependencies are listed in the ``pyproject.toml`` file on
+`the GitHub repository <https://github.com/SMTG-Bham/doped/blob/main/pyproject.toml>`__.

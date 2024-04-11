@@ -353,7 +353,6 @@ class DefectDictSet(DopedDictSet):
         """
         _ignore_pmg_warnings()
         self.charge_state = charge_state
-        self.potcars = self._check_user_potcars(unperturbed_poscar=True, snb=False)
         self.poscar_comment = (
             poscar_comment
             or f"{structure.formula} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
@@ -517,10 +516,11 @@ class DefectDictSet(DopedDictSet):
             snb (bool): If input structures are from ShakeNBreak (so POSCARs aren't
                 'unperturbed'). (default: False)
         """
-        if not potcar_spec:
-            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
-        else:
+        if potcar_spec:
             potcars = True
+
+        else:
+            potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
 
         if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
             try:
@@ -532,12 +532,14 @@ class DefectDictSet(DopedDictSet):
                     zip_output=zip_output,
                 )
             except ValueError as e:
-                if str(e).startswith("NELECT") and potcar_spec:
-                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
-                        pot_spec_file.write("\n".join(self.potcar_symbols))
+                if not str(e).startswith("NELECT") or not potcar_spec:
+                    raise e
 
-                    self.kpoints.write_file(f"{output_path}/KPOINTS")
-                    self.poscar.write_file(f"{output_path}/POSCAR")
+                with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
+                    pot_spec_file.write("\n".join(self.potcar_symbols))
+
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
+                self.poscar.write_file(f"{output_path}/POSCAR")
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
             os.makedirs(output_path, exist_ok=True)
@@ -1182,7 +1184,7 @@ class DefectRelaxSet(MSONable):
         if nkred_defect_dict_set is None:
             return None
 
-        if nkred_defect_dict_set._check_user_potcars(unperturbed_poscar=True, snb=False):
+        if any("VASP_PSP_DIR" in i for i in SETTINGS):  # POTCARs available
             user_incar_settings = copy.deepcopy(self.user_incar_settings)
             user_incar_settings.update(singleshot_incar_settings)
             user_incar_settings.update(  # add NKRED settings

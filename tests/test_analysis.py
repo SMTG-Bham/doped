@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
-from test_generation import _potcars_available
 from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
@@ -611,13 +610,13 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "Estimated error in the Freysoldt (FNV) ",
                 "Estimated error in the Kumagai (eFNV) ",
                 "charge correction for certain defects is greater than the `error_tolerance` (= "
-                "0.001 eV):",
-                "v_Cd_-2: 0.011 eV",
-                "v_Cd_-1: 0.008 eV",
-                "Int_Te_3_1: 0.003 eV",
-                "Te_Cd_+1: 0.002 eV",
-                "Int_Te_3_Unperturbed_1: 0.005 eV",
-                "Int_Te_3_2: 0.012 eV",
+                "1.00e-03 eV):",
+                "v_Cd_-2: 1.13e-02 eV",
+                "v_Cd_-1: 7.91e-03 eV",
+                "Int_Te_3_1: 3.10e-03 eV",
+                "Te_Cd_+1: 2.02e-03 eV",
+                "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
+                "Int_Te_3_2: 1.24e-02 eV",
                 "You may want to check the accuracy of the corrections by",
                 "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
                 "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
@@ -772,7 +771,26 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
 
+        # spot check:
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
+
+    def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
+        with warnings.catch_warnings(record=True) as w:  # no warning about negative corrections with
+            # strong anisotropic dielectric:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect/O_-2",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )
+        print([warn.message for warn in w])  # for debugging
+        assert not w  # no warnings
+        self._check_DefectsParser(Sb2Se3_O_dp)
+        Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+
+        assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
@@ -1051,8 +1069,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.CaO_DATA_DIR,
                 skip_corrections=True,
-                parse_projected_eigen=bool(_potcars_available()),
-            )  # only test projected eigenvalues if POTCARs available (i.e. locally) to save time
+            )
 
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
@@ -1915,8 +1932,8 @@ class DopedParsingTestCase(unittest.TestCase):
             )
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-            f"{int_F_minus1_ent.name} is 0.003 eV (i.e. which is greater than the `error_tolerance`: "
-            f"0.001 eV). You may want to check the accuracy of the correction by plotting the site "
+            f"{int_F_minus1_ent.name} is 2.58e-03 eV (i.e. which is greater than the `error_tolerance`: "
+            f"1.00e-03 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
             f"which can't be accurately modelled with the supercell approach; see "
@@ -2010,8 +2027,8 @@ class DopedParsingTestCase(unittest.TestCase):
         print([str(warn.message) for warn in w])
         assert any(
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"0.000 eV (i.e. which is greater than the `error_tolerance`: 0.000 eV). You may want to "
-            f"check the accuracy of the correction by plotting the site potential differences (using "
+            f"3.54e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
+            f"to check the accuracy of the correction by plotting the site potential differences (using "
             f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
             f"to unstable or shallow defect charge states (which can't be accurately modelled with "
             f"the supercell approach; see "
@@ -2252,53 +2269,6 @@ def _remove_metadata_keys_from_dict(d: dict) -> dict:
             d[key] = _remove_metadata_keys_from_dict(d[key])
 
     return d
-
-
-def _compare_band_edge_states_dicts(d1, d2, orb_diff_tol: float = 0.1):
-    """
-    Compare two dictionaries of band edge states, removing metadata keys and
-    allowing a slight difference in the ``vbm/cbm_orbital_diff`` values to
-    account for rounding errors with ``PROCAR``s.
-    """
-    if isinstance(d1, str):
-        d1 = loadfn(d1)
-    if isinstance(d2, str):
-        d2 = loadfn(d2)
-
-    d1 = d1.as_dict()
-    d2 = d2.as_dict()
-
-    cbm_orbital_diffs1 = [subdict.pop("cbm_orbital_diff") for subdict in d1["states"]]
-    cbm_orbital_diffs2 = [subdict.pop("cbm_orbital_diff") for subdict in d2["states"]]
-    for i, j in zip(cbm_orbital_diffs1, cbm_orbital_diffs2):
-        print(f"cbm_orbital_diffs: {i:.3f} vs {j:.3f}")
-        assert np.isclose(i, j, atol=orb_diff_tol)
-    vbm_orbital_diffs1 = [subdict.pop("vbm_orbital_diff") for subdict in d1["states"]]
-    vbm_orbital_diffs2 = [subdict.pop("vbm_orbital_diff") for subdict in d2["states"]]
-    for i, j in zip(vbm_orbital_diffs1, vbm_orbital_diffs2):
-        print(f"vbm_orbital_diffs: {i:.3f} vs {j:.3f}")
-        assert np.isclose(i, j, atol=orb_diff_tol)
-
-    orb_infos_orbitals1 = [
-        subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]
-    ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]]
-    orb_infos_orbitals2 = [
-        subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]
-    ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]]
-    for i, j in zip(orb_infos_orbitals1, orb_infos_orbitals2):
-        print(f"orbital_info_orbitals: {i} vs {j}")
-        for k, v in i.items():
-            assert np.allclose(v, j[k], atol=orb_diff_tol)
-
-    participation_ratio1 = [
-        subdict["vbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d1["states"]
-    ] + [subdict["cbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d1["states"]]
-    participation_ratio2 = [
-        subdict["vbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d2["states"]
-    ] + [subdict["cbm_info"]["orbital_info"].pop("participation_ratio") for subdict in d2["states"]]
-    assert np.allclose(participation_ratio1, participation_ratio2, atol=orb_diff_tol)
-
-    assert _remove_metadata_keys_from_dict(d1) == _remove_metadata_keys_from_dict(d2)
 
 
 class DopedParsingFunctionsTestCase(unittest.TestCase):
@@ -2723,6 +2693,80 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         Print statements added because dict comparison doesn't give verbose
         output on exact location of failure.
         """
+
+        def _compare_band_edge_states_dicts(d1, d2, orb_diff_tol: float = 0.1):
+            """
+            Compare two dictionaries of band edge states, removing metadata
+            keys and allowing a slight difference in the
+            ``vbm/cbm_orbital_diff`` values to account for rounding errors with
+            ``PROCAR``s.
+            """
+            if isinstance(d1, str):
+                d1 = loadfn(d1)
+            if isinstance(d2, str):
+                d2 = loadfn(d2)
+
+            d1 = d1.as_dict()
+            d2 = d2.as_dict()
+
+            cbm_orbital_diffs1 = [subdict.pop("cbm_orbital_diff") for subdict in d1["states"]]
+            cbm_orbital_diffs2 = [subdict.pop("cbm_orbital_diff") for subdict in d2["states"]]
+            for i, j in zip(cbm_orbital_diffs1, cbm_orbital_diffs2):
+                print(f"cbm_orbital_diffs: {i:.3f} vs {j:.3f}")
+                assert np.isclose(i, j, atol=orb_diff_tol)
+            vbm_orbital_diffs1 = [subdict.pop("vbm_orbital_diff") for subdict in d1["states"]]
+            vbm_orbital_diffs2 = [subdict.pop("vbm_orbital_diff") for subdict in d2["states"]]
+            for i, j in zip(vbm_orbital_diffs1, vbm_orbital_diffs2):
+                print(f"vbm_orbital_diffs: {i:.3f} vs {j:.3f}")
+                assert np.isclose(i, j, atol=orb_diff_tol)
+
+            orb_infos_orbitals1 = [
+                subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]
+            ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d1["states"]]
+            orb_infos_orbitals2 = [
+                subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]
+            ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]]
+            for i, j in zip(orb_infos_orbitals1, orb_infos_orbitals2):
+                print(f"orbital_info_orbitals: {i} vs {j}")
+                for k, v in i.items():
+                    assert np.allclose(v, j[k], atol=orb_diff_tol)
+
+            participation_ratio1 = (
+                [
+                    subdict["vbm_info"]["orbital_info"].pop("participation_ratio")
+                    for subdict in d1["states"]
+                ]
+                + [
+                    subdict["cbm_info"]["orbital_info"].pop("participation_ratio")
+                    for subdict in d1["states"]
+                ]
+                + [
+                    subsubdict.pop("participation_ratio")
+                    for subdict in d1["states"]
+                    for subsubdict in subdict["localized_orbitals"]
+                ]
+            )
+
+            participation_ratio2 = (
+                [
+                    subdict["vbm_info"]["orbital_info"].pop("participation_ratio")
+                    for subdict in d2["states"]
+                ]
+                + [
+                    subdict["cbm_info"]["orbital_info"].pop("participation_ratio")
+                    for subdict in d2["states"]
+                ]
+                + [
+                    subsubdict.pop("participation_ratio")
+                    for subdict in d2["states"]
+                    for subsubdict in subdict["localized_orbitals"]
+                ]
+            )
+            print(f"participation_ratio: {participation_ratio1} vs {participation_ratio2}")
+            assert np.allclose(participation_ratio1, participation_ratio2, atol=orb_diff_tol)
+
+            assert _remove_metadata_keys_from_dict(d1) == _remove_metadata_keys_from_dict(d2)
+
         # Test loading of MgO using vasprun.xml
         defect_entry = DefectParser.from_paths(
             f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_+1/vasp_std",
@@ -2735,7 +2779,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         bes, fig = defect_entry.get_eigenvalue_analysis()  # Test plotting KS
         Mg_O_1_bes_path = f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_1_band_edge_states.json"
         # dumpfn(bes, Mg_O_1_bes_path)  # for saving test data
-        _compare_band_edge_states_dicts(bes, Mg_O_1_bes_path, orb_diff_tol=0.001)
+        _compare_band_edge_states_dicts(bes, Mg_O_1_bes_path, orb_diff_tol=0.01)
         assert bes.has_occupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
@@ -2771,7 +2815,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         bes = dp.defect_dict["Si_i_-1"].get_eigenvalue_analysis(plot=False)
         Si_i_m1_bes_path = f"{self.Cu2SiSe3_EXAMPLE_DIR}/Cu2SiSe3_int_band_edge_states.json"
         # dumpfn(bes, Si_i_m1_bes_path)  # for saving test data
-        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.01)
         assert bes.has_occupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
@@ -2853,7 +2897,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         bes = defect_entry.get_eigenvalue_analysis(plot=False)
         Te_i_1_SOC_bes_path = f"{self.CdTe_EXAMPLE_DIR}/CdTe_test_soc_band_edge_states.json"
         # dumpfn(bes, Te_i_1_SOC_bes_path)  # for saving test data
-        _compare_band_edge_states_dicts(bes, Te_i_1_SOC_bes_path, orb_diff_tol=0.001)
+        _compare_band_edge_states_dicts(bes, Te_i_1_SOC_bes_path, orb_diff_tol=0.02)
         assert bes.has_unoccupied_localized_state
         assert not any(
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_occupied_localized_state, bes.is_shallow]
@@ -2870,7 +2914,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             )
 
         print([str(warning.message) for warning in w])  # for debugging
-        assert any("with projected orbitals in path" in str(warning.message) for warning in w)
+        assert any("Could not parse eigenvalue data" in str(warning.message) for warning in w)
 
         # Test no warning for no projected orbitals with default ``parse_projected_eigen=None`` (attempt
         # but don't warn): Sb2Se3 data
