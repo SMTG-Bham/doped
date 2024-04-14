@@ -82,11 +82,6 @@ class ChemPotsTestCase(unittest.TestCase):
         # check if it's no longer Element
         assert isinstance(next(iter(stable_cpa.intrinsic_chempots["elemental_refs"].keys())), str)
 
-        self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.unstable_system)
-        self.unstable_cpa.from_csv(self.csv_path)
-        with pytest.raises(ValueError):
-            self.unstable_cpa.calculate_chempots()
-
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             self.stable_system, self.extrinsic_species
         )
@@ -94,6 +89,41 @@ class ChemPotsTestCase(unittest.TestCase):
         chempot_df = self.ext_cpa.calculate_chempots()
         assert next(iter(chempot_df["La-Limiting Phase"])) == "La2Zr2O7"
         assert np.isclose(next(iter(chempot_df["La"])), -9.46298748)
+
+    def test_unstable_host_chempots(self):
+        """
+        Test the chemical potentials parsing when the host phase is unstable.
+        """
+        self.unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.unstable_system)
+        self.unstable_cpa.from_csv(self.csv_path)
+        with warnings.catch_warnings(record=True) as w:
+            chempot_df = self.unstable_cpa.calculate_chempots()
+
+        print([str(warning.message) for warning in w])  # for debugging
+        assert (
+            f"{self.unstable_system} is not stable with respect to competing phases, having an energy "
+            f"above hull of 0.0194 eV/atom.\nFormally, this means that"
+        ) in str(w[0].message)
+        assert (
+            "just a metastable phase.\nHere we will determine a single chemical potential 'limit' "
+            "corresponding to the least unstable point on the convex hull for the host material, "
+            "as an approximation for the true chemical potentials."
+        ) in str(w[0].message)
+        assert chempot_df.index.tolist() == ["Zr2O-ZrO2"]
+        assert np.isclose(next(iter(chempot_df["Zr"])), -0.1997)
+        assert np.isclose(next(iter(chempot_df["O"])), -5.3878)
+
+        assert self.unstable_cpa.chempots["elemental_refs"] == self.parsed_chempots["elemental_refs"]
+        assert len(self.unstable_cpa.chempots["limits"]) == 1
+        assert len(self.unstable_cpa.chempots["limits_wrt_el_refs"]) == 1
+        assert np.isclose(self.unstable_cpa.chempots["limits"]["Zr2O-ZrO2"]["Zr"], -10.0434)
+        assert np.isclose(self.unstable_cpa.chempots["limits"]["Zr2O-ZrO2"]["O"], -12.3944)
+        assert np.isclose(
+            self.unstable_cpa.chempots["limits_wrt_el_refs"]["Zr2O-ZrO2"]["Zr"], -0.1997, atol=1e-3
+        )
+        assert np.isclose(
+            self.unstable_cpa.chempots["limits_wrt_el_refs"]["Zr2O-ZrO2"]["O"], -5.3878, atol=1e-3
+        )
 
     def test_ext_cpa_chempots(self):
         # test accessing cpa.chempots without previously calling cpa.calculate_chempots()
