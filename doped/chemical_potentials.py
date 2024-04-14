@@ -1454,18 +1454,33 @@ class CompetingPhasesAnalyzer:
             )
         # lowest energy bulk phase
         self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
+        unstable_bulk = False
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
             map(Element, self.bulk_composition.elements),
         )
 
-        # check if it's stable and if not error out
+        # check if it's stable and if not, warn user and downshift to get _least_ unstable point on convex
+        # hull for the host material
         if self.bulk_pde not in self._intrinsic_phase_diagram.stable_entries:
+            unstable_bulk = True
             eah = self._intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
-            raise ValueError(
-                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing "
-                f"phases, EaH={eah:.4f} eV/atom"
+            warnings.warn(
+                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
+                f"having an energy above hull of {eah:.4f} eV/atom.\n"
+                f"Formally, this means that (based on the supplied athermal calculation data) the host "
+                f"material is unstable and so has no chemical potential limits; though in reality the "
+                f"host may be stabilised by temperature effects etc, or just a metastable phase.\n"
+                f"Here we will determine a single chemical potential 'limit' corresponding to the least "
+                f"unstable point on the convex hull for the host material, as an approximation for the "
+                f"true chemical potentials."
+            )
+            # decrease bulk_pde energy per atom by ``e_above_hull`` + 0.1 meV/atom
+            renormalised_bulk_pde = _renormalise_entry(self.bulk_pde, eah + 1e-4)
+            self._intrinsic_phase_diagram = PhaseDiagram(
+                [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
+                map(Element, self.bulk_composition.elements),
             )
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
@@ -1494,6 +1509,8 @@ class CompetingPhasesAnalyzer:
             for e in relative_chempot_dict:
                 relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
             self._intrinsic_chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
+            if unstable_bulk:
+                break  # only one limit for unstable bulk
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
