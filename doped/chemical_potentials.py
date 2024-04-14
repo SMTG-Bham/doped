@@ -1454,7 +1454,7 @@ class CompetingPhasesAnalyzer:
             )
         # lowest energy bulk phase
         self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
-        unstable_bulk = False
+        unstable_host = False
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
@@ -1464,7 +1464,7 @@ class CompetingPhasesAnalyzer:
         # check if it's stable and if not, warn user and downshift to get _least_ unstable point on convex
         # hull for the host material
         if self.bulk_pde not in self._intrinsic_phase_diagram.stable_entries:
-            unstable_bulk = True
+            unstable_host = True
             eah = self._intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
             warnings.warn(
                 f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
@@ -1485,10 +1485,13 @@ class CompetingPhasesAnalyzer:
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
 
-        no_element_chem_lims = {}  # remove Element to make it JSONable
-        for k, v in chem_lims.items():
-            temp_dict = {str(kk): vv for kk, vv in v.items()}
-            no_element_chem_lims[k] = temp_dict
+        # remove Element to make it JSONable:
+        no_element_chem_lims = {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims.items()}
+
+        if unstable_host:
+            no_element_chem_lims = {
+                k: {str(kk): vv for kk, vv in v.items()} for k, v in list(chem_lims.items())[:1]
+            }
 
         if sort_by is not None:
             no_element_chem_lims = dict(
@@ -1509,8 +1512,6 @@ class CompetingPhasesAnalyzer:
             for e in relative_chempot_dict:
                 relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
             self._intrinsic_chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
-            if unstable_bulk:
-                break  # only one limit for unstable bulk
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
