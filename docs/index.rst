@@ -11,6 +11,8 @@
    :target: https://anaconda.org/conda-forge/doped
 .. image:: https://img.shields.io/pypi/dm/doped
    :target: https://pypi.org/project/doped
+.. image:: https://joss.theoj.org/papers/10.21105/joss.06433/status.svg
+   :target: https://doi.org/10.21105/joss.06433
 
 .. raw:: html
 
@@ -22,9 +24,7 @@ powerful and fully-customisable manner.
 
 Tutorials showing the code functionality and usage are provided on the :ref:`Tutorials` page, and an
 overview of the key advances of the package is given in the
-`JOSS paper <https://arxiv.org/abs/2403.08012>`__.
-
-.. update JOSS paper link when done!
+`JOSS paper <https://doi.org/10.21105/joss.06433>`__.
 
 .. raw:: html
 
@@ -48,7 +48,7 @@ Performance and Example Outputs
 -------------------------------
 
 .. image:: JOSS/doped_JOSS_figure.png
-   :target: https://arxiv.org/abs/2403.08012
+   :target: https://doi.org/10.21105/joss.06433
 
 **(a)** Optimal supercell generation comparison. **(b)** Charge state estimation comparison.
 Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram,
@@ -56,9 +56,7 @@ Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect f
 defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration
 heatmap plots from ``doped``. Automated plots of **(i,j)** single-particle eigenvalues and **(k)** site
 displacements from DFT supercell calculations. See the
-`JOSS paper <https://github.com/openjournals/joss-reviews/issues/6433>`__ for more details.
-
-.. Update all JOSS paper links when ready!
+`JOSS paper <https://doi.org/10.21105/joss.06433>`__ for more details.
 
 Installation
 ------------
@@ -66,6 +64,12 @@ Installation
 instructions for setting up ``POTCAR`` files with ``pymatgen`` (needed for input file generation), if not
 already done, are provided on the :ref:`Installation` page.
 
+Citation
+========
+
+If you use ``doped`` in your research, please cite:
+
+- S\. R. Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
 
 ``ShakeNBreak``
 ================
