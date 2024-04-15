@@ -1475,13 +1475,16 @@ class CompetingPhasesAnalyzer:
                 f"Here we will determine a single chemical potential 'limit' corresponding to the least "
                 f"unstable point on the convex hull for the host material, as an approximation for the "
                 f"true chemical potentials."
-            )
+            )  # TODO: Add example of adjusting the entry energy after loading (if user has calculated
+            # e.g. temperature effects) and link in this warning
             # decrease bulk_pde energy per atom by ``e_above_hull`` + 0.1 meV/atom
             renormalised_bulk_pde = _renormalise_entry(self.bulk_pde, eah + 1e-4)
             self._intrinsic_phase_diagram = PhaseDiagram(
                 [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
                 map(Element, self.bulk_composition.elements),
             )
+            # TODO: Implement same downshifting & warning strategy for competing phase _generation_ too
+            # Na2FePO4F a good test case for this, 0.17 eV/atom above the MP Hull
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
 
