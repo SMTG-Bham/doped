@@ -82,6 +82,11 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    Note the Materials Project API key is required for determining the necessary competing phases to calculate in order to determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy MP API, with your unique key available at: https://legacy.materialsproject.org/open.
 
 
+If you use ``doped`` in your research, please cite:
+
+- S\. R. Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
+
+
 Developer Installation
 -----------------------
 If you want to use the example files from the tutorials or run the package tests, you will need to clone
