@@ -791,8 +791,8 @@ def _compare_incar_tags(
 
     def _compare_incar_vals(val1, val2):
         if isinstance(val1, str):
-            return val1.split()[0].lower() == val2.split()[0].lower()
-        if isinstance(val1, float):
+            return val1.split()[0].lower() == str(val2).split()[0].lower()
+        if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
             return np.isclose(val1, val2, rtol=1e-3)
 
         return val1 == val2
