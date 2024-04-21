@@ -17,8 +17,25 @@ message about the origin of the problem, it is likely to be an issue with your v
   pip install pymatgen --upgrade
   pip install doped --upgrade
 
-If this does not solve your issue, please contact the developers through the ``GitHub``
+If this does not solve your issue, please check the specific cases noted below. If your issue still isn't
+solved, then please contact the developers through the ``GitHub``
 `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+
+Parsing Errors
+--------------
+
+If errors occur during parsing of defect calculations, ``doped`` will try to informatively warn you about
+the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
+Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
+worth trying to parse one or two of these failing defect calculations individually, using
+``DefectParser.from_paths(defect_path="...", bulk_path="...", ...)``, which should give a more verbose
+error traceback.
+
+.. note::
+
+    XML-related errors or "``ParseError``" are related to parsing of ``vasprun.xml(.gz)`` files. In most
+    cases, these error messages are indicating a corrupted/incomplete ``vasprun.xml(.gz)`` file, for which
+    the solution is to re-run the VASP calculation to obtain the appropriate output.
 
 
 ``numpy`` Errors
