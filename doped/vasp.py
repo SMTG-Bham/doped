@@ -81,11 +81,11 @@ def _test_potcar_functional_choice(
         symbols = ["Mg"]
     try:
         test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-    except OSError as e:
+    except (OSError, RuntimeError) as e:  # updated to RuntimeError in pymatgen 2024.5.1
         # try other functional choices:
         if potcar_functional.startswith("PBE"):
             for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
-                with contextlib.suppress(OSError):
+                with contextlib.suppress(OSError, RuntimeError):
                     potcar_functional = pbe_potcar_string
                     test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
                     break
