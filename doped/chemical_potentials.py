@@ -1219,12 +1219,23 @@ class CompetingPhasesAnalyzer:
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
 
-        if skipped_folders and verbose:
+        # only warn about skipped folders that are recognised calculation folders (containing a material
+        # composition in the name, or 'EaH' in the name)
+        skipped_folders_for_warning = []
+        for folder_name in skipped_folders:
+            comps = []
+            for i in folder_name.split(" or ")[0].split("_"):
+                with contextlib.suppress(ValueError):
+                    comps.append(Composition(i))
+            if "EaH" in folder_name or comps:
+                skipped_folders_for_warning.append(folder_name)
+
+        if skipped_folders_for_warning and verbose:
             parent_folder_string = f" (in {path})" if isinstance(path, (PurePath, str)) else ""
-            print(
+            warnings.warn(
                 f"vasprun.xml files could not be found in the following "
                 f"directories{parent_folder_string}, and so they will be skipped for parsing:\n"
-                + "\n".join(skipped_folders)
+                + "\n".join(skipped_folders_for_warning)
             )
 
         # Ignore POTCAR warnings when loading vasprun.xml
@@ -1690,13 +1701,20 @@ class CompetingPhasesAnalyzer:
             self.calculate_chempots()
         return self._intrinsic_phase_diagram
 
-    def cplap_input(self, dependent_variable=None, filename="input.dat"):
-        """For completeness' sake, automatically saves to input.dat for cplap
+    def _cplap_input(self, dependent_variable=None, filename="input.dat"):
+        """
+        Generates an ``input.dat`` file for the ``CPLAP`` ``FORTRAN`` code
+        (legacy code for computing and analysing chemical potential limits, no
+        longer recommended).
+
         Args:
-            dependent_variable (str) Pick one of the variables as dependent, the first element is
-                chosen from the composition if this isn't set
-            filename (str): filename, should end in .dat
-        Returns
+            dependent_variable (str):
+                Pick one of the variables as dependent, the first element in
+                the composition is chosen if this isn't set.
+            filename (str):
+                Filename, should end in ``.dat``.
+
+        Returns:
             None, writes input.dat file.
         """
         if not hasattr(self, "chempots"):
