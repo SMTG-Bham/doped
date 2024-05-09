@@ -33,9 +33,10 @@ error traceback.
 
 .. note::
 
-    XML-related errors or "``ParseError``" are related to parsing of ``vasprun.xml(.gz)`` files. In most
-    cases, these error messages are indicating a corrupted/incomplete ``vasprun.xml(.gz)`` file, for which
-    the solution is to re-run the VASP calculation to obtain the appropriate output.
+    "``ParseError``", ``ElementTree``/"no element found" or other XML-related errors  are related to
+    issues in parsing ``vasprun.xml(.gz)`` files. In most cases, these error messages are indicating a
+    corrupted/incomplete ``vasprun.xml(.gz)`` file, for which the solution is to re-run the VASP
+    calculation to obtain the appropriate output.
 
 
 ``numpy`` Errors
