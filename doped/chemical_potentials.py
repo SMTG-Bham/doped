@@ -18,10 +18,10 @@ from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
-from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
 
 from doped import _ignore_pmg_warnings
-from doped.utils.parsing import _get_output_files_and_check_if_multiple
+from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
@@ -1130,7 +1130,7 @@ class CompetingPhasesAnalyzer:
     #  unstable (in `pymatgen-analysis-defects` it just drops it to the convex hull)
     # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
     #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
-    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
+    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None, verbose=True):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
@@ -1153,6 +1153,10 @@ class CompetingPhasesAnalyzer:
                 If set will save the parsed data to a csv at this filepath.
                 Further customisation of the output csv can be achieved with
                 the CompetingPhasesAnalyzer.to_csv() method.
+            verbose (bool):
+                Whether to print out information about directories that were
+                skipped (due to no ``vasprun.xml`` files being found).
+                Default is ``True``.
 
         Returns:
             None, sets self.data, self.formation_energy_df and self.elemental_energies
@@ -1163,9 +1167,9 @@ class CompetingPhasesAnalyzer:
         # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
         #  analysis.py for this
         self.vasprun_paths = []
-        # fetch data
-        # if path is just a list of all competing phases
-        if isinstance(path, list):
+        skipped_folders = []
+
+        if isinstance(path, list):  # if path is just a list of all competing phases
             for p in path:
                 if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
                     self.vasprun_paths.append(str(Path(p)))
@@ -1176,7 +1180,7 @@ class CompetingPhasesAnalyzer:
                     self.vasprun_paths.append(str(vsp))
 
                 else:
-                    print(f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution")
+                    skipped_folders.append(p)
 
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
@@ -1210,27 +1214,38 @@ class CompetingPhasesAnalyzer:
                             self.vasprun_paths.append(vr_path)
 
                         else:
-                            warnings.warn(f"Can't find a vasprun.xml file in {p} or {p/folder}, skipping")
+                            folder_name = str(PurePath(*p.parts[len(path.parts) :]))
+                            skipped_folders += [f"{folder_name} or {folder_name}/{folder}"]
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
+
+        if skipped_folders and verbose:
+            parent_folder_string = f" (in {path})" if isinstance(path, (PurePath, str)) else ""
+            print(
+                f"vasprun.xml files could not be found in the following "
+                f"directories{parent_folder_string}, and so they will be skipped for parsing:\n"
+                + "\n".join(skipped_folders)
+            )
 
         # Ignore POTCAR warnings when loading vasprun.xml
         # pymatgen assumes the default PBE with no way of changing this
         _ignore_pmg_warnings()
 
-        num = len(self.vasprun_paths)
-        print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
+        # TODO: Change this to a tqdm progress bar:
+        print(f"Parsing {len(self.vasprun_paths)} vaspruns...")
 
         self.vaspruns = []
         failed_parsing_dict = {}
-        for vasprun_path in self.vasprun_paths:
-            try:
-                self.vaspruns.append(Vasprun(vasprun_path).as_dict())
-            except Exception as e:
-                if str(e) in failed_parsing_dict:
-                    failed_parsing_dict[str(e)] += [vasprun_path]
-                else:
-                    failed_parsing_dict[str(e)] = [vasprun_path]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)
+            for vasprun_path in self.vasprun_paths:
+                try:
+                    self.vaspruns.append(get_vasprun(vasprun_path))
+                except Exception as e:
+                    if str(e) in failed_parsing_dict:
+                        failed_parsing_dict[str(e)] += [vasprun_path]
+                    else:
+                        failed_parsing_dict[str(e)] = [vasprun_path]
 
         if failed_parsing_dict:
             warning_string = (
@@ -1239,45 +1254,71 @@ class CompetingPhasesAnalyzer:
             )
             warnings.warn(warning_string)
 
+        # check if any vaspruns are unconverged, and warn together:
+        electronic_unconverged_vaspruns = [
+            vr.filename for vr in self.vaspruns if not vr.converged_electronic
+        ]
+        ionic_unconverged_vaspruns = [vr.filename for vr in self.vaspruns if not vr.converged_ionic]
+        for unconverged_vaspruns, unconverged_type in zip(
+            [electronic_unconverged_vaspruns, ionic_unconverged_vaspruns],
+            ["Electronic", "Ionic"],
+        ):
+            if unconverged_vaspruns:
+                warnings.warn(
+                    f"{unconverged_type} convergence was not reached for:\n"
+                    + "\n".join(unconverged_vaspruns)
+                )
+
         if not self.vaspruns:
             raise FileNotFoundError(
                 "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
                 "folders and input parameters are in the correct format (see docstrings/tutorials)."
             )
-        self.data = []
 
-        temp_data = []
+        data = []
         self.elemental_energies = {}
-        for v in self.vaspruns:
-            rcf = v["reduced_cell_formula"]
-            comp = Composition(v["unit_cell_formula"])
+
+        for vr in self.vaspruns:
+            comp = vr.final_structure.composition
             formulas_per_unit = comp.get_reduced_composition_and_factor()[1]
-            final_energy = v["output"]["final_energy"]
-            kpoints = "x".join(str(x) for x in v["input"]["kpoints"]["kpoints"][0])
+            energy_per_atom = vr.final_energy / len(vr.final_structure)
+
+            kpoints = (
+                "x".join(str(x) for x in vr.kpoints.kpts[0])
+                if (vr.kpoints.kpts and len(vr.kpoints.kpts) == 1)
+                else "N/A"
+            )
 
             # check if elemental:
-            if len(rcf) == 1:
-                el = v["elements"][0]
+            if len(Composition(comp.reduced_formula).as_dict()) == 1:
+                el = next(iter(vr.atomic_symbols))  # elemental, so first symbol is only (unique) element
                 if el not in self.elemental_energies:
-                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = energy_per_atom
                     if el not in self.elemental:  # new (extrinsic) element
-                        self.extrinsic_species = el
                         self.elemental.append(el)
 
-                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[el]:
+                elif energy_per_atom < self.elemental_energies[el]:
                     # only include lowest energy elemental polymorph
-                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = energy_per_atom
 
             d = {
-                "Formula": v["pretty_formula"],
+                "Formula": comp.reduced_formula,
                 "k-points": kpoints,
-                "DFT Energy (eV/fu)": final_energy / formulas_per_unit,
-                "DFT Energy (eV/atom)": v["output"]["final_energy_per_atom"],
-                "DFT Energy (eV)": final_energy,
+                "DFT Energy (eV/fu)": vr.final_energy / formulas_per_unit,
+                "DFT Energy (eV/atom)": energy_per_atom,
+                "DFT Energy (eV)": vr.final_energy,
             }
-            temp_data.append(d)
+            data.append(d)
 
-        formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
+        if self.extrinsic_species and self.extrinsic_species not in self.elemental_energies:
+            raise ValueError(
+                f"Elemental reference phase for the specified extrinsic species {self.extrinsic_species} "
+                f"was not parsed, but is necessary for chemical potential calculations. "
+                f"Please ensure that this phase is present in the calculation directory and is being "
+                f"correctly parsed."
+            )
+
+        formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
         self.data = formation_energy_df.to_dict(orient="records")
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
         self.formation_energy_df.set_index("Formula")
@@ -1610,7 +1651,7 @@ class CompetingPhasesAnalyzer:
             new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
             new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
             cl2["limits_wrt_el_refs"][key] = new_vals
-        # print(f"cl2: {cl2}")  # debugging
+        print(f"cl2: {cl2}")  # debugging
 
         # relate the limits to the elemental
         # energies but in reverse this time
