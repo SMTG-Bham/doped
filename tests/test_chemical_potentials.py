@@ -266,15 +266,15 @@ class ChemPotsTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
             cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert "Failed to parse the following `vasprun.xml` files:\n(files: error)\n" in str(w[0].message)
-        assert "Is a directory" in str(w[0].message)
+        assert "vasprun.xml files could not be found in the following directories (in" in str(w[0].message)
+        assert "ZrO2 or ZrO2/relax" in str(w[0].message)
+        print(e.value)
         assert "No vasprun files have been parsed," in str(e.value)
 
     def test_cplap_input(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_csv(self.csv_path)
-        cpa.cplap_input(dependent_variable="O")
+        cpa._cplap_input(dependent_variable="O")
 
         assert Path("input.dat").is_file()
 
@@ -688,8 +688,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_api_keys_errors(self):
         nonvalid_api_key_error = ValueError(
-            "API key test is not a valid legacy Materials Project API key. These are "
-            "available at https://legacy.materialsproject.org/open"
+            "The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` "
+            "file) test is not a valid legacy Materials Project API key, which is "
+            "required by doped. See the doped installation instructions for details:\n"
+            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
         )
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
@@ -699,8 +701,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert str(nonvalid_api_key_error) in str(e.value)
 
         new_api_key_error = ValueError(
-            "You are trying to use the new Materials Project (MP) API which is not supported "
-            "by doped. Please use the legacy MP API (https://legacy.materialsproject.org/open)."
+            "The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` "
+            "file) corresponds to the new Materials Project (MP) API, which is not "
+            "supported by doped. Please use the legacy MP API as detailed on the doped "
+            "installation instructions:\n"
+            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
         )
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
