@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
-from pymatgen.core import Composition, Element, Structure
+from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
@@ -319,7 +319,7 @@ class CompetingPhases:
                 limits), if their relative energy was downshifted by ``e_above_hull``.
                 (Default is False).
         """
-        self.api_key = api_key
+        self.api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
 
         # create list of entries
         self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
@@ -368,21 +368,22 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         # test api_key:
-        if api_key is not None:  # TODO: Should test API key also when not explicitly set, but this will
-            # be avoided when we just update to make it compatible with both
-            if len(api_key) == 32:
-                raise ValueError(
-                    "You are trying to use the new Materials Project (MP) API which is not "
-                    "supported by doped. Please use the legacy MP API ("
-                    "https://legacy.materialsproject.org/open)."
-                )
-            if 15 <= len(api_key) <= 20:
-                self.eah = "e_above_hull"
-            else:
-                raise ValueError(
-                    f"API key {api_key} is not a valid legacy Materials Project API key. These "
-                    f"are available at https://legacy.materialsproject.org/open"
-                )
+        if len(self.api_key) == 32:
+            raise ValueError(
+                "The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` file) "
+                "corresponds to the new Materials Project (MP) API, which is not supported by doped. "
+                "Please use the legacy MP API as detailed on the doped installation instructions:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
+            )
+        if 15 <= len(self.api_key) <= 20:
+            self.eah = "e_above_hull"
+        else:
+            raise ValueError(
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` file) "
+                f"{self.api_key} is not a valid legacy Materials Project API key, which is required by "
+                f"doped. See the doped installation instructions for details:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
+            )
 
         # use with MPRester() as mpr: if self.api_key is None, else use with MPRester(self.api_key)
         with contextlib.ExitStack() as stack:
