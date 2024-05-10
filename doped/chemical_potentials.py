@@ -34,8 +34,6 @@ warnings.filterwarnings(
 )  # currently rely on this so shouldn't show warning, `message` only needs to match start of message
 
 
-# TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
-#  sufficiently informative, add try except catch to give more informative error message for this.
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary`.
@@ -369,21 +367,33 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         # test api_key:
+        if self.api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
+            raise ValueError(
+                "No API key (``api_key`` parameter or 'PMG_MAPI_KEY' in the ``~/.pmgrc.yaml`` or "
+                "``~/.config/.pmgrc.yaml file) was supplied. This is required for automatic competing "
+                "phase generation in doped, as detailed on the installation instructions:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                "-project-api"
+            )
         if len(self.api_key) == 32:
             raise ValueError(
-                "The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` file) "
-                "corresponds to the new Materials Project (MP) API, which is not supported by doped. "
-                "Please use the legacy MP API as detailed on the doped installation instructions:\n"
-                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml` or "
+                f"``~/.config/.pmgrc.yaml file; {self.api_key}) corresponds to the new Materials Project "
+                f"(MP) API, which is not supported by doped. Please use the legacy MP API as detailed on "
+                f"the doped installation instructions:\n"
+                f"https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                f"-project-api"
             )
         if 15 <= len(self.api_key) <= 20:
             self.eah = "e_above_hull"
         else:
             raise ValueError(
-                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``.pmgrc.yaml`` file) "
-                f"{self.api_key} is not a valid legacy Materials Project API key, which is required by "
-                f"doped. See the doped installation instructions for details:\n"
-                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api"
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml file; {self.api_key}) is not a valid legacy Materials Project "
+                f"API key, which is required by doped. See the doped installation instructions for "
+                f"details:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                "-project-api"
             )
 
         # use with MPRester() as mpr: if self.api_key is None, else use with MPRester(self.api_key)
