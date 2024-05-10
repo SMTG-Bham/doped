@@ -19,6 +19,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
@@ -1242,14 +1243,11 @@ class CompetingPhasesAnalyzer:
         # pymatgen assumes the default PBE with no way of changing this
         _ignore_pmg_warnings()
 
-        # TODO: Change this to a tqdm progress bar:
-        print(f"Parsing {len(self.vasprun_paths)} vaspruns...")
-
         self.vaspruns = []
         failed_parsing_dict = {}
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)
-            for vasprun_path in self.vasprun_paths:
+            warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
+            for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
                 try:
                     self.vaspruns.append(get_vasprun(vasprun_path))
                 except Exception as e:
