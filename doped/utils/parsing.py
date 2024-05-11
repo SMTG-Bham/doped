@@ -230,7 +230,7 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     ):
         output_path = os.path.join(path, output_files[0])
         return (output_path, True) if len(output_files) > 1 else (output_path, False)
-    return path, False  # so when `get_X()` is called, it will raise an informative FileNotFoundError
+    return f"{path}/{output_file}", False  # so `get_X()` will raise an informative FileNotFoundError
 
 
 def get_defect_type_and_composition_diff(bulk, defect):
@@ -684,7 +684,8 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
     new_structure = Structure.from_sites(reordered_sites)
 
-    assert len(new_structure) == len(s1_structure)
+    if not len(new_structure) == len(s1_structure):
+        raise ValueError("Structure reordering failed: structures have different number of sites?")
 
     return new_structure
 
@@ -791,8 +792,8 @@ def _compare_incar_tags(
 
     def _compare_incar_vals(val1, val2):
         if isinstance(val1, str):
-            return val1.split()[0].lower() == val2.split()[0].lower()
-        if isinstance(val1, float):
+            return val1.split()[0].lower() == str(val2).split()[0].lower()
+        if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
             return np.isclose(val1, val2, rtol=1e-3)
 
         return val1 == val2
@@ -886,7 +887,7 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     elif not vasprun.parameters.get("LNONCOLLINEAR", False):
         nelect *= 2  # non-spin-polarised or SOC calc
 
-    return nelect
+    return round(nelect, 2)
 
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
@@ -1363,10 +1364,20 @@ def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int =
     return simple_spin_degeneracy_from_charge(defect_vr.final_structure, charge_state)
 
 
-def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_state: Optional[int]):
+def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: Optional[int]) -> int:
     """
-    Determine the defect charge state from the defect and bulk vaspruns, and
-    compare to the manually-set charge state if provided.
+    Determine the defect charge state from the defect vasprun, and compare to
+    the manually-set charge state if provided.
+
+    Args:
+        defect_vr (Vasprun):
+            Defect ``pymatgen`` ``Vasprun`` object.
+        charge_state (int):
+            Manually-set charge state for the defect, to check if it matches
+            the auto-determined charge state.
+
+    Returns:
+        int: The auto-determined defect charge state.
     """
     auto_charge = None
 
@@ -1376,11 +1387,7 @@ def _defect_charge_from_vasprun(bulk_vr: Vasprun, defect_vr: Vasprun, charge_sta
 
         else:
             defect_nelect = defect_vr.parameters.get("NELECT")
-            bulk_nelect = get_nelect_from_vasprun(bulk_vr)
             neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
-
-            if bulk_vr.parameters.get("NELECT", False):
-                assert bulk_nelect == bulk_vr.parameters["NELECT"]
 
             auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
 

@@ -1,6 +1,13 @@
 Change Log
 ==========
 
+v.2.4.2
+----------
+- Allow cases where the calculated host material is unstable wrt competing phases (above the hull), by downshifting to the hull and warning the user about this.
+- General updates to chemical potentials code; more robust (better error catches and messages, API key handling), more informative, cleaner outputs.
+- Updates to match recent changes in ``pymatgen`` object types (e.g. https://github.com/SMTG-Bham/doped/issues/68)
+- Minor efficiency & robustness updates
+
 v.2.4.1
 ----------
 - Speed up eigenvalue parsing by using the faster ``doped`` site-matching functions rather than ``MakeDefectStructureInfo`` from ``pydefect``
