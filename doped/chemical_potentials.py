@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
+from doped.utils.symmetry import get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
@@ -36,7 +37,7 @@ warnings.filterwarnings(
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
-#  with `plot_cplap_ternary`.
+#  with `plot_cplap_ternary` -- using ``ChemicalPotentialGrid`` from Alex PR
 
 
 def make_molecule_in_a_box(element: str):
@@ -266,8 +267,6 @@ def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
 
 
 class CompetingPhases:
-    # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
-    #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
     # on the MP - warn user (i.e. check your stuff) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
@@ -279,13 +278,11 @@ class CompetingPhases:
     # #                 "know about this structure:"
     # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
     # analyze_GGA_chempots code for example.
-    # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
-    # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
-
-    # TODO: Is the Materials Project entry structure always the primitive structure? Should check,
-    #  and if not then use something like this:
-    #  sga = SpacegroupAnalyzer(e.structure)
-    #  struct = sym.get_primitive_standard_structure() -> output this structure
+    # e.g. in pmg-analysis-defects (for parsing, like our approach): stable_entry = ComputedEntry(
+    #         entry.composition,
+    #         pd.get_hull_energy(entry.composition) - threshold,
+    #     )
+    # Na2FePO4F a good test case for this, 0.17 eV/atom above the MP Hull
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
@@ -443,8 +440,7 @@ class CompetingPhases:
             entry for entry in temp_phase_diagram.all_entries if entry.data["e_above_hull"] <= e_above_hull
         ]
         phase_diagram = PhaseDiagram(pd_entries)
-        # TODO: This breaks if bulk composition not on MP, need to fix!
-        bulk_entries = [
+        bulk_entries = [  # TODO: Currently breaks if bulk composition not on MP, need to fix!
             entry
             for entry in pd_entries
             if entry.composition.reduced_composition == self.bulk_comp.reduced_composition
@@ -550,7 +546,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
+                structure=get_primitive_structure(e.structure),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": min_nm},
                 user_potcar_settings=user_potcar_settings or {},
@@ -580,7 +576,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
+                structure=get_primitive_structure(e.structure),
                 user_kpoints_settings={"reciprocal_density": min_m},
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings or {},
@@ -669,7 +665,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
+                structure=get_primitive_structure(e.structure),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
                 user_potcar_settings=user_potcar_settings or {},
@@ -686,7 +682,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
+                structure=get_primitive_structure(e.structure),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_potcar_settings=user_potcar_settings or {},
@@ -704,7 +700,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
+                structure=e.structure,  # molecule in a box structure
                 user_incar_settings=uis,
                 user_kpoints_settings=Kpoints().from_dict(
                     {
@@ -1137,8 +1133,6 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
-    # TODO: Need to be able to deal with cases where the bulk composition is found to be
-    #  unstable (in `pymatgen-analysis-defects` it just drops it to the convex hull)
     # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
     #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None, verbose=True):
@@ -1544,8 +1538,6 @@ class CompetingPhasesAnalyzer:
                 [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
                 map(Element, self.bulk_composition.elements),
             )
-            # TODO: Implement same downshifting & warning strategy for competing phase _generation_ too
-            # Na2FePO4F a good test case for this, 0.17 eV/atom above the MP Hull
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
 
