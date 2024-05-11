@@ -380,16 +380,16 @@ class CompetingPhases:
         # test api_key:
         if self.api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
             raise ValueError(
-                "No API key (``api_key`` parameter or 'PMG_MAPI_KEY' in the ``~/.pmgrc.yaml`` or "
-                "``~/.config/.pmgrc.yaml file) was supplied. This is required for automatic competing "
+                "No API key (either ``api_key`` parameter or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+                "``~/.config/.pmgrc.yaml``) was supplied. This is required for automatic competing "
                 "phase generation in doped, as detailed on the installation instructions:\n"
                 "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
                 "-project-api"
             )
         if len(self.api_key) == 32:
             raise ValueError(
-                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
-                f"``~/.config/.pmgrc.yaml file; {self.api_key}) corresponds to the new Materials Project "
+                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml``; {self.api_key}) corresponds to the new Materials Project "
                 f"(MP) API, which is not supported by doped. Please use the legacy MP API as detailed on "
                 f"the doped installation instructions:\n"
                 f"https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
@@ -399,8 +399,8 @@ class CompetingPhases:
             self.eah = "e_above_hull"
         else:
             raise ValueError(
-                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
-                f"``~/.config/.pmgrc.yaml file; {self.api_key}) is not a valid legacy Materials Project "
+                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml``; {self.api_key}) is not a valid legacy Materials Project "
                 f"API key, which is required by doped. See the doped installation instructions for "
                 f"details:\n"
                 "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
@@ -1678,7 +1678,7 @@ class CompetingPhasesAnalyzer:
             new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
             new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
             cl2["limits_wrt_el_refs"][key] = new_vals
-        print(f"cl2: {cl2}")  # debugging
+        # print(f"cl2: {cl2}")  # debugging
 
         # relate the limits to the elemental
         # energies but in reverse this time
