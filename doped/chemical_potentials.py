@@ -23,7 +23,6 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
-from doped.utils.symmetry import _get_sga, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
@@ -298,9 +297,6 @@ class CompetingPhases:
         Diatomic gaseous molecules are generated as molecules-in-a-box as
         appropriate (e.g. for O2, F2, H2 etc).
 
-        Note that the MP entry structure is converted to the primitive cell
-        (if not already the case) upon input file generation, for efficiency.
-
         Args:
             composition (str, ``Composition``):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
@@ -563,7 +559,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(_get_sga(e.structure)),
+                structure=e.structure,
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": min_nm},
                 user_potcar_settings=user_potcar_settings or {},
@@ -593,7 +589,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(_get_sga(e.structure)),
+                structure=e.structure,
                 user_kpoints_settings={"reciprocal_density": min_m},
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings or {},
@@ -682,7 +678,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(_get_sga(e.structure)),
+                structure=e.structure,
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
                 user_potcar_settings=user_potcar_settings or {},
@@ -699,7 +695,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(_get_sga(e.structure)),
+                structure=e.structure,
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_potcar_settings=user_potcar_settings or {},
