@@ -3,9 +3,6 @@ name: Tests
 on:
   workflow_dispatch:
 
-  pull_request:
-    branches:
-       - '*'  # all branches
   push:
     branches:
       - '*'  # all branches
@@ -16,15 +13,20 @@ jobs:
       fail-fast: false
 
       matrix:
+        os: [ ubuntu-latest, macos-14 ]
         python-version: [ '3.9', '3.10', '3.11' ]
-        os: [ ubuntu-latest ]
+        exclude:
+          - os: macos-14
+            python-version: '3.9'  # Exclude Python 3.9 on macOS, not supported for macOS-14 tests
+        # macos-latest should be 14 according to link below, but currently doesn't?
+        # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -52,7 +54,7 @@ jobs:
       # Upload test plots
       - name: Archive test plots
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: output-plots
           path: tests/remote_baseline
