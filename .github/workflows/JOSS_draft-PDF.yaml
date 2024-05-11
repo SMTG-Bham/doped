@@ -1,8 +1,5 @@
 on:
-  workflow_dispatch:  # only if manually run or on main branch
-
-  push:
-    branches: [ main ]
+  workflow_dispatch:  # only if manually run, now JOSS published
 
 jobs:
   paper:
@@ -18,7 +15,7 @@ jobs:
           # This should be the path to the paper within your repo.
           paper-path: docs/JOSS/paper.md
       - name: Upload
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: paper
           # This is the output path where Pandoc will write the compiled
