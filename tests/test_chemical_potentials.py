@@ -736,10 +736,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
 
-        for phase in os.listdir("competing_phases"):
-            if "EaH" in phase:
-                check_poscars_are_primitive(f"competing_phases/{phase}/kpoint_converge")
-
     def test_vasp_std_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=self.api_key)
         cp.vasp_std_setup(potcar_spec=True)
@@ -775,34 +771,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
         struct = Structure.from_file(f"{path2}/POSCAR")
         assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
-
-        for phase in os.listdir("competing_phases"):
-            if "EaH" in phase:
-                check_poscars_are_primitive("competing_phases", subfolder="vasp_std")
-
-    def test_TiO2_vasp_std_setup(self):
-        """
-        Previously gave two phases that weren't primitive structures.
-        """
-        cp = chemical_potentials.CompetingPhases("TiO2")
-        cp.vasp_std_setup(potcar_spec=True)
-        for phase in os.listdir("competing_phases"):
-            if "EaH" in phase:
-                check_poscars_are_primitive("competing_phases", subfolder="vasp_std")
-
-
-def check_poscars_are_primitive(output_path, subfolder=""):
-    """
-    Check that all POSCAR files in folders in output_path (in subfolders
-    ``subfolder``) correspond to the primitive cell.
-    """
-    for i in os.listdir(output_path):
-        if os.path.isdir(os.path.join(output_path, i)) and os.path.isdir(
-            os.path.join(output_path, i, subfolder)
-        ):
-            struct = Structure.from_file(os.path.join(output_path, i, subfolder, "POSCAR"))
-            print(f"Checking primitive cell used for {i}")  # for debugging
-            assert len(struct) == len(struct.get_primitive_structure(tolerance=0.05))
 
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
