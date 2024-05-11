@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
-from doped.utils.symmetry import get_primitive_structure
+from doped.utils.symmetry import _get_sga, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
@@ -286,33 +286,50 @@ class CompetingPhases:
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
-        Class to generate the input files for competing phases on the phase
-        diagram for the host material (determining the chemical potential
-        limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by ``e_above_hull``, to determine the relevant
-        competing phases. Diatomic gaseous molecules are generated as
-        molecules-in-a-box as appropriate.
+        Class to generate the VASP input files for competing phases on the
+        phase diagram for the host material, which determine the chemical
+        potential limits for that compound.
+
+        For this, the Materials Project (MP) database is queried using the
+        ``MPRester`` API, and any calculated compounds which _could_ border
+        the host material within an error tolerance for the semi-local DFT
+        database energies (``e_above_hull``, 0.1 eV/atom by default) are
+        generated, along with the elemental reference phases.
+        Diatomic gaseous molecules are generated as molecules-in-a-box as
+        appropriate (e.g. for O2, F2, H2 etc).
+
+        Note that the MP entry structure is converted to the primitive cell
+        (if not already the case) upon input file generation, for efficiency.
 
         Args:
-            composition (str, Composition): Composition of host material
-                (e.g. 'LiFePO4', or Composition('LiFePO4'), or Composition({"Li":1, "Fe":1,
-                "P":1, "O":4}))
-            e_above_hull (float): Maximum energy-above-hull of Materials Project entries to be
-                considered as competing phases. This is an uncertainty range for the
-                MP-calculated formation energies, which may not be accurate due to functional
-                choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                Any phases that (would) border the host material on the phase diagram, if their
-                relative energy was downshifted by ``e_above_hull``, are included.
-                Default is 0.1 eV/atom.
-            api_key (str): Materials Project (MP) API key, needed to access the MP database for
-                competing phase generation. If not supplied, will attempt to read from
-                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
-                Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
-            full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
-                with energy above hull < e_above_hull) for the chemical system of the input
-                composition (not recommended). If False, only includes phases that (would) border
-                the host material on the phase diagram (and thus set the chemical potential
-                limits), if their relative energy was downshifted by ``e_above_hull``.
+            composition (str, ``Composition``):
+                Composition of the host material (e.g. ``'LiFePO4'``, or
+                ``Composition('LiFePO4')``, or
+                ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
+            e_above_hull (float):
+                Maximum energy above hull (in eV/atom) of Materials Project
+                entries to be considered as competing phases. This is an
+                uncertainty range for the MP-calculated formation energies,
+                which may not be accurate due to functional choice (GGA vs
+                hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                Any phases that (would) border the host material on the phase
+                diagram, if their relative energy was downshifted by
+                ``e_above_hull``, are included.
+                (Default is 0.1 eV/atom).
+            api_key (str):
+                Materials Project (MP) API key, needed to access the MP
+                database for competing phase generation. If not supplied, will
+                attempt to read from environment variable ``PMG_MAPI_KEY`` (in
+                ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``) - see the ``doped``
+                Installation docs page:
+                https://doped.readthedocs.io/en/latest/Installation.html
+            full_phase_diagram (bool):
+                If ``True``, include all phases on the MP phase diagram (with energy
+                above hull < ``e_above_hull`` eV/atom) for the chemical system of
+                the input composition (not recommended). If ``False``, only includes
+                phases that would border the host material on the phase diagram (and
+                thus set the chemical potential limits), if their relative energy was
+                downshifted by ``e_above_hull`` eV/atom.
                 (Default is False).
         """
         self.api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
@@ -374,7 +391,7 @@ class CompetingPhases:
             )
         if len(self.api_key) == 32:
             raise ValueError(
-                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml` or "
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
                 f"``~/.config/.pmgrc.yaml file; {self.api_key}) corresponds to the new Materials Project "
                 f"(MP) API, which is not supported by doped. Please use the legacy MP API as detailed on "
                 f"the doped installation instructions:\n"
@@ -546,7 +563,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(e.structure),
+                structure=get_primitive_structure(_get_sga(e.structure)),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": min_nm},
                 user_potcar_settings=user_potcar_settings or {},
@@ -576,7 +593,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(e.structure),
+                structure=get_primitive_structure(_get_sga(e.structure)),
                 user_kpoints_settings={"reciprocal_density": min_m},
                 user_incar_settings=uis,
                 user_potcar_settings=user_potcar_settings or {},
@@ -665,7 +682,7 @@ class CompetingPhases:
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(e.structure),
+                structure=get_primitive_structure(_get_sga(e.structure)),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
                 user_potcar_settings=user_potcar_settings or {},
@@ -682,7 +699,7 @@ class CompetingPhases:
             self._set_default_metal_smearing(uis, user_incar_settings or {})
 
             dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=get_primitive_structure(e.structure),
+                structure=get_primitive_structure(_get_sga(e.structure)),
                 user_incar_settings=uis,
                 user_kpoints_settings={"reciprocal_density": kpoints_metals},
                 user_potcar_settings=user_potcar_settings or {},
@@ -699,21 +716,23 @@ class CompetingPhases:
             uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,  # molecule in a box structure
-                user_incar_settings=uis,
-                user_kpoints_settings=Kpoints().from_dict(
-                    {
-                        "comment": "Gamma-only kpoints for molecule-in-a-box",
-                        "generation_style": "Gamma",
-                    }
-                ),
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
-            )
-            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
-            dict_set.write_input(fname, **kwargs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ-only")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=e.structure,  # molecule in a box structure
+                    user_incar_settings=uis,
+                    user_kpoints_settings=Kpoints().from_dict(
+                        {
+                            "comment": "Gamma-only kpoints for molecule-in-a-box",
+                            "generation_style": "Gamma",
+                        }
+                    ),
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
+                dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
