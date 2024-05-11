@@ -1,0 +1,80 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Kavanagh
+  given-names: Seán R.
+  orcid: "https://orcid.org/0000-0003-4577-9647"
+- family-names: Squires
+  given-names: Alexander G.
+  orcid: "https://orcid.org/0000-0001-6967-3690"
+- family-names: Nicolson
+  given-names: Adair
+  orcid: "https://orcid.org/0000-0002-8889-9369"
+- family-names: Mosquera-Lois
+  given-names: Irea
+  orcid: "https://orcid.org/0000-0001-7651-0814"
+- family-names: Ganose
+  given-names: Alex M.
+  orcid: "https://orcid.org/0000-0002-4486-3321"
+- family-names: Zhu
+  given-names: Bonan
+  orcid: "https://orcid.org/0000-0001-5601-6130"
+- family-names: Brlec
+  given-names: Katarina
+  orcid: "https://orcid.org/0000-0003-1485-1888"
+- family-names: Walsh
+  given-names: Aron
+  orcid: "https://orcid.org/0000-0001-5460-7033"
+- family-names: Scanlon
+  given-names: David O.
+  orcid: "https://orcid.org/0000-0001-9174-8601"
+contact:
+- family-names: Kavanagh
+  given-names: Seán R.
+  orcid: "https://orcid.org/0000-0003-4577-9647"
+doi: 10.5281/zenodo.10957359
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Kavanagh
+    given-names: Seán R.
+    orcid: "https://orcid.org/0000-0003-4577-9647"
+  - family-names: Squires
+    given-names: Alexander G.
+    orcid: "https://orcid.org/0000-0001-6967-3690"
+  - family-names: Nicolson
+    given-names: Adair
+    orcid: "https://orcid.org/0000-0002-8889-9369"
+  - family-names: Mosquera-Lois
+    given-names: Irea
+    orcid: "https://orcid.org/0000-0001-7651-0814"
+  - family-names: Ganose
+    given-names: Alex M.
+    orcid: "https://orcid.org/0000-0002-4486-3321"
+  - family-names: Zhu
+    given-names: Bonan
+    orcid: "https://orcid.org/0000-0001-5601-6130"
+  - family-names: Brlec
+    given-names: Katarina
+    orcid: "https://orcid.org/0000-0003-1485-1888"
+  - family-names: Walsh
+    given-names: Aron
+    orcid: "https://orcid.org/0000-0001-5460-7033"
+  - family-names: Scanlon
+    given-names: David O.
+    orcid: "https://orcid.org/0000-0001-9174-8601"
+  date-published: 2024-04-15
+  doi: 10.21105/joss.06433
+  issn: 2475-9066
+  issue: 96
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 6433
+  title: "doped: Python toolkit for robust and repeatable charged defect
+    supercell calculations"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.06433"
+  volume: 9
+title: "doped: Python toolkit for robust and repeatable charged defect
+  supercell calculations"
