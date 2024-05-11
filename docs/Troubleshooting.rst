@@ -14,7 +14,7 @@ message about the origin of the problem, it is likely to be an issue with your v
 
 .. code:: bash
 
-  pip install pymatgen --upgrade
+  pip install pymatgen pymatgen-analysis-defects --upgrade
   pip install doped --upgrade
 
 If this does not solve your issue, please check the specific cases noted below. If your issue still isn't

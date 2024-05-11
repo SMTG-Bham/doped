@@ -1975,7 +1975,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                 atol=1e-3,
             )
 
-    def test_defects_generator_cdte(self):
+    def test_defects_generator_CdTe(self):
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte)
 
         assert self.CdTe_defect_gen_info in output  # matches expected 4b & 4d Wyckoff letters for Td
@@ -2902,7 +2902,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             atol=1e-3,
         )
 
-    def test_supercell_w_defect_cd_i_cdte(self):
+    def test_supercell_w_defect_cd_i_CdTe(self):
         if not self.heavy_tests:
             return
 
