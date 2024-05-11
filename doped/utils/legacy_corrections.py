@@ -44,7 +44,7 @@ def get_murphy_image_charge_correction(
         verbose (bool): If True details of the correction will be printed.
 
     Returns:
-        The image charge correction as {charge: correction}
+        The image charge correction as a ``{charge: correction}`` dictionary.
     """
     inv_diel = np.linalg.inv(dielectric_matrix)
     det_diel = np.linalg.det(dielectric_matrix)
