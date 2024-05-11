@@ -230,7 +230,10 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     ):
         output_path = os.path.join(path, output_files[0])
         return (output_path, True) if len(output_files) > 1 else (output_path, False)
-    return f"{path}/{output_file}", False  # so `get_X()` will raise an informative FileNotFoundError
+    return (
+        os.path.join(path, output_file),
+        False,
+    )  # so `get_X()` will raise an informative FileNotFoundError
 
 
 def get_defect_type_and_composition_diff(bulk, defect):
