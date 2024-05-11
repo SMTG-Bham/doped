@@ -33,7 +33,6 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
-    _defect_charge_from_vasprun,
     _defect_spin_degeneracy_from_vasprun,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
@@ -42,6 +41,7 @@ from doped.utils.parsing import (
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
+    defect_charge_from_vasprun,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
     get_locpot,
@@ -1592,7 +1592,7 @@ class DefectParser:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
         try:
-            parsed_charge_state: int = _defect_charge_from_vasprun(bulk_vr, defect_vr, charge_state)
+            parsed_charge_state: int = defect_charge_from_vasprun(defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
             # try to determine from folder name - must have "-" or "+" at end of name for this
             try:
