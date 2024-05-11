@@ -14,14 +14,15 @@ import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
-from pymatgen.core import Composition, Element, Structure
+from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
-from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
-from doped.utils.parsing import _get_output_files_and_check_if_multiple
+from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
@@ -33,11 +34,10 @@ warnings.filterwarnings(
 )  # currently rely on this so shouldn't show warning, `message` only needs to match start of message
 
 
-# TODO: Check default error when user attempts `CompetingPhases()` with no API key setup; if not
-#  sufficiently informative, add try except catch to give more informative error message for this.
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Add chemical potential diagram plotting functionality that we had before
-#  with `plot_cplap_ternary`.
+#  with `plot_cplap_ternary` -- using ``ChemicalPotentialGrid`` from Alex PR; code from
+#  pymatgen/analysis/defects/plotting/phases.py may be useful
 
 
 def make_molecule_in_a_box(element: str):
@@ -267,8 +267,6 @@ def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
 
 
 class CompetingPhases:
-    # TODO: See chempot tools in new pymatgen defects code to see if any useful functionality (don't
-    #  reinvent the wheel)
     # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
     # on the MP - warn user (i.e. check your stuff) and generate the competing phases according to
     # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
@@ -280,46 +278,58 @@ class CompetingPhases:
     # #                 "know about this structure:"
     # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
     # analyze_GGA_chempots code for example.
-    # TODO: Add note to notebook that if your bulk phase is lower energy than its version on the MP
-    # (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
-
-    # TODO: Is the Materials Project entry structure always the primitive structure? Should check,
-    #  and if not then use something like this:
-    #  sga = SpacegroupAnalyzer(e.structure)
-    #  struct = sym.get_primitive_standard_structure() -> output this structure
+    # e.g. in pmg-analysis-defects (for parsing, like our approach): stable_entry = ComputedEntry(
+    #         entry.composition,
+    #         pd.get_hull_energy(entry.composition) - threshold,
+    #     )
+    # Na2FePO4F a good test case for this, 0.17 eV/atom above the MP Hull
 
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
-        Class to generate the input files for competing phases on the phase
-        diagram for the host material (determining the chemical potential
-        limits). Materials Project (MP) data is used, along with an uncertainty
-        range specified by ``e_above_hull``, to determine the relevant
-        competing phases. Diatomic gaseous molecules are generated as
-        molecules-in-a-box as appropriate.
+        Class to generate the VASP input files for competing phases on the
+        phase diagram for the host material, which determine the chemical
+        potential limits for that compound.
+
+        For this, the Materials Project (MP) database is queried using the
+        ``MPRester`` API, and any calculated compounds which _could_ border
+        the host material within an error tolerance for the semi-local DFT
+        database energies (``e_above_hull``, 0.1 eV/atom by default) are
+        generated, along with the elemental reference phases.
+        Diatomic gaseous molecules are generated as molecules-in-a-box as
+        appropriate (e.g. for O2, F2, H2 etc).
 
         Args:
-            composition (str, Composition): Composition of host material
-                (e.g. 'LiFePO4', or Composition('LiFePO4'), or Composition({"Li":1, "Fe":1,
-                "P":1, "O":4}))
-            e_above_hull (float): Maximum energy-above-hull of Materials Project entries to be
-                considered as competing phases. This is an uncertainty range for the
-                MP-calculated formation energies, which may not be accurate due to functional
-                choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                Any phases that (would) border the host material on the phase diagram, if their
-                relative energy was downshifted by ``e_above_hull``, are included.
-                Default is 0.1 eV/atom.
-            api_key (str): Materials Project (MP) API key, needed to access the MP database for
-                competing phase generation. If not supplied, will attempt to read from
-                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
-                Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
-            full_phase_diagram (bool): If True, include all phases on the MP phase diagram (
-                with energy above hull < e_above_hull) for the chemical system of the input
-                composition (not recommended). If False, only includes phases that (would) border
-                the host material on the phase diagram (and thus set the chemical potential
-                limits), if their relative energy was downshifted by ``e_above_hull``.
+            composition (str, ``Composition``):
+                Composition of the host material (e.g. ``'LiFePO4'``, or
+                ``Composition('LiFePO4')``, or
+                ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
+            e_above_hull (float):
+                Maximum energy above hull (in eV/atom) of Materials Project
+                entries to be considered as competing phases. This is an
+                uncertainty range for the MP-calculated formation energies,
+                which may not be accurate due to functional choice (GGA vs
+                hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                Any phases that (would) border the host material on the phase
+                diagram, if their relative energy was downshifted by
+                ``e_above_hull``, are included.
+                (Default is 0.1 eV/atom).
+            api_key (str):
+                Materials Project (MP) API key, needed to access the MP
+                database for competing phase generation. If not supplied, will
+                attempt to read from environment variable ``PMG_MAPI_KEY`` (in
+                ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``) - see the ``doped``
+                Installation docs page:
+                https://doped.readthedocs.io/en/latest/Installation.html
+            full_phase_diagram (bool):
+                If ``True``, include all phases on the MP phase diagram (with energy
+                above hull < ``e_above_hull`` eV/atom) for the chemical system of
+                the input composition (not recommended). If ``False``, only includes
+                phases that would border the host material on the phase diagram (and
+                thus set the chemical potential limits), if their relative energy was
+                downshifted by ``e_above_hull`` eV/atom.
                 (Default is False).
         """
-        self.api_key = api_key
+        self.api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
 
         # create list of entries
         self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
@@ -368,21 +378,34 @@ class CompetingPhases:
         self.bulk_comp = Composition(composition)
 
         # test api_key:
-        if api_key is not None:  # TODO: Should test API key also when not explicitly set, but this will
-            # be avoided when we just update to make it compatible with both
-            if len(api_key) == 32:
-                raise ValueError(
-                    "You are trying to use the new Materials Project (MP) API which is not "
-                    "supported by doped. Please use the legacy MP API ("
-                    "https://legacy.materialsproject.org/open)."
-                )
-            if 15 <= len(api_key) <= 20:
-                self.eah = "e_above_hull"
-            else:
-                raise ValueError(
-                    f"API key {api_key} is not a valid legacy Materials Project API key. These "
-                    f"are available at https://legacy.materialsproject.org/open"
-                )
+        if self.api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
+            raise ValueError(
+                "No API key (``api_key`` parameter or 'PMG_MAPI_KEY' in the ``~/.pmgrc.yaml`` or "
+                "``~/.config/.pmgrc.yaml file) was supplied. This is required for automatic competing "
+                "phase generation in doped, as detailed on the installation instructions:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                "-project-api"
+            )
+        if len(self.api_key) == 32:
+            raise ValueError(
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml file; {self.api_key}) corresponds to the new Materials Project "
+                f"(MP) API, which is not supported by doped. Please use the legacy MP API as detailed on "
+                f"the doped installation instructions:\n"
+                f"https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                f"-project-api"
+            )
+        if 15 <= len(self.api_key) <= 20:
+            self.eah = "e_above_hull"
+        else:
+            raise ValueError(
+                f"The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml file; {self.api_key}) is not a valid legacy Materials Project "
+                f"API key, which is required by doped. See the doped installation instructions for "
+                f"details:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                "-project-api"
+            )
 
         # use with MPRester() as mpr: if self.api_key is None, else use with MPRester(self.api_key)
         with contextlib.ExitStack() as stack:
@@ -431,8 +454,7 @@ class CompetingPhases:
             entry for entry in temp_phase_diagram.all_entries if entry.data["e_above_hull"] <= e_above_hull
         ]
         phase_diagram = PhaseDiagram(pd_entries)
-        # TODO: This breaks if bulk composition not on MP, need to fix!
-        bulk_entries = [
+        bulk_entries = [  # TODO: Currently breaks if bulk composition not on MP, need to fix!
             entry
             for entry in pd_entries
             if entry.composition.reduced_composition == self.bulk_comp.reduced_composition
@@ -691,21 +713,23 @@ class CompetingPhases:
             uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
             self._set_spin_polarisation(uis, user_incar_settings or {}, e)
 
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
-                user_incar_settings=uis,
-                user_kpoints_settings=Kpoints().from_dict(
-                    {
-                        "comment": "Gamma-only kpoints for molecule-in-a-box",
-                        "generation_style": "Gamma",
-                    }
-                ),
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
-            )
-            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
-            dict_set.write_input(fname, **kwargs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ-only")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=e.structure,  # molecule in a box structure
+                    user_incar_settings=uis,
+                    user_kpoints_settings=Kpoints().from_dict(
+                        {
+                            "comment": "Gamma-only kpoints for molecule-in-a-box",
+                            "generation_style": "Gamma",
+                        }
+                    ),
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
+                fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
+                dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
@@ -1125,11 +1149,9 @@ class CompetingPhasesAnalyzer:
         if extrinsic_species:
             self.elemental.append(extrinsic_species)
 
-    # TODO: Need to be able to deal with cases where the bulk composition is found to be
-    #  unstable (in `pymatgen-analysis-defects` it just drops it to the convex hull)
     # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
     #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
-    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None):
+    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None, verbose=True):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
@@ -1152,6 +1174,10 @@ class CompetingPhasesAnalyzer:
                 If set will save the parsed data to a csv at this filepath.
                 Further customisation of the output csv can be achieved with
                 the CompetingPhasesAnalyzer.to_csv() method.
+            verbose (bool):
+                Whether to print out information about directories that were
+                skipped (due to no ``vasprun.xml`` files being found).
+                Default is ``True``.
 
         Returns:
             None, sets self.data, self.formation_energy_df and self.elemental_energies
@@ -1162,9 +1188,9 @@ class CompetingPhasesAnalyzer:
         # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
         #  analysis.py for this
         self.vasprun_paths = []
-        # fetch data
-        # if path is just a list of all competing phases
-        if isinstance(path, list):
+        skipped_folders = []
+
+        if isinstance(path, list):  # if path is just a list of all competing phases
             for p in path:
                 if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
                     self.vasprun_paths.append(str(Path(p)))
@@ -1175,7 +1201,7 @@ class CompetingPhasesAnalyzer:
                     self.vasprun_paths.append(str(vsp))
 
                 else:
-                    print(f"Can't find a vasprun.xml(.gz) file for {p}, proceed with caution")
+                    skipped_folders.append(p)
 
         elif isinstance(path, (PurePath, str)):
             path = Path(path)
@@ -1209,27 +1235,46 @@ class CompetingPhasesAnalyzer:
                             self.vasprun_paths.append(vr_path)
 
                         else:
-                            warnings.warn(f"Can't find a vasprun.xml file in {p} or {p/folder}, skipping")
+                            folder_name = str(PurePath(*p.parts[len(path.parts) :]))
+                            skipped_folders += [f"{folder_name} or {folder_name}/{folder}"]
         else:
             raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
+
+        # only warn about skipped folders that are recognised calculation folders (containing a material
+        # composition in the name, or 'EaH' in the name)
+        skipped_folders_for_warning = []
+        for folder_name in skipped_folders:
+            comps = []
+            for i in folder_name.split(" or ")[0].split("_"):
+                with contextlib.suppress(ValueError):
+                    comps.append(Composition(i))
+            if "EaH" in folder_name or comps:
+                skipped_folders_for_warning.append(folder_name)
+
+        if skipped_folders_for_warning and verbose:
+            parent_folder_string = f" (in {path})" if isinstance(path, (PurePath, str)) else ""
+            warnings.warn(
+                f"vasprun.xml files could not be found in the following "
+                f"directories{parent_folder_string}, and so they will be skipped for parsing:\n"
+                + "\n".join(skipped_folders_for_warning)
+            )
 
         # Ignore POTCAR warnings when loading vasprun.xml
         # pymatgen assumes the default PBE with no way of changing this
         _ignore_pmg_warnings()
 
-        num = len(self.vasprun_paths)
-        print(f"Parsing {num} vaspruns and pruning to include only lowest-energy polymorphs...")
-
         self.vaspruns = []
         failed_parsing_dict = {}
-        for vasprun_path in self.vasprun_paths:
-            try:
-                self.vaspruns.append(Vasprun(vasprun_path).as_dict())
-            except Exception as e:
-                if str(e) in failed_parsing_dict:
-                    failed_parsing_dict[str(e)] += [vasprun_path]
-                else:
-                    failed_parsing_dict[str(e)] = [vasprun_path]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
+            for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
+                try:
+                    self.vaspruns.append(get_vasprun(vasprun_path))
+                except Exception as e:
+                    if str(e) in failed_parsing_dict:
+                        failed_parsing_dict[str(e)] += [vasprun_path]
+                    else:
+                        failed_parsing_dict[str(e)] = [vasprun_path]
 
         if failed_parsing_dict:
             warning_string = (
@@ -1238,45 +1283,71 @@ class CompetingPhasesAnalyzer:
             )
             warnings.warn(warning_string)
 
+        # check if any vaspruns are unconverged, and warn together:
+        electronic_unconverged_vaspruns = [
+            vr.filename for vr in self.vaspruns if not vr.converged_electronic
+        ]
+        ionic_unconverged_vaspruns = [vr.filename for vr in self.vaspruns if not vr.converged_ionic]
+        for unconverged_vaspruns, unconverged_type in zip(
+            [electronic_unconverged_vaspruns, ionic_unconverged_vaspruns],
+            ["Electronic", "Ionic"],
+        ):
+            if unconverged_vaspruns:
+                warnings.warn(
+                    f"{unconverged_type} convergence was not reached for:\n"
+                    + "\n".join(unconverged_vaspruns)
+                )
+
         if not self.vaspruns:
             raise FileNotFoundError(
                 "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
                 "folders and input parameters are in the correct format (see docstrings/tutorials)."
             )
-        self.data = []
 
-        temp_data = []
+        data = []
         self.elemental_energies = {}
-        for v in self.vaspruns:
-            rcf = v["reduced_cell_formula"]
-            comp = Composition(v["unit_cell_formula"])
+
+        for vr in self.vaspruns:
+            comp = vr.final_structure.composition
             formulas_per_unit = comp.get_reduced_composition_and_factor()[1]
-            final_energy = v["output"]["final_energy"]
-            kpoints = "x".join(str(x) for x in v["input"]["kpoints"]["kpoints"][0])
+            energy_per_atom = vr.final_energy / len(vr.final_structure)
+
+            kpoints = (
+                "x".join(str(x) for x in vr.kpoints.kpts[0])
+                if (vr.kpoints.kpts and len(vr.kpoints.kpts) == 1)
+                else "N/A"
+            )
 
             # check if elemental:
-            if len(rcf) == 1:
-                el = v["elements"][0]
+            if len(Composition(comp.reduced_formula).as_dict()) == 1:
+                el = next(iter(vr.atomic_symbols))  # elemental, so first symbol is only (unique) element
                 if el not in self.elemental_energies:
-                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = energy_per_atom
                     if el not in self.elemental:  # new (extrinsic) element
-                        self.extrinsic_species = el
                         self.elemental.append(el)
 
-                elif v["output"]["final_energy_per_atom"] < self.elemental_energies[el]:
+                elif energy_per_atom < self.elemental_energies[el]:
                     # only include lowest energy elemental polymorph
-                    self.elemental_energies[el] = v["output"]["final_energy_per_atom"]
+                    self.elemental_energies[el] = energy_per_atom
 
             d = {
-                "Formula": v["pretty_formula"],
+                "Formula": comp.reduced_formula,
                 "k-points": kpoints,
-                "DFT Energy (eV/fu)": final_energy / formulas_per_unit,
-                "DFT Energy (eV/atom)": v["output"]["final_energy_per_atom"],
-                "DFT Energy (eV)": final_energy,
+                "DFT Energy (eV/fu)": vr.final_energy / formulas_per_unit,
+                "DFT Energy (eV/atom)": energy_per_atom,
+                "DFT Energy (eV)": vr.final_energy,
             }
-            temp_data.append(d)
+            data.append(d)
 
-        formation_energy_df = _calculate_formation_energies(temp_data, self.elemental_energies)
+        if self.extrinsic_species and self.extrinsic_species not in self.elemental_energies:
+            raise ValueError(
+                f"Elemental reference phase for the specified extrinsic species {self.extrinsic_species} "
+                f"was not parsed, but is necessary for chemical potential calculations. "
+                f"Please ensure that this phase is present in the calculation directory and is being "
+                f"correctly parsed."
+            )
+
+        formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
         self.data = formation_energy_df.to_dict(orient="records")
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
         self.formation_energy_df.set_index("Formula")
@@ -1454,26 +1525,45 @@ class CompetingPhasesAnalyzer:
             )
         # lowest energy bulk phase
         self.bulk_pde = sorted(bulk_pde_list, key=lambda x: x.energy_per_atom)[0]
+        unstable_host = False
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
             map(Element, self.bulk_composition.elements),
         )
 
-        # check if it's stable and if not error out
+        # check if it's stable and if not, warn user and downshift to get _least_ unstable point on convex
+        # hull for the host material
         if self.bulk_pde not in self._intrinsic_phase_diagram.stable_entries:
+            unstable_host = True
             eah = self._intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
-            raise ValueError(
-                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing "
-                f"phases, EaH={eah:.4f} eV/atom"
+            warnings.warn(
+                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
+                f"having an energy above hull of {eah:.4f} eV/atom.\n"
+                f"Formally, this means that (based on the supplied athermal calculation data) the host "
+                f"material is unstable and so has no chemical potential limits; though in reality the "
+                f"host may be stabilised by temperature effects etc, or just a metastable phase.\n"
+                f"Here we will determine a single chemical potential 'limit' corresponding to the least "
+                f"unstable point on the convex hull for the host material, as an approximation for the "
+                f"true chemical potentials."
+            )  # TODO: Add example of adjusting the entry energy after loading (if user has calculated
+            # e.g. temperature effects) and link in this warning
+            # decrease bulk_pde energy per atom by ``e_above_hull`` + 0.1 meV/atom
+            renormalised_bulk_pde = _renormalise_entry(self.bulk_pde, eah + 1e-4)
+            self._intrinsic_phase_diagram = PhaseDiagram(
+                [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
+                map(Element, self.bulk_composition.elements),
             )
 
         chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
 
-        no_element_chem_lims = {}  # remove Element to make it JSONable
-        for k, v in chem_lims.items():
-            temp_dict = {str(kk): vv for kk, vv in v.items()}
-            no_element_chem_lims[k] = temp_dict
+        # remove Element to make it JSONable:
+        no_element_chem_lims = {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims.items()}
+
+        if unstable_host:
+            no_element_chem_lims = {
+                k: {str(kk): vv for kk, vv in v.items()} for k, v in list(chem_lims.items())[:1]
+            }
 
         if sort_by is not None:
             no_element_chem_lims = dict(
@@ -1588,7 +1678,7 @@ class CompetingPhasesAnalyzer:
             new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
             new_vals[f"{self.extrinsic_species}"] = d[f"{self.extrinsic_species}"]
             cl2["limits_wrt_el_refs"][key] = new_vals
-        # print(f"cl2: {cl2}")  # debugging
+        print(f"cl2: {cl2}")  # debugging
 
         # relate the limits to the elemental
         # energies but in reverse this time
@@ -1627,13 +1717,20 @@ class CompetingPhasesAnalyzer:
             self.calculate_chempots()
         return self._intrinsic_phase_diagram
 
-    def cplap_input(self, dependent_variable=None, filename="input.dat"):
-        """For completeness' sake, automatically saves to input.dat for cplap
+    def _cplap_input(self, dependent_variable=None, filename="input.dat"):
+        """
+        Generates an ``input.dat`` file for the ``CPLAP`` ``FORTRAN`` code
+        (legacy code for computing and analysing chemical potential limits, no
+        longer recommended).
+
         Args:
-            dependent_variable (str) Pick one of the variables as dependent, the first element is
-                chosen from the composition if this isn't set
-            filename (str): filename, should end in .dat
-        Returns
+            dependent_variable (str):
+                Pick one of the variables as dependent, the first element in
+                the composition is chosen if this isn't set.
+            filename (str):
+                Filename, should end in ``.dat``.
+
+        Returns:
             None, writes input.dat file.
         """
         if not hasattr(self, "chempots"):
