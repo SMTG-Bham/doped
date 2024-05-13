@@ -681,8 +681,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_api_keys_errors(self):
         api_key_error_start = ValueError(
-            "The supplied API key (``api_key`` or 'PMG_MAPI_KEY' in your ``~/.pmgrc.yaml`` or "
-            "``~/.config/.pmgrc.yaml file;"
+            "The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+            "``~/.config/.pmgrc.yaml``;"
         )
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
