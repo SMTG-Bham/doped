@@ -297,7 +297,7 @@ class DefectDictSetTest(unittest.TestCase):
 
     def kpts_nelect_nupdown_check(self, dds, kpt, nelect, nupdown):
         if isinstance(kpt, int):
-            assert dds.kpoints.kpts == [[kpt, kpt, kpt]]
+            assert dds.kpoints.kpts == [(kpt, kpt, kpt)]
         else:
             assert dds.kpoints.kpts == kpt
         if _potcars_available():
@@ -451,7 +451,7 @@ class DefectDictSetTest(unittest.TestCase):
             self._write_and_check_dds_files(dds)
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
             self._write_and_check_dds_files(dds, unperturbed_poscar=False)
-        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1584, 0)
+        self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
         if not _potcars_available():
@@ -463,7 +463,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         # check changing charge state
         dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
-        self.kpts_nelect_nupdown_check(dds, [[2, 2, 1]], 1583, 1)
+        self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
         self._write_and_check_dds_files(dds, output_path="YTOS_test_dir")
         self._write_and_check_dds_files(dds, unperturbed_poscar=False)
@@ -1313,7 +1313,7 @@ class DefectsSetTest(unittest.TestCase):
         # test DefectDictSet objects:
         for _defect_species, defect_relax_set in defects_set.defect_sets.items():
             for defect_dict_set in [defect_relax_set.vasp_gam, defect_relax_set.bulk_vasp_gam]:
-                assert defect_dict_set.kpoints.kpts == [[1, 1, 1]]
+                assert defect_dict_set.kpoints.kpts == [(1, 1, 1)]
             for defect_dict_set in [
                 defect_relax_set.vasp_std,
                 defect_relax_set.bulk_vasp_std,
@@ -1322,7 +1322,7 @@ class DefectsSetTest(unittest.TestCase):
                 defect_relax_set.vasp_ncl,
                 defect_relax_set.bulk_vasp_ncl,
             ]:
-                assert defect_dict_set.kpoints.kpts == [[2, 2, 2]]
+                assert defect_dict_set.kpoints.kpts == [(2, 2, 2)]
 
         # test custom POTCAR and KPOINTS choices (INCAR already tested): also tests dictionary input to
         # DefectsSet
@@ -1350,7 +1350,7 @@ class DefectsSetTest(unittest.TestCase):
 
                 for subfolder in ["vasp_std", "vasp_nkred_std", "vasp_ncl"]:
                     kpoints = Kpoints.from_file(f"{folder}/{subfolder}/KPOINTS")
-                    assert kpoints.kpts == [[4, 4, 4]]  # 4x4x4 with 54-atom 3x3x3 prim supercell,
+                    assert kpoints.kpts == [(4, 4, 4)]  # 4x4x4 with 54-atom 3x3x3 prim supercell,
                     # 3x3x3 with 64-atom 2x2x2 conv supercell
 
     def test_write_files_single_defect_entry(self):

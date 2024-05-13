@@ -48,7 +48,7 @@ _orientational_degeneracy_warning = (
 class DefectEntry(thermo.DefectEntry):
     """
     Subclass of ``pymatgen.analysis.defects.thermo.DefectEntry`` with
-    additional attributes used by doped.
+    additional attributes used by ``doped``.
 
     Core Attributes:
         defect:
@@ -1467,7 +1467,7 @@ class Defect(core.Defect):
     ):
         """
         Subclass of ``pymatgen.analysis.defects.core.Defect`` with additional
-        attributes and methods used by doped.
+        attributes and methods used by ``doped``.
 
         Args:
             structure (Structure):
@@ -1727,7 +1727,10 @@ class Defect(core.Defect):
             )[0]
 
         sc_defect = self.__class__(
-            structure=self.structure * sc_mat, site=sc_site, oxi_state=self.oxi_state
+            structure=self.structure * sc_mat,
+            site=sc_site,
+            oxi_state=self.oxi_state,
+            multiplicity=1,  # so doesn't break for interstitials
         )
         sc_defect_struct = sc_defect.defect_structure
         sc_defect_struct.remove_oxidation_states()
@@ -1874,11 +1877,11 @@ def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **d
     return defect_type._from_pmg_defect(defect, bulk_oxi_states=bulk_oxi_states, **doped_kwargs)
 
 
-class Vacancy(core.Vacancy, Defect):
+class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
         Subclass of ``pymatgen.analysis.defects.core.Vacancy`` with additional
-        attributes and methods used by doped.
+        attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -1890,11 +1893,11 @@ class Vacancy(core.Vacancy, Defect):
         return f"{self.name} vacancy defect at site [{frac_coords_string}] in structure"
 
 
-class Substitution(core.Substitution, Defect):
+class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
         Subclass of ``pymatgen.analysis.defects.core.Substitution`` with
-        additional attributes and methods used by doped.
+        additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -1906,12 +1909,14 @@ class Substitution(core.Substitution, Defect):
         return f"{self.name} substitution defect at site [{frac_coords_string}] in structure"
 
 
-class Interstitial(core.Interstitial, Defect):
+class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
         Subclass of ``pymatgen.analysis.defects.core.Interstitial`` with
-        additional attributes and methods used by doped.
+        additional attributes and methods used by ``doped``.
         """
+        if "multiplicity" not in kwargs:  # will break for Interstitials if not set
+            kwargs["multiplicity"] = 1
         super().__init__(*args, **kwargs)
 
     def __repr__(self) -> str:

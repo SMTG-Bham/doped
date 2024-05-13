@@ -72,8 +72,8 @@ def _get_min_image_distance_from_matrix(matrix: np.ndarray) -> float:
     eff_cubic_length = lattice.volume ** (1 / 3)
     max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
 
-    zipped_fcoords_dist_idx_image = lattice.get_points_in_sphere(
-        [[0, 0, 0]], [0, 0, 0], r=max_min_dist * 1.01
+    zipped_fcoords_dist_idx_image = list(
+        lattice.get_points_in_sphere([[0, 0, 0]], [0, 0, 0], r=max_min_dist * 1.01)
     )
 
     # sort zipped list by dist:
