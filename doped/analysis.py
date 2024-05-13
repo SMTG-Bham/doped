@@ -318,6 +318,10 @@ def defect_from_structures(
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
+    if def_type == "interstitial":
+        for_monty_defect["multiplicity"] = 1  # multiplicity needed for interstitial initialisation with
+        # pymatgen-analysis-defects, so set to 1 here. Set later for interstitials during parsing anyway
+        # (see below)
     defect = MontyDecoder().process_decoded(for_monty_defect)
 
     if not return_all_info:
