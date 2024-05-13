@@ -22,7 +22,7 @@ dependencies = [
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
     "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
-    "spglib==2.0.2",  # dependent of pymatgen, but explicitly set to 2.0.2 here to avoid unnecessary warnings
+    "spglib<=2.0.2",  # dependent of pymatgen, but explicitly set to <=2.0.2 here to avoid unnecessary warnings
     # see https://github.com/spglib/spglib/issues/338; remove this limit when issue resolved
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.1",
@@ -41,7 +41,10 @@ Package = "https://pypi.org/project/doped/"
 Repository = "https://github.com/SMTG-Bham/doped"
 
 [project.optional-dependencies]
-tests = ["pytest<8.2", "pytest-mpl>=0.16.1"]
+tests = [
+    "pytest<8.2",  # with pytest==8.2.0, seemed to cause memory issue on GH Actions mpl tests, python=3.10
+    "pytest-mpl>=0.16.1"
+]
 docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
 analysis = [
     "easyunfold",
