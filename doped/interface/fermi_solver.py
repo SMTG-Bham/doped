@@ -12,7 +12,7 @@ import functools
 from copy import deepcopy
 from itertools import product
 from typing import TYPE_CHECKING, Any, Optional, Union
-from warnings import warn, filterwarnings
+from warnings import filterwarnings, warn
 
 import numpy as np
 import pandas as pd
@@ -68,7 +68,10 @@ class FermiSolver(MSONable):
     """
 
     def __init__(
-        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr_path: str, chemical_potentials: dict
+        self,
+        defect_thermodynamics: "DefectThermodynamics",
+        bulk_dos_vr_path: str,
+        chemical_potentials: Optional[dict] = None,
     ):
         """
         Initialize the FermiSolver object.
@@ -76,6 +79,11 @@ class FermiSolver(MSONable):
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr_path
         self.chemical_potentials = chemical_potentials
+
+        if self.chemical_potentials is None and self.defect_thermodynamics.chempots is not None:
+            # if chempots not supplied, but present in DefectThermodynamics, then use them
+            self.chemical_potentials = self.defect_thermodynamics.chempots
+
         self._not_implemented_message = (
             "This method is implemented in the derived class, "
             "use FermiSolverDoped or FermiSolverPyScFermi instead."
@@ -778,7 +786,7 @@ class FermiSolverDoped(FermiSolver):
         for column, value in new_columns.items():
             concentrations[column] = value
 
-        # trimmed_concentrations = 
+        # trimmed_concentrations =
         trimmed_concentrations_sub_duplicates = concentrations.drop_duplicates()
         excluded_columns = ["Defect"]
         for column in concentrations.columns.difference(excluded_columns):
@@ -971,7 +979,6 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
             and the self consistent Fermi energy
         """
-        
         if self.supress_warnings:
             filterwarnings("ignore", category=RuntimeWarning)
 
@@ -1021,7 +1028,6 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
                 and the self consistent Fermi energy
         """
-
         if self.supress_warnings:
             filterwarnings("ignore", category=RuntimeWarning)
 
