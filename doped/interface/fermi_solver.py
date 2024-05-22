@@ -12,7 +12,7 @@ import functools
 from copy import deepcopy
 from itertools import product
 from typing import TYPE_CHECKING, Any, Optional, Union
-from warnings import warn
+from warnings import warn, filterwarnings
 
 import numpy as np
 import pandas as pd
@@ -68,13 +68,13 @@ class FermiSolver(MSONable):
     """
 
     def __init__(
-        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr: str, chemical_potentials: dict
+        self, defect_thermodynamics: "DefectThermodynamics", bulk_dos_vr_path: str, chemical_potentials: dict
     ):
         """
         Initialize the FermiSolver object.
         """
         self.defect_thermodynamics = defect_thermodynamics
-        self.bulk_dos = bulk_dos_vr
+        self.bulk_dos = bulk_dos_vr_path
         self.chemical_potentials = chemical_potentials
         self._not_implemented_message = (
             "This method is implemented in the derived class, "
@@ -758,6 +758,14 @@ class FermiSolverDoped(FermiSolver):
             quenched_temperature=quenched_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
         )
+        concentrations = concentrations.drop(
+            columns=[
+                "Charge",
+                "Charge State Population",
+                "Concentration (cm^-3)",
+                "Formation Energy (eV)",
+            ],
+        )
 
         new_columns = {
             "Fermi Level": fermi_level,
@@ -770,15 +778,8 @@ class FermiSolverDoped(FermiSolver):
         for column, value in new_columns.items():
             concentrations[column] = value
 
-        trimmed_concentrations = concentrations.drop(
-            columns=[
-                "Charge",
-                "Charge State Population",
-                "Concentration (cm^-3)",
-                "Formation Energy (eV)",
-            ],
-        )
-        trimmed_concentrations_sub_duplicates = trimmed_concentrations.drop_duplicates()
+        # trimmed_concentrations = 
+        trimmed_concentrations_sub_duplicates = concentrations.drop_duplicates()
         excluded_columns = ["Defect"]
         for column in concentrations.columns.difference(excluded_columns):
             concentrations[column] = concentrations[column].astype(float)
@@ -828,18 +829,19 @@ class FermiSolverPyScFermi(FermiSolver):
     def __init__(
         self,
         defect_thermodynamics: "DefectThermodynamics",
-        bulk_dos_vr: str,
+        bulk_dos_vr_path: str,
         multiplicity_scaling=None,
         chemical_potentials=None,
+        supress_warnings=True,
     ):
         """
         Initialize the FermiSolverPyScFermi object.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr, chemical_potentials)
+        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chemical_potentials)
         vr = Vasprun(self.bulk_dos)
         self.bulk_dos = self.DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
-        self.chemical_potentials = chemical_potentials
+        self.supress_warnings = supress_warnings
 
         if multiplicity_scaling is None:
             ms = self.defect_thermodynamics.defect_entries[0].defect.structure.volume / self.volume
@@ -969,6 +971,10 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
             and the self consistent Fermi energy
         """
+        
+        if self.supress_warnings:
+            filterwarnings("ignore", category=RuntimeWarning)
+
         defect_system = self.generate_defect_system(
             chemical_potentials=chempots,
             temperature=temperature,
@@ -1015,6 +1021,10 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
                 and the self consistent Fermi energy
         """
+
+        if self.supress_warnings:
+            filterwarnings("ignore", category=RuntimeWarning)
+
         defect_system = self.generate_annealed_defect_system(
             chemical_potentials=chempots,
             quenched_temperature=quenched_temperature,
