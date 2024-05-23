@@ -6,6 +6,19 @@ Installation
 .. code-block:: bash
 
    pip install doped  # install doped and dependencies
+   conda install -c conda-forge spglib  # bundle C libraries with spglib
+
+Note that either ``conda install -c conda-forge spglib`` or
+``pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF``
+should be used after ``pip install doped``, which ensures that the correct C libraries are bundled with
+``spglib``, to prevent unnecessary warnings. You can check that the correct C libraries have been bundled
+by running the following in Python, and confirming that the same version numbers are printed:
+
+.. code-block:: python
+
+   import spglib
+   print(spglib.__version__)
+   print(spglib.spg_get_version_full())
 
 Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 
