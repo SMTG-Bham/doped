@@ -40,7 +40,7 @@ jobs:
           sleep 360  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
           pip install doped[tests]  # install only from PyPI
-          conda install -c conda-forge spglib
+          pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF  # avoid spglib warnings
 
       - name: Test
         run: |
