@@ -27,6 +27,38 @@ from doped.utils.parsing import (
 )
 
 
+def _set_spglib_warnings_env_var():
+    """
+    Set the SPGLIB environment variable to suppress spglib warnings.
+    """
+    os.environ["SPGLIB_WARNING"] = "OFF"
+
+
+def _check_spglib_version():
+    """
+    Check the versions of spglib and its C libraries, and raise a warning if
+    the correct installation instructions have not been followed.
+    """
+    import spglib
+
+    python_version = spglib.__version__
+    c_version = spglib.spg_get_version_full()
+
+    if python_version != c_version:
+        warnings.warn(
+            f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
+            f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
+            f"spglib warning messages, but can be avoided by installing spglib with `conda install -c "
+            f"conda-forge spglib` or `pip install git+https://github.com/spglib/spglib "
+            f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
+            f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
+        )
+
+
+_check_spglib_version()
+_set_spglib_warnings_env_var()
+
+
 def _round_floats(obj, places=5):
     """
     Recursively round floats in a dictionary to ``places`` decimal places.

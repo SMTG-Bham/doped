@@ -65,7 +65,7 @@ that it is rebuilt with the new ``numpy`` C API:
 
 ``spglib`` Errors/Warnings
 --------------------------
-A previous known issue with ``spglib`` is that it could give an error or warnings similar to:
+A known issue with ``spglib`` is that it can give unnecessary errors or warnings similar to:
 
 .. code:: python
 
@@ -76,20 +76,12 @@ A previous known issue with ``spglib`` is that it could give an error or warning
   spglib: get_bravais_exact_positions_and_lattice failed
   spglib: ref_get_exact_structure_and_symmetry failed.
 
-This can be fixed by reinstalling ``spglib`` with ``conda install -c conda-forge spglib==2.0.2``.
-Sometimes installation with ``conda`` rather than ``pip`` is required, as ``conda``  will bundle the C
-and Fortran libraries, while using version ``2.0.2`` for now avoids some unnecessary warnings (see this
-`Issue <https://github.com/spglib/spglib/issues/338>`_ on the ``spglib`` GitHub for details).
+This can be fixed by reinstalling ``spglib`` with ``conda install -c conda-forge spglib`` or
+``pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF``
+as detailed in the `Installation <https://doped.readthedocs.io/en/latest/Installation.html>`__ instructions.
+This ensures the correct C libraries are bundled with ``spglib``.
 
-.. If this still does not remove these warnings, then setting the environment variable: ``SPGLIB_WARNING=OFF``
-and re-installing ``spglib`` with:
-
-.. .. code:: bash
-
-..   pip uninstall spglib
-  pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF
-
-.. should fix it. – STILL DOESN'T FULLY FIX IT YET (see doped_spglib_warnings.ipynb)
+.. see doped_spglib_warnings.ipynb
 
 ``ShakeNBreak``
 -------------------
