@@ -1,6 +1,10 @@
 Change Log
 ==========
 
+v.2.4.3
+----------
+- Remove ``spglib<=2.0.2`` dependency (set to avoid unnecessary warnings), and update installation instructions accordingly.
+
 v.2.4.2
 ----------
 - Allow cases where the calculated host material is unstable wrt competing phases (above the hull), by downshifting to the hull and warning the user about this.
