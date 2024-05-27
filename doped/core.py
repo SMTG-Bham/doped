@@ -1085,7 +1085,8 @@ class DefectEntry(thermo.DefectEntry):
                 referenced to the VBM. Default is 0 (i.e. the VBM).
             per_site (bool):
                 Whether to return the concentration as fractional concentration per site,
-                rather than the default of per cm^3. (default: False)
+                rather than the default of per cm^3. Multiply by 100 for concentration in
+                percent. (default: False)
             symprec (float):
                 Symmetry tolerance for ``spglib`` to use when determining relaxed defect
                 point symmetries and thus orientational degeneracies. Default is ``0.1``

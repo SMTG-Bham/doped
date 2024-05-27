@@ -1227,7 +1227,7 @@ class DefectThermodynamics(MSONable):
                 states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
                 (default: True)
             per_site (bool):
-                Whether to return the concentrations as fractional concentrations per site,
+                Whether to return the concentrations as percent concentrations per site,
                 rather than the default of per cm^3. (default: False)
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
@@ -1252,7 +1252,7 @@ class DefectThermodynamics(MSONable):
                 fermi_level=fermi_level,
                 vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
             )
-            concentration = defect_entry.equilibrium_concentration(
+            raw_concentration = defect_entry.equilibrium_concentration(
                 chempots=chempots,
                 limit=limit,
                 el_refs=el_refs,
@@ -1261,6 +1261,17 @@ class DefectThermodynamics(MSONable):
                 temperature=temperature,
                 per_site=per_site,
             )
+            if skip_formatting:
+                concentration = raw_concentration
+
+            elif per_site:
+                concentration = (
+                    f"{raw_concentration:.3%}"  # greater than 0.001%
+                    if raw_concentration > 1e-5
+                    else f"{raw_concentration * 100:.3e} %"
+                )
+            else:
+                concentration = f"{raw_concentration:.3e}"
             energy_concentration_list.append(
                 {
                     "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
@@ -1271,10 +1282,8 @@ class DefectThermodynamics(MSONable):
                         else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                     ),
                     "Formation Energy (eV)": round(formation_energy, 3),
-                    "Raw Concentration": concentration,
-                    "Concentration (per site)" if per_site else "Concentration (cm^-3)": (
-                        concentration if skip_formatting else f"{concentration:.3e}"
-                    ),
+                    "Raw Concentration": raw_concentration,
+                    "Concentration (per site)" if per_site else "Concentration (cm^-3)": concentration,
                 }
             )
 
