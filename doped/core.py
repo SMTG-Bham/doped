@@ -1150,10 +1150,19 @@ class DefectEntry(thermo.DefectEntry):
         if per_site:
             return exp_factor * degeneracy_factor
 
-        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
-
         with np.errstate(over="ignore"):
-            return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
+            return self.bulk_site_concentration * degeneracy_factor * exp_factor
+
+    @property
+    def bulk_site_concentration(self):
+        """
+        Return the site concentration (in cm^-3) of the corresponding atomic
+        site of the defect in the pristine bulk material (e.g. if the defect is
+        V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
+        oxygen atoms in SrTiO3).
+        """
+        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
+        return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
         """

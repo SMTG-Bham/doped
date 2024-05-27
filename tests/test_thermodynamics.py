@@ -1445,7 +1445,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.chempots == self.CdTe_chempots
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.chempots == self.CdTe_chempots  # the same
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
@@ -1460,7 +1459,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
 
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict  # the same
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
@@ -1477,7 +1475,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # unchanged
-        self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
         assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict  # the same
@@ -1833,6 +1830,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                     )
                     assert np.isclose(new_conc, orig_conc * 21)
+
+                    # test per_site and bulk_site_concentration attributes:
+                    new_conc = random_defect_entry.equilibrium_concentration(
+                        chempots=self.CdTe_chempots,
+                        limit="Cd-rich",
+                        fermi_level=fermi_level,
+                        temperature=temperature,
+                        per_site=True,
+                    )
+                    assert np.isclose(orig_conc, new_conc * random_defect_entry.bulk_site_concentration)
 
     @custom_mpl_image_compare(filename="CdTe_duplicate_entry_names.png")
     def test_handling_duplicate_entry_names(self):

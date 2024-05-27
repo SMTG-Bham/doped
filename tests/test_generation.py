@@ -1772,6 +1772,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             + "\n---------------------------------------------------------\n"
             + self.CdTe_defect_gen_info
         )
+        for defect_entry in CdTe_defect_gen.defect_entries.values():
+            if defect_entry.defect.defect_type != DefectType.Interstitial:
+                assert np.isclose(defect_entry.bulk_site_concentration, 1e24 / self.prim_cdte.volume)
+            else:
+                assert np.isclose(
+                    defect_entry.bulk_site_concentration, 1e24 / self.prim_cdte.volume
+                ) or np.isclose(defect_entry.bulk_site_concentration, 4e24 / self.prim_cdte.volume)
 
         # explicitly test defect entry charge state log:
         assert CdTe_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
