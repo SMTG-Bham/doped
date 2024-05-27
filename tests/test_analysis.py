@@ -970,6 +970,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
         thermo = dp.get_defect_thermodynamics()
 
+        # hardcoded check of bulk_site_concentration property:
+        for defect_entry in dp.defect_dict.values():  # oxygen site concentration
+            assert np.isclose(defect_entry.bulk_site_concentration, 5.06752e22, rtol=1e-4)
+
         print(thermo.get_symmetries_and_degeneracies())
 
         return thermo.plot()
