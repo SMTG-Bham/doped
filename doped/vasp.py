@@ -20,7 +20,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
-from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
+from pymatgen.io.vasp.sets import DictSet
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -69,9 +69,7 @@ singleshot_incar_settings = {
 }
 
 
-def _test_potcar_functional_choice(
-    potcar_functional: UserPotcarFunctional = "PBE", symbols: Optional[list] = None
-):
+def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: Optional[list] = None):
     """
     Check if the potcar functional choice needs to be changed to match those
     available.
@@ -138,7 +136,7 @@ class DopedDictSet(DictSet):
         structure: Structure,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE",
+        user_potcar_functional: str = "PBE",
         user_potcar_settings: Optional[dict] = None,
         auto_kpar: bool = True,
         poscar_comment: Optional[str] = None,
@@ -251,7 +249,7 @@ class DopedDictSet(DictSet):
         Redefined to intelligently handle ``pymatgen`` ``POTCAR`` issues.
         """
         if any("VASP_PSP_DIR" in i for i in SETTINGS):
-            self.user_potcar_functional: UserPotcarFunctional = _test_potcar_functional_choice(
+            self.user_potcar_functional: str = _test_potcar_functional_choice(
                 self.user_potcar_functional, self.potcar_symbols
             )
 
@@ -319,7 +317,7 @@ class DefectDictSet(DopedDictSet):
         charge_state: int = 0,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE",
+        user_potcar_functional: str = "PBE",
         user_potcar_settings: Optional[dict] = None,
         poscar_comment: Optional[str] = None,
         **kwargs,
@@ -598,7 +596,7 @@ class DefectRelaxSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE",
+        user_potcar_functional: str = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,
     ):
@@ -1873,7 +1871,7 @@ class DefectsSet(MSONable):
         soc: Optional[bool] = None,
         user_incar_settings: Optional[dict] = None,
         user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
-        user_potcar_functional: UserPotcarFunctional = "PBE",
+        user_potcar_functional: str = "PBE",
         user_potcar_settings: Optional[dict] = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
