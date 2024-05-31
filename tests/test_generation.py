@@ -27,7 +27,6 @@ from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
@@ -295,8 +294,7 @@ Cu_i_Td          [+2,+1,0]          [0.250,0.250,0.250]  8c
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
-        aaa = AseAtomsAdaptor()
-        self.agcu = aaa.get_structure(atoms)
+        self.agcu = Structure.from_ase_atoms(atoms)
         self.agcu_defect_gen_string = (
             "DefectsGenerator for input composition AgCu, space group R-3m with 28 defect entries created."
         )
