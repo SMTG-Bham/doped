@@ -9,7 +9,7 @@ import operator
 import warnings
 from functools import partial, reduce
 from itertools import chain
-from multiprocessing import Pool, Queue, cpu_count
+from multiprocessing import Pool, cpu_count
 from typing import Optional, Union, cast
 from unittest.mock import MagicMock
 
@@ -39,8 +39,8 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
-    _guess_and_set_oxi_states_with_timeout,
     doped_defect_from_pmg_defect,
+    guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
 
@@ -789,10 +789,9 @@ def guess_defect_charge_states(
         possible_oxi_states, orig_oxi, max_host_oxi_magnitude, return_log=True
     )
 
-    charge_state_list = [
+    if charge_state_list := [
         k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
-    ]
-    if charge_state_list:
+    ]:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
         charge_state_range = (0, 0)
@@ -844,10 +843,9 @@ def guess_defect_charge_states(
         sorted(possible_charge_states.items(), key=lambda x: x[1]["probability"], reverse=True)
     )
 
-    charge_state_list = [
+    if charge_state_list := [
         k for k, v in sorted_charge_state_dict.items() if v["probability"] > probability_threshold
-    ]
-    if charge_state_list:
+    ]:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
         # if no charge states are included, take most probable (if probability > 0.1*threshold)
@@ -1332,7 +1330,7 @@ class DefectsGenerator(MSONable):
                 )
 
             self._bulk_oxi_states: Union[bool, dict] = (
-                True  # to check if pymatgen can guess the bulk oxidation states
+                False  # to check if pymatgen can guess the bulk oxidation states
             )
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
@@ -1343,12 +1341,8 @@ class DefectsGenerator(MSONable):
                 }
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
-                queue: Queue = Queue()
-                self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
-                    self.primitive_structure, queue=queue
-                )
-                if self._bulk_oxi_states:
-                    self.primitive_structure = queue.get()
+                if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
+                    self.primitive_structure = prim_struct_w_oxi
                     self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
