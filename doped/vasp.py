@@ -20,7 +20,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
-from pymatgen.io.vasp.sets import DictSet
+from pymatgen.io.vasp.sets import VaspInputSet
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -123,9 +123,9 @@ class DopedKpoints(Kpoints):
             return super().__repr__()
 
 
-class DopedDictSet(DictSet):
+class DopedDictSet(VaspInputSet):
     """
-    Modified version of ``pymatgen`` ``DictSet``, to have more robust
+    Modified version of ``pymatgen`` ``VaspInputSet``, to have more robust
     ``POTCAR`` handling, expedited I/O (particularly for ``POTCAR`` generation,
     which can be slow when generating many folders), ensure ``POSCAR`` atom
     sorting, avoid encoding issues with ``KPOINTS`` comments etc.
@@ -152,7 +152,7 @@ class DopedDictSet(DictSet):
                 quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``DictSet``
+                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``VaspInputSet``
                 format) e.g., ``{"reciprocal_density": 123}``, or a ``Kpoints`` object.
                 Default is Gamma-only.
             user_potcar_functional (str):
@@ -170,7 +170,7 @@ class DopedDictSet(DictSet):
                 Default is ``True``.
             poscar_comment (str):
                 Comment line to use for ``POSCAR`` file. Default is structure formula.
-            **kwargs: Additional kwargs to pass to ``DictSet``.
+            **kwargs: Additional kwargs to pass to ``VaspInputSet``.
         """
         _ignore_pmg_warnings()
         self.auto_kpar = auto_kpar
@@ -205,7 +205,7 @@ class DopedDictSet(DictSet):
                 user_potcar_settings = user_potcar_settings["POTCAR"]
 
         potcar_settings.update(user_potcar_settings or {})
-        base_config_dict = {"POTCAR": potcar_settings}  # needs to be set with ``DictSet``
+        base_config_dict = {"POTCAR": potcar_settings}  # needs to be set with ``VaspInputSet``
         config_dict = deep_dict_update(base_config_dict, kwargs.pop("config_dict", {}))
         config_dict["INCAR"] = user_incar_settings or {}
 
@@ -221,8 +221,8 @@ class DopedDictSet(DictSet):
     @property
     def incar(self):
         """
-        Returns the ``Incar`` object generated from the ``DictSet`` config,
-        with a warning if ``KPAR > 1`` and only one k-point.
+        Returns the ``Incar`` object generated from the ``VaspInputSet``
+        config, with a warning if ``KPAR > 1`` and only one k-point.
         """
         incar_obj = super().incar
 
@@ -307,7 +307,7 @@ class DopedDictSet(DictSet):
 
 class DefectDictSet(DopedDictSet):
     """
-    Extension to ``pymatgen`` ``DictSet`` object for ``VASP`` defect
+    Extension to ``pymatgen`` ``VaspInputSet`` object for ``VASP`` defect
     calculations.
     """
 
@@ -335,7 +335,7 @@ class DefectDictSet(DopedDictSet):
                 as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``DictSet`` format) e.g.,
+                Dictionary of user ``KPOINTS`` settings (in ``pymatgen`` ``VaspInputSet`` format) e.g.,
                 ``{"reciprocal_density": 123}``, or a ``Kpoints`` object. Default is Gamma-centred,
                 reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
@@ -347,7 +347,7 @@ class DefectDictSet(DopedDictSet):
             poscar_comment (str):
                 Comment line to use for ``POSCAR`` files. Default is defect name,
                 fractional coordinates of initial site and charge state.
-            **kwargs: Additional kwargs to pass to ``DictSet``.
+            **kwargs: Additional kwargs to pass to ``VaspInputSet``.
         """
         _ignore_pmg_warnings()
         self.charge_state = charge_state
@@ -491,7 +491,7 @@ class DefectDictSet(DopedDictSet):
     ):
         """
         Writes out all input to a directory. Refactored slightly from
-        ``pymatgen`` ``DictSet.write_input()`` to allow checking of user
+        ``pymatgen`` ``VaspInputSet.write_input()`` to allow checking of user
         ``POTCAR`` setup.
 
         Args:
@@ -520,7 +520,7 @@ class DefectDictSet(DopedDictSet):
         else:
             potcars = self._check_user_potcars(unperturbed_poscar=unperturbed_poscar, snb=snb)
 
-        if unperturbed_poscar and potcars:  # write everything, use DictSet.write_input()
+        if unperturbed_poscar and potcars:  # write everything, use VaspInputSet.write_input()
             try:
                 super().write_input(
                     output_path,
@@ -627,7 +627,7 @@ class DefectRelaxSet(MSONable):
             is only generated for systems with a max atomic number (Z) >= 31 (i.e.
             further down the periodic table than Zn).
 
-        where ``DefectDictSet`` is an extension of ``pymatgen``'s ``DictSet`` class for
+        where ``DefectDictSet`` is an extension of ``pymatgen``'s ``VaspInputSet`` class for
         defect calculations, with ``incar``, ``poscar``, ``kpoints`` and ``potcar``
         attributes for the corresponding VASP defect calculations (see docstring).
         Also creates the corresponding ``bulk_vasp_...`` attributes for singlepoint
@@ -669,10 +669,10 @@ class DefectRelaxSet(MSONable):
                 as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet format)
+                Dictionary of user KPOINTS settings (in ``pymatgen`` ``VaspInputSet`` format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
-                ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` DefectDictSets (Γ-only for
-                ``vasp_gam``). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
+                ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
+                for ``vasp_gam``). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
@@ -683,22 +683,22 @@ class DefectRelaxSet(MSONable):
 
         Attributes:
             vasp_gam (DefectDictSet):
-                DefectDictSet for Gamma-point only relaxation. Usually not needed
+                ``DefectDictSet`` for Gamma-point only relaxation. Usually not needed
                 if ShakeNBreak structure searching has been performed
                 (recommended), unless only Γ-point `k`-point sampling is required
                 (converged) for your system, and no vasp_std calculations with
                 multiple `k`-points are required (determined from kpoints settings).
             vasp_nkred_std (DefectDictSet):
-                DefectDictSet for relaxation with a non-Γ-only kpoint mesh, using
+                ``DefectDictSet`` for relaxation with a non-Γ-only kpoint mesh, using
                 ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF exchange
                 part of the hybrid DFT calculation. Not generated for GGA calculations
                 (if ``LHFCALC`` is set to ``False`` in user_incar_settings) or if only Gamma
                 kpoint sampling is required.
             vasp_std (DefectDictSet):
-                DefectDictSet for relaxation with a non-Γ-only kpoint mesh, not using
+                ``DefectDictSet`` for relaxation with a non-Γ-only kpoint mesh, not using
                 ``NKRED``. Not generated if only Gamma kpoint sampling is required.
             vasp_ncl (DefectDictSet):
-                DefectDictSet for singlepoint (static) energy calculation with SOC
+                ``DefectDictSet`` for singlepoint (static) energy calculation with SOC
                 included. Generated if ``soc=True``. If ``soc`` is not set, then by default
                 is only generated for systems with a max atomic number (Z) >= 31
                 (i.e. further down the periodic table than Zn).
@@ -719,23 +719,23 @@ class DefectRelaxSet(MSONable):
                 structure and charge state (if inputting a Structure object),
                 for defects. For the bulk supercell, it's "{formula} - Bulk".
             bulk_vasp_gam (DefectDictSet):
-                DefectDictSet for a `bulk` Γ-point-only singlepoint (static)
+                ``DefectDictSet`` for a `bulk` Γ-point-only singlepoint (static)
                 supercell calculation. Often not used, as the bulk supercell only
                 needs to be calculated once with the same settings as the final
                 defect calculations, which may be with ``vasp_std`` or ``vasp_ncl``.
             bulk_vasp_nkred_std (DefectDictSet):
-                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                ``DefectDictSet`` for a singlepoint (static) `bulk` ``vasp_std`` supercell
                 calculation (i.e. with a non-Γ-only kpoint mesh) and ``NKRED(X,Y,Z)``
                 INCAR tag(s) to downsample kpoints for the HF exchange part of the
                 hybrid DFT calculation. Not generated for GGA calculations (if
                 ``LHFCALC`` is set to ``False`` in user_incar_settings) or if only Gamma
                 kpoint sampling is required.
             bulk_vasp_std (DefectDictSet):
-                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                ``DefectDictSet`` for a singlepoint (static) `bulk` ``vasp_std`` supercell
                 calculation with a non-Γ-only kpoint mesh, not using ``NKRED``. Not
                 generated if only Gamma kpoint sampling is required.
             bulk_vasp_ncl (DefectDictSet):
-                DefectDictSet for singlepoint (static) energy calculation of the `bulk`
+                ``DefectDictSet`` for singlepoint (static) energy calculation of the `bulk`
                 supercell with SOC included. Generated if ``soc=True``. If ``soc`` is not
                 set, then by default is only generated for systems with a max atomic
                 number (Z) >= 31 (i.e. further down the periodic table than Zn).
@@ -801,12 +801,12 @@ class DefectRelaxSet(MSONable):
         self,
     ) -> DefectDictSet:
         """
-        Returns a DefectDictSet object for a VASP Γ-point-only (``vasp_gam``)
-        defect supercell relaxation. Typically not needed if ShakeNBreak
-        structure searching has been performed (recommended), unless only
-        Γ-point `k`-point sampling is required (converged) for your system, and
-        no vasp_std calculations with multiple `k`-points are required
-        (determined from kpoints settings).
+        Returns a ``DefectDictSet`` object for a VASP Γ-point-only
+        (``vasp_gam``) defect supercell relaxation. Typically not needed if
+        ShakeNBreak structure searching has been performed (recommended),
+        unless only Γ-point `k`-point sampling is required (converged) for your
+        system, and no vasp_std calculations with multiple `k`-points are
+        required (determined from kpoints settings).
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT`` settings,
@@ -859,10 +859,10 @@ class DefectRelaxSet(MSONable):
     @property
     def vasp_std(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a VASP defect supercell relaxation
-        using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh). Returns None
-        and a warning if the input kpoint settings correspond to a Γ-only
-        kpoint mesh (in which case ``vasp_gam`` should be used).
+        Returns a ``DefectDictSet`` object for a VASP defect supercell
+        relaxation using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh).
+        Returns None and a warning if the input kpoint settings correspond to a
+        Γ-only kpoint mesh (in which case ``vasp_gam`` should be used).
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT`` settings,
@@ -893,8 +893,8 @@ class DefectRelaxSet(MSONable):
     @property
     def vasp_nkred_std(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a VASP defect supercell relaxation
-        using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh) and
+        Returns a ``DefectDictSet`` object for a VASP defect supercell
+        relaxation using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh) and
         ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF exchange
         part of hybrid DFT calculations, following the doped recommended defect
         calculation workflow (see docs). By default, sets ``NKRED(X,Y,Z)`` to 2
@@ -974,13 +974,13 @@ class DefectRelaxSet(MSONable):
     @property
     def vasp_ncl(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a VASP defect supercell singlepoint
-        calculation with spin-orbit coupling (SOC) included (LSORBIT = True),
-        using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is False, then this
-        returns None and a warning. If the ``soc`` parameter is not set when
-        initializing ``DefectRelaxSet``, then this is set to True for systems
-        with a max atomic number (Z) >= 31 (i.e. further down the periodic
-        table than Zn), otherwise False.
+        Returns a ``DefectDictSet`` object for a VASP defect supercell
+        singlepoint calculation with spin-orbit coupling (SOC) included
+        (LSORBIT = True), using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is
+        False, then this returns None and a warning. If the ``soc`` parameter
+        is not set when initializing ``DefectRelaxSet``, then this is set to
+        True for systems with a max atomic number (Z) >= 31 (i.e. further down
+        the periodic table than Zn), otherwise False.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT`` settings,
@@ -1028,7 +1028,7 @@ class DefectRelaxSet(MSONable):
     @property
     def bulk_vasp_gam(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a VASP `bulk` Γ-point-only
+        Returns a ``DefectDictSet`` object for a VASP `bulk` Γ-point-only
         (``vasp_gam``) singlepoint (static) supercell calculation. Often not
         used, as the bulk supercell only needs to be calculated once with the
         same settings as the final defect calculations, which is ``vasp_std``
@@ -1081,7 +1081,7 @@ class DefectRelaxSet(MSONable):
     @property
     def bulk_vasp_std(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a singlepoint (static) `bulk`
+        Returns a ``DefectDictSet`` object for a singlepoint (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
         input kpoint settings correspond to a Γ-only kpoint mesh (in which case
         ``(bulk_)vasp_gam`` should be used).
@@ -1135,7 +1135,7 @@ class DefectRelaxSet(MSONable):
     @property
     def bulk_vasp_nkred_std(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for a singlepoint (static) `bulk`
+        Returns a ``DefectDictSet`` object for a singlepoint (static) `bulk`
         ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
         and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
         exchange part of the hybrid DFT calculation. By default, sets
@@ -1205,13 +1205,13 @@ class DefectRelaxSet(MSONable):
     @property
     def bulk_vasp_ncl(self) -> Optional[DefectDictSet]:
         """
-        Returns a DefectDictSet object for VASP `bulk` supercell singlepoint
-        calculations with spin-orbit coupling (SOC) included (LSORBIT = True),
-        using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is False, then this
-        returns None and a warning. If the ``soc`` parameter is not set when
-        initializing ``DefectRelaxSet``, then this is set to True for systems
-        with a max atomic number (Z) >= 31 (i.e. further down the periodic
-        table than Zn), otherwise False.
+        Returns a ``DefectDictSet`` object for VASP `bulk` supercell
+        singlepoint calculations with spin-orbit coupling (SOC) included
+        (LSORBIT = True), using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is
+        False, then this returns None and a warning. If the ``soc`` parameter
+        is not set when initializing ``DefectRelaxSet``, then this is set to
+        True for systems with a max atomic number (Z) >= 31 (i.e. further down
+        the periodic table than Zn), otherwise False.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT`` settings,
@@ -1899,13 +1899,13 @@ class DefectsSet(MSONable):
             is only generated for systems with a max atomic number (Z) >= 31
             (i.e. further down the periodic table than Zn).
 
-        where ``DefectDictSet`` is an extension of ``pymatgen``'s ``DictSet`` class for
-        defect calculations, with ``incar``, ``poscar``, ``kpoints`` and ``potcar``
-        attributes for the corresponding VASP defect calculations (see docstring).
-        Also creates the corresponding ``bulk_vasp_...`` attributes for singlepoint
-        (static) energy calculations of the bulk (pristine, defect-free) supercell.
-        This needs to be calculated once with the same settings as the final defect
-        calculations, for the later calculation of defect formation energies.
+        where ``DefectDictSet`` is an extension of ``pymatgen``'s ``VaspInputSet``
+        class for defect calculations, with ``incar``, ``poscar``, ``kpoints`` and
+        ``potcar`` attributes for the corresponding VASP defect calculations (see
+        docstring). Also creates the corresponding ``bulk_vasp_...`` attributes for
+        singlepoint (static) energy calculations of the bulk (pristine, defect-free)
+        supercell. This needs to be calculated once with the same settings as the
+        final defect calculations, for the later calculation of defect formation energies.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` settings, and
@@ -1925,10 +1925,10 @@ class DefectsSet(MSONable):
                 set equal to ``defect_species``. If a list or single ``DefectEntry``
                 object is provided, the defect folder names will be set equal to
                 ``DefectEntry.name`` if the ``name`` attribute is set, otherwise
-                generated according to the ``doped`` convention (see doped.generation).
+                generated according to the ``doped`` convention (see ``doped.generation``).
                 Defect charge states are taken from ``DefectEntry.charge_state``.
             soc (bool):
-                Whether to generate ``vasp_ncl`` DefectDictSet attribute for spin-orbit
+                Whether to generate ``vasp_ncl`` ``DefectDictSet`` attribute for spin-orbit
                 coupling singlepoint (static) energy calculations. If not set, then
                 by default is set to True if the max atomic number (Z) in the
                 structure is >= 31 (i.e. further down the periodic table than Zn).
@@ -1941,9 +1941,9 @@ class DefectsSet(MSONable):
                 with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
-                Dictionary of user KPOINTS settings (in pymatgen DictSet format)
+                Dictionary of user KPOINTS settings (in ``pymatgen`` ``VaspInputSet`` format)
                 e.g. {"reciprocal_density": 123}, or a Kpoints object, to use for the
-                ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` DefectDictSets (Γ-only for
+                ``vasp_std``, ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectVaspInputSet``\s (Γ-only for
                 ``vasp_gam``). Default is Gamma-centred, reciprocal_density = 100 [Å⁻³].
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails, tries
@@ -1960,23 +1960,23 @@ class DefectsSet(MSONable):
                 Dictionary of {defect_species: DefectEntry} for the input defect
                 species, for which to generate VASP input files.
             bulk_vasp_gam (DefectDictSet):
-                DefectDictSet for a `bulk` Γ-point-only singlepoint (static)
+                ``DefectDictSet`` for a `bulk` Γ-point-only singlepoint (static)
                 supercell calculation. Often not used, as the bulk supercell only
                 needs to be calculated once with the same settings as the final
                 defect calculations, which may be with ``vasp_std`` or ``vasp_ncl``.
             bulk_vasp_nkred_std (DefectDictSet):
-                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                ``DefectDictSet`` for a singlepoint (static) `bulk` ``vasp_std`` supercell
                 calculation (i.e. with a non-Γ-only kpoint mesh) and ``NKRED(X,Y,Z)``
                 INCAR tag(s) to downsample kpoints for the HF exchange part of the
                 hybrid DFT calculation. Not generated for GGA calculations (if
                 ``LHFCALC`` is set to ``False`` in user_incar_settings) or if only Gamma
                 kpoint sampling is required.
             bulk_vasp_std (DefectDictSet):
-                DefectDictSet for a singlepoint (static) `bulk` ``vasp_std`` supercell
+                ``DefectDictSet`` for a singlepoint (static) `bulk` ``vasp_std`` supercell
                 calculation with a non-Γ-only kpoint mesh, not using ``NKRED``. Not
                 generated if only Gamma kpoint sampling is required.
             bulk_vasp_ncl (DefectDictSet):
-                DefectDictSet for singlepoint (static) energy calculation of the `bulk`
+                ``DefectDictSet`` for singlepoint (static) energy calculation of the `bulk`
                 supercell with SOC included. Generated if ``soc=True``. If ``soc`` is not
                 set, then by default is only generated for systems with a max atomic
                 number (Z) >= 31 (i.e. further down the periodic table than Zn).
