@@ -2691,6 +2691,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert all(
                 i in str(w[-1].message)
@@ -2731,6 +2732,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert all(
                 i in str(w[-1].message)
@@ -2758,6 +2760,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 2  # now INCAR and KPOINTS warnings!
             assert any(
                 all(
@@ -2789,6 +2792,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 3  # now INCAR and KPOINTS and POTCAR warnings!
             assert any(
                 all(
@@ -2821,6 +2825,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert any(
                 "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
                 "2241.3 Å^3 respectively." in str(warning.message)
