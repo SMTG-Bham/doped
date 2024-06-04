@@ -11,7 +11,7 @@ from functools import lru_cache
 from importlib import resources
 from multiprocessing import cpu_count
 from multiprocessing.pool import Pool
-from typing import Optional, Union, cast
+from typing import TYPE_CHECKING, Optional, Union, cast, 
 
 import numpy as np
 from monty.io import zopen
@@ -37,6 +37,9 @@ from doped.utils.parsing import (
     _get_defect_supercell_bulk_site_coords,
 )
 from doped.utils.symmetry import _frac_coords_sort_func
+
+if TYPE_CHECKING:
+    from pymatgen.io.vasp.sets import UserPotcarFunctional
 
 _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
