@@ -20,7 +20,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
-from pymatgen.io.vasp.sets import DictSet, UserPotcarFunctional
+from pymatgen.io.vasp.sets import DictSet
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
