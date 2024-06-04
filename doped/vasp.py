@@ -11,7 +11,7 @@ from functools import lru_cache
 from importlib import resources
 from multiprocessing import cpu_count
 from multiprocessing.pool import Pool
-from typing import TYPE_CHECKING, Optional, Union, cast, 
+from typing import TYPE_CHECKING, Optional, Union, cast
 
 import numpy as np
 from monty.io import zopen
