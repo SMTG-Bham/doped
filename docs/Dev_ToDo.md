@@ -87,7 +87,6 @@
   there's any useful functionality we want to add!
 
 ## SK To-Do for next update:
-- Remove `typing-extensions` requirement from `pyproject.toml`, once new `pymatgen-analysis-defects` released.
 - `doped` repo/docs cleanup `TODO`s above
 - Quick-start tutorial suggested by Alex G
 - Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).

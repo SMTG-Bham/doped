@@ -35,9 +35,6 @@ dependencies = [
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
     "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
     # if any dependency issues arise can make easyunfold an optional dependency
-    "typing-extensions"  # to fix `pymatgen` typing issues
-    # (https://github.com/materialsproject/pymatgen/pull/3752)
-    # TODO: Remove once new pymatgen released
 ]
 
 [project.urls]
