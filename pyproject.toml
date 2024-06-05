@@ -28,7 +28,7 @@ dependencies = [
     # https://github.com/spglib/spglib/issues/462 -- update Troubleshooting.rst and spglib warning in
     # doped.utils.symmetry when finally resolved
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.3.1",
+    "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
