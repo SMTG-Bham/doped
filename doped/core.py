@@ -7,12 +7,12 @@ import contextlib
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
-from itertools import combinations_with_replacement
-from multiprocessing import Process, Queue, current_process
+from multiprocessing import Process, SimpleQueue, current_process
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
@@ -1085,7 +1085,8 @@ class DefectEntry(thermo.DefectEntry):
                 referenced to the VBM. Default is 0 (i.e. the VBM).
             per_site (bool):
                 Whether to return the concentration as fractional concentration per site,
-                rather than the default of per cm^3. (default: False)
+                rather than the default of per cm^3. Multiply by 100 for concentration in
+                percent. (default: False)
             symprec (float):
                 Symmetry tolerance for ``spglib`` to use when determining relaxed defect
                 point symmetries and thus orientational degeneracies. Default is ``0.1``
@@ -1149,10 +1150,19 @@ class DefectEntry(thermo.DefectEntry):
         if per_site:
             return exp_factor * degeneracy_factor
 
-        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
-
         with np.errstate(over="ignore"):
-            return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
+            return self.bulk_site_concentration * degeneracy_factor * exp_factor
+
+    @property
+    def bulk_site_concentration(self):
+        """
+        Return the site concentration (in cm^-3) of the corresponding atomic
+        site of the defect in the pristine bulk material (e.g. if the defect is
+        V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
+        oxygen atoms in SrTiO3).
+        """
+        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
+        return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
         """
@@ -1260,9 +1270,33 @@ def _get_dft_chempots(chempots, el_refs, limit):
     return chempots
 
 
-def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
+def _guess_and_set_struct_oxi_states(structure):
     """
-    Tries to guess (and set) the oxidation states of the input structure.
+    Tries to guess (and set) the oxidation states of the input structure, using
+    the ``pymatgen`` ``BVAnalyzer`` class.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    bv_analyzer = BVAnalyzer()
+    with contextlib.suppress(ValueError):  # ValueError raised if oxi states can't be assigned
+        oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
+        if all(
+            np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
+        ):
+            return oxi_dec_structure
+
+    return False  # if oxi states could not be guessed
+
+
+def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=False):
+    """
+    Tries to guess (and set) the oxidation states of the input structure, using
+    the ``pymatgen``-tabulated ICSD oxidation state probabilities.
 
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
@@ -1270,26 +1304,24 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
             Whether to try to guess the oxidation states
             without using the ``max_sites=-1`` argument (``True``)(which attempts
             to use the reduced composition for guessing oxi states) or not (``False``).
-        queue (Queue):
-            A multiprocessing queue to put the guessed structure in, if provided.
-            Only really intended for use internally in ``doped``, during defect
-            generation.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
     """
+    structure = structure.copy()  # don't modify original structure
     if try_without_max_sites:
         with contextlib.suppress(Exception):
             structure.add_oxidation_state_by_guess()
             # check all oxidation states are whole numbers:
             if all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-                if queue is not None:
-                    queue.put(structure)
-                return
+                return structure
 
     # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
     try:
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
-        # check oxi_states assigned and not all zero:
-        while (
+        while (  # check oxi_states assigned and not all zero:
             attempt < 3
             and all(specie.oxi_state == 0 for specie in structure.species)
             or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
@@ -1302,15 +1334,111 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
     except Exception:
         structure.add_oxidation_state_by_guess()
 
-    if queue is not None:
-        queue.put(structure)
+    if all(hasattr(site.specie, "oxi_state") for site in structure.sites) and all(
+        isinstance(site.specie.oxi_state, (int, float)) for site in structure.sites
+    ):
+        return structure
+
+    return False
 
 
-def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15, queue=None) -> bool:
+def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
+    """
+    Tries to guess (and set) the oxidation states of the input structure, first
+    using the ``pymatgen`` ``BVAnalyzer`` class, and if that fails, using the
+    ICSD oxidation state probabilities to guess.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        try_without_max_sites (bool):
+            Whether to try to guess the oxidation states
+            without using the ``max_sites=-1`` argument (``True``)(which attempts
+            to use the reduced composition for guessing oxi states) or not (``False``),
+            when using the ICSD oxidation state probability guessing.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states(structure):
+        return structure_with_oxi
+
+    return _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
+
+
+def guess_and_set_oxi_states_with_timeout(
+    structure, timeout_1=10, timeout_2=15, break_early_if_expensive=False
+) -> bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, with
     a timeout catch for cases where the structure is complex and oxi state
     guessing will take a very very long time.
+
+    Tries first without using the ``pymatgen`` ``BVAnalyzer`` class, and if
+    this fails, tries using the ICSD oxidation state probabilities (with
+    timeouts) to guess.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        timeout_1 (float):
+            Timeout in seconds for the second attempt to guess the oxidation states,
+            using ICSD oxidation state probabilities (with ``max_sites=-1``).
+            Default is 10 seconds.
+        timeout_2 (float):
+            Timeout in seconds for the third attempt to guess the oxidation states,
+            using ICSD oxidation state probabilities (without ``max_sites=-1``).
+            Default is 15 seconds.
+        break_early_if_expensive (bool):
+            Whether to stop the function if the first oxi state guessing attempt
+            (with ``BVAnalyzer``) fails and the cost estimate for the ICSD probability
+            guessing is high (expected to take a long time; > 10 seconds).
+            Default is ``False``.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states(structure):
+        return structure_with_oxi  # BVAnalyzer succeeded
+
+    if (  # if BVAnalyzer failed and cost estimate is high, break early:
+        (
+            break_early_if_expensive or current_process().daemon
+        )  # if in a daemon process, can't spawn new `Process`s
+        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
+    ):
+        return False
+
+    if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+        return _guess_and_set_struct_oxi_states_icsd_prob(structure)
+
+    return _guess_and_set_oxi_states_with_timeout_icsd_prob(structure, timeout_1, timeout_2)
+
+
+def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
+    """
+    Implements the ``_guess_and_set_struct_oxi_states_icsd_prob`` function
+    above, but also putting the results into the supplied ``multiprocessing``
+    queue object (for use with timeouts via ``Process``).
+
+    For internal ``doped`` usage.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites):
+        queue.put(structure_with_oxi)
+    else:
+        queue.put(False)
+
+
+def _guess_and_set_oxi_states_with_timeout_icsd_prob(
+    structure,
+    timeout_1=10,
+    timeout_2=15,
+) -> bool:
+    """
+    Tries to guess (and set) the oxidation states of the input structure using
+    the ICSD oxidation state probabilities approach, with a timeout catch for
+    cases where the structure is complex and oxi state guessing will take a
+    very very long time.
 
     Tries first without using the ``max_sites=-1`` argument with ``pymatgen``'s
     oxidation state guessing functions (which attempts to use the reduced
@@ -1319,25 +1447,21 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
 
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
-        queue (Queue):
-            A multiprocessing queue to put the guessed structure in, if provided.
-            Only really intended for use internally in ``doped``, during defect
-            generation.
         timeout_1 (float):
             Timeout in seconds for the first attempt to guess the oxidation states
             (with ``max_sites=-1``). Default is 10 seconds.
         timeout_2 (float):
             Timeout in seconds for the second attempt to guess the oxidation states
             (without ``max_sites=-1``). Default is 15 seconds.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
     """
-    if queue is None:
-        queued_struct = False
-        queue = Queue()
-    else:
-        queued_struct = True
+    queue: SimpleQueue = SimpleQueue()
 
     guess_oxi_process_wout_max_sites = Process(
-        target=_guess_and_set_struct_oxi_states, args=(structure, True, queue)
+        target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
     )  # try without max sites first, if fails, try with max sites
     guess_oxi_process_wout_max_sites.start()
     guess_oxi_process_wout_max_sites.join(timeout=timeout_1)
@@ -1347,8 +1471,8 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
         guess_oxi_process_wout_max_sites.join()
 
         guess_oxi_process = Process(
-            target=_guess_and_set_struct_oxi_states,
-            args=(structure, False, queue),
+            target=_guess_and_set_struct_oxi_states_icsd_prob_process,
+            args=(structure, queue, False),
         )
         guess_oxi_process.start()
         guess_oxi_process.join(timeout=timeout_2)  # wait for pymatgen to guess oxi states,
@@ -1360,20 +1484,15 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
 
             return False
 
-    if not queued_struct:
-        # apply oxi states to structure:
-        structure_from_subprocess = queue.get()
-        structure.add_oxidation_state_by_element(
-            {el.symbol: el.oxi_state for el in structure_from_subprocess.composition.elements}
-        )
-
-    return True
+    # apply oxi states to structure:
+    return queue.get()
 
 
-def _rough_oxi_state_cost_from_comp(comp: Union[str, Composition], max_sites=True) -> float:
+def _rough_oxi_state_cost_icsd_prob_from_comp(comp: Union[str, Composition], max_sites=True) -> float:
     """
     A cost function which roughly estimates the computational cost of guessing
-    the oxidation states of a given composition.
+    the oxidation states of a given composition, using the ICSD oxidation state
+    probabilities approach.
     """
     if isinstance(comp, str):
         comp = Composition(comp)
@@ -1383,13 +1502,16 @@ def _rough_oxi_state_cost_from_comp(comp: Union[str, Composition], max_sites=Tru
 
     el_amt = comp.get_el_amt_dict()
     elements = list(el_amt)
+
+    def num_possible_combinations(n, r):
+        from math import factorial
+
+        return factorial(n + r - 1) / factorial(r) / factorial(n - 1)
+
     return np.prod(
         [
-            sum(
-                1
-                for _i in combinations_with_replacement(
-                    Element(el).icsd_oxidation_states or Element(el).oxidation_states, int(el_amt[el])
-                )
+            num_possible_combinations(
+                len(Element(el).icsd_oxidation_states or Element(el).oxidation_states), int(el_amt[el])
             )
             for el in elements
         ]
@@ -1478,26 +1600,16 @@ class Defect(core.Defect):
             all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
             and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
         ):
-            if _rough_oxi_state_cost_from_comp(self.structure.composition) > 1e6:
-                self.oxi_state = "Undetermined"  # likely will take very long to guess oxi_state
+            # try guess oxi-states but with timeout:
+            if struct_w_oxi := guess_and_set_oxi_states_with_timeout(
+                self.structure, timeout_1=5, timeout_2=5, break_early_if_expensive=True
+            ):
+                self.structure = struct_w_oxi
+            else:
+                self.oxi_state = "Undetermined"
                 return
 
-            if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
-                _guess_and_set_struct_oxi_states(self.structure)
-                self.oxi_state = self._guess_oxi_state()
-                return
-
-            # else try guess oxi-states but with timeout, using new `Process`s:
-            _guess_and_set_oxi_states_with_timeout(self.structure, timeout_1=5, timeout_2=5)
-
-        if not (  # oxi states unable to be parsed, set to "Undetermined"
-            all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
-            and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
-        ):
-            self.oxi_state = "Undetermined"
-
-        else:
-            self.oxi_state = self._guess_oxi_state()
+        self.oxi_state = self._guess_oxi_state()
 
     @classmethod
     def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":

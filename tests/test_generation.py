@@ -27,7 +27,6 @@ from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.coord import pbc_diff
@@ -295,8 +294,7 @@ Cu_i_Td          [+2,+1,0]          [0.250,0.250,0.250]  8c
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
-        aaa = AseAtomsAdaptor()
-        self.agcu = aaa.get_structure(atoms)
+        self.agcu = Structure.from_ase_atoms(atoms)
         self.agcu_defect_gen_string = (
             "DefectsGenerator for input composition AgCu, space group R-3m with 28 defect entries created."
         )
@@ -607,28 +605,28 @@ N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
         self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
 
         self.sb2si2te6_defect_gen_info = (
-            """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
------------  ------------------  -------------------  ---------
-v_Si         [+1,0,-1,-2,-3,-4]  [0.000,0.000,0.445]  6c
-v_Sb         [+1,0,-1,-2]        [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1]        [0.335,0.003,0.073]  18f
+            """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
+-----------  -----------------  -------------------  ---------
+v_Si         [+1,0,-1,-2,-3]    [0.000,0.000,0.445]  6c
+v_Sb         [+1,0,-1,-2,-3]    [0.000,0.000,0.166]  6c
+v_Te         [+2,+1,0,-1]       [0.335,0.003,0.073]  18f
 
 Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_Sb            [+2,+1,0]                    [0.000,0.000,0.166]  6c
+Si_Sb            [+1,0,-1]                    [0.000,0.000,0.166]  6c
 Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.335,0.003,0.073]  18f
-Sb_Si            [+1,0,-1,-2,-3,-4,-5,-6,-7]  [0.000,0.000,0.445]  6c
+Sb_Si            [+2,+1,0,-1,-2,-3,-4,-5,-6]  [0.000,0.000,0.445]  6c
 Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.335,0.003,0.073]  18f
-Te_Si            [+2,+1,0,-1,-2,-3,-4,-5,-6]  [0.000,0.000,0.445]  6c
-Te_Sb            [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.000,0.000,0.166]  6c
+Te_Si            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.445]  6c
+Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.20   [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.179,0.359,0.167]  18f
-Si_i_C1_Si2.43   [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.341,0.341,0.458]  18f
-Si_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.001,0.336,0.289]  18f
-Si_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.000,0.000,0.318]  6c
-Si_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2,-3,-4]  [0.000,0.000,0.000]  3a
+Si_i_C1_Si2.20   [+4,+3,+2,+1,0]              [0.179,0.359,0.167]  18f
+Si_i_C1_Si2.43   [+4,+3,+2,+1,0]              [0.341,0.341,0.458]  18f
+Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
+Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
+Si_i_C3i_Te2.81  [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
 Sb_i_C1_Si2.20   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.179,0.359,0.167]  18f
 Sb_i_C1_Si2.43   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.341,0.341,0.458]  18f
 Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
@@ -1003,25 +1001,25 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             with warnings.catch_warnings(record=True) as w:
                 warnings.resetwarnings()
                 defect_gen = DefectsGenerator(structure, **kwargs)
-            if w:
-                print([str(warning.message) for warning in w])  # for debugging
-            if min_image_distance is None:
-                assert not w
-            else:
-                assert len(w) == 1
-                assert issubclass(w[-1].category, UserWarning)
-                assert (
-                    f"Input structure is <10 Å in at least one direction (minimum image distance ="
-                    f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
-                    f"calculations, but generate_supercell = False, so using input structure as "
-                    f"defect & bulk supercells. Caution advised!" in str(w[-1].message)
-                )
             output = sys.stdout.getvalue()  # Return a str containing the printed output
         finally:
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
         if w:
             print([str(warning.message) for warning in w])  # for debugging
+        print(output)  # for debugging
+
+        if min_image_distance is None:
+            assert not w
+        else:
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert (
+                f"Input structure is <10 Å in at least one direction (minimum image distance ="
+                f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
+                f"calculations, but generate_supercell = False, so using input structure as "
+                f"defect & bulk supercells. Caution advised!" in str(w[-1].message)
+            )
 
         return defect_gen, output
 
@@ -1772,6 +1770,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             + "\n---------------------------------------------------------\n"
             + self.CdTe_defect_gen_info
         )
+        for defect_entry in CdTe_defect_gen.defect_entries.values():
+            if defect_entry.defect.defect_type != DefectType.Interstitial:
+                assert np.isclose(defect_entry.bulk_site_concentration, 1e24 / self.prim_cdte.volume)
+            else:
+                assert np.isclose(
+                    defect_entry.bulk_site_concentration, 1e24 / self.prim_cdte.volume
+                ) or np.isclose(defect_entry.bulk_site_concentration, 4e24 / self.prim_cdte.volume)
 
         # explicitly test defect entry charge state log:
         assert CdTe_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
@@ -3204,11 +3209,11 @@ Se_i_C2_Ag2.48   [0,-1,-2]          [0.091,0.500,0.500]  2b
 
         assert (  # different charge states than when max_sites = -1 is used:
             (
-                """Vacancies    Guessed Charges        Conv. Cell Coords    Wyckoff
------------  ---------------------  -------------------  ---------
-v_Si         [+2,+1,0,-1,-2,-3,-4]  [0.000,0.000,0.445]  6c
-v_Sb         [+2,+1,0,-1,-2]        [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1,-2]        [0.335,0.003,0.073]  18f
+                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
+-----------  ------------------  -------------------  ---------
+v_Si         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.445]  6c
+v_Sb         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.166]  6c
+v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 \n"""
             )
             in output

@@ -1,6 +1,12 @@
 Change Log
 ==========
 
+v.2.4.4
+----------
+- Make oxidation state guessing more efficient, semi-significant speed up in generation/parsing for tough cases.
+- Add `bulk_site_concentration` property to `DefectEntry`, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
+- Minor updates to ensure compatibility with recent ``pymatgen`` and ``ASE`` releases.
+
 v.2.4.3
 ----------
 - Remove ``spglib<=2.0.2`` dependency (set to avoid unnecessary warnings), and update installation instructions accordingly.

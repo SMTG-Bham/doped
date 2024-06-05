@@ -19,7 +19,6 @@ from monty.json import MontyEncoder
 from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
-from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_generation import if_present_rm
 
@@ -106,8 +105,7 @@ class DefectDictSetTest(unittest.TestCase):
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
-        aaa = AseAtomsAdaptor()
-        self.agcu = aaa.get_structure(atoms)
+        self.agcu = Structure.from_ase_atoms(atoms)
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {

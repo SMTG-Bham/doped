@@ -1,6 +1,7 @@
 """
-Tests for the `doped.analysis` module, which also implicitly tests most of the
-`doped.utils.parsing` module.
+Tests for the ``doped.analysis`` module, which also implicitly tests most of
+the ``doped.utils.parsing`` module, and some ``doped.thermodynamics``
+functions.
 """
 
 import gzip
@@ -920,10 +921,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         return thermo.plot(limit="V2O5-O2")
 
     @custom_mpl_image_compare(filename="SrTiO3_v_O.png")
-    def test_SrTiO3_diff_ISYM_bulk_defect(self):
+    def test_SrTiO3_diff_ISYM_bulk_defect_and_concentration_funcs(self):
         """
         Test parsing SrTiO3 defect calculations, where a different ISYM was
-        used for the bulk (= 3) compared to the defect (= 0) calculations.
+        used for the bulk (= 3) compared to the defect (= 0) calculations, as
+        well as the ``DefectThermodynamics`` concentration functions with
+        various options.
 
         Previously this failed because the bulk/defect kpoints could not be
         properly compared.
@@ -970,7 +973,156 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
         thermo = dp.get_defect_thermodynamics()
 
+        # hardcoded check of bulk_site_concentration property:
+        sto_O_site_conc = 5.067520709900586e22
+        for defect_entry in dp.defect_dict.values():  # oxygen site concentration
+            assert np.isclose(defect_entry.bulk_site_concentration, sto_O_site_conc, rtol=1e-4)
+
         print(thermo.get_symmetries_and_degeneracies())
+
+        conc_df = thermo.get_equilibrium_concentrations()  # no chempots or Fermi level
+        print("conc_df", conc_df)  # for debugging
+        srtio3_V_O_conc_lists = [  # with no chempots or Fermi level (so using Eg/2)
+            ["vac_O", "+2", 9.742, "4.456e-141", "100.00%"],
+            ["vac_O", "+1", 11.043, "2.497e-162", "0.00%"],
+            ["vac_O", "0", 12.635, "1.109e-189", "0.00%"],
+        ]
+        for i, row in enumerate(srtio3_V_O_conc_lists):
+            print(i, row)
+            assert list(conc_df.iloc[i]) == row
+
+        per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True)
+        print("per_site_conc_df", per_site_conc_df)  # for debugging
+        for i, row in enumerate(srtio3_V_O_conc_lists):
+            print(i, row)
+            for j, val in enumerate(row):
+                if j != 3:
+                    assert per_site_conc_df.iloc[i, j] == val
+                else:
+                    assert np.isclose(
+                        float(per_site_conc_df.iloc[i, j][:-2]), 100 * float(row[3]) / sto_O_site_conc
+                    )
+
+        per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, skip_formatting=True)
+        print("per_site_conc_df", per_site_conc_df)  # for debugging
+        for i, row in enumerate(srtio3_V_O_conc_lists):
+            print(i, row)
+            for j, val in enumerate(row):
+                if j not in [1, 3]:
+                    assert per_site_conc_df.iloc[i, j] == val
+                elif j == 3:
+                    assert np.isclose(
+                        per_site_conc_df.iloc[i, j], float(row[3]) / sto_O_site_conc, rtol=1e-5
+                    )
+                elif j == 1:
+                    assert per_site_conc_df.iloc[i, j] == int(val)  # charge states
+
+        assert thermo.get_equilibrium_concentrations(per_charge=False).to_numpy().tolist() == [
+            ["4.456e-141"]
+        ]
+        assert np.isclose(
+            float(
+                thermo.get_equilibrium_concentrations(
+                    per_charge=False, per_site=True, skip_formatting=True
+                )
+                .to_numpy()
+                .tolist()[0][0]
+            ),
+            4.456e-141 / sto_O_site_conc,
+        )
+        assert np.isclose(
+            float(
+                thermo.get_equilibrium_concentrations(per_charge=False, per_site=True)
+                .to_numpy()
+                .tolist()[0][0][:-2]
+            ),
+            100 * 4.456e-141 / sto_O_site_conc,
+            rtol=1e-3,
+        )
+
+        assert next(
+            iter(
+                thermo.get_equilibrium_concentrations(per_charge=False, fermi_level=1.710795)
+                .to_numpy()
+                .tolist()
+            )
+        ) == ["2.004e-142"]
+
+        per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, fermi_level=1.710795)
+        print("per_site_conc_df", per_site_conc_df)  # for debugging
+        custom_fermi_concs = ["3.954e-163 %", "1.045e-183 %", "2.189e-210 %"]
+        for i, val in enumerate(custom_fermi_concs):
+            print(i, val)
+            assert per_site_conc_df.iloc[i, 3] == val
+
+        # test get_quenched_fermi_level_and_concentrations
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            annealing_temperature=300,
+            per_charge=False,
+        )
+        print("conc_df", conc_df)  # for debugging
+        assert np.isclose(fermi_level, 1.710795, rtol=1e-4)
+        assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
+        # without chempots
+        assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
+        assert conc_df.to_numpy().tolist() == [["2.004e-142", 6.010973640124676e-142]]
+        assert conc_df.index[0] == "vac_O"
+        assert conc_df.index.name == "Defect"
+
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            annealing_temperature=300,
+            skip_formatting=True,
+        )
+        print("quenched conc_df", conc_df)  # for debugging
+        assert np.isclose(fermi_level, 1.710795, rtol=1e-4)
+        assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
+        # without chempots
+        assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
+        quenched_conc_df_lists = [
+            ["vac_O", 2, 9.822, 2.0036578800415587e-142, "100.00%", 2.0036578800415587e-142],
+            ["vac_O", 1, 11.083, 5.2947236022031443e-163, "0.00%", 2.0036578800415587e-142],
+            ["vac_O", 0, 12.635, 1.1092122529257341e-189, "0.00%", 2.0036578800415587e-142],
+        ]
+        for i, row in enumerate(quenched_conc_df_lists):
+            print(i, row)
+            assert list(conc_df.iloc[i]) == row
+
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            annealing_temperature=300,
+            per_site=True,
+        )
+        print("per_site quenched conc_df", conc_df)  # for debugging
+        assert np.isclose(fermi_level, 1.710795, rtol=1e-4)
+        assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
+        # without chempots
+        assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
+        quenched_per_site_conc_df_lists = [
+            ["vac_O", 2, 9.822, "100.00%", 2.0036578800415587e-142, "3.954e-163 %"],
+            ["vac_O", 1, 11.083, "0.00%", 2.0036578800415587e-142, "1.045e-183 %"],
+            ["vac_O", 0, 12.635, "0.00%", 2.0036578800415587e-142, "2.189e-210 %"],
+        ]
+        for i, row in enumerate(quenched_per_site_conc_df_lists):
+            print(i, row)
+            assert list(conc_df.iloc[i]) == row
+
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            annealing_temperature=300,
+            per_site=True,
+            per_charge=False,
+            skip_formatting=True,
+        )
+        print("per_site not per_charge quenched conc_df", conc_df)  # for debugging
+        assert np.isclose(fermi_level, 1.710795, rtol=1e-4)
+        assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
+        # without chempots
+        assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
+        assert conc_df.to_numpy().tolist() == [[6.010973640124676e-142, 3.953921443531439e-165]]
+        assert conc_df.index[0] == "vac_O"
+        assert conc_df.index.name == "Defect"
 
         return thermo.plot()
 
@@ -2539,6 +2691,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert all(
                 i in str(w[-1].message)
@@ -2579,6 +2732,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert all(
                 i in str(w[-1].message)
@@ -2606,6 +2760,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 skip_corrections=True,
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 2  # now INCAR and KPOINTS warnings!
             assert any(
                 all(
@@ -2637,6 +2792,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 3  # now INCAR and KPOINTS and POTCAR warnings!
             assert any(
                 all(
@@ -2669,6 +2825,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
                 parse_projected_eigen=False,
             )
+            print([str(warning.message) for warning in w])  # for debugging
             assert any(
                 "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
                 "2241.3 Å^3 respectively." in str(warning.message)

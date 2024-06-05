@@ -10,7 +10,7 @@ publication-quality outputs.
 import contextlib
 import os
 import warnings
-from multiprocessing import Pool, Queue, cpu_count
+from multiprocessing import Pool, cpu_count
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
@@ -26,7 +26,7 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
-from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
+from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.parsing import (
@@ -706,18 +706,14 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
-        if _rough_oxi_state_cost_from_comp(self.bulk_vr.final_structure.composition) > 1e6:
-            self._bulk_oxi_states: Union[dict, bool] = False  # will take very long to guess oxi_state
-        else:
-            queue: Queue = Queue()
-            self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
-                self.bulk_vr.final_structure, queue=queue
-            )
-            if self._bulk_oxi_states:
-                self.bulk_vr.final_structure = queue.get()  # oxi-state decorated structure
-                self._bulk_oxi_states = {
-                    el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements
-                }
+        self._bulk_oxi_states: Union[dict, bool] = False
+        if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
+            self.bulk_vr.final_structure, break_early_if_expensive=True
+        ):
+            self.bulk_vr.final_structure = bulk_struct_w_oxi
+            self._bulk_oxi_states = {
+                el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements  # type: ignore
+            }
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once

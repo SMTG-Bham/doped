@@ -1227,11 +1227,11 @@ class DefectThermodynamics(MSONable):
                 states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
                 (default: True)
             per_site (bool):
-                Whether to return the concentrations as fractional concentrations per site,
+                Whether to return the concentrations as percent concentrations per site,
                 rather than the default of per cm^3. (default: False)
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
-                strings (and keep as ints and floats instead). (default: False)
+                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
 
         Returns:
             ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
@@ -1252,7 +1252,7 @@ class DefectThermodynamics(MSONable):
                 fermi_level=fermi_level,
                 vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
             )
-            concentration = defect_entry.equilibrium_concentration(
+            raw_concentration = defect_entry.equilibrium_concentration(
                 chempots=chempots,
                 limit=limit,
                 el_refs=el_refs,
@@ -1261,6 +1261,7 @@ class DefectThermodynamics(MSONable):
                 temperature=temperature,
                 per_site=per_site,
             )
+
             energy_concentration_list.append(
                 {
                     "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
@@ -1271,9 +1272,11 @@ class DefectThermodynamics(MSONable):
                         else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                     ),
                     "Formation Energy (eV)": round(formation_energy, 3),
-                    "Raw Concentration": concentration,
-                    "Concentration (per site)" if per_site else "Concentration (cm^-3)": (
-                        concentration if skip_formatting else f"{concentration:.3e}"
+                    "Raw Concentration": raw_concentration,
+                    (
+                        "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                    ): _format_concentration(
+                        raw_concentration, per_site=per_site, skip_formatting=skip_formatting
                     ),
                 }
             )
@@ -1285,24 +1288,14 @@ class DefectThermodynamics(MSONable):
                 "Raw Concentration"
             ].transform("sum")
             conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
-                lambda x: f"{x:.1%}"
+                lambda x: f"{x:.2%}"
             )
             conc_df = conc_df.drop(columns=["Raw Charge", "Raw Concentration"])
             return conc_df.reset_index(drop=True)
 
         # group by defect and sum concentrations:
-        summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
-        summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))] = (
-            summed_df["Raw Concentration"]
-            if skip_formatting
-            else summed_df["Raw Concentration"].apply(lambda x: f"{x:.3e}")
-        )
-        return summed_df.drop(
-            columns=[
-                i
-                for i in ["Charge", "Formation Energy (eV)", "Raw Charge", "Raw Concentration"]
-                if i in summed_df.columns
-            ]
+        return _group_defect_charge_state_concentrations(
+            conc_df, per_site=per_site, skip_formatting=skip_formatting
         )
 
     def _parse_fermi_dos(self, bulk_dos_vr: Union[str, Vasprun, FermiDos]):
@@ -1433,6 +1426,9 @@ class DefectThermodynamics(MSONable):
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
+        if chempots is None:  # handle once here, as otherwise brentq function results in this being
+            # called many times
+            _no_chempots_warning()
 
         def _get_total_q(fermi_level):
             conc_df = self.get_equilibrium_concentrations(
@@ -1449,6 +1445,8 @@ class DefectThermodynamics(MSONable):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
+            # as given once above
 
             eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
             if return_concs:
@@ -1468,6 +1466,9 @@ class DefectThermodynamics(MSONable):
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         delta_gap: float = 0,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = False,
         **kwargs,
     ) -> tuple[float, float, float, pd.DataFrame]:
         r"""
@@ -1592,6 +1593,16 @@ class DefectThermodynamics(MSONable):
                 about the VBM and CBM (i.e. assuming equal up/downshifts of the band-edges
                 around their original eigenvalues) while the defect levels remain fixed.
                 (Default: 0)
+            per_charge (bool):
+                Whether to break down the defect concentrations into individual defect charge
+                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
+                (default: True)
+            per_site (bool):
+                Whether to return the concentrations as percent concentrations per site,
+                rather than the default of per cm^3. (default: False)
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states and concentrations as
+                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
                 is not 0).
@@ -1602,12 +1613,19 @@ class DefectThermodynamics(MSONable):
             quenched defect concentrations (in cm^-3).
             (fermi_level, e_conc, h_conc, conc_df)
         """
+        if kwargs and any(i not in ["verbose", "tol"] for i in kwargs):
+            raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
+
         # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
         #  advanced analysis
         fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
+        if chempots is None:  # handle once here, as otherwise brentq function results in this being
+            # called many times
+            _no_chempots_warning()
+
         annealing_dos = (
             fermi_dos
             if delta_gap == 0
@@ -1618,67 +1636,117 @@ class DefectThermodynamics(MSONable):
                 tol=kwargs.get("tol", 1e-8),
             )
         )
-        annealing_fermi_level = self.get_equilibrium_fermi_level(
-            annealing_dos,
-            chempots=chempots,
-            limit=limit,
-            el_refs=el_refs,
-            temperature=annealing_temperature,
-            return_concs=False,
-        )
-        annealing_defect_concentrations = self.get_equilibrium_concentrations(
-            chempots=chempots,
-            limit=limit,
-            el_refs=el_refs,
-            fermi_level=annealing_fermi_level,  # type: ignore
-            temperature=annealing_temperature,
-            per_charge=False,  # give total concentrations for each defect
-            skip_formatting=True,
-        )
-        annealing_defect_concentrations = annealing_defect_concentrations.rename(
-            columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
-        )
-
-        def _get_constrained_total_q(fermi_level, return_conc_df=False):
-            conc_df = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=quenched_temperature,
-                fermi_level=fermi_level,
-                skip_formatting=True,
-            )
-
-            conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
-            conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
-                conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
-                / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
-            ) * conc_df["Total Concentration (cm^-3)"]
-
-            if return_conc_df:
-                return conc_df
-            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += fermi_dos.get_doping(
-                fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
-            )
-            return qd_tot
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings
+            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
+            # as given once above
+
+            annealing_fermi_level = self.get_equilibrium_fermi_level(
+                annealing_dos,
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=annealing_temperature,
+                return_concs=False,
+            )
+            annealing_defect_concentrations = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=annealing_fermi_level,  # type: ignore
+                temperature=annealing_temperature,
+                per_charge=False,  # give total concentrations for each defect
+                skip_formatting=True,
+            )
+            annealing_defect_concentrations = annealing_defect_concentrations.rename(
+                columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
+            )
+
+            def _get_constrained_concentrations(
+                fermi_level, per_charge=True, per_site=False, skip_formatting=False
+            ):
+                conc_df = self.get_equilibrium_concentrations(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    temperature=quenched_temperature,
+                    fermi_level=fermi_level,
+                    skip_formatting=True,
+                )
+
+                conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
+                conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
+                    conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
+                    / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
+                ) * conc_df["Total Concentration (cm^-3)"]
+
+                if not per_charge:
+                    conc_df = _group_defect_charge_state_concentrations(
+                        conc_df, per_site, skip_formatting=True
+                    )
+
+                if per_site:
+                    cm3_conc_df = self.get_equilibrium_concentrations(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        temperature=quenched_temperature,
+                        fermi_level=fermi_level,
+                        skip_formatting=True,
+                        per_charge=per_charge,
+                    )
+                    per_site_conc_df = self.get_equilibrium_concentrations(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        temperature=quenched_temperature,
+                        fermi_level=fermi_level,
+                        skip_formatting=True,
+                        per_site=True,
+                        per_charge=per_charge,
+                    )
+                    per_site_factors = (
+                        per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
+                    )
+                    conc_df["Concentration (per site)"] = (
+                        conc_df["Concentration (cm^-3)"] * per_site_factors
+                    )
+                    conc_df = conc_df.drop(columns=["Concentration (cm^-3)"])
+
+                    if not skip_formatting:
+                        conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
+                            _format_per_site_concentration
+                        )
+
+                elif not skip_formatting:
+                    conc_df["Concentration (cm^-3)"] = conc_df["Concentration (cm^-3)"].apply(
+                        lambda x: f"{x:.3e}"
+                    )
+
+                return conc_df
+
+            def _get_constrained_total_q(fermi_level, return_conc_df=False):
+                conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
+                qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+                qd_tot += fermi_dos.get_doping(
+                    fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
+                )
+                return qd_tot
 
             eq_fermi_level: float = brentq(
                 _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
             )
+            e_conc, h_conc = get_e_h_concs(
+                fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
+            )
 
-        e_conc, h_conc = get_e_h_concs(
-            fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
-        )
-        return (
-            eq_fermi_level,
-            e_conc,
-            h_conc,
-            _get_constrained_total_q(eq_fermi_level, return_conc_df=True),
-        )
+            return (
+                eq_fermi_level,
+                e_conc,
+                h_conc,
+                _get_constrained_concentrations(eq_fermi_level, per_charge, per_site, skip_formatting),
+            )
 
     def get_formation_energy(
         self,
@@ -2559,7 +2627,7 @@ class DefectThermodynamics(MSONable):
                 If None (default), set to the mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states as
-                strings (and keep as ints and floats instead).
+                strings (and keep as ``int``\s and ``float``\s instead).
                 (default: False)
 
         Returns:
@@ -2608,7 +2676,7 @@ class DefectThermodynamics(MSONable):
         fermi_level: float = 0,
         skip_formatting: bool = False,
     ) -> pd.DataFrame:
-        """
+        r"""
         Returns a defect formation energy table for a single chemical potential
         limit as a pandas ``DataFrame``.
 
@@ -2650,7 +2718,7 @@ class DefectThermodynamics(MSONable):
                 used, or if not present, ``self.vbm``).
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states as
-                strings (and keep as ints and floats instead).
+                strings (and keep as ``int``\s and ``float``\s instead).
                 (default: False)
 
         Returns:
@@ -2782,7 +2850,7 @@ class DefectThermodynamics(MSONable):
         Args:
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states as
-                strings (and keep as ints and floats instead).
+                strings (and keep as ``int``\s and ``float``\s instead).
                 (default: False)
             symprec (float):
                 Symmetry tolerance for ``spglib`` to use when determining
@@ -2859,6 +2927,54 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n"
             f"{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def _group_defect_charge_state_concentrations(conc_df, per_site=False, skip_formatting=False):
+    summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
+    raw_concentrations = (
+        summed_df["Raw Concentration"]
+        if "Raw Concentration" in summed_df.columns
+        else summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))]
+    )
+    summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))] = (
+        raw_concentrations.apply(
+            lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
+        )
+    )
+    return summed_df.drop(
+        columns=[
+            i
+            for i in [
+                "Charge",
+                "Formation Energy (eV)",
+                "Raw Charge",
+                "Raw Concentration",
+                "Charge State Population",
+            ]
+            if i in summed_df.columns
+        ]
+    )
+
+
+def _format_concentration(raw_concentration, per_site=False, skip_formatting=False):
+    """
+    Format concentration values for ``DataFrame`` outputs.
+    """
+    if skip_formatting:
+        return raw_concentration
+    if per_site:
+        return _format_per_site_concentration(raw_concentration)
+
+    return f"{raw_concentration:.3e}"
+
+
+def _format_per_site_concentration(raw_concentration):
+    """
+    Format per-site concentrations for ``DataFrame`` outputs.
+    """
+    if raw_concentration > 1e-5:
+        return f"{raw_concentration:.3%}"
+    return f"{raw_concentration * 100:.3e} %"
 
 
 def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> tuple[float, float]:
