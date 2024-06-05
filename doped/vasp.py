@@ -533,6 +533,7 @@ class DefectDictSet(DopedDictSet):
                 if not str(e).startswith("NELECT") or not potcar_spec:
                     raise e
 
+                os.makedirs(output_path, exist_ok=True)
                 with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
                     pot_spec_file.write("\n".join(self.potcar_symbols))
 
