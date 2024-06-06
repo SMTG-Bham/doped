@@ -1,6 +1,10 @@
 Change Log
 ==========
 
+v.2.4.5
+----------
+- Enforce ``shakenbreak>=2.3.4`` requirement.
+
 v.2.4.4
 ----------
 - Make oxidation state guessing more efficient, semi-significant speed up in generation/parsing for tough cases.
