@@ -1126,8 +1126,8 @@ class DefectsGenerator(MSONable):
                 defect site(s). Default (when interstitial_coords not specified) is
                 to automatically generate interstitial sites using Voronoi tessellation.
                 The input interstitial_coords are converted to
-                DefectsGenerator.prim_interstitial_coords, which are the corresponding
-                fractional coordinates in DefectsGenerator.primitive_structure (which
+                ``DefectsGenerator.prim_interstitial_coords``, which are the corresponding
+                fractional coordinates in ``DefectsGenerator.primitive_structure`` (which
                 is used for defect generation), along with the multiplicity and
                 equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):

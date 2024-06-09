@@ -148,6 +148,10 @@ class DefectEntry(thermo.DefectEntry):
     # codes etc)
     equivalent_supercell_sites: list[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
+    _bulk_entry_energy: Optional[float] = None
+    _bulk_entry_hash: Optional[int] = None
+    _sc_entry_energy: Optional[float] = None
+    _sc_entry_hash: Optional[int] = None
 
     def __post_init__(self):
         """
@@ -167,31 +171,9 @@ class DefectEntry(thermo.DefectEntry):
                 f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
-    def _check_if_multiple_finite_size_corrections(self):
-        """
-        Checks that there is no double counting of finite-size charge
-        corrections, in the defect_entry.corrections dict.
-        """
-        matching_finite_size_correction_keys = {
-            key
-            for key in self.corrections
-            if any(x in key for x in ["FNV", "freysoldt", "Freysoldt", "Kumagai", "kumagai"])
-        }
-        if len(matching_finite_size_correction_keys) > 1:
-            warnings.warn(
-                f"It appears there are multiple finite-size charge corrections in the corrections dict "
-                f"attribute for defect {self.name}. These are:"
-                f"\n{matching_finite_size_correction_keys}."
-                f"\nPlease ensure there is no double counting / duplication of energy corrections!"
-            )
-
-    @property
-    def corrected_energy(self) -> float:
-        """
-        The energy of the defect entry with `all` corrections applied.
-        """
-        self._check_if_multiple_finite_size_corrections()
-        return self.sc_entry.energy + sum(self.corrections.values())
+        self._bulk_entry = self.bulk_entry  # for backwards compatibility
+        self._sc_entry = self.sc_entry  # for backwards compatibility
+        self._defect = self.defect  # for backwards compatibility
 
     def to_json(self, filename: Optional[str] = None):
         """
@@ -829,12 +811,60 @@ class DefectEntry(thermo.DefectEntry):
 
     def _get_chempot_term(self, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}
+        element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
 
         return sum(
-            chem_pot * -self.defect.element_changes[Element(el)]
+            chem_pot * -element_changes[el]
             for el, chem_pot in chemical_potentials.items()
-            if Element(el) in self.defect.element_changes
+            if el in element_changes
         )
+
+    def get_ediff(self) -> float | None:
+        """
+        Get the energy difference between the defect and bulk supercell
+        calculations, including finite-size corrections.
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if self.bulk_entry is None:
+            raise RuntimeError(
+                "Attempting to compute the energy difference without a defined bulk entry for the "
+                "DefectEntry object!"
+            )
+        return self.corrected_energy - self.bulk_entry_energy
+
+    @property
+    def corrected_energy(self) -> float:
+        """
+        Get the energy of the defect supercell calculation, with `all`
+        corrections (in ``DefectEntry.corrections``) applied.
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        self._check_if_multiple_finite_size_corrections()
+        return self.sc_entry_energy + sum(self.corrections.values())
+
+    def _check_if_multiple_finite_size_corrections(self):
+        """
+        Checks that there is no double counting of finite-size charge
+        corrections, in the defect_entry.corrections dict.
+        """
+        matching_finite_size_correction_keys = {
+            key
+            for key in self.corrections
+            if any(x in key for x in ["FNV", "freysoldt", "Freysoldt", "Kumagai", "kumagai"])
+        }
+        if len(matching_finite_size_correction_keys) > 1:
+            warnings.warn(
+                f"It appears there are multiple finite-size charge corrections in the corrections dict "
+                f"attribute for defect {self.name}. These are:"
+                f"\n{matching_finite_size_correction_keys}."
+                f"\nPlease ensure there is no double counting / duplication of energy corrections!"
+            )
 
     def formation_energy(
         self,
@@ -1011,6 +1041,7 @@ class DefectEntry(thermo.DefectEntry):
         vbm: Optional[float] = None,
         per_site: bool = False,
         symprec: Optional[float] = None,
+        formation_energy: Optional[float] = None,
     ) -> float:
         r"""
         Compute the `equilibrium` concentration (in cm^-3) for the
@@ -1098,6 +1129,13 @@ class DefectEntry(thermo.DefectEntry):
                 If ``symprec`` is set, then the point symmetries and corresponding
                 orientational degeneracy will be re-parsed/computed even if already
                 present in the ``DefectEntry`` object ``calculation_metadata``.
+            formation_energy (float):
+                Pre-calculated formation energy to use for the defect concentration
+                calculation, in order to reduce compute times (e.g. when looping over
+                many chemical potential / temperature / etc ranges). Only really intended
+                for internal ``doped`` usage. If ``None`` (default), will calculate the
+                formation energy using the input ``chempots``, ``limit``, ``el_refs``,
+                ``vbm`` and ``fermi_level`` arguments. (Default: None)
 
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
@@ -1135,22 +1173,24 @@ class DefectEntry(thermo.DefectEntry):
         if self.calculation_metadata.get("periodicity_breaking_supercell", False):
             warnings.warn(_orientational_degeneracy_warning)
 
-        formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
-            chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
-        )
+        if formation_energy is None:
+            formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
+                chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
+            )
 
         with np.errstate(over="ignore"):
             exp_factor = np.exp(
                 -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
             )
 
-        degeneracy_factor = (
-            reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
-        )
-        if per_site:
-            return exp_factor * degeneracy_factor
+            degeneracy_factor = (
+                reduce(lambda x, y: x * y, self.degeneracy_factors.values())
+                if self.degeneracy_factors
+                else 1
+            )
+            if per_site:
+                return exp_factor * degeneracy_factor
 
-        with np.errstate(over="ignore"):
             return self.bulk_site_concentration * degeneracy_factor * exp_factor
 
     @property
@@ -1161,7 +1201,7 @@ class DefectEntry(thermo.DefectEntry):
         V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
         oxygen atoms in SrTiO3).
         """
-        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
+        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
         return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
@@ -1190,6 +1230,45 @@ class DefectEntry(thermo.DefectEntry):
         self.name and self.sc_entry.
         """
         return self.name == other.name and self.sc_entry == other.sc_entry
+
+    @property
+    def bulk_entry_energy(self):
+        r"""
+        Get the raw energy of the bulk supercell calculation (i.e.
+        ``bulk_entry.energy``).
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if self.bulk_entry is None:
+            return None
+
+        if hasattr(self, "_bulk_entry_energy") and self._bulk_entry_hash == hash(self.bulk_entry):
+            return self._bulk_entry_energy
+
+        self._bulk_entry_hash = hash(self.bulk_entry)
+        self._bulk_entry_energy = self.bulk_entry.energy
+
+        return self._bulk_entry_energy
+
+    @property
+    def sc_entry_energy(self):
+        r"""
+        Get the raw energy of the defect supercell calculation (i.e.
+        ``sc_entry.energy``).
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if hasattr(self, "_sc_entry_energy") and self._sc_entry_hash == hash(self.sc_entry):
+            return self._sc_entry_energy
+
+        self._sc_entry_hash = hash(self.sc_entry)
+        self._sc_entry_energy = self.sc_entry.energy
+
+        return self._sc_entry_energy
 
     def plot_site_displacements(
         self,
@@ -1899,6 +1978,40 @@ class Defect(core.Defect):
             charges = [*range(oxi_state - padding, padding + 1)]
 
         return charges
+
+    @property
+    def defect_site(self) -> PeriodicSite:
+        """
+        The defect site in the structure.
+
+        Re-written from ``pymatgen-analysis-defects`` version to
+        be far more efficient, when used in loops (e.g. for calculating
+        defect concentrations as functions of chemical potentials,
+        temperature etc.).
+        """
+        if self.defect_type == core.DefectType.Interstitial:
+            return self.site  # same as self.defect_site
+
+        # else defect_site is the closest site in ``structure`` to the provided ``site``:
+        if not hasattr(self, "_defect_site"):
+            self._defect_site = super().defect_site
+
+        return self._defect_site
+
+    @property
+    def volume(self) -> float:
+        """
+        The volume (in Å³) of the structure in which the defect is created
+        (i.e. ``Defect.structure``).
+
+        Ensures volume is only computed once when calculating defect
+        concentrations in loops (e.g. for calculating defect concentrations as
+        functions of chemical potentials, temperature etc.).
+        """
+        if not hasattr(self, "_volume"):
+            self._volume = self.structure.volume
+
+        return self._volume
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
