@@ -1154,6 +1154,7 @@ class DefectThermodynamics(MSONable):
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
+        lean: bool = False,
     ) -> pd.DataFrame:
         r"""
         Compute the `equilibrium` concentrations (in cm^-3) for all
@@ -1232,6 +1233,11 @@ class DefectThermodynamics(MSONable):
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
                 strings (and keep as ``int``\s and ``float``\s instead). (default: False)
+            lean (bool):
+                Whether to return a leaner ``DataFrame`` with only the defect name, charge
+                state, and concentration in cm^-3 (assumes ``skip_formatting=True``). Only
+                really intended for internal ``doped`` usage, to reduce compute times when
+                calculating defect concentrations repeatedly. (default: False)
 
         Returns:
             ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
@@ -1241,6 +1247,7 @@ class DefectThermodynamics(MSONable):
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
+        skip_formatting = skip_formatting or lean
 
         energy_concentration_list = []
 
@@ -1260,30 +1267,44 @@ class DefectThermodynamics(MSONable):
                 vbm=self.vbm,
                 temperature=temperature,
                 per_site=per_site,
+                formation_energy=formation_energy,  # reduce compute times
             )
 
-            energy_concentration_list.append(
-                {
-                    "Defect": defect_entry.name.rsplit("_", 1)[0],  # name without charge
-                    "Raw Charge": defect_entry.charge_state,  # for sorting
-                    "Charge": (
-                        defect_entry.charge_state
-                        if skip_formatting
-                        else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-                    ),
-                    "Formation Energy (eV)": round(formation_energy, 3),
-                    "Raw Concentration": raw_concentration,
-                    (
-                        "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                    ): _format_concentration(
-                        raw_concentration, per_site=per_site, skip_formatting=skip_formatting
-                    ),
-                }
+            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
+            charge = (
+                defect_entry.charge_state
+                if skip_formatting
+                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
             )
+            if lean:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Charge": charge,
+                        "Concentration (cm^-3)": raw_concentration,
+                    }
+                )
+            else:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Raw Charge": defect_entry.charge_state,  # for sorting
+                        "Charge": charge,
+                        "Formation Energy (eV)": round(formation_energy, 3),
+                        "Raw Concentration": raw_concentration,
+                        (
+                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                        ): _format_concentration(
+                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
+                        ),
+                    }
+                )
 
         conc_df = pd.DataFrame(energy_concentration_list)
 
         if per_charge:
+            if skip_formatting:
+                return conc_df
             conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
                 "Raw Concentration"
             ].transform("sum")
@@ -1437,7 +1458,7 @@ class DefectThermodynamics(MSONable):
                 el_refs=el_refs,
                 temperature=temperature,
                 fermi_level=fermi_level,
-                skip_formatting=True,
+                lean=True,
             )
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
             qd_tot += fermi_dos.get_doping(fermi_level=fermi_level + self.vbm, temperature=temperature)
@@ -1657,10 +1678,13 @@ class DefectThermodynamics(MSONable):
                 fermi_level=annealing_fermi_level,  # type: ignore
                 temperature=annealing_temperature,
                 per_charge=False,  # give total concentrations for each defect
-                skip_formatting=True,
+                lean=True,
             )
-            annealing_defect_concentrations = annealing_defect_concentrations.rename(
-                columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"}
+            total_concentrations = dict(  # {Defect: Total Concentration (cm^-3)}
+                zip(
+                    annealing_defect_concentrations.index,  # index is Defect name, when per_charge=False
+                    annealing_defect_concentrations["Concentration (cm^-3)"],
+                )
             )
 
             def _get_constrained_concentrations(
@@ -1672,10 +1696,9 @@ class DefectThermodynamics(MSONable):
                     el_refs=el_refs,
                     temperature=quenched_temperature,
                     fermi_level=fermi_level,
-                    skip_formatting=True,
+                    lean=True,
                 )
-
-                conc_df = conc_df.merge(annealing_defect_concentrations, on="Defect")
+                conc_df["Total Concentration (cm^-3)"] = conc_df["Defect"].map(total_concentrations)
                 conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
                     conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
                     / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
@@ -1726,7 +1749,7 @@ class DefectThermodynamics(MSONable):
 
                 return conc_df
 
-            def _get_constrained_total_q(fermi_level, return_conc_df=False):
+            def _get_constrained_total_q(fermi_level):
                 conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
                 qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
                 qd_tot += fermi_dos.get_doping(
