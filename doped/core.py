@@ -171,10 +171,6 @@ class DefectEntry(thermo.DefectEntry):
                 f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
-        self._bulk_entry = self.bulk_entry  # for backwards compatibility
-        self._sc_entry = self.sc_entry  # for backwards compatibility
-        self._defect = self.defect  # for backwards compatibility
-
     def to_json(self, filename: Optional[str] = None):
         """
         Save the ``DefectEntry`` object to a json file, which can be reloaded
