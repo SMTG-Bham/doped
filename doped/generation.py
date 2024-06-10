@@ -1180,6 +1180,8 @@ class DefectsGenerator(MSONable):
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
+        # SpglibDataset warning introduced in v2.4.1, can later remove when pymatgen updated to avoid this:
+        warnings.filterwarnings("ignore", message="dict interface")
         self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
