@@ -1303,8 +1303,9 @@ class DefectThermodynamics(MSONable):
         conc_df = pd.DataFrame(energy_concentration_list)
 
         if per_charge:
-            if skip_formatting:
+            if lean:
                 return conc_df
+
             conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
                 "Raw Concentration"
             ].transform("sum")
@@ -1688,7 +1689,7 @@ class DefectThermodynamics(MSONable):
             )
 
             def _get_constrained_concentrations(
-                fermi_level, per_charge=True, per_site=False, skip_formatting=False
+                fermi_level, per_charge=True, per_site=False, skip_formatting=False, lean=True
             ):
                 conc_df = self.get_equilibrium_concentrations(
                     chempots=chempots,
@@ -1696,7 +1697,8 @@ class DefectThermodynamics(MSONable):
                     el_refs=el_refs,
                     temperature=quenched_temperature,
                     fermi_level=fermi_level,
-                    lean=True,
+                    skip_formatting=True,
+                    lean=lean,
                 )
                 conc_df["Total Concentration (cm^-3)"] = conc_df["Defect"].map(total_concentrations)
                 conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
@@ -1768,7 +1770,9 @@ class DefectThermodynamics(MSONable):
                 eq_fermi_level,
                 e_conc,
                 h_conc,
-                _get_constrained_concentrations(eq_fermi_level, per_charge, per_site, skip_formatting),
+                _get_constrained_concentrations(
+                    eq_fermi_level, per_charge, per_site, skip_formatting, lean=False
+                ),  # not lean for final output
             )
 
     def get_formation_energy(
