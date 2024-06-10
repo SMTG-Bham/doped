@@ -815,7 +815,7 @@ class DefectEntry(thermo.DefectEntry):
             if el in element_changes
         )
 
-    def get_ediff(self) -> float | None:
+    def get_ediff(self) -> float:
         """
         Get the energy difference between the defect and bulk supercell
         calculations, including finite-size corrections.
@@ -1680,6 +1680,14 @@ class Defect(core.Defect):
                 self.structure, timeout_1=5, timeout_2=5, break_early_if_expensive=True
             ):
                 self.structure = struct_w_oxi
+                if self.defect_type != core.DefectType.Interstitial:
+                    self._defect_site = min(
+                        self.structure.get_sites_in_sphere(
+                            self.site.coords,
+                            0.5,
+                        ),
+                        key=lambda x: x[1],
+                    )
             else:
                 self.oxi_state = "Undetermined"
                 return
@@ -1990,7 +1998,13 @@ class Defect(core.Defect):
 
         # else defect_site is the closest site in ``structure`` to the provided ``site``:
         if not hasattr(self, "_defect_site"):
-            self._defect_site = super().defect_site
+            self._defect_site = min(
+                self.structure.get_sites_in_sphere(
+                    self.site.coords,
+                    0.5,
+                ),
+                key=lambda x: x[1],
+            )
 
         return self._defect_site
 
