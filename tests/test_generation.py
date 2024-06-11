@@ -6,7 +6,6 @@ Implicitly tests the `doped.utils.symmetry` module as well.
 
 import copy
 import filecmp
-import json
 import operator
 import os
 import random
@@ -21,7 +20,6 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
-from monty.json import MontyEncoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
@@ -60,6 +58,48 @@ def _potcars_available() -> bool:
         return True
     except ValueError:
         return False
+
+
+def _compare_attributes(obj1, obj2, exclude=None):
+    """
+    Check that two objects are equal by comparing their public
+    attributes/properties.
+    """
+    if exclude is None:
+        exclude = set()  # Create an empty set if no exclusions
+
+    for attr in dir(obj1):
+        if attr.startswith("_") or attr in exclude or callable(getattr(obj1, attr)):
+            continue  # Skip private, excluded, and callable attributes
+
+        print(attr)
+        val1 = getattr(obj1, attr)
+        val2 = getattr(obj2, attr)
+
+        if isinstance(val1, np.ndarray):
+            assert np.allclose(val1, val2)
+        elif attr == "prim_interstitial_coords":
+            _compare_prim_interstitial_coords(val1, val2)
+        elif attr == "defects" and any(len(i.defect_structure) == 0 for i in val1["vacancies"]):
+            continue  # StructureMatcher comparison breaks for empty structures, which we can have with
+            # our 1-atom primitive Cu input
+        elif isinstance(val1, (list, tuple)) and all(isinstance(i, np.ndarray) for i in val1):
+            assert all(np.array_equal(i, j) for i, j in zip(val1, val2)), "List of arrays do not match"
+        else:
+            assert val1 == val2
+
+
+def _compare_prim_interstitial_coords(result, expected):  # check attribute set
+    if result is None:
+        assert expected is None
+        return
+
+    assert len(result) == len(expected), "Lengths do not match"
+
+    for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected):
+        assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
+        assert r_num == e_num, "Number of coordinates do not match"
+        assert all(np.array_equal(r, e) for r, e in zip(r_list, e_list)), "List of arrays do not match"
 
 
 class DefectsGeneratorTest(unittest.TestCase):
@@ -667,7 +707,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         if_present_rm("test.json")
         if_present_rm("test_defect_gen.json")
 
-    def _load_and_test_defect_gen_jsons(self, defect_gen):  # , gen_check): - shouldn't need this as we
+    def _load_and_test_defect_gen_jsons(self, defect_gen):
         # test that the jsons are identical (except for ordering)
         formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
@@ -683,9 +723,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         # test it's the same as the original:
         # here we compare using json dumps because the ordering can change slightly when saving to json
-        assert json.dumps(defect_gen_from_json, sort_keys=True, cls=MontyEncoder) == json.dumps(
-            defect_gen, sort_keys=True, cls=MontyEncoder
-        )
+        _compare_attributes(defect_gen, defect_gen_from_json)
         if_present_rm("test.json")
         if_present_rm("test_loadfn.json")
         if_present_rm(default_json_filename)
@@ -1435,18 +1473,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
             (np.array([0.5, 0.5, 0.5]), 1, [np.array([0.5, 0.5, 0.5])]),
         ]
-
-        def _test_prim_interstitial_coords(result, expected):  # check attribute set
-            assert len(result) == len(expected), "Lengths do not match"
-
-            for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected):
-                assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
-                assert r_num == e_num, "Number of coordinates do not match"
-                assert all(
-                    np.array_equal(r, e) for r, e in zip(r_list, e_list)
-                ), "List of arrays do not match"
-
-        _test_prim_interstitial_coords(CdTe_defect_gen.prim_interstitial_coords, expected)
+        _compare_prim_interstitial_coords(CdTe_defect_gen.prim_interstitial_coords, expected)
 
         # defect_gen_check changes defect_entries ordering, so save to json first:
         self._save_defect_gen_jsons(CdTe_defect_gen)
@@ -1457,7 +1484,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             self.prim_cdte, interstitial_coords=[[0.5, 0.5, 0.5]], extrinsic={"Te": ["Se", "S"]}
         )
         assert CdTe_defect_gen.interstitial_coords == [[0.5, 0.5, 0.5]]  # check attribute set
-        _test_prim_interstitial_coords(
+        _compare_prim_interstitial_coords(
             CdTe_defect_gen.prim_interstitial_coords,
             [(np.array([0.5, 0.5, 0.5]), 1, [np.array([0.5, 0.5, 0.5])])],  # check attribute set
         )
@@ -1498,7 +1525,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
         assert ytos_defect_gen.interstitial_coords == ytos_interstitial_coords  # check attribute set
-        _test_prim_interstitial_coords(
+        _compare_prim_interstitial_coords(
             ytos_defect_gen.prim_interstitial_coords,
             [
                 (
@@ -1545,7 +1572,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert (
             CdTe_defect_gen.interstitial_coords == CdTe_supercell_interstitial_coords
         )  # check attribute set
-        _test_prim_interstitial_coords(
+        _compare_prim_interstitial_coords(
             CdTe_defect_gen.prim_interstitial_coords,
             [
                 (
@@ -2016,7 +2043,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             for warning in w
             if ("`calculation_metadata` attribute is not set") not in str(warning.message)
         ]
-        assert len(non_ignored_warnings) == 0  # no warnings for CdTe, scalar matrix
+        assert not non_ignored_warnings  # no warnings for CdTe, scalar matrix
 
     def test_defects_generator_CdTe_supercell_input(self):
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.CdTe_bulk_supercell)
@@ -3246,10 +3273,10 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
             self.sqs_agsbte2, generate_supercell=False
         )
         # same output regardless of `generate_supercell` because input supercell satisfies constraints
+        with pytest.raises(AssertionError):
+            _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         agsbte2_defect_gen_a.generate_supercell = False  # adjust one difference to make equal overall
-        assert json.dumps(agsbte2_defect_gen_a, sort_keys=True, cls=MontyEncoder) == json.dumps(
-            agsbte2_defect_gen_b, sort_keys=True, cls=MontyEncoder
-        )
+        _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
             np.array([[3.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),

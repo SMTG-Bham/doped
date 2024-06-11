@@ -1,6 +1,14 @@
 Change Log
 ==========
 
+v.2.4.6
+----------
+- Update ``Defect``, ``DefectEntry`` and ``DefectThermodynamics`` properties/methods to be even more
+  efficient with calculations of formation energies and concentrations. Gives ~10x speedup in Fermi
+  solving and concentration calculations (e.g. from 2 hours to 12 minutes for 2D chempot vs temp CdTe grid
+  in thermodynamics tutorial).
+- Avoid unnecessary ``DeprecationWarning``s from latest ``spglib`` release.
+
 v.2.4.5
 ----------
 - Enforce ``shakenbreak>=2.3.4`` requirement.
