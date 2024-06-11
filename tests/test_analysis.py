@@ -2127,7 +2127,9 @@ class DopedParsingTestCase(unittest.TestCase):
         # test symmetry determination (periodicity breaking does not affect F_i):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
+            warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
             relaxed_defect_name = get_defect_name_from_entry(int_F_minus1_ent)
+            print([warn.message for warn in w])  # for debugging
             assert not w  # this supercell is not periodicity breaking
         assert relaxed_defect_name == "F_i_C4v_O2.67"
         assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.67"
@@ -2243,7 +2245,9 @@ class DopedParsingTestCase(unittest.TestCase):
         # test symmetry determination (no warning here because periodicity breaking doesn't affect F_O):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
+            warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
             relaxed_defect_name = get_defect_name_from_entry(F_O_1_ent)
+            print([warn.message for warn in w])  # for debugging
             assert len(w) == 0
         assert relaxed_defect_name == "F_O_D4h_Ti1.79"
         assert get_defect_name_from_entry(F_O_1_ent, relaxed=False) == "F_O_D4h_Ti1.79"
