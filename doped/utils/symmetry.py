@@ -26,6 +26,8 @@ from doped.utils.parsing import (
     _get_unrelaxed_defect_structure,
 )
 
+warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
+
 
 def _set_spglib_warnings_env_var():
     """
@@ -1083,6 +1085,7 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Returns:
         str: Defect point symmetry.
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )

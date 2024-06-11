@@ -907,6 +907,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
 
         with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
             dp = DefectsParser("V2O5_test", dielectric=[4.186, 19.33, 17.49])
         print([str(warning.message) for warning in w])  # for debugging
         assert not w  # no warnings
