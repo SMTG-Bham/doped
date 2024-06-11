@@ -83,6 +83,8 @@ def _compare_attributes(obj1, obj2, exclude=None):
         elif attr == "defects" and any(len(i.defect_structure) == 0 for i in val1["vacancies"]):
             continue  # StructureMatcher comparison breaks for empty structures, which we can have with
             # our 1-atom primitive Cu input
+        elif isinstance(val1, (list, tuple)) and all(isinstance(i, np.ndarray) for i in val1):
+            assert all(np.array_equal(i, j) for i, j in zip(val1, val2)), "List of arrays do not match"
         else:
             assert val1 == val2
 

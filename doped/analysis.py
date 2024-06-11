@@ -217,6 +217,7 @@ def defect_from_structures(
             Dictionary of bulk supercell Voronoi node information, for
             further expedited site-matching.
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     try:
         def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
     except RuntimeError as exc:

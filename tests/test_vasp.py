@@ -4,7 +4,6 @@ Tests for the `doped.vasp` module.
 
 import contextlib
 import filecmp
-import json
 import locale
 import os
 import random
@@ -15,12 +14,11 @@ from threading import Thread
 import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
-from monty.json import MontyEncoder
 from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
-from test_generation import if_present_rm
+from test_generation import _compare_attributes, if_present_rm
 
 from doped.generation import DefectsGenerator
 from doped.vasp import (
@@ -1597,9 +1595,7 @@ class DefectsSetTest(unittest.TestCase):
                 reloaded_defect_entry.sc_defect_frac_coords,
                 ref_defect_entry.sc_defect_frac_coords,
             )
-            assert json.dumps(reloaded_defect_entry, sort_keys=True, cls=MontyEncoder) == json.dumps(
-                ref_defect_entry, sort_keys=True, cls=MontyEncoder
-            )
+            _compare_attributes(reloaded_defect_entry, ref_defect_entry)
 
         _check_reloaded_defect_entry("Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
 
