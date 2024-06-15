@@ -3080,25 +3080,27 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
     """
     # code for obtaining the electron and hole concentrations here is taken from
-    # FermiDos.get_doping():
+    # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
+    # correct DOS integral) and better handle exponential overflows
+    idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
     e_conc: float = np.sum(
-        fermi_dos.tdos[fermi_dos.idx_cbm :]
+        fermi_dos.tdos[idx_mid_gap:]
         * f0(
-            fermi_dos.energies[fermi_dos.idx_cbm :],
+            fermi_dos.energies[idx_mid_gap:],
             fermi_level,  # type: ignore
             temperature,
         )
-        * fermi_dos.de[fermi_dos.idx_cbm :],
+        * fermi_dos.de[idx_mid_gap:],
         axis=0,
     ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
     h_conc: float = np.sum(
-        fermi_dos.tdos[: fermi_dos.idx_vbm + 1]
+        fermi_dos.tdos[: idx_mid_gap + 1]
         * f0(
-            -fermi_dos.energies[: fermi_dos.idx_vbm + 1],
+            -fermi_dos.energies[: idx_mid_gap + 1],
             -fermi_level,  # type: ignore
             temperature,
         )
-        * fermi_dos.de[: fermi_dos.idx_vbm + 1],
+        * fermi_dos.de[: idx_mid_gap + 1],
         axis=0,
     ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
