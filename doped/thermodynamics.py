@@ -1347,46 +1347,54 @@ class DefectThermodynamics(MSONable):
             conc_df, per_site=per_site, skip_formatting=skip_formatting
         )
 
-    def _parse_fermi_dos(self, bulk_dos_vr: Union[str, Vasprun, FermiDos]):
-        if isinstance(bulk_dos_vr, FermiDos):
-            fdos = bulk_dos_vr
+    def _parse_fermi_dos(
+        self, bulk_dos: Union[str, Vasprun, FermiDos], skip_check: bool = False
+    ) -> FermiDos:
+        if isinstance(bulk_dos, FermiDos):
+            fdos = bulk_dos
             # most similar settings to Vasprun.eigenvalue_band_properties:
-            fdos_vbm = fdos.get_cbm_vbm(tol=1e-8, abs_tol=True)[1]
-            fdos_band_gap = fdos.get_gap(tol=1e-8, abs_tol=True)
+            fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
+            fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
-        if isinstance(bulk_dos_vr, str):
-            if hasattr(self, "_fermi_dos_hash") and calculate_md5(bulk_dos_vr) == self._fermi_dos_hash:
+        if isinstance(bulk_dos, str):
+            if hasattr(self, "_fermi_dos_hash") and calculate_md5(bulk_dos) == self._fermi_dos_hash:
                 return self.fermi_dos  # already parsed, don't waste time re-parsing, & no need to re-warn
 
-            bulk_dos_vr = get_vasprun(bulk_dos_vr, parse_dos=True)
+            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)
 
-        if isinstance(bulk_dos_vr, Vasprun):  # either supplied Vasprun or parsed from string there
-            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos_vr.eigenvalue_band_properties
-            fdos = FermiDos(bulk_dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(bulk_dos_vr))
+        if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
+            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
+            fdos = get_fermi_dos(bulk_dos)
 
-        if abs(fdos_vbm - self.vbm) > 0.1:
+        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_check:
             warnings.warn(
-                f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, with band "
-                f"gap of {fdos_band_gap:.2f} eV) differs from that of the bulk supercell "
-                f"calculations ({self.vbm:.2f} eV, with band gap of {self.band_gap:.2f} eV) by more "
-                f"than 0.1 eV. If this is only due to slight differences in kpoint sampling for the "
-                f"bulk DOS vs defect supercell calculations, and consistent functional settings "
-                f"(LHFCALC, AEXX etc) were used, then the eigenvalue references should be consistent "
-                f"and this warning can be ignored. If not, then this could lead to inaccuracies in "
-                f"the predicted Fermi level. Note that the Fermi level will be referenced to "
-                f"DefectThermodynamics.vbm, which corresponds to the VBM of the bulk supercell "
-                f"calculation by default (unless `bulk_band_gap_vr` set during defect parsing)!"
+                f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
+                f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
+                f"({self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the bulk "
+                f"supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
+                f"parsing). If this is only due to differences in kpoint sampling for the bulk DOS vs "
+                f"supercell calculations, then you should use the `bulk_band_gap_vr` option during "
+                f"defect parsing to set the bulk band gap and VBM eigenvalue "
+                f"(`DefectThermodynamics.gap/vbm`) to the correct values (though the absolute values of "
+                f"predictions should not be affected as the eigenvalue references in the calculations "
+                f"are consistent, just the reported Fermi levels will be referenced to "
+                f"`DefectThermodynamics.vbm` which may not be the exact VBM position here).\n"
+                f"Otherwise if this is due to changes in functional settings (LHFCALC, AEXX etc), then "
+                f"the calculations should be redone with consistent settings to ensure accurate "
+                f"predictions.\n"
+                f"Note that the Fermi level will be always referenced to `DefectThermodynamics.vbm`!"
             )
         return fdos
 
     def get_equilibrium_fermi_level(
         self,
-        bulk_dos_vr: Optional[Union[str, Vasprun, FermiDos]] = None,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, str]] = None,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
         temperature: float = 300,
         return_concs: bool = False,
+        skip_check: bool = False,
     ) -> Union[float, tuple[float, float, float]]:
         r"""
         Calculate the self-consistent Fermi level, at a given chemical
@@ -1410,10 +1418,6 @@ class DefectThermodynamics(MSONable):
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
-        Note: For dense k-point DOS calculations, loading the ``vasprun.xml(.gz)``
-        file can be the most time-consuming part of this function, but then the
-        corresponding ``FermiDos`` object is saved to ``self.fermi_dos``, reducing
-        any subsequent Fermi level / doping calculations.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
@@ -1423,19 +1427,22 @@ class DefectThermodynamics(MSONable):
         ``defect_entry.degeneracy_factors`` attributes.
 
         Args:
-            bulk_dos_vr (str or Vasprun or FermiDos):
-                Path to the ``vasprun.xml(.gz)`` output of a bulk electronic density of
-                states (DOS) calculation, or the corresponding ``pymatgen`` ``Vasprun``
-                object. Usually this is a static calculation with the `primitive` cell
-                of the bulk material, with relatively dense `k`-point sampling (especially
-                for materials with disperse band edges) to ensure an accurately-converged
-                DOS and thus Fermi level. ``ISMEAR = -5`` (tetrahedron smearing) is
-                usually recommended for best convergence wrt `k`-point sampling. Consistent
-                functional settings should be used for the bulk DOS and defect supercell
-                calculations. Alternatively, a ``pymatgen`` ``FermiDos`` object can be
-                supplied directly (e.g. in case you are using a DFT code other than VASP).
+            bulk_dos (FermiDos or Vasprun or str):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
+                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
+                calculation in VASP -- however this will be much slower when looping over many
+                conditions as it will re-parse the DOS each time! (So preferably use
+                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
 
-                ``bulk_dos_vr`` can also be left as ``None`` (default), if it has previously
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+
+                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.fermi_dos`` attribute.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
@@ -1482,18 +1489,22 @@ class DefectThermodynamics(MSONable):
             return_concs (bool):
                 Whether to return the corresponding electron and hole concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
+            skip_check (bool):
+                Whether to skip the warning about the DOS VBM differing from ``self.vbm``
+                by >0.05 eV. Should only be used when the reason for this difference is
+                known/acceptable. (default: False)
 
         Returns:
             Self consistent Fermi level (in eV from the VBM (``self.vbm``)), and the
             corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
         """
-        if bulk_dos_vr is not None:
-            self.fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
-            if isinstance(bulk_dos_vr, str):
-                self._fermi_dos_hash = calculate_md5(bulk_dos_vr)  # to avoid re-parsing unnecessarily
+        if bulk_dos is not None:
+            self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
+            if isinstance(bulk_dos, str):
+                self._fermi_dos_hash = calculate_md5(bulk_dos)  # to avoid re-parsing unnecessarily
         elif not hasattr(self, "fermi_dos"):
             raise ValueError(
-                "No bulk DOS calculation (`bulk_dos_vr`) provided or previously parsed to "
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
                 "`DefectThermodynamics.fermi_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
@@ -1535,7 +1546,7 @@ class DefectThermodynamics(MSONable):
 
     def get_quenched_fermi_level_and_concentrations(
         self,
-        bulk_dos_vr: Optional[Union[str, Vasprun, FermiDos]] = None,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, str]] = None,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
@@ -1545,8 +1556,12 @@ class DefectThermodynamics(MSONable):
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
+        return_annealing_values: bool = False,
         **kwargs,
-    ) -> tuple[float, float, float, pd.DataFrame]:
+    ) -> Union[
+        tuple[float, float, float, pd.DataFrame],
+        tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame],
+    ]:
         r"""
         Calculate the self-consistent Fermi level and corresponding
         carrier/defect calculations, for a given chemical potential limit,
@@ -1582,10 +1597,6 @@ class DefectThermodynamics(MSONable):
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
-        Note: For dense k-point DOS calculations, loading the ``vasprun.xml(.gz)``
-        file can be the most time-consuming part of this function, but then the
-        corresponding ``FermiDos`` object is saved to ``self.fermi_dos``, reducing
-        any subsequent Fermi level / doping calculations.
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation and thus Fermi level calculation (see discussion in
@@ -1599,19 +1610,22 @@ class DefectThermodynamics(MSONable):
         https://doi.org/10.21105/joss.04962
 
         Args:
-            bulk_dos_vr (str or Vasprun or FermiDos):
-                Path to the ``vasprun.xml(.gz)`` output of a bulk electronic density of
-                states (DOS) calculation, or the corresponding ``pymatgen`` ``Vasprun``
-                object. Usually this is a static calculation with the `primitive` cell
-                of the bulk material, with relatively dense `k`-point sampling (especially
-                for materials with disperse band edges) to ensure an accurately-converged
-                DOS and thus Fermi level. ``ISMEAR = -5`` (tetrahedron smearing) is
-                usually recommended for best convergence wrt `k`-point sampling. Consistent
-                functional settings should be used for the bulk DOS and defect supercell
-                calculations. Alternatively, a ``pymatgen`` ``FermiDos`` object can be
-                supplied directly (e.g. in case you are using a DFT code other than VASP).
+            bulk_dos (FermiDos or Vasprun or str):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
+                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
+                calculation in VASP -- however this will be much slower when looping over many
+                conditions as it will re-parse the DOS each time! (So preferably use
+                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
 
-                ``bulk_dos_vr`` can also be left as ``None`` (default), if it has previously
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+
+                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.fermi_dos`` attribute.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
@@ -1660,16 +1674,18 @@ class DefectThermodynamics(MSONable):
                 defect approach. Default is 1000 K.
             quenched_temperature (float):
                 Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level, given the fixed total
-                concentrations, which should correspond to operating temperature
-                of the material (typically room temperature). Default is 300 K.
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
             delta_gap (float):
                 Change in band gap (in eV) of the host material at the annealing
                 temperature (e.g. due to thermal renormalisation), relative to the
-                original band gap of the FermiDos object. If set, applies a scissor
-                correction to ``fermi_dos`` which renormalises the band gap symmetrically
-                about the VBM and CBM (i.e. assuming equal up/downshifts of the band-edges
-                around their original eigenvalues) while the defect levels remain fixed.
+                original band gap of the ``FermiDos`` object (assumed to correspond to the
+                quenching temperature). If set, applies a scissor correction to ``fermi_dos``
+                which renormalises the band gap symmetrically about the VBM and CBM (i.e.
+                assuming equal up/downshifts of the band-edges around their original
+                eigenvalues) while the defect levels remain fixed.
                 (Default: 0)
             per_charge (bool):
                 Whether to break down the defect concentrations into individual defect charge
@@ -1681,30 +1697,39 @@ class DefectThermodynamics(MSONable):
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
                 strings (and keep as ``int``\s and ``float``\s instead). (default: False)
+            return_annealing_values (bool):
+                If True, also returns the Fermi level, electron and hole concentrations and
+                defect concentrations at the annealing temperature. (default: False)
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
-                is not 0).
+                is not 0) or ``_parse_fermi_dos`` (``skip_check``; to skip the warning about
+                the DOS VBM differing from ``self.vbm`` by >0.05 eV; default is False).
 
         Returns:
             Predicted quenched Fermi level (in eV from the VBM (``self.vbm``)), the
             corresponding electron and hole concentrations (in cm^-3) and a dataframe of the
-            quenched defect concentrations (in cm^-3); ``(fermi_level, e_conc, h_conc, conc_df)``
+            quenched defect concentrations (in cm^-3); ``(fermi_level, e_conc, h_conc, conc_df)``.
+            If ``return_annealing_values=True``, also returns the annealing Fermi level, electron
+            and hole concentrations and a dataframe of the annealing defect concentrations (in cm^-3);
+            ``(fermi_level, e_conc, h_conc, conc_df, annealing_fermi_level, annealing_e_conc,
+            annealing_h_conc, annealing_conc_df)``.
         """
-        if kwargs and any(i not in ["verbose", "tol"] for i in kwargs):
-            raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
-
         # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
         #  advanced analysis
-        if bulk_dos_vr is not None:
-            self.fermi_dos = self._parse_fermi_dos(bulk_dos_vr)
-            if isinstance(bulk_dos_vr, str):
-                self._fermi_dos_hash = calculate_md5(bulk_dos_vr)  # to avoid re-parsing unnecessarily
+        if kwargs and any(i not in ["verbose", "tol", "skip_check"] for i in kwargs):
+            raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
+
+        if bulk_dos is not None:
+            self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
+            if isinstance(bulk_dos, str):
+                self._fermi_dos_hash = calculate_md5(bulk_dos)  # to avoid re-parsing unnecessarily
         elif not hasattr(self, "fermi_dos"):
             raise ValueError(
-                "No bulk DOS calculation (`bulk_dos_vr`) provided or previously parsed to "
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
                 "`DefectThermodynamics.fermi_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
+        orig_fermi_dos = deepcopy(self.fermi_dos)  # can get modified during annealing loops
 
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
@@ -1735,7 +1760,10 @@ class DefectThermodynamics(MSONable):
                 el_refs=el_refs,
                 temperature=annealing_temperature,
                 return_concs=False,
+                skip_check=kwargs.get("skip_check", delta_gap != 0),  # skip check by default if delta
+                # gap not 0
             )
+            assert not isinstance(annealing_fermi_level, tuple)  # should be single value
             annealing_defect_concentrations = self.get_equilibrium_concentrations(
                 chempots=chempots,
                 limit=limit,
@@ -1818,7 +1846,7 @@ class DefectThermodynamics(MSONable):
             def _get_constrained_total_q(fermi_level):
                 conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
                 qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-                qd_tot += self.fermi_dos.get_doping(
+                qd_tot += orig_fermi_dos.get_doping(  # use orig fermi dos for quenched temperature
                     fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
                 )
                 return qd_tot
@@ -1827,16 +1855,37 @@ class DefectThermodynamics(MSONable):
                 _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
             )
             e_conc, h_conc = get_e_h_concs(
-                self.fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
+                orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
             )
+            conc_df = _get_constrained_concentrations(
+                eq_fermi_level, per_charge, per_site, skip_formatting, lean=False
+            )  # not lean for final output
 
+            if not return_annealing_values:
+                return (eq_fermi_level, e_conc, h_conc, conc_df)
+
+            annealing_e_conc, annealing_h_conc = get_e_h_concs(
+                annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature  # type: ignore
+            )
+            annealing_defect_concentrations = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=annealing_fermi_level,  # type: ignore
+                temperature=annealing_temperature,
+                per_charge=per_charge,
+                per_site=per_site,
+                skip_formatting=skip_formatting,
+            )
             return (
                 eq_fermi_level,
                 e_conc,
                 h_conc,
-                _get_constrained_concentrations(
-                    eq_fermi_level, per_charge, per_site, skip_formatting, lean=False
-                ),  # not lean for final output
+                conc_df,
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+                annealing_defect_concentrations,
             )
 
     def get_formation_energy(
@@ -3086,6 +3135,18 @@ def _format_per_site_concentration(raw_concentration):
     if raw_concentration > 1e-5:
         return f"{raw_concentration:.3%}"
     return f"{raw_concentration * 100:.3e} %"
+
+
+def get_fermi_dos(dos_vr: Union[str, Vasprun]):
+    """
+    Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
+    eiether a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
+    ``Vasprun`` object (parsed with ``parse_dos = True``).
+    """
+    if not isinstance(dos_vr, Vasprun):
+        dos_vr = get_vasprun(dos_vr, parse_dos=True)
+
+    return FermiDos(dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(dos_vr))
 
 
 def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> tuple[float, float]:
