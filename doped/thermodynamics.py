@@ -1357,10 +1357,7 @@ class DefectThermodynamics(MSONable):
             fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
         if isinstance(bulk_dos, str):
-            if hasattr(self, "_fermi_dos_hash") and calculate_md5(bulk_dos) == self._fermi_dos_hash:
-                return self.fermi_dos  # already parsed, don't waste time re-parsing, & no need to re-warn
-
-            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)
+            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
 
         if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
             fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
@@ -1500,8 +1497,6 @@ class DefectThermodynamics(MSONable):
         """
         if bulk_dos is not None:
             self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
-            if isinstance(bulk_dos, str):
-                self._fermi_dos_hash = calculate_md5(bulk_dos)  # to avoid re-parsing unnecessarily
         elif not hasattr(self, "fermi_dos"):
             raise ValueError(
                 "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
@@ -1721,8 +1716,6 @@ class DefectThermodynamics(MSONable):
 
         if bulk_dos is not None:
             self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
-            if isinstance(bulk_dos, str):
-                self._fermi_dos_hash = calculate_md5(bulk_dos)  # to avoid re-parsing unnecessarily
         elif not hasattr(self, "fermi_dos"):
             raise ValueError(
                 "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
@@ -1767,6 +1760,8 @@ class DefectThermodynamics(MSONable):
                 # gap not 0
             )
             assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
+            self.fermi_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
+
             annealing_defect_concentrations = self.get_equilibrium_concentrations(
                 chempots=chempots,
                 limit=limit,
