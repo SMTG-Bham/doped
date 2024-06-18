@@ -595,7 +595,10 @@ class DefectsParser:
         self.error_tolerance = error_tolerance
         self.bulk_path = bulk_path
         self.subfolder = subfolder
-        self.bulk_band_gap_vr = bulk_band_gap_vr
+        if bulk_band_gap_vr and not isinstance(bulk_band_gap_vr, Vasprun):
+            self.bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
+        else:
+            self.bulk_band_gap_vr = bulk_band_gap_vr
         self.processes = processes
         self.json_filename = json_filename
         self.parse_projected_eigen = parse_projected_eigen

@@ -20,7 +20,7 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 
 from doped.generation import _sort_defect_entries
-from doped.thermodynamics import DefectThermodynamics, scissor_dos
+from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
 from doped.utils.parsing import get_vasprun
 from doped.utils.symmetry import _get_sga, point_symmetry
 
@@ -321,13 +321,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
-        with pytest.raises(TypeError) as exc:
+        with pytest.raises(ValueError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
-        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.value)
+        assert "No bulk DOS calculation (`bulk_dos`) provided" in str(exc.value)
 
-        with pytest.raises(TypeError) as exc:
+        with pytest.raises(ValueError) as exc:
             defect_thermo.get_quenched_fermi_level_and_concentrations()
-        assert "missing 1 required positional argument: 'bulk_dos_vr'" in str(exc.value)
+        assert "No bulk DOS calculation (`bulk_dos`) provided" in str(exc.value)
 
         if defect_thermo.chempots is None:
             with pytest.raises(ValueError) as exc:
@@ -1956,10 +1956,11 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         cls.defect_thermo = DefectThermodynamics(cls.defect_dict)
         cls.defect_thermo.chempots = cls.CdTe_chempots
 
-        cls.fermi_dos = loadfn(
-            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_fermi_dos.json")
+        cls.fermi_dos = get_fermi_dos(
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         )
         cls.anneal_temperatures = np.arange(200, 1401, 50)
+        cls.reduced_anneal_temperatures = np.arange(200, 1401, 100)  # for quicker testing
 
         cls.annealing_dict = {}
 
@@ -2012,6 +2013,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         )
         quenched_fermi_levels = np.array([v["fermi_level"] for k, v in self.annealing_dict.items()])
         assert np.isclose(np.mean(self.anneal_temperatures[12:16]), 875)
+        # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
         assert np.isclose(np.mean(quenched_fermi_levels[12:16]), 0.318674, atol=1e-3)
 
         ax.plot(
@@ -2094,10 +2096,10 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         """
         k10_dos_vr_path = os.path.join(self.module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
 
-        for i, bulk_dos_vr in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
+        for i, bulk_dos in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
             print(f"Testing k10 DOS with thermo for {'str input' if i == 0 else 'DOS object input'}")
             quenched_fermi_levels = []
-            for anneal_temp in self.anneal_temperatures:
+            for anneal_temp in self.reduced_anneal_temperatures:
                 gap_shift = belas_linear_fit(anneal_temp) - 1.5
                 (
                     fermi_level,
@@ -2106,15 +2108,16 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                     conc_df,
                 ) = self.defect_thermo.get_quenched_fermi_level_and_concentrations(
                     # quenching to 300K (default)
-                    bulk_dos_vr=bulk_dos_vr,
+                    bulk_dos=bulk_dos,
                     limit="Te-rich",
                     annealing_temperature=anneal_temp,
                     delta_gap=gap_shift,
                 )
                 quenched_fermi_levels += [fermi_level]
 
-            # (approx) same result as with k181818 NKRED=2 (0.319104 eV with this dos)
-            assert np.isclose(np.mean(quenched_fermi_levels[12:16]), 0.318674, atol=1e-3)
+            # (approx) same result as with k181818 NKRED=2 (0.31825 eV with this DOS)
+            # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
+            assert np.isclose(np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3)
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations.png")
     def test_calculated_concentrations(self):

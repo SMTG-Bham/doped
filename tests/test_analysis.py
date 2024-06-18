@@ -29,6 +29,7 @@ from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
+    Vasprun,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
     get_orientational_degeneracy,
@@ -223,7 +224,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.error_tolerance == 0.05
             assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
-            assert CdTe_dp.bulk_band_gap_path is None
+            assert CdTe_dp.bulk_band_gap_vr is None
 
         self._check_DefectsParser(CdTe_dp)
         assert (
@@ -446,7 +447,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=[9.13, 9.13, 9.13],
                 error_tolerance=0.01,
                 skip_corrections=False,
-                bulk_band_gap_path=self.CdTe_BULK_DATA_DIR,
+                bulk_band_gap_vr=f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml",
                 processes=4,
                 json_filename="test_pop.json",
             )
@@ -476,7 +477,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
         assert dp.dielectric == [9.13, 9.13, 9.13]
         assert dp.error_tolerance == 0.01
-        assert dp.bulk_band_gap_path == self.CdTe_BULK_DATA_DIR
+        assert isinstance(dp.bulk_band_gap_vr, Vasprun)
         assert dp.processes == 4
         assert dp.json_filename == "test_pop.json"
 
@@ -1058,7 +1059,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test get_quenched_fermi_level_and_concentrations
         fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
-            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_charge=False,
         )
@@ -1072,7 +1073,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert conc_df.index.name == "Defect"
 
         fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
-            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             skip_formatting=True,
         )
@@ -1091,7 +1092,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert list(conc_df.iloc[i]) == row
 
         fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
-            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,
         )
@@ -1110,7 +1111,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert list(conc_df.iloc[i]) == row
 
         fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
-            bulk_dos_vr=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
+            bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,
             per_charge=False,
