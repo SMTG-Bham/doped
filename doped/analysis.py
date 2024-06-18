@@ -1175,7 +1175,8 @@ class DefectsParser:
         pbar.update()
 
         if result[0] is not None:
-            defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
+            i = -1 if self.subfolder == "." else -2
+            defect_folder = result[0].calculation_metadata["defect_path"].replace("/.", "").split("/")[i]
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
