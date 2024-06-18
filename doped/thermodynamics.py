@@ -1750,6 +1750,9 @@ class DefectThermodynamics(MSONable):
         )
 
         with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from
+            # FermiDos.get_doping, can remove in future versions following SK's fix in
+            # https://github.com/materialsproject/pymatgen/pull/3879
             warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
             # as given once above
 
@@ -1763,7 +1766,7 @@ class DefectThermodynamics(MSONable):
                 skip_check=kwargs.get("skip_check", delta_gap != 0),  # skip check by default if delta
                 # gap not 0
             )
-            assert not isinstance(annealing_fermi_level, tuple)  # should be single value
+            assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
             annealing_defect_concentrations = self.get_equilibrium_concentrations(
                 chempots=chempots,
                 limit=limit,
@@ -3159,30 +3162,33 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     level should be the corresponding eigenvalue within the calculation (or in
     other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
     """
-    # code for obtaining the electron and hole concentrations here is taken from
-    # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
-    # correct DOS integral) and better handle exponential overflows
-    idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
-    e_conc: float = np.sum(
-        fermi_dos.tdos[idx_mid_gap:]
-        * f0(
-            fermi_dos.energies[idx_mid_gap:],
-            fermi_level,  # type: ignore
-            temperature,
-        )
-        * fermi_dos.de[idx_mid_gap:],
-        axis=0,
-    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-    h_conc: float = np.sum(
-        fermi_dos.tdos[: idx_mid_gap + 1]
-        * f0(
-            -fermi_dos.energies[: idx_mid_gap + 1],
-            -fermi_level,  # type: ignore
-            temperature,
-        )
-        * fermi_dos.de[: idx_mid_gap + 1],
-        axis=0,
-    ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from f0, can remove in
+        # future versions following SK's fix in https://github.com/materialsproject/pymatgen/pull/3879
+        # code for obtaining the electron and hole concentrations here is taken from
+        # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
+        # correct DOS integral) and better handle exponential overflows (by editing `f0` in `pymatgen`)
+        idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
+        e_conc: float = np.sum(
+            fermi_dos.tdos[idx_mid_gap:]
+            * f0(
+                fermi_dos.energies[idx_mid_gap:],
+                fermi_level,  # type: ignore
+                temperature,
+            )
+            * fermi_dos.de[idx_mid_gap:],
+            axis=0,
+        ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
+        h_conc: float = np.sum(
+            fermi_dos.tdos[: idx_mid_gap + 1]
+            * f0(
+                -fermi_dos.energies[: idx_mid_gap + 1],
+                -fermi_level,  # type: ignore
+                temperature,
+            )
+            * fermi_dos.de[: idx_mid_gap + 1],
+            axis=0,
+        ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
     return e_conc, h_conc
 
