@@ -1285,7 +1285,6 @@ class DefectsGenerator(MSONable):
                         f"using input structure as defect & bulk supercells. Caution advised!"
                     )
 
-                # else input structure is greater than ``min_image_distance`` Å in each direction, and
                 # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
                 # doped supercell, so use input structure:
 
