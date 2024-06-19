@@ -1382,7 +1382,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(row)[7] == list(te_rich_df.iloc[i])[7]
             assert list(row)[8] != list(te_rich_df.iloc[i])[8]
             assert list(row)[9] == list(te_rich_df.iloc[i])[9]
-            _check_formation_energy_methods(row, manual_thermo, 3)
+            _check_formation_energy_methods(list(row), manual_thermo, 3)
 
         assert list(manual_form_en_df.iloc[2])[:-1] == [
             "v_Cd",
@@ -1923,8 +1923,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             df_row = formation_energy_table_df.iloc[i]
             reloaded_df_row = formation_energy_table_df_wout_charge_formatting.iloc[i]
             for j, val in enumerate(df_row):
-                print(val, reloaded_df_row[j])
-            assert val == reloaded_df_row[j]
+                print(val, reloaded_df_row.iloc[j])
+            assert val == reloaded_df_row.iloc[j]
 
         os.remove("test.csv")
 

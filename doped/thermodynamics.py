@@ -2526,11 +2526,11 @@ class DefectThermodynamics(MSONable):
         self,
         all: bool = False,
         format_charges: bool = True,
-    ) -> pd.DataFrame:
+    ) -> Union[pd.DataFrame, None]:
         """
-        Return a DataFrame of the charge transition levels for the defects in
-        the DefectThermodynamics object (stored in the transition_level_map
-        attribute).
+        Return a ``DataFrame`` of the charge transition levels for the defects
+        in the ``DefectThermodynamics`` object (stored in the
+        ``transition_level_map`` attribute).
 
         Note that the transition level (and Fermi level) positions are given
         relative to ``self.vbm``, which is the VBM eigenvalue of the bulk
@@ -2547,7 +2547,7 @@ class DefectThermodynamics(MSONable):
         If instead all single-electron transition levels are desired, set
         ``all = True``.
 
-        Returns a DataFrame with columns:
+        Returns a ``DataFrame`` with columns:
 
         - "Defect": Defect name
         - "Charges": Defect charge states which make up the transition level
@@ -2627,6 +2627,9 @@ class DefectThermodynamics(MSONable):
                             }
                         )
 
+        if not transition_level_map_list:
+            warnings.warn("No transition levels found for chosen parameters!")
+            return None
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
         tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._name_wout_charge_appearance_order)
@@ -2669,6 +2672,8 @@ class DefectThermodynamics(MSONable):
 
         else:
             all_TLs_df = self.get_transition_levels(all=True)
+            if all_TLs_df is None:
+                return
             for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
                 for _, row in tl_df.iterrows():

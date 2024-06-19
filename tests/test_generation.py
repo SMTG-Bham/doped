@@ -3373,9 +3373,8 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
 
-        assert (
-            "TopographyAnalyzer.__init__() got an unexpected keyword argument 'unrecognised_kwarg'"
-            in str(exc.value)
+        assert (  # TopographyAnalyzer.__init__() but only __init__() shown in python 3.9
+            "__init__() got an unexpected keyword argument 'unrecognised_kwarg'" in str(exc.value)
         )
 
         with pytest.raises(TypeError) as exc:
