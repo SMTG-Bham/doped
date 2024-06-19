@@ -5,7 +5,6 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 """
 
 import contextlib
-import hashlib
 import os
 import warnings
 from copy import deepcopy
@@ -50,22 +49,6 @@ def bold_print(string: str) -> None:
     Prints the input string in bold.
     """
     print("\033[1m" + string + "\033[0m")
-
-
-def calculate_md5(file_path):
-    """
-    Calculate the MD5 hash of a file.
-
-    Used for checking if the pimitive cell DOS ``vasprun.xml(.gz)``
-    file has already been parsed, to avoid wasting time re-parsing.
-
-    https://www.geeksforgeeks.org/finding-md5-of-files-recursively-in-directory-in-python/
-    """
-    hasher = hashlib.md5()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
 
 
 def _raise_limit_with_user_chempots_error(no_chempots=True):
