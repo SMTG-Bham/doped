@@ -307,7 +307,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
             sorted(
                 possible_mappings,
                 key=lambda x: (
-                    _lattice_matrix_sorting_func(x[1].T @ x[2]),
+                    _lattice_matrix_sorting_func(np.dot(x[1].T, x[2])),
                     _lattice_matrix_sorting_func(x[2]),
                     _lattice_matrix_sorting_func(x[1]),
                 ),
@@ -356,7 +356,9 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     """
     try:
         # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
-        transformation_matrix = target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
+        transformation_matrix = np.dot(
+            target_struct.lattice.matrix, np.linalg.inv(prim_struct.lattice.matrix)
+        )
         if not np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
             raise ValueError  # if non-integer transformation matrix
 

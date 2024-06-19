@@ -1,6 +1,15 @@
 Change Log
 ==========
 
+v.2.4.7
+----------
+- Update doping/carrier concentration functions to be more accurate and robust (following logic discussed
+  here: https://github.com/materialsproject/pymatgen/pull/3879).
+- Improve reverse-supercell-matrix determination for `generate_supercell=False`
+- Refactor `bulk_band_gap_path` to `bulk_band_gap_vr` in `DefectsParser`/`DefectParser`,
+- Update docstrings to reiterate that bulk supercell VBM is used as VBM reference point for the Fermi level
+  by default, unless alternative `bulk_band_gap_vr` provided.
+
 v.2.4.6
 ----------
 - Update ``Defect``, ``DefectEntry`` and ``DefectThermodynamics`` properties/methods to be even more
