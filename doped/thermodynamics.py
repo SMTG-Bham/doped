@@ -1521,8 +1521,8 @@ class DefectThermodynamics(MSONable):
                 lean=True,
             )
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += self.fermi_dos.get_doping(
-                fermi_level=fermi_level + self.vbm, temperature=temperature
+            qd_tot += get_doping(
+                fermi_dos=self.fermi_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
             )
             return qd_tot
 
@@ -1743,9 +1743,6 @@ class DefectThermodynamics(MSONable):
         )
 
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from
-            # FermiDos.get_doping, can remove in future versions following SK's fix in
-            # https://github.com/materialsproject/pymatgen/pull/3879
             warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
             # as given once above
 
@@ -1844,8 +1841,10 @@ class DefectThermodynamics(MSONable):
             def _get_constrained_total_q(fermi_level):
                 conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
                 qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-                qd_tot += orig_fermi_dos.get_doping(  # use orig fermi dos for quenched temperature
-                    fermi_level=fermi_level + self.vbm, temperature=quenched_temperature
+                qd_tot += get_doping(  # use orig fermi dos for quenched temperature
+                    fermi_dos=orig_fermi_dos,
+                    fermi_level=fermi_level + self.vbm,
+                    temperature=quenched_temperature,
                 )
                 return qd_tot
 
@@ -3186,6 +3185,26 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
         ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
     return e_conc, h_conc
+
+
+def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> float:
+    """
+    Get the doping concentration (majority carrier - minority carrier
+    concentration) in cm^-3 for a given Fermi level (in eV) and temperature
+    (in K), for a ``FermiDos`` object.
+
+    Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
+    level should be the corresponding eigenvalue within the calculation (or in
+    other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
+
+    Refactored from ``FermiDos.get_doping()`` to be more accurate/robust
+    (independent of estimated VBM/CBM positions
+    """
+    # can replace this function with the ``FermiDos.get_doping()`` method in future versions following SK's
+    # fix in https://github.com/materialsproject/pymatgen/pull/3879, whenever pymatgen>2024.6.10 becomes
+    # a ``doped`` requirement (same for overflow catches in ``get_e_h_concs`` etc)
+    e_conc, h_conc = get_e_h_concs(fermi_dos, fermi_level, temperature)
+    return h_conc - e_conc
 
 
 def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, verbose: bool = True):
