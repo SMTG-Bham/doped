@@ -302,14 +302,16 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     target_struct.
     """
     possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
-    mapping = next(  # get possible mappings, then sort by R*S, S, R, then return first
-        sorted(
-            possible_mappings,
-            key=lambda x: (
-                _lattice_matrix_sorting_func(x[1].T @ x[2]),
-                _lattice_matrix_sorting_func(x[2]),
-                _lattice_matrix_sorting_func(x[1]),
-            ),
+    mapping = next(
+        iter(  # get possible mappings, then sort by R*S, S, R, then return first
+            sorted(
+                possible_mappings,
+                key=lambda x: (
+                    _lattice_matrix_sorting_func(x[1].T @ x[2]),
+                    _lattice_matrix_sorting_func(x[2]),
+                    _lattice_matrix_sorting_func(x[1]),
+                ),
+            )
         )
     )
 
