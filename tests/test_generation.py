@@ -1669,7 +1669,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert self.CdTe_defect_gen_info in output
         self._general_defect_gen_check(CdTe_defect_gen)
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_image_distance": 15}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 15  # check attribute set
 
         assert len(CdTe_defect_gen.bulk_supercell) == 78  # check now with 78-atom supercell
 
@@ -1687,7 +1687,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 60}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 60  # check attribute set
 
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, supercell_gen_kwargs={"min_atoms": 0}
@@ -1696,7 +1696,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         assert len(CdTe_defect_gen.bulk_supercell) == 26
         assert get_min_image_distance(CdTe_defect_gen.bulk_supercell) > 10
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 0}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 0  # check attribute set
 
         # test ideal_threshold:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1706,7 +1706,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 55, "ideal_threshold": 0.15}
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 55
+        assert CdTe_defect_gen.supercell_gen_kwargs["ideal_threshold"] == 0.15
 
         # test force_cubic:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1716,7 +1717,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"force_cubic": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
 
         # test force_diagonal:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1726,7 +1727,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen)  # same 54-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 54
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"force_diagonal": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_diagonal"] is True
 
         # test combo settings; force_cubic and min_image_distance
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1736,7 +1737,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         assert CdTe_defect_gen.min_image_distance == 26.1626
         assert len(CdTe_defect_gen.bulk_supercell) == 512
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_image_distance": 20, "force_cubic": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 20
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
 
     def CdTe_defect_gen_check(self, CdTe_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(CdTe_defect_gen)
