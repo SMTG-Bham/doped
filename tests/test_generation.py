@@ -691,6 +691,8 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         self.conv_si = Structure.from_file(f"{self.data_dir}/Si_MP_conv_POSCAR")
 
+        self.cspbcl3_supercell = Structure.from_file(f"{self.data_dir}/CsPbCl3_supercell_POSCAR")
+
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
         dumpfn(defect_gen, "test_defect_gen.json")
@@ -3323,3 +3325,28 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         rattled_struc = rattle(self.prim_cdte, 0.25)
         defect_gen, output = self._generate_and_test_no_warnings(rattled_struc)
         assert "Note that the detected symmetry of the input structure is P1" in output
+
+    def test_cspbcl3_no_generate_supercell(self):
+        """
+        Test the created supercell, primitive structure and rotation matrix for
+        a CsPbCl3 supercell input with ``generate_supercell=False``.
+
+        Previously gave a rotated supercell (but same lattice definition, just
+        rotated octahedra) due to falsely mis-matched integer transformation
+        matrices (and using ``find_mapping`` rather than ``find_all_mappings``),
+        but now fixed.
+        """
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.cspbcl3_supercell, generate_supercell=False
+        )
+        self._general_defect_gen_check(defect_gen)
+
+        assert np.allclose(defect_gen.supercell_matrix, np.eye(3) * 3)
+        assert np.allclose(
+            defect_gen.bulk_supercell.lattice.matrix, self.cspbcl3_supercell.lattice.matrix, atol=1e-4
+        )
+        assert {tuple(i) for i in np.round(defect_gen.bulk_supercell.frac_coords, 4)} == {
+            tuple(i) for i in np.round(self.cspbcl3_supercell.frac_coords, 4)
+        }
+        assert np.allclose(defect_gen._T, np.eye(3))
+        assert np.allclose(defect_gen.primitive_structure, np.eye(3) * 5.69313, atol=1e-4)

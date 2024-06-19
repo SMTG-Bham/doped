@@ -301,8 +301,18 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     returns the supercell matrix to convert from the rotated prim_struct to the
     target_struct.
     """
-    # first rotate primitive structure to match target structure:
-    mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
+    possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
+    mapping = next(  # get possible mappings, then sort by R*S, S, R, then return first
+        sorted(
+            possible_mappings,
+            key=lambda x: (
+                _lattice_matrix_sorting_func(x[1].T @ x[2]),
+                _lattice_matrix_sorting_func(x[2]),
+                _lattice_matrix_sorting_func(x[1]),
+            ),
+        )
+    )
+
     rotation_matrix = mapping[1]
     if np.allclose(rotation_matrix, -1 * np.eye(3)):
         # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
@@ -311,6 +321,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         supercell_matrix = -1 * mapping[2]
     else:
         supercell_matrix = mapping[2]
+
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
@@ -343,20 +354,17 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     """
     try:
         # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
-        transformation_matrix = np.rint(
-            target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
-        )
-        if not np.allclose(
-            (prim_struct * transformation_matrix).lattice.matrix,
-            target_struct.lattice.matrix,
-            rtol=5e-3,
-        ):
+        transformation_matrix = target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
+        if not np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
             raise ValueError  # if non-integer transformation matrix
 
-        return prim_struct, transformation_matrix
+        return prim_struct, np.rint(transformation_matrix)
 
     except ValueError:  # if non-integer transformation matrix
         prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(prim_struct, target_struct)
+
+    if np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
+        return prim_struct, np.rint(transformation_matrix)
 
     return prim_struct, transformation_matrix
 
