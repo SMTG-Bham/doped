@@ -1466,10 +1466,10 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 np.array([0.625, 0.625, 0.625]),
                 4,
                 [
-                    np.array([0.125, 0.625, 0.625]),
                     np.array([0.625, 0.125, 0.625]),
                     np.array([0.625, 0.625, 0.125]),
                     np.array([0.625, 0.625, 0.625]),
+                    np.array([0.125, 0.625, 0.625]),
                 ],
             ),
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
@@ -1581,10 +1581,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                     np.array([0.625, 0.625, 0.625]),
                     4,
                     [
-                        np.array([0.625, 0.125, 0.625]),
                         np.array([0.625, 0.625, 0.125]),
                         np.array([0.625, 0.625, 0.625]),
                         np.array([0.125, 0.625, 0.625]),
+                        np.array([0.625, 0.125, 0.625]),
                     ],
                 ),
                 (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
@@ -3270,14 +3270,18 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         In particular, test that defect generation doesn't yield unsorted
         structures.
         """
-        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(
+            self.sqs_agsbte2, supercell_gen_kwargs={"min_atoms": 40}  # 48 atoms in input cell
+        )
         agsbte2_defect_gen_b, output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2, generate_supercell=False
         )
         # same output regardless of `generate_supercell` because input supercell satisfies constraints
         with pytest.raises(AssertionError):
             _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
-        agsbte2_defect_gen_a.generate_supercell = False  # adjust one difference to make equal overall
+        # adjust only differences to make equal:
+        agsbte2_defect_gen_a.generate_supercell = False
+        agsbte2_defect_gen_b.supercell_gen_kwargs["min_atoms"] = 40
         _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
@@ -3349,4 +3353,33 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
             tuple(i) for i in np.round(self.cspbcl3_supercell.frac_coords, 4)
         }
         assert np.allclose(defect_gen._T, np.eye(3))
-        assert np.allclose(defect_gen.primitive_structure, np.eye(3) * 5.69313, atol=1e-4)
+        assert np.allclose(defect_gen.primitive_structure.lattice.matrix, np.eye(3) * 5.69313, atol=1e-4)
+
+    def test_unrecognised_gen_kwargs(self):
+        """
+        Test using unrecognised kwargs (previously wouldn't be caught for
+        ``supercell_gen_kwargs``).
+        """
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, supercell_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (
+            "get_ideal_supercell_matrix() got an unexpected keyword argument 'unrecognised_kwarg'"
+            in str(exc.value)
+        )
+
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (
+            "TopographyAnalyzer.__init__() got an unexpected keyword argument 'unrecognised_kwarg'"
+            in str(exc.value)
+        )
+
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (
+            "guess_defect_charge_states() got an unexpected keyword argument 'unrecognised_kwarg'"
+            in str(exc.value)
+        )

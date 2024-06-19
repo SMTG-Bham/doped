@@ -1048,7 +1048,7 @@ class DefectsGenerator(MSONable):
         interstitial_coords: Optional[list] = None,
         generate_supercell: bool = True,
         charge_state_gen_kwargs: Optional[dict] = None,
-        supercell_gen_kwargs: Optional[dict] = None,
+        supercell_gen_kwargs: Optional[dict[str, Union[int, float, bool]]] = None,
         interstitial_gen_kwargs: Optional[dict] = None,
         target_frac_coords: Optional[list] = None,
         processes: Optional[int] = None,
@@ -1201,12 +1201,19 @@ class DefectsGenerator(MSONable):
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
         )
-        self.supercell_gen_kwargs = supercell_gen_kwargs if supercell_gen_kwargs is not None else {}
-        self.interstitial_gen_kwargs = (
+        self.supercell_gen_kwargs: dict[str, Union[int, float, bool]] = {
+            "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
+            "min_atoms": 50,  # different from current pymatgen-analysis-defects `min_atoms` ( = 80)
+            "ideal_threshold": 0.1,
+            "force_cubic": False,
+            "force_diagonal": False,
+        }
+        self.supercell_gen_kwargs.update(supercell_gen_kwargs if supercell_gen_kwargs is not None else {})
+        self.interstitial_gen_kwargs: dict[str, Union[int, float, bool]] = (
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
-        specified_min_image_distance = self.supercell_gen_kwargs.get("min_image_distance", 10)
+        specified_min_image_distance = self.supercell_gen_kwargs["min_image_distance"]
 
         if len(self.structure) == 1 and not self.generate_supercell:
             # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
@@ -1258,22 +1265,16 @@ class DefectsGenerator(MSONable):
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
                     supercell_matrix = get_ideal_supercell_matrix(
-                        primitive_structure,
-                        min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different from current
-                        # pymatgen-analysis-defects default `min_atoms` ( = 80)
-                        min_image_distance=specified_min_image_distance,  # same as current
-                        # pymatgen-analysis-defects default `min_length` ( = 10)
-                        ideal_threshold=self.supercell_gen_kwargs.get("ideal_threshold", 0.1),
-                        force_cubic=self.supercell_gen_kwargs.get("force_cubic", False),
-                        force_diagonal=self.supercell_gen_kwargs.get("force_diagonal", False),
+                        structure=primitive_structure,
                         pbar=pbar,
+                        **self.supercell_gen_kwargs,  # type: ignore
                     )
 
             if not self.generate_supercell or (
                 input_min_image_distance >= specified_min_image_distance
                 and (primitive_structure * supercell_matrix).num_sites
                 >= self.structure.num_sites
-                >= self.supercell_gen_kwargs.get("min_atoms", 0)
+                >= self.supercell_gen_kwargs["min_atoms"]
             ):
                 if input_min_image_distance < 10:
                     # input structure is <10 Å in at least one direction, and generate_supercell=False,
