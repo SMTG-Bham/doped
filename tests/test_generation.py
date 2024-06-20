@@ -691,6 +691,8 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         self.conv_si = Structure.from_file(f"{self.data_dir}/Si_MP_conv_POSCAR")
 
+        self.cspbcl3_supercell = Structure.from_file(f"{self.data_dir}/CsPbCl3_supercell_POSCAR")
+
     def _save_defect_gen_jsons(self, defect_gen):
         defect_gen.to_json("test.json")
         dumpfn(defect_gen, "test_defect_gen.json")
@@ -1464,10 +1466,10 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 np.array([0.625, 0.625, 0.625]),
                 4,
                 [
-                    np.array([0.125, 0.625, 0.625]),
                     np.array([0.625, 0.125, 0.625]),
                     np.array([0.625, 0.625, 0.125]),
                     np.array([0.625, 0.625, 0.625]),
+                    np.array([0.125, 0.625, 0.625]),
                 ],
             ),
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
@@ -1579,10 +1581,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                     np.array([0.625, 0.625, 0.625]),
                     4,
                     [
-                        np.array([0.625, 0.125, 0.625]),
                         np.array([0.625, 0.625, 0.125]),
                         np.array([0.625, 0.625, 0.625]),
                         np.array([0.125, 0.625, 0.625]),
+                        np.array([0.625, 0.125, 0.625]),
                     ],
                 ),
                 (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
@@ -1667,7 +1669,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert self.CdTe_defect_gen_info in output
         self._general_defect_gen_check(CdTe_defect_gen)
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_image_distance": 15}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 15  # check attribute set
 
         assert len(CdTe_defect_gen.bulk_supercell) == 78  # check now with 78-atom supercell
 
@@ -1685,7 +1687,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 60}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 60  # check attribute set
 
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
             self.prim_cdte, supercell_gen_kwargs={"min_atoms": 0}
@@ -1694,7 +1696,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         assert len(CdTe_defect_gen.bulk_supercell) == 26
         assert get_min_image_distance(CdTe_defect_gen.bulk_supercell) > 10
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 0}  # check attribute set
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 0  # check attribute set
 
         # test ideal_threshold:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1704,7 +1706,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_atoms": 55, "ideal_threshold": 0.15}
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_atoms"] == 55
+        assert CdTe_defect_gen.supercell_gen_kwargs["ideal_threshold"] == 0.15
 
         # test force_cubic:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1714,7 +1717,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen, generate_supercell=False)  # same 64-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 64
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"force_cubic": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
 
         # test force_diagonal:
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1724,7 +1727,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen)  # same 54-atom cell
         assert len(CdTe_defect_gen.bulk_supercell) == 54
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"force_diagonal": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_diagonal"] is True
 
         # test combo settings; force_cubic and min_image_distance
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(
@@ -1734,7 +1737,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(CdTe_defect_gen)
         assert CdTe_defect_gen.min_image_distance == 26.1626
         assert len(CdTe_defect_gen.bulk_supercell) == 512
-        assert CdTe_defect_gen.supercell_gen_kwargs == {"min_image_distance": 20, "force_cubic": True}
+        assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 20
+        assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
 
     def CdTe_defect_gen_check(self, CdTe_defect_gen, generate_supercell=True):
         self._general_defect_gen_check(CdTe_defect_gen)
@@ -3268,14 +3272,18 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         In particular, test that defect generation doesn't yield unsorted
         structures.
         """
-        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(self.sqs_agsbte2)
+        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(
+            self.sqs_agsbte2, supercell_gen_kwargs={"min_atoms": 40}  # 48 atoms in input cell
+        )
         agsbte2_defect_gen_b, output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2, generate_supercell=False
         )
         # same output regardless of `generate_supercell` because input supercell satisfies constraints
         with pytest.raises(AssertionError):
             _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
-        agsbte2_defect_gen_a.generate_supercell = False  # adjust one difference to make equal overall
+        # adjust only differences to make equal:
+        agsbte2_defect_gen_a.generate_supercell = False
+        agsbte2_defect_gen_b.supercell_gen_kwargs["min_atoms"] = 40
         _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
@@ -3323,3 +3331,56 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         rattled_struc = rattle(self.prim_cdte, 0.25)
         defect_gen, output = self._generate_and_test_no_warnings(rattled_struc)
         assert "Note that the detected symmetry of the input structure is P1" in output
+
+    def test_cspbcl3_no_generate_supercell(self):
+        """
+        Test the created supercell, primitive structure and rotation matrix for
+        a CsPbCl3 supercell input with ``generate_supercell=False``.
+
+        Previously gave a rotated supercell (but same lattice definition, just
+        rotated octahedra) due to falsely mis-matched integer transformation
+        matrices (and using ``find_mapping`` rather than ``find_all_mappings``),
+        but now fixed.
+        """
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.cspbcl3_supercell, generate_supercell=False
+        )
+        self._general_defect_gen_check(defect_gen)
+
+        assert np.allclose(defect_gen.supercell_matrix, np.eye(3) * 3)
+        assert np.allclose(
+            defect_gen.bulk_supercell.lattice.matrix, self.cspbcl3_supercell.lattice.matrix, atol=1e-4
+        )
+        assert {tuple(i) for i in np.round(defect_gen.bulk_supercell.frac_coords, 4)} == {
+            tuple(i) for i in np.round(self.cspbcl3_supercell.frac_coords, 4)
+        }
+        assert np.allclose(defect_gen._T, np.eye(3))
+        assert np.allclose(defect_gen.primitive_structure.lattice.matrix, np.eye(3) * 5.69313, atol=1e-4)
+
+    def test_unrecognised_gen_kwargs(self):
+        """
+        Test using unrecognised kwargs (previously wouldn't be caught for
+        ``supercell_gen_kwargs``).
+        """
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, supercell_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (
+            "get_ideal_supercell_matrix() got an unexpected keyword argument 'unrecognised_kwarg'"
+            in str(exc.value)
+        )
+
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (  # TopographyAnalyzer.__init__() but only __init__() shown in python 3.9
+            "__init__() got an unexpected keyword argument 'unrecognised_kwarg'" in str(exc.value)
+        )
+
+        with pytest.raises(TypeError) as exc:
+            DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})
+
+        assert (
+            "guess_defect_charge_states() got an unexpected keyword argument 'unrecognised_kwarg'"
+            in str(exc.value)
+        )
