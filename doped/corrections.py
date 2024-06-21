@@ -535,10 +535,10 @@ def get_kumagai_correction(
             # scale bulk lattice to match defect lattice:
             bulk_supercell.scale_lattice(defect_supercell.lattice.volume)
         else:
-            raise ValueError(
+            warnings.warn(
                 f"Bulk and defect supercells have different lattices, and so the eFNV (Kumagai) "
-                f"correction cannot be computed!\nBulk lattice:\n{bulk_supercell.lattice}\nDefect "
-                f"lattice:\n{defect_supercell.lattice}"
+                f"correction is likely unreliable!"
+                f"\nBulk lattice:\n{bulk_supercell.lattice}\nDefect lattice:\n{defect_supercell.lattice}"
             )
 
     bulk_calc_results_for_eFNV = CalcResults(
