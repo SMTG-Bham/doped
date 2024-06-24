@@ -895,45 +895,6 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
                 #  entries, including limits with multiple extrinsic entries but still not the
                 #  full phase diagram? - To be updated!
-                # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
-                #  this code block and just use something like this: (but then false bulk composition
-                # could alter behaviour, throwin warnings etc...)
-                # pseudo_cp = CompetingPhases(
-                #     composition="".join(self.intrinsic_species + self.extrinsic_species),
-                #     e_above_hull=self.e_above_hull,
-                #     api_key=self.api_key,
-                #     full_phase_diagram=True,
-                # )
-                #
-                # self.intrinsic_entries = [
-                #     entry
-                #     for entry in pseudo_cp.entries
-                #     if not any(
-                #         [
-                #             Element(extrinsic) in entry.composition.elements
-                #             for extrinsic in self.extrinsic_species
-                #         ]
-                #     )
-                # ]
-                # self.entries = [
-                #     phase for phase in pseudo_cp.entries if phase not in self.intrinsic_entries
-                # ]
-                # self.MP_intrinsic_full_pd_entries = [
-                #     entry
-                #     for entry in pseudo_cp.MP_full_pd_entries
-                #     if not any(
-                #         [
-                #             Element(extrinsic) in entry.composition.elements
-                #             for extrinsic in self.extrinsic_species
-                #         ]
-                #     )
-                # ]
-                # MP_full_pd_entries = [
-                #     entry
-                #     for entry in pseudo_cp.MP_full_pd_entries
-                #     if entry not in self.MP_intrinsic_full_pd_entries
-                # ]
-                # self.MP_full_pd_entries = MP_full_pd_entries  # includes molecules-in-boxes
 
                 with contextlib.ExitStack() as stack:
                     if self.api_key is None:
@@ -948,7 +909,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         property_data=self.data,
                     )
                 self.MP_full_pd_entries = [
-                    e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= e_above_hull
+                    e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= self.e_above_hull
                 ]
 
                 # sort by e_above_hull:
