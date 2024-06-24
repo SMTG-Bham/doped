@@ -1349,20 +1349,12 @@ class CompetingPhasesAnalyzer:
                 el = next(iter(vr.atomic_symbols))  # elemental, so first symbol is only (unique) element
                 if el not in self.elemental_energies:
                     self.elemental_energies[el] = energy_per_atom
-                    if el not in self.elements:  # new (extrinsic) element
+                    if el not in self.elements + self.extrinsic_elements:  # new (extrinsic) element
                         self.extrinsic_elements.append(el)
 
                 elif energy_per_atom < self.elemental_energies[el]:
                     # only include lowest energy elemental polymorph
                     self.elemental_energies[el] = energy_per_atom
-
-            # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
-            # self.elements:
-            self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
-            self.elemental_energies = dict(
-                sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
-            )
-            self.elements += self.extrinsic_elements
 
             d = {
                 "Formula": comp.reduced_formula,
@@ -1372,6 +1364,14 @@ class CompetingPhasesAnalyzer:
                 "DFT Energy (eV)": vr.final_energy,
             }
             data.append(d)
+
+        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
+        # self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        self.elemental_energies = dict(
+            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+        )
+        self.elements += self.extrinsic_elements
 
         formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
         self.data = formation_energy_df.to_dict(orient="records")
@@ -1492,7 +1492,7 @@ class CompetingPhasesAnalyzer:
         for i in self.data:
             c = Composition(i["Formula"])
             if len(c.elements) == 1:
-                el = c.chemical_system
+                el = str(next(iter(c.elements)))  # elemental, so first symbol is only (unique) element
                 if "DFT Energy (eV/atom)" in list(formation_energy_df.columns):
                     el_energy_per_atom = i["DFT Energy (eV/atom)"]
                 else:
@@ -1500,6 +1500,8 @@ class CompetingPhasesAnalyzer:
 
                 if el not in self.elemental_energies or el_energy_per_atom < self.elemental_energies[el]:
                     self.elemental_energies[el] = el_energy_per_atom
+                    if el not in self.elements + self.extrinsic_elements:  # new (extrinsic) element
+                        self.extrinsic_elements.append(el)
 
         if "Formation Energy (eV/fu)" not in list(formation_energy_df.columns):
             formation_energy_df = _calculate_formation_energies(self.data, self.elemental_energies)
@@ -1507,6 +1509,14 @@ class CompetingPhasesAnalyzer:
 
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
         self.formation_energy_df.set_index("Formula")
+
+        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
+        # self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        self.elemental_energies = dict(
+            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+        )
+        self.elements += self.extrinsic_elements
 
     def calculate_chempots(
         self,
@@ -1759,6 +1769,11 @@ class CompetingPhasesAnalyzer:
     def chempots(self) -> dict:
         """
         Returns the calculated chemical potential limits.
+
+        If this is used with ``ExtrinsicCompetingPhases``
+        before calling ``calculate_chempots`` with a specified
+        ``extrinsic_species``, then the intrinsic chemical
+        potential limits will be returned.
         """
         if not hasattr(self, "_chempots"):
             self.calculate_chempots()
