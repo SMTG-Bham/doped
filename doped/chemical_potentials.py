@@ -15,7 +15,7 @@ import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Structure
-from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
@@ -29,9 +29,6 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 # globally ignore:
 _ignore_pmg_warnings()
-warnings.filterwarnings(
-    "ignore", message="You are using the legacy MPRester"
-)  # currently rely on this so shouldn't show warning, `message` only needs to match start of message
 
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
@@ -267,23 +264,6 @@ def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
 
 
 class CompetingPhases:
-    # TODO: Need to add functionality to deal with cases where the bulk composition is not listed
-    # on the MP - warn user (i.e. check your stuff) and generate the competing phases according to
-    # composition position within phase diagram. (i.e. downshift it to the convex hull, print warning
-    # and generate from there)
-    # E.g. from pycdt chemical_potentials:
-    # #                 "However, no stable entry with this composition exists "
-    # #                 "in the MP database!\nPlease consider submitting the "
-    # #                 "POSCAR to the MP xtaltoolkit, so future users will "
-    # #                 "know about this structure:"
-    # #                 " https://materialsproject.org/#apps/xtaltoolkit\n" - see
-    # analyze_GGA_chempots code for example.
-    # e.g. in pmg-analysis-defects (for parsing, like our approach): stable_entry = ComputedEntry(
-    #         entry.composition,
-    #         pd.get_hull_energy(entry.composition) - threshold,
-    #     )
-    # Na2FePO4F a good test case for this, 0.17 eV/atom above the MP Hull
-
     def __init__(self, composition, e_above_hull=0.1, api_key=None, full_phase_diagram=False):
         """
         Class to generate the VASP input files for competing phases on the
@@ -329,6 +309,9 @@ class CompetingPhases:
                 downshifted by ``e_above_hull`` eV/atom.
                 (Default is False).
         """
+        warnings.filterwarnings(
+            "ignore", message="You are using the legacy MPRester"
+        )  # currently rely on this so shouldn't show warning, `message` only needs to match start
         self.api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
 
         # create list of entries
@@ -375,7 +358,7 @@ class CompetingPhases:
         ]
 
         # set bulk composition (Composition(Composition("LiFePO4")) = Composition("LiFePO4")))
-        self.bulk_comp = Composition(composition)
+        self.bulk_composition = Composition(composition)
 
         # test api_key:
         if self.api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
@@ -416,7 +399,7 @@ class CompetingPhases:
 
             # get all entries in the chemical system
             self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                list(self.bulk_comp.as_dict().keys()),
+                list(self.bulk_composition.as_dict().keys()),
                 inc_structure="initial",
                 property_data=self.data,
             )
@@ -450,16 +433,52 @@ class CompetingPhases:
         for entry in formatted_pd_entries:
             # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
             entry.data["e_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
+
         pd_entries = [
             entry for entry in temp_phase_diagram.all_entries if entry.data["e_above_hull"] <= e_above_hull
         ]
+        pd_entries.sort(key=lambda x: x.data["e_above_hull"])
         phase_diagram = PhaseDiagram(pd_entries)
-        bulk_entries = [  # TODO: Currently breaks if bulk composition not on MP, need to fix!
+        if bulk_entries := [
             entry
-            for entry in pd_entries
-            if entry.composition.reduced_composition == self.bulk_comp.reduced_composition
-        ]
-        bulk_ce = bulk_entries[0]  # lowest energy entry for bulk composition (after sorting)
+            for entry in pd_entries  # sorted by e_above_hull above
+            if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
+        ]:
+            bulk_ce = bulk_entries[0]  # lowest energy entry for bulk composition (after sorting)
+        elif MP_bulk_entries := [  # no bulk entries in pruned phase diagram, check first if in original
+            entry  # MP phase diagram (i.e. present in MP but not stable)
+            for entry in self.MP_full_pd_entries  # sorted by e_above_hull too
+            if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
+        ]:
+            bulk_ce = MP_bulk_entries[0]
+            eah = phase_diagram.get_e_above_hull(bulk_ce)
+            warnings.warn(
+                f"Note that the Materials Project (MP) database entry for "
+                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
+                f"having an energy above hull of {eah:.4f} eV/atom.\n"
+                f"Formally, this means that the host material is unstable and so has no chemical "
+                f"potential limits; though in reality there may be errors in the MP energies (GGA, "
+                f"no vdW, SOC...), the host may be stabilised by temperature effects etc, or just a "
+                f"metastable phase.\n"
+                f"Here we downshift the host compound entry to the convex hull energy, and then determine "
+                f"the possible competing phases with the same approach as usual."
+            )
+            # decrease bulk_ce energy per atom by ``e_above_hull`` + 0.1 meV/atom
+            bulk_ce = _renormalise_entry(bulk_ce, eah + 1e-4)
+            phase_diagram = PhaseDiagram([bulk_ce, *pd_entries])
+
+        else:  # composition not on MP, warn and add fake entry
+            warnings.warn(
+                f"Note that no Materials Project (MP) database entry exists for "
+                f"{self.bulk_composition.reduced_formula}. Here we assume the host material has an energy "
+                f"equal to the MP convex hull energy at the corresponding point in chemical space, and "
+                f"then determine the possible competing phases with the same approach as usual."
+            )
+            bulk_ce = ComputedEntry(
+                self.bulk_composition, self.MP_full_pd.get_hull_energy(self.bulk_composition) - 1e-4
+            )
+            phase_diagram = PhaseDiagram([bulk_ce, *pd_entries])
+
         self.MP_bulk_ce = bulk_ce
 
         if not full_phase_diagram:  # default
@@ -820,7 +839,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         super().__init__(composition, e_above_hull, api_key)
         self.intrinsic_entries = copy.deepcopy(self.entries)
         self.entries = []
-        self.intrinsic_species = [s.symbol for s in self.bulk_comp.reduced_composition.elements]
+        self.intrinsic_species = [s.symbol for s in self.bulk_composition.reduced_composition.elements]
         self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
 
         if isinstance(extrinsic_species, str):
