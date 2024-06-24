@@ -896,21 +896,44 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 #  entries, including limits with multiple extrinsic entries but still not the
                 #  full phase diagram? - To be updated!
                 # TODO: When `full_phase_diagram` option added to `CompetingPhases`, can remove
-                #  this code block and just use:
-                #  super()__init__(composition = (
-                #  self.intrinsic_species+self.extrinsic_species).join(""), e_above_hull, api_key)
-                #  )
-                #  self.intrinsic_entries = [phase for phase in self.entries if
-                #  not any([extrinsic in phase for extrinsic in self.extrinsic_species])]
-                #  entries = [phase for phase in self.entries if phase not in
-                #  self.intrinsic_entries]
-                #  self.entries = entries
-                #  self.MP_intrinsic_full_pd_entries = [entry for entry in
-                #  self.MP_full_pd_entries if not any([extrinsic in entry.composition.reduced_formula
-                #  for extrinsic in self.extrinsic_species])]
-                #  MP_full_pd_entries = [entry for entry in self.MP_full_pd_entries if entry not in
-                #  self.MP_intrinsic_full_pd_entries]
-                #  self.MP_full_pd_entries = MP_full_pd_entries  # includes molecules-in-boxes
+                #  this code block and just use something like this: (but then false bulk composition
+                # could alter behaviour, throwin warnings etc...)
+                # pseudo_cp = CompetingPhases(
+                #     composition="".join(self.intrinsic_species + self.extrinsic_species),
+                #     e_above_hull=self.e_above_hull,
+                #     api_key=self.api_key,
+                #     full_phase_diagram=True,
+                # )
+                #
+                # self.intrinsic_entries = [
+                #     entry
+                #     for entry in pseudo_cp.entries
+                #     if not any(
+                #         [
+                #             Element(extrinsic) in entry.composition.elements
+                #             for extrinsic in self.extrinsic_species
+                #         ]
+                #     )
+                # ]
+                # self.entries = [
+                #     phase for phase in pseudo_cp.entries if phase not in self.intrinsic_entries
+                # ]
+                # self.MP_intrinsic_full_pd_entries = [
+                #     entry
+                #     for entry in pseudo_cp.MP_full_pd_entries
+                #     if not any(
+                #         [
+                #             Element(extrinsic) in entry.composition.elements
+                #             for extrinsic in self.extrinsic_species
+                #         ]
+                #     )
+                # ]
+                # MP_full_pd_entries = [
+                #     entry
+                #     for entry in pseudo_cp.MP_full_pd_entries
+                #     if entry not in self.MP_intrinsic_full_pd_entries
+                # ]
+                # self.MP_full_pd_entries = MP_full_pd_entries  # includes molecules-in-boxes
 
                 with contextlib.ExitStack() as stack:
                     if self.api_key is None:
