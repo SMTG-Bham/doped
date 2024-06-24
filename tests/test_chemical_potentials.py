@@ -382,13 +382,11 @@ class ChemPotAnalyzerTest(unittest.TestCase):
     def test_cpa_csv(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
-        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
 
-        assert len(stable_cpa.elemental) == 2
-        assert len(self.ext_cpa.elemental) == 3
+        assert len(stable_cpa.elements) == 2
+        assert len(self.ext_cpa.elements) == 3
         assert any(entry["Formula"] == "O2" for entry in stable_cpa.data)
         assert np.isclose(
             next(
@@ -408,11 +406,9 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         # check if it's no longer Element
         assert isinstance(next(iter(stable_cpa.intrinsic_chempots["elemental_refs"].keys())), str)
 
-        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
-        chempot_df = self.ext_cpa.calculate_chempots()
+        chempot_df = self.ext_cpa.calculate_chempots(extrinsic_species="La")
         assert next(iter(chempot_df["La-Limiting Phase"])) == "La2Zr2O7"
         assert np.isclose(next(iter(chempot_df["La"])), -9.46298748)
 
@@ -457,10 +453,16 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         stable_cpa.from_csv(self.csv_path)
         _compare_chempot_dicts(stable_cpa.chempots, self.parsed_chempots)
 
-        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        # for ext_cpa, because we haven't yet specified the extrinsic species (with calculate_chempots),
+        # just returns the intrinsic chempots:
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
+        for host_el, chempot in self.ext_cpa.chempots["elemental_refs"].items():
+            assert chempot == self.parsed_ext_chempots["elemental_refs"][host_el]
+
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        self.ext_cpa.from_csv(self.csv_path_ext)
+        self.ext_cpa.calculate_chempots(extrinsic_species="La")
         assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
     def test_sort_by(self):
@@ -478,7 +480,7 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path = self.path / "ZrO2"
         cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
-        assert len(cpa.elemental) == 2
+        assert len(cpa.elements) == 2
         assert cpa.data[0]["Formula"] == "O2"
 
         cpa_no = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -488,10 +490,11 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         with pytest.raises(ValueError):
             cpa_no.from_vaspruns(path=0)
 
-        ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.extrinsic_species)
+        ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         path2 = self.path / "La_ZrO2"
         ext_cpa.from_vaspruns(path=path2, folder="relax", csv_path=self.csv_path_ext)
-        assert len(ext_cpa.elemental) == 3
+        assert len(ext_cpa.elements) == 3
+        assert len(ext_cpa.extrinsic_elements) == 1
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
         # formation_energy
         assert [entry["Formula"] for entry in ext_cpa.data] == [
@@ -559,13 +562,13 @@ class ChemPotAnalyzerTest(unittest.TestCase):
                     all_paths.append(ppgz)
         lst_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_cpa.from_vaspruns(path=all_paths)
-        assert len(lst_cpa.elemental) == 2
+        assert len(lst_cpa.elements) == 2
         assert len(lst_cpa.vasprun_paths) == 8
 
         all_fols = [p / "relax" for p in path.iterdir() if not p.name.startswith(".")]
         lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_fols_cpa.from_vaspruns(path=all_fols)
-        assert len(lst_fols_cpa.elemental) == 2
+        assert len(lst_fols_cpa.elements) == 2
 
     def test_vaspruns_hidden_files(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -693,14 +696,10 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         # check chem limits the same:
         _compare_chempot_dicts(stable_cpa.chempots, reloaded_cpa.chempots)
 
-        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
         self.ext_cpa.to_csv("competing_phases.csv")
-        reloaded_ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        reloaded_ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         reloaded_ext_cpa.from_csv("competing_phases.csv")
         reloaded_ext_cpa._get_and_sort_formation_energy_data()
 
@@ -723,17 +722,21 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         # check chem limits the same:
         _compare_chempot_dicts(reloaded_cpa.chempots, stable_cpa.chempots)
 
-        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        # for ext_cpa, because we haven't yet specified the extrinsic species (with calculate_chempots),
+        # just returns the intrinsic chempots:
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
+        for host_el, chempot in self.ext_cpa.chempots["elemental_refs"].items():
+            assert chempot == self.parsed_ext_chempots["elemental_refs"][host_el]
+
+        self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
+        self.ext_cpa.from_csv(self.csv_path_ext)
+        self.ext_cpa.calculate_chempots(extrinsic_species="La")
         assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
         # test correct sorting:
         self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True, sort_by_energy=True)
-        reloaded_ext_cpa_energy_sorted = chemical_potentials.CompetingPhasesAnalyzer(
-            self.stable_system, self.extrinsic_species
-        )
+        reloaded_ext_cpa_energy_sorted = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         reloaded_ext_cpa_energy_sorted.from_csv("competing_phases.csv")
         assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
 
