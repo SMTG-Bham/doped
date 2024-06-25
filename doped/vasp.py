@@ -21,6 +21,7 @@ from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import VaspInputSet
+from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -481,7 +482,7 @@ class DefectDictSet(DopedDictSet):
 
     def write_input(
         self,
-        output_path: str,
+        output_path: PathLike,
         unperturbed_poscar: bool = True,
         make_dir_if_not_present: bool = True,
         include_cif: bool = False,
@@ -495,7 +496,7 @@ class DefectDictSet(DopedDictSet):
         ``POTCAR`` setup.
 
         Args:
-            output_path (str): Directory to output the VASP input files.
+            output_path (PathLike): Directory to output the VASP input files.
             unperturbed_poscar (bool):
                 If True, write the unperturbed defect POSCAR to the generated
                 folder as well. (default: True)
@@ -1248,7 +1249,9 @@ class DefectRelaxSet(MSONable):
             **self.dict_set_kwargs,
         )
 
-    def _get_output_path(self, defect_dir: Optional[str] = None, subfolder: Optional[str] = None):
+    def _get_output_path(
+        self, defect_dir: Optional[PathLike] = None, subfolder: Optional[PathLike] = None
+    ):
         if defect_dir is None:
             if self.defect_entry.name is None:
                 self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, relaxed=False)
@@ -1273,8 +1276,8 @@ class DefectRelaxSet(MSONable):
 
     def write_gam(
         self,
-        defect_dir: Optional[str] = None,
-        subfolder: Optional[str] = "vasp_gam",
+        defect_dir: Optional[PathLike] = None,
+        subfolder: Optional[PathLike] = "vasp_gam",
         unperturbed_poscar: bool = True,
         bulk: bool = False,
         **kwargs,
@@ -1305,13 +1308,13 @@ class DefectRelaxSet(MSONable):
         ``defect_dir`` to aid calculation provenance.
 
         Args:
-            defect_dir (str):
+            defect_dir (PathLike):
                 Folder in which to create the VASP defect calculation inputs.
                 Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
                 etc.), from ``self.defect_entry.name``. If this attribute is not
                 set, it is automatically generated according to the doped
                 convention (using ``get_defect_name_from_entry()``).
-            subfolder (str):
+            subfolder (PathLike):
                 Output folder structure is ``<defect_dir>/<subfolder>`` where
                 ``subfolder`` = 'vasp_gam' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_gam`` input files directly to the
@@ -1361,8 +1364,8 @@ class DefectRelaxSet(MSONable):
 
     def write_std(
         self,
-        defect_dir: Optional[str] = None,
-        subfolder: Optional[str] = "vasp_std",
+        defect_dir: Optional[PathLike] = None,
+        subfolder: Optional[PathLike] = "vasp_std",
         unperturbed_poscar: bool = False,
         bulk: bool = False,
         **kwargs,
@@ -1402,13 +1405,13 @@ class DefectRelaxSet(MSONable):
         ``defect_dir`` to aid calculation provenance.
 
         Args:
-            defect_dir (str):
+            defect_dir (PathLike):
                 Folder in which to create the VASP defect calculation inputs.
                 Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
                 etc.), from ``self.defect_entry.name``. If this attribute is not
                 set, it is automatically generated according to the doped
                 convention (using ``get_defect_name_from_entry()``).
-            subfolder (str):
+            subfolder (PathLike):
                 Output folder structure is ``<defect_dir>/<subfolder>`` where
                 ``subfolder`` = 'vasp_std' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_std`` input files directly to the
@@ -1461,8 +1464,8 @@ class DefectRelaxSet(MSONable):
 
     def write_nkred_std(
         self,
-        defect_dir: Optional[str] = None,
-        subfolder: Optional[str] = "vasp_nkred_std",
+        defect_dir: Optional[PathLike] = None,
+        subfolder: Optional[PathLike] = "vasp_nkred_std",
         unperturbed_poscar: bool = False,
         bulk: bool = False,
         **kwargs,
@@ -1505,13 +1508,13 @@ class DefectRelaxSet(MSONable):
         ``defect_dir`` to aid calculation provenance.
 
         Args:
-            defect_dir (str):
+            defect_dir (PathLike):
                 Folder in which to create the VASP defect calculation inputs.
                 Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
                 etc.), from ``self.defect_entry.name``. If this attribute is not
                 set, it is automatically generated according to the doped
                 convention (using ``get_defect_name_from_entry()``).
-            subfolder (str):
+            subfolder (PathLike):
                 Output folder structure is ``<defect_dir>/<subfolder>`` where
                 ``subfolder`` = 'vasp_nkred_std' by default. Setting ``subfolder``
                 to ``None`` will write the ``vasp_nkred_std`` input files directly
@@ -1568,8 +1571,8 @@ class DefectRelaxSet(MSONable):
 
     def write_ncl(
         self,
-        defect_dir: Optional[str] = None,
-        subfolder: Optional[str] = "vasp_ncl",
+        defect_dir: Optional[PathLike] = None,
+        subfolder: Optional[PathLike] = "vasp_ncl",
         unperturbed_poscar: bool = False,
         bulk: bool = False,
         **kwargs,
@@ -1608,13 +1611,13 @@ class DefectRelaxSet(MSONable):
         ``defect_dir`` to aid calculation provenance.
 
         Args:
-            defect_dir (str):
+            defect_dir (PathLike):
                 Folder in which to create the VASP defect calculation inputs.
                 Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
                 etc.), from ``self.defect_entry.name``. If this attribute is not
                 set, it is automatically generated according to the doped
                 convention (using ``get_defect_name_from_entry()``).
-            subfolder (str):
+            subfolder (PathLike):
                 Output folder structure is ``<defect_dir>/<subfolder>`` where
                 ``subfolder`` = 'vasp_ncl' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_ncl`` input files directly to the
@@ -1674,7 +1677,7 @@ class DefectRelaxSet(MSONable):
 
     def write_all(
         self,
-        defect_dir: Optional[str] = None,
+        defect_dir: Optional[PathLike] = None,
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
         bulk: Union[bool, str] = False,
@@ -1747,7 +1750,7 @@ class DefectRelaxSet(MSONable):
         ``defect_dir`` to aid calculation provenance.
 
         Args:
-            defect_dir (str):
+            defect_dir (PathLike):
                 Folder in which to create the VASP defect calculation inputs.
                 Default is to use the DefectEntry name (e.g. "Y_i_C4v_O1.92_+2"
                 etc.), from ``self.defect_entry.name``. If this attribute is not
@@ -1986,7 +1989,7 @@ class DefectsSet(MSONable):
                 ``DefectsGenerator`` object, otherwise the ``defect_entries`` dictionary,
                 which will be written to file when ``write_files()`` is called, to
                 aid calculation provenance.
-            json_name (str):
+            json_name (PathLike):
                 Name of the JSON file to save the ``json_obj`` to.
 
             Input parameters are also set as attributes.
@@ -2155,7 +2158,7 @@ class DefectsSet(MSONable):
 
     def write_files(
         self,
-        output_path: str = ".",
+        output_path: PathLike = ".",
         unperturbed_poscar: bool = False,
         vasp_gam: bool = False,
         bulk: Union[bool, str] = True,
@@ -2234,7 +2237,7 @@ class DefectsSet(MSONable):
         chemical potential) calculations.
 
         Args:
-            output_path (str):
+            output_path (PathLike):
                 Folder in which to create the VASP defect calculation folders.
                 Default is the current directory ("."). Output folder structure
                 is ``<output_path>/<defect_species>/<subfolder>`` where
