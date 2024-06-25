@@ -89,6 +89,10 @@ the
 Studies using ``doped``, so far
 ===============================
 
+.. Not currently cited but should be for chempot plot:
+   Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_arXiv_](https://arxiv.org/abs/2406.15637) 2024
+
+- Z\. Yuan & G. Hautier **First-principles study of defects and doping limits in CaO** `Applied Physics Letters <https://doi.org/10.1063/5.0211707>`_ 2024
 - B\. E. Murdock et al. **Li-Site Defects Induce Formation of Li-Rich Impurity Phases: Implications for Charge Distribution and Performance of LiNi** :sub:`0.5-x` **M** :sub:`x` **Mn** :sub:`1.5` **O** :sub:`4`  **Cathodes (M = Fe and Mg; x = 0.05–0.2)** `Advanced Materials <https://doi.org/10.1002/adma.202400343>`_ 2024
 - A\. G. Squires et al. **Oxygen dimerization as a defect-driven process in bulk LiNiO₂** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-lcmkj>`_ 2024
 - Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>** `arXiv <https://doi.org/10.48550/arXiv.2401.02257>`_ 2024
