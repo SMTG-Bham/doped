@@ -19,15 +19,16 @@ from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
+from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped import _doped_obj_properties_methods
 
 if TYPE_CHECKING:
-    from pathlib import Path
 
     from easyunfold.procar import Procar as EasyunfoldProcar
+
 
 # SpglibDataset warning introduced in v2.4.1, can be ignored for now
 warnings.filterwarnings("ignore", message="dict interface")
@@ -175,13 +176,13 @@ class DefectEntry(thermo.DefectEntry):
                 f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``DefectEntry`` object to a json file, which can be reloaded
         with the ``DefectEntry.from_json()`` class method.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename to save json file as. If None, the filename will
                 be set as ``"{DefectEntry.name}.json"``.
         """
@@ -196,7 +197,7 @@ class DefectEntry(thermo.DefectEntry):
         Load a ``DefectEntry`` object from a json file.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename of json file to load ``DefectEntry`` from.
 
         Returns:
@@ -286,14 +287,14 @@ class DefectEntry(thermo.DefectEntry):
     def get_freysoldt_correction(
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-        defect_locpot: Optional[Union[str, Locpot, dict]] = None,
-        bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
+        defect_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
+        bulk_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
         plot: bool = False,
-        filename: Optional[str] = None,
+        filename: Optional[PathLike] = None,
         axis=None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
-        style_file: Optional[str] = None,
+        style_file: Optional[PathLike] = None,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -334,7 +335,7 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the FNV electrostatic potential plots (for
                 manually checking the behaviour of the charge correction here).
-            filename (str):
+            filename (PathLike):
                 Filename to save the FNV electrostatic potential plots to.
                 If None, plots are not saved.
             axis (int or None):
@@ -351,7 +352,7 @@ class DefectEntry(thermo.DefectEntry):
                 If the estimated error in the charge correction, based on the
                 variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            style_file (str):
+            style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
@@ -416,13 +417,13 @@ class DefectEntry(thermo.DefectEntry):
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         defect_region_radius: Optional[float] = None,
         excluded_indices: Optional[list[int]] = None,
-        defect_outcar: Optional[Union[str, Outcar]] = None,
-        bulk_outcar: Optional[Union[str, Outcar]] = None,
+        defect_outcar: Optional[Union[PathLike, Outcar]] = None,
+        bulk_outcar: Optional[Union[PathLike, Outcar]] = None,
         plot: bool = False,
-        filename: Optional[str] = None,
+        filename: Optional[PathLike] = None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
-        style_file: Optional[str] = None,
+        style_file: Optional[PathLike] = None,
         **kwargs,
     ):
         """
@@ -467,12 +468,12 @@ class DefectEntry(thermo.DefectEntry):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
-            defect_outcar (str or Outcar):
+            defect_outcar (PathLike or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
                 calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``defect_supercell_site_potentials``
                 from the ``defect_entry`` ``calculation_metadata`` if available.
-            bulk_outcar (str or Outcar):
+            bulk_outcar (PathLike or Outcar):
                 Path to the output VASP OUTCAR file from the bulk supercell
                 calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``bulk_supercell_site_potentials``
@@ -480,7 +481,7 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
                 manually checking the behaviour of the charge correction here).
-            filename (str):
+            filename (PathLike):
                 Filename to save the Kumagai site potential plots to.
                 If None, plots are not saved.
             return_correction_error (bool):
@@ -492,7 +493,7 @@ class DefectEntry(thermo.DefectEntry):
                 If the estimated error in the charge correction, based on the
                 variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            style_file (str):
+            style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
@@ -552,10 +553,10 @@ class DefectEntry(thermo.DefectEntry):
 
     def _load_and_parse_eigenvalue_data(
         self,
-        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        bulk_vr: Optional[Union[PathLike, Vasprun]] = None,
+        bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[PathLike, Vasprun]] = None,
+        defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
         force_reparse: bool = False,
     ):
         """
@@ -563,7 +564,7 @@ class DefectEntry(thermo.DefectEntry):
         present in the ``calculation_metadata``.
 
         Args:
-            bulk_vr (str, Path, Vasprun):
+            bulk_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
@@ -571,7 +572,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if projected eigenvalue data available from ``bulk_vr``
                 (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
@@ -579,7 +580,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
                 calculation. If ``None`` (default), tries to load from a
                 ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
-            defect_vr (str, Path, Vasprun):
+            defect_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
                 calculation. If ``None`` (default), tries to load the ``Vasprun``
@@ -587,7 +588,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (str, Path, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if projected eigenvalue data available from ``defect_vr``
                 (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
@@ -696,11 +697,11 @@ class DefectEntry(thermo.DefectEntry):
     def get_eigenvalue_analysis(
         self,
         plot: bool = True,
-        filename: Optional[str] = None,
-        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        filename: Optional[PathLike] = None,
+        bulk_vr: Optional[Union[PathLike, Vasprun]] = None,
+        bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[PathLike, Vasprun]] = None,
+        defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
         force_reparse: bool = False,
         **kwargs,
     ):
@@ -731,10 +732,10 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the single-particle eigenvalues.
                 (Default: True)
-            filename (str):
+            filename (PathLike):
                 Filename to save the eigenvalue plot to (if ``plot = True``).
                 If ``None`` (default), plots are not saved.
-            bulk_vr (str, Path, Vasprun):
+            bulk_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -745,7 +746,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -755,7 +756,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
                 calculation. If ``None`` (default), tries to load from a
                 ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
-            defect_vr (str, Path, Vasprun):
+            defect_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -766,7 +767,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (str, Path, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -1286,7 +1287,7 @@ class DefectEntry(thermo.DefectEntry):
         relative_to_defect: Optional[bool] = False,
         vector_to_project_on: Optional[list] = None,
         use_plotly: Optional[bool] = False,
-        mpl_style_file: Optional[str] = "",
+        mpl_style_file: Optional[PathLike] = "",
     ):
         """
         Plot the site displacements as a function of distance from the defect
@@ -1307,7 +1308,7 @@ class DefectEntry(thermo.DefectEntry):
                 in the cartesian basis x, y, z).
             use_plotly (bool):
                 Whether to use plotly (True) or matplotlib (False).
-            mpl_style_file (str):
+            mpl_style_file (PathLike):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
@@ -1941,13 +1942,13 @@ class Defect(core.Defect):
         """
         return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``Defect`` object to a json file, which can be reloaded with
         the `` Defect``.from_json()`` class method.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename to save json file as. If None, the filename will
                 be set as "{Defect.name}.json".
         """
@@ -1962,7 +1963,7 @@ class Defect(core.Defect):
         Load a ``Defect`` object from a json file.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename of json file to load ``Defect`` from.
 
         Returns:

@@ -30,6 +30,7 @@ from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
+from pymatgen.util.typing import PathLike
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -145,15 +146,22 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
+def closest_site_info(
+    defect_entry_or_defect: Union[DefectEntry, Defect],
+    n: int = 1,
+    element_list: Optional[list[str]] = None,
+):
     """
     Return the element and distance (rounded to 2 decimal places) of the
-    closest site to the defect in the input DefectEntry or Defect object.
+    closest site to the defect in the input ``DefectEntry`` or ``Defect``
+    object.
 
-    If DefectEntry, uses defect_entry.defect_supercell_site if set, otherwise
-    defect_entry.sc_defect_frac_coords, with defect_entry.sc_entry.structure.
-    If Defect, uses defect.get_supercell_structure() with a 2x2x2 supercell to
-    ensure none of the detected sites are periodic images of the defect site.
+    If ``DefectEntry``, uses ``defect_entry.defect_supercell_site`` if set,
+    otherwise ``defect_entry.sc_defect_frac_coords``, with
+    ``defect_entry.sc_entry.structure``.
+    If ``Defect``, uses ``defect.get_supercell_structure()`` with a 2x2x2
+    supercell to ensure none of the detected sites are periodic images of
+    the defect site.
 
     Requires distances > 0.01 (i.e. so not the site itself), and if there are
     multiple elements with the same distance, sort by order of appearance of
@@ -224,7 +232,12 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, symprec=0.01):
+def get_defect_name_from_defect(
+    defect: Defect,
+    element_list: Optional[list[str]] = None,
+    symm_ops: Optional[list] = None,
+    symprec: float = 0.01,
+):
     """
     Get the doped/SnB defect name from Defect object.
 
@@ -395,7 +408,11 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
-def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
+def name_defect_entries(
+    defect_entries: list[DefectEntry],
+    element_list: Optional[list[str]] = None,
+    symm_ops: Optional[list] = None,
+):
     """
     Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
     objects, where the names are set according to the default doped algorithm;
@@ -500,7 +517,7 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
 
         return defect_naming_dict, defect_name
 
-    defect_naming_dict = {}
+    defect_naming_dict: dict[str, DefectEntry] = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_defect(defect_entry.defect, element_list, symm_ops)
         split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
@@ -1983,13 +2000,13 @@ class DefectsGenerator(MSONable):
 
         return defects_generator
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``DefectsGenerator`` object as a json file, which can be
         reloaded with the ``DefectsGenerator.from_json()`` class method.
 
         Args:
-            filename (str): Filename to save json file as. If None, the filename will be
+            filename (PathLike): Filename to save json file as. If None, the filename will be
                 set as "{Chemical Formula}_defects_generator.json" where {Chemical Formula}
                 is the chemical formula of the host material.
         """
@@ -2002,16 +2019,17 @@ class DefectsGenerator(MSONable):
         dumpfn(self, filename)
 
     @classmethod
-    def from_json(cls, filename: str):
+    def from_json(cls, filename: PathLike):
         """
-        Load a DefectsGenerator object from a json file.
+        Load a ``DefectsGenerator`` object from a json file.
 
         Args:
-            filename (str): Filename of json file to load DefectsGenerator
-            object from.
+            filename (PathLike):
+                Filename of json file to load DefectsGenerator
+                object from.
 
         Returns:
-            DefectsGenerator object
+            ``DefectsGenerator`` object
         """
         return loadfn(filename)
 
@@ -2158,7 +2176,7 @@ class DefectsGenerator(MSONable):
         )
 
 
-def _first_and_second_element(defect_name):
+def _first_and_second_element(defect_name: str):
     """
     Return a tuple of the first and second element in the defect name.
 
@@ -2175,7 +2193,9 @@ def _first_and_second_element(defect_name):
     )
 
 
-def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
+def _sort_defect_entries(
+    defect_entries_dict: dict, element_list: Optional[list] = None, symm_ops: Optional[list] = None
+):
     """
     Sort defect entries for deterministic behaviour (for output and when
     reloading DefectsGenerator objects, and with DefectThermodynamics entries
@@ -2187,13 +2207,12 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     charge state (from positive to negative).
     """
     if element_list is None:
-        host_element_list = None
-        extrinsic_element_list = []
+        host_element_list = [
+            el.symbol
+            for el in next(iter(defect_entries_dict.values())).defect.structure.composition.elements
+        ]
+        extrinsic_element_list: list[str] = []
         for defect_entry in defect_entries_dict.values():
-            if host_element_list is None:  # first iteration
-                host_element_list = [
-                    el.symbol for el in defect_entry.defect.structure.composition.elements
-                ]
             extrinsic_element_list.extend(
                 el.symbol
                 for el in defect_entry.defect.defect_structure.composition.elements
@@ -2258,7 +2277,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
             raise value_err_2 from value_err
 
 
-def _sort_defects(defects_dict, element_list=None):
+def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     """
     Sort defect objects for deterministic behaviour (for output and when
     reloading DefectsGenerator objects.
@@ -2268,13 +2287,13 @@ def _sort_defects(defects_dict, element_list=None):
     alphabetically, then according to symmetry._frac_coords_sort_func.
     """
     if element_list is None:
-        all_elements = []
-        host_element_list = None
+        all_elements: list[str] = []
+        host_element_list = [
+            el.symbol for el in next(iter(defects_dict.values())).structure.composition.elements
+        ]
 
         for _defect_type, defect_list in defects_dict.items():
             for defect in defect_list:
-                if host_element_list is None:  # first iteration
-                    host_element_list = [el.symbol for el in defect.structure.composition.elements]
                 all_elements.extend(el.symbol for el in defect.defect_structure.composition.elements)
         extrinsic_element_list = list(set(all_elements) - set(host_element_list))
 

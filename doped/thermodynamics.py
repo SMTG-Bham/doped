@@ -22,6 +22,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
 from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.util.typing import PathLike
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 
@@ -616,13 +617,13 @@ class DefectThermodynamics(MSONable):
             dist_tol=d.get("dist_tol"),
         )
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``DefectThermodynamics`` object as a json file, which can be
         reloaded with the ``DefectThermodynamics.from_json()`` class method.
 
         Args:
-            filename (str): Filename to save json file as. If None, the filename will be
+            filename (PathLike): Filename to save json file as. If None, the filename will be
                 set as "{Chemical Formula}_defect_thermodynamics.json" where
                 {Chemical Formula} is the chemical formula of the host material.
         """
@@ -635,16 +636,17 @@ class DefectThermodynamics(MSONable):
         dumpfn(self, filename)
 
     @classmethod
-    def from_json(cls, filename: str):
+    def from_json(cls, filename: PathLike):
         """
-        Load a DefectThermodynamics object from a json file.
+        Load a ``DefectThermodynamics`` object from a json file.
 
         Args:
-            filename (str): Filename of json file to load DefectThermodynamics
-            object from.
+            filename (PathLike):
+                Filename of json file to load ``DefectThermodynamics``
+                object from.
 
         Returns:
-            DefectThermodynamics object
+            ``DefectThermodynamics`` object
         """
         return loadfn(filename)
 
@@ -1331,7 +1333,7 @@ class DefectThermodynamics(MSONable):
         )
 
     def _parse_fermi_dos(
-        self, bulk_dos: Union[str, Vasprun, FermiDos], skip_check: bool = False
+        self, bulk_dos: Union[PathLike, Vasprun, FermiDos], skip_check: bool = False
     ) -> FermiDos:
         if isinstance(bulk_dos, FermiDos):
             fdos = bulk_dos
@@ -1339,7 +1341,7 @@ class DefectThermodynamics(MSONable):
             fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
             fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
-        if isinstance(bulk_dos, str):
+        if isinstance(bulk_dos, PathLike):
             bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
 
         if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
@@ -1368,7 +1370,7 @@ class DefectThermodynamics(MSONable):
 
     def get_equilibrium_fermi_level(
         self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, str]] = None,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
@@ -1407,7 +1409,7 @@ class DefectThermodynamics(MSONable):
         ``defect_entry.degeneracy_factors`` attributes.
 
         Args:
-            bulk_dos (FermiDos or Vasprun or str):
+            bulk_dos (FermiDos or Vasprun or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
                 for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
                 ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
@@ -1524,7 +1526,7 @@ class DefectThermodynamics(MSONable):
 
     def get_quenched_fermi_level_and_concentrations(
         self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, str]] = None,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
@@ -1588,7 +1590,7 @@ class DefectThermodynamics(MSONable):
         https://doi.org/10.21105/joss.04962
 
         Args:
-            bulk_dos (FermiDos or Vasprun or str):
+            bulk_dos (FermiDos or Vasprun or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
                 for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
                 ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
@@ -2355,13 +2357,13 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[dict] = None,
         chempot_table: bool = True,
         all_entries: Union[bool, str] = False,
-        style_file: Optional[str] = None,
+        style_file: Optional[PathLike] = None,
         xlim: Optional[tuple] = None,
         ylim: Optional[tuple] = None,
         fermi_level: Optional[float] = None,
         colormap: Optional[Union[str, colors.Colormap]] = None,
         auto_labels: bool = False,
-        filename: Optional[str] = None,
+        filename: Optional[PathLike] = None,
     ) -> Union[Figure, list[Figure]]:
         r"""
         Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
@@ -2421,9 +2423,9 @@ class DefectThermodynamics(MSONable):
                 Fermi level position (traditional). If instead set to "faded", will plot
                 the equilibrium states in bold, and all unstable states in faded grey
                 (Default: False)
-            style_file (str):
+            style_file (PathLike):
                 Path to a mplstyle file to use for the plot. If None (default), uses
-                the default doped style (from doped/utils/doped.mplstyle).
+                the default doped style (from ``doped/utils/doped.mplstyle``).
             xlim:
                 Tuple (min,max) giving the range of the x-axis (Fermi level). May want
                 to set manually when including transition level labels, to avoid crossing
@@ -2446,7 +2448,7 @@ class DefectThermodynamics(MSONable):
                 Whether to automatically label the transition levels with their charge
                 states. If there are many transition levels, this can be quite ugly.
                 (Default: False)
-            filename (str): Filename to save the plot to. (Default: None (not saved))
+            filename (PathLike): Filename to save the plot to. (Default: None (not saved))
 
         Returns:
             Matplotlib Figure object, or list of Figure objects if multiple limits
@@ -3074,7 +3076,9 @@ class DefectThermodynamics(MSONable):
         )
 
 
-def _group_defect_charge_state_concentrations(conc_df, per_site=False, skip_formatting=False):
+def _group_defect_charge_state_concentrations(
+    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False
+):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
     raw_concentrations = (
         summed_df["Raw Concentration"]
@@ -3101,7 +3105,7 @@ def _group_defect_charge_state_concentrations(conc_df, per_site=False, skip_form
     )
 
 
-def _format_concentration(raw_concentration, per_site=False, skip_formatting=False):
+def _format_concentration(raw_concentration: float, per_site: bool = False, skip_formatting: bool = False):
     """
     Format concentration values for ``DataFrame`` outputs.
     """
@@ -3113,7 +3117,7 @@ def _format_concentration(raw_concentration, per_site=False, skip_formatting=Fal
     return f"{raw_concentration:.3e}"
 
 
-def _format_per_site_concentration(raw_concentration):
+def _format_per_site_concentration(raw_concentration: float):
     """
     Format per-site concentrations for ``DataFrame`` outputs.
     """
@@ -3122,11 +3126,18 @@ def _format_per_site_concentration(raw_concentration):
     return f"{raw_concentration * 100:.3e} %"
 
 
-def get_fermi_dos(dos_vr: Union[str, Vasprun]):
+def get_fermi_dos(dos_vr: Union[PathLike, Vasprun]):
     """
     Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
-    eiether a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-    ``Vasprun`` object (parsed with ``parse_dos = True``).
+    either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+    object (parsed with ``parse_dos = True``).
+
+    Args:
+        dos_vr (Union[PathLike, Vasprun]):
+            Path to a ``vasprun.xml(.gz)`` file, or a ``Vasprun`` object.
+
+    Returns:
+        FermiDos: The ``FermiDos`` object.
     """
     if not isinstance(dos_vr, Vasprun):
         dos_vr = get_vasprun(dos_vr, parse_dos=True)
@@ -3143,6 +3154,26 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
     level should be the corresponding eigenvalue within the calculation (or in
     other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
+
+    Args:
+        fermi_dos (FermiDos):
+            ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+            for calculating carrier concentrations.
+
+            Usually this is a static calculation with the `primitive` cell of the bulk
+            material, with relatively dense `k`-point sampling (especially for materials
+            with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+            level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+            convergence wrt `k`-point sampling. Consistent functional settings should be
+            used for the bulk DOS and defect supercell calculations.
+        fermi_level (float):
+            Value corresponding to the electron chemical potential, **not** referenced
+            to the VBM! (i.e. same eigenvalue reference as the raw calculation)
+        temperature (float):
+            Temperature in Kelvin at which to calculate the equilibrium concentrations.
+
+    Returns:
+        tuple[float, float]: The electron and hole concentrations in cm^-3.
     """
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from f0, can remove in
@@ -3186,7 +3217,27 @@ def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> f
     other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
 
     Refactored from ``FermiDos.get_doping()`` to be more accurate/robust
-    (independent of estimated VBM/CBM positions
+    (independent of estimated VBM/CBM positions, avoiding overflow warnings).
+
+    Args:
+        fermi_dos (FermiDos):
+            ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+            for calculating carrier concentrations.
+
+            Usually this is a static calculation with the `primitive` cell of the bulk
+            material, with relatively dense `k`-point sampling (especially for materials
+            with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+            level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+            convergence wrt `k`-point sampling. Consistent functional settings should be
+            used for the bulk DOS and defect supercell calculations.
+        fermi_level (float):
+            Value corresponding to the electron chemical potential, **not** referenced
+            to the VBM! (i.e. same eigenvalue reference as the raw calculation)
+        temperature (float):
+            Temperature in Kelvin at which to calculate the equilibrium concentrations.
+
+    Returns:
+        tuple[float, float]: The electron and hole concentrations in cm^-3.
     """
     # can replace this function with the ``FermiDos.get_doping()`` method in future versions following SK's
     # fix in https://github.com/materialsproject/pymatgen/pull/3879, whenever pymatgen>2024.6.10 becomes

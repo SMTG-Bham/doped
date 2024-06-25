@@ -28,25 +28,32 @@ try:
 except ImportError:
     plotly_installed = False
 
+from pymatgen.util.typing import PathLike
+
+from doped.core import DefectEntry
+
 
 def calc_site_displacements(
-    defect_entry,
+    defect_entry: DefectEntry,
     vector_to_project_on: Optional[list] = None,
     relative_to_defect: Optional[bool] = False,
 ) -> dict:
     """
     Calculates the site displacements in the defect supercell, relative to the
     bulk supercell. The signed displacements are stored in the
-    calculation_metadata of the DefectEntry object under the
+    calculation_metadata of the ``DefectEntry`` object under the
     "site_displacements" key.
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object
-        vector_to_project_on (list): Direction to project the site
-            displacements along (e.g. [0, 0, 1]). Defaults to None.
-        relative_to_defect (bool): Whether to calculate the signed displacements
-            along the line from the defect site to that atom. Negative values
-            indicate the atom moves towards the defect (compressive strain),
+        defect_entry (DefectEntry):
+            DefectEntry object
+        vector_to_project_on (list):
+            Direction to project the site displacements along
+            (e.g. [0, 0, 1]). Defaults to None.
+        relative_to_defect (bool):
+            Whether to calculate the signed displacements along the line
+            from the defect site to that atom. Negative values indicate
+            the atom moves towards the defect (compressive strain),
             positive values indicate the atom moves away from the defect.
             Defaults to False. If True, the relative displacements are stored in
             the `Displacement wrt defect` key of the returned dictionary.
@@ -259,31 +266,35 @@ def calc_site_displacements(
 
 
 def plot_site_displacements(
-    defect_entry,
+    defect_entry: DefectEntry,
     separated_by_direction: Optional[bool] = False,
     relative_to_defect: Optional[bool] = False,
     vector_to_project_on: Optional[list] = None,
     use_plotly: Optional[bool] = True,
-    style_file: Optional[str] = "",
+    style_file: Optional[PathLike] = None,
 ):
     """
     Plots site displacements around a defect.
 
     Args:
-        defect_entry: DefectEntry object
-        separated_by_direction: Whether to plot site displacements separated by
+        defect_entry (DefectEntry): DefectEntry object
+        separated_by_direction (bool):
+            Whether to plot site displacements separated by
             direction (x, y, z). Default is False.
-        relative_to_defect (bool): Whether to plot the signed displacements
+        relative_to_defect (bool):
+            Whether to plot the signed displacements
             along the line from the defect site to that atom. Negative values
             indicate the atom moves towards the defect (compressive strain),
             positive values indicate the atom moves away from the defect
             (tensile strain). Uses the *relaxed* defect position as reference.
-        vector_to_project_on: Direction to project the site displacements along
+        vector_to_project_on (bool):
+            Direction to project the site displacements along
             (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
             in the cartesian basis x, y, z).
-        use_plotly: Whether to use Plotly for plotting. Default is True.
-        style_file: Path to matplotlib style file. Default is "", which will use
-            the doped default style.
+        use_plotly (bool):
+            Whether to use Plotly for plotting. Default is True.
+        style_file (PathLike):
+            Path to matplotlib style file. if not set, will use the ``doped`` default style.
 
     Returns:
         Plotly or matplotlib figure.

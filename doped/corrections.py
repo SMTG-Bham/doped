@@ -47,6 +47,7 @@ from pymatgen.analysis.defects.corrections import freysoldt
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
+from pymatgen.util.typing import PathLike
 from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import _convert_dielectric_to_tensor
@@ -98,8 +99,8 @@ def _get_and_check_metadata(entry, key, display_name):
     return value
 
 
-def _check_if_str_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
-    if isinstance(locpot_or_outcar, str):
+def _check_if_pathlike_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
+    if isinstance(locpot_or_outcar, PathLike):
         if obj_type == "locpot":
             return get_locpot(locpot_or_outcar)
         return get_outcar(locpot_or_outcar)
@@ -116,13 +117,13 @@ def _check_if_str_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
 def get_freysoldt_correction(
     defect_entry,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-    defect_locpot: Optional[Union[str, Locpot, dict]] = None,
-    bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
+    defect_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
+    bulk_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
     plot: bool = False,
-    filename: Optional[str] = None,
+    filename: Optional[PathLike] = None,
     axis: Optional[int] = None,
     verbose: bool = True,
-    style_file: Optional[str] = None,
+    style_file: Optional[PathLike] = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -160,7 +161,7 @@ def get_freysoldt_correction(
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
             manually checking the behaviour of the charge correction here).
-        filename (str):
+        filename (PathLike):
             Filename to save the FNV electrostatic potential plots to.
             If None, plots are not saved.
         axis (int or None):
@@ -170,7 +171,7 @@ def get_freysoldt_correction(
             If None, then all three axes are plotted.
         verbose (bool):
             Whether to print the correction energy (default = True).
-        style_file (str):
+        style_file (PathLike):
             Path to a ``.mplstyle`` file to use for the plot. If ``None``
             (default), uses the default doped style
             (from ``doped/utils/doped.mplstyle``).
@@ -197,8 +198,8 @@ def get_freysoldt_correction(
     )
     bulk_locpot = bulk_locpot or _get_and_check_metadata(defect_entry, "bulk_locpot_dict", "Bulk LOCPOT")
 
-    defect_locpot = _check_if_str_and_get_pmg_obj(defect_locpot, obj_type="locpot")
-    bulk_locpot = _check_if_str_and_get_pmg_obj(bulk_locpot, obj_type="locpot")
+    defect_locpot = _check_if_pathlike_and_get_pmg_obj(defect_locpot, obj_type="locpot")
+    bulk_locpot = _check_if_pathlike_and_get_pmg_obj(bulk_locpot, obj_type="locpot")
 
     fnv_correction = freysoldt.get_freysoldt_correction(
         q=defect_entry.charge_state,
@@ -255,7 +256,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
             axis is one of [0, 1, 2] specifying which axis to plot along (a, b, c)).
          title (str): Title for the plot. Default is no title.
          ax (matplotlib.axes.Axes): Axes object to plot on. If None, makes new figure.
-         style_file (str):
+         style_file (PathLike):
             Path to a mplstyle file to use for the plot. If None (default), uses
             the default doped style (from doped/utils/doped.mplstyle).
     """
@@ -313,12 +314,12 @@ def get_kumagai_correction(
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
     defect_region_radius: Optional[float] = None,
     excluded_indices: Optional[list[int]] = None,
-    defect_outcar: Optional[Union[str, Outcar]] = None,
-    bulk_outcar: Optional[Union[str, Outcar]] = None,
+    defect_outcar: Optional[Union[PathLike, Outcar]] = None,
+    bulk_outcar: Optional[Union[PathLike, Outcar]] = None,
     plot: bool = False,
-    filename: Optional[str] = None,
+    filename: Optional[PathLike] = None,
     verbose: bool = True,
-    style_file: Optional[str] = None,
+    style_file: Optional[PathLike] = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -360,12 +361,12 @@ def get_kumagai_correction(
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
             If None (default), no sites are excluded.
-        defect_outcar (str or Outcar):
+        defect_outcar (PathLike or Outcar):
             Path to the output VASP OUTCAR file from the defect supercell
             calculation, or the corresponding pymatgen Outcar object.
             If None, will try to use the ``defect_site_potentials``
             from the ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_outcar (str or Outcar):
+        bulk_outcar (PathLike or Outcar):
             Path to the output VASP OUTCAR file from the bulk supercell
             calculation, or the corresponding pymatgen Outcar object.
             If None, will try to use the ``bulk_site_potentials``
@@ -373,12 +374,12 @@ def get_kumagai_correction(
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
             manually checking the behaviour of the charge correction here).
-        filename (str):
+        filename (PathLike):
             Filename to save the Kumagai site potential plots to.
             If None, plots are not saved.
         verbose (bool):
             Whether to print the correction energy (default = True).
-        style_file (str):
+        style_file (PathLike):
             Path to a mplstyle file to use for the plot. If None (default), uses
             the default doped style (from doped/utils/doped.mplstyle).
         **kwargs:
@@ -499,7 +500,7 @@ def get_kumagai_correction(
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     if defect_outcar is not None:
-        defect_outcar = _check_if_str_and_get_pmg_obj(defect_outcar, obj_type="outcar")
+        defect_outcar = _check_if_pathlike_and_get_pmg_obj(defect_outcar, obj_type="outcar")
         if defect_outcar.electrostatic_potential is None:
             _raise_incomplete_outcar_error(defect_outcar, dir_type="defect")
         defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
@@ -509,7 +510,7 @@ def get_kumagai_correction(
         )
 
     if bulk_outcar is not None:
-        bulk_outcar = _check_if_str_and_get_pmg_obj(bulk_outcar, obj_type="outcar")
+        bulk_outcar = _check_if_pathlike_and_get_pmg_obj(bulk_outcar, obj_type="outcar")
         if bulk_outcar.electrostatic_potential is None:
             _raise_incomplete_outcar_error(bulk_outcar, dir_type="bulk")
         bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
@@ -635,7 +636,7 @@ def _raise_incomplete_outcar_error(outcar, dir_type="bulk"):
 
     Input outcar is either a path or a pymatgen Outcar object
     """
-    outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, str) else "`OUTCAR` object"
+    outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, PathLike) else "`OUTCAR` object"
     raise ValueError(
         f"Unable to parse atomic core potentials from {dir_type} {outcar_info}. This can happen if "
         f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
