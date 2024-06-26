@@ -139,4 +139,4 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
-    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
