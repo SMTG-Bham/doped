@@ -50,8 +50,11 @@ def _check_spglib_version():
         warnings.warn(
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by installing spglib with `conda install -c "
-            f"conda-forge spglib` or `pip install git+https://github.com/spglib/spglib "
+            f"spglib warning messages, but can be avoided by:\n"
+            f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
+            f"(to ensure no duplicate installations).\n"
+            f"- Then, install spglib with `conda install -c conda-forge spglib` or "
+            f"`pip install git+https://github.com/spglib/spglib "
             f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
             f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
         )
