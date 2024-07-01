@@ -566,7 +566,7 @@ class DefectsParser:
                 calculation provenance. Can be reloaded using the ``loadfn`` function
                 from ``monty.serialization`` (and then input to ``DefectThermodynamics``
                 etc.). If ``None`` (default), set as
-                ``{Host Chemical Formula}_defect_dict.json``.
+                ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
@@ -1167,7 +1167,7 @@ class DefectsParser:
                 formula = next(
                     iter(self.defect_dict.values())
                 ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-                self.json_filename = f"{formula}_defect_dict.json"
+                self.json_filename = f"{formula}_defect_dict.json.gz"
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
 

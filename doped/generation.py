@@ -2005,23 +2005,29 @@ class DefectsGenerator(MSONable):
         Save the ``DefectsGenerator`` object as a json file, which can be
         reloaded with the ``DefectsGenerator.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
-            filename (PathLike): Filename to save json file as. If None, the filename will be
-                set as "{Chemical Formula}_defects_generator.json" where {Chemical Formula}
-                is the chemical formula of the host material.
+            filename (PathLike):
+                Filename to save json file as. If None, the filename will be
+                set as ``{Chemical Formula}_defects_generator.json.gz`` where
+                {Chemical Formula} is the chemical formula of the host material.
         """
         if filename is None:
             formula = self.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
-            filename = f"{formula}_defects_generator.json"
+            filename = f"{formula}_defects_generator.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: PathLike):
         """
-        Load a ``DefectsGenerator`` object from a json file.
+        Load a ``DefectsGenerator`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):

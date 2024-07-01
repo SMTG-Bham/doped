@@ -128,44 +128,46 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.MgO_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "MgO")
 
         cls.orig_CdTe_defect_dict = loadfn(
-            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json.gz")
         )
         cls.orig_CdTe_defect_thermo = loadfn(
-            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz")
         )
         cls.orig_YTOS_defect_dict = loadfn(
-            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json")
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json.gz")
         )
         cls.orig_YTOS_defect_thermo = loadfn(
-            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
         )
         cls.orig_Sb2Se3_defect_dict = loadfn(
-            os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json")
+            os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json.gz")
         )
         cls.orig_Sb2Se3_defect_thermo = loadfn(
-            os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
+            os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json.gz")
         )
         cls.orig_Sb2Si2Te6_defect_dict = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json")
+            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json.gz")
         )
         cls.orig_Sb2Si2Te6_defect_thermo = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json")
+            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json.gz")
         )
 
         cls.orig_V2O5_defect_dict = loadfn(
-            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json")
+            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json.gz")
         )
-        cls.orig_V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
+        cls.orig_V2O5_defect_thermo = loadfn(
+            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json.gz")
+        )
         cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
 
-        cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json"))
-        cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json"))
+        cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json.gz"))
+        cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
         cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "competing_phases/mgo_chempots.json"))
 
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
-        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json"))
+        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
 
-        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json"))
+        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json.gz"))
 
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
@@ -229,9 +231,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         defect_thermo.to_json()  # test default naming
         compositions = ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5", "ZnS"]
         assert defect_thermo.bulk_formula in compositions
-        assert any(os.path.exists(f"{i}_defect_thermodynamics.json") for i in compositions)
+        assert any(os.path.exists(f"{i}_defect_thermodynamics.json.gz") for i in compositions)
         for i in compositions:
-            if_present_rm(f"{i}_defect_thermodynamics.json")
+            if_present_rm(f"{i}_defect_thermodynamics.json.gz")
 
         thermo_dict = defect_thermo.as_dict()
         dumpfn(thermo_dict, "test_thermo.json")
@@ -774,7 +776,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
     def test_get_symmetries_degeneracies_MgO(self):
-        MgO_thermo = loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json")
+        MgO_thermo = loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json.gz")
         sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies()
         # print(sym_degen_df)
         assert sym_degen_df.shape == (5, 8)
@@ -1568,7 +1570,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "CdTe_LZ_defect_dict_v2.3_wout_meta",
             "CdTe_defect_dict_old_names",
         ]:
-            cdte_defect_dict = loadfn(os.path.join(self.module_path, f"data/{i}.json"))
+            cdte_defect_dict = loadfn(os.path.join(self.module_path, f"data/{i}.json.gz"))
             cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
             self._check_defect_thermo(cdte_defect_thermo, cdte_defect_dict)
 
@@ -1744,7 +1746,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         assert skipped == 1  # only v_Cd_1_not_in_gap_+1, because different format ("_+1" vs "_1")
 
-        cdte_defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json"))
+        cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json.gz")
+        )
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         cdte_defect_thermo.chempots = self.CdTe_chempots
         self._check_defect_thermo(
@@ -1778,7 +1782,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json")
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json.gz")
         )
         # random defect_entry:
         for _ in range(10):
@@ -1847,7 +1851,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test renaming behaviour when defect entries with the same names are
         provided.
         """
-        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json"))
+        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json.gz"))
         num_entries = len(defect_dict)
         for defect_entry in defect_dict.values():
             if "Cd_i" in defect_entry.name:
@@ -1951,7 +1955,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         cls.CdTe_EXAMPLE_DIR = os.path.join(cls.module_path, "../examples/CdTe")
         cls.CdTe_chempots = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         cls.defect_dict = loadfn(
-            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
         cls.defect_thermo = DefectThermodynamics(cls.defect_dict)
         cls.defect_thermo.chempots = cls.CdTe_chempots

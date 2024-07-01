@@ -1272,7 +1272,7 @@ class DefectRelaxSet(MSONable):
         )
 
         if "bulk" not in defect_dir:  # not a bulk supercell
-            self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json")
+            self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json.gz")
 
     def write_gam(
         self,
@@ -1301,11 +1301,12 @@ class DefectRelaxSet(MSONable):
         KPAR matching your HPC setup.**
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
-        The ``DefectEntry`` object is also written to a ``json`` file in
-        ``defect_dir`` to aid calculation provenance.
+        The ``DefectEntry`` object is also written to a ``json.gz`` file in
+        ``defect_dir`` to aid calculation provenance --- can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or ``DefectEntry.from_json()``.
 
         Args:
             defect_dir (PathLike):
@@ -1398,11 +1399,12 @@ class DefectRelaxSet(MSONable):
         KPAR matching your HPC setup.**
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
-        The ``DefectEntry`` object is also written to a ``json`` file in
-        ``defect_dir`` to aid calculation provenance.
+        The ``DefectEntry`` object is also written to a ``json.gz`` file in
+        ``defect_dir`` to aid calculation provenance --- can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or ``DefectEntry.from_json()``.
 
         Args:
             defect_dir (PathLike):
@@ -1501,11 +1503,12 @@ class DefectRelaxSet(MSONable):
         KPAR matching your HPC setup.**
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
-        The ``DefectEntry`` object is also written to a ``json`` file in
-        ``defect_dir`` to aid calculation provenance.
+        The ``DefectEntry`` object is also written to a ``json.gz`` file in
+        ``defect_dir`` to aid calculation provenance --- can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or ``DefectEntry.from_json()``.
 
         Args:
             defect_dir (PathLike):
@@ -1604,11 +1607,12 @@ class DefectRelaxSet(MSONable):
         KPAR matching your HPC setup.**
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
-        The ``DefectEntry`` object is also written to a ``json`` file in
-        ``defect_dir`` to aid calculation provenance.
+        The ``DefectEntry`` object is also written to a ``json.gz`` file in
+        ``defect_dir`` to aid calculation provenance --- can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or ``DefectEntry.from_json()``.
 
         Args:
             defect_dir (PathLike):
@@ -1743,11 +1747,12 @@ class DefectRelaxSet(MSONable):
         KPAR matching your HPC setup.**
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings should
-        be consistent with those used for all defect and competing phase (
-        chemical potential) calculations.
+        be consistent with those used for all defect and competing phase
+        (chemical potential) calculations.
 
-        The ``DefectEntry`` object is also written to a ``json`` file in
-        ``defect_dir`` to aid calculation provenance.
+        The ``DefectEntry`` object is also written to a ``json.gz`` file in
+        ``defect_dir`` to aid calculation provenance --- can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or ``DefectEntry.from_json()``.
 
         Args:
             defect_dir (PathLike):
@@ -2060,11 +2065,12 @@ class DefectsSet(MSONable):
     ) -> tuple[dict[str, DefectEntry], str, Union[dict[str, DefectEntry], DefectsGenerator]]:
         r"""
         Helper function to format input ``defect_entries`` into a named
-        dictionary of ``DefectEntry`` objects. Also returns the name of the
-        JSON file and object to serialise when writing the VASP input to files.
-        This is the DefectsGenerator object if ``defect_entries`` is a
-        ``DefectsGenerator`` object, otherwise the dictionary of
-        ``DefectEntry`` objects.
+        dictionary of ``DefectEntry`` objects.
+
+        Also returns the name of the JSON file and object to serialise
+        when writing the VASP input to files. This is the DefectsGenerator
+        object if ``defect_entries`` is a ``DefectsGenerator`` object,
+        otherwise the dictionary of ``DefectEntry`` objects.
 
         Args:
             defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
@@ -2078,14 +2084,14 @@ class DefectsSet(MSONable):
                 ``DefectEntry.name`` if the ``name`` attribute is set, otherwise
                 generated according to the ``doped`` convention (see doped.generation).
         """
-        json_filename = "defect_entries.json"  # global statement in case, but should be skipped
+        json_filename = "defect_entries.json.gz"  # global statement in case, but should be skipped
         json_obj = defect_entries
         if type(defect_entries).__name__ == "DefectsGenerator":
             defect_entries = cast(DefectsGenerator, defect_entries)
             formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
-            json_filename = f"{formula}_defects_generator.json"
+            json_filename = f"{formula}_defects_generator.json.gz"
             json_obj = defect_entries
             defect_entries = defect_entries.defect_entries
 
@@ -2124,7 +2130,7 @@ class DefectsSet(MSONable):
             formula = defect_entry_list[0].defect.structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
-            json_filename = f"{formula}_defect_entries.json"
+            json_filename = f"{formula}_defect_entries.json.gz"
             json_obj = defect_entries
 
         # check correct format:
@@ -2220,9 +2226,11 @@ class DefectsSet(MSONable):
         input files for all VASP calculations (gam/std/ncl) are written to the bulk
         supercell folder, or if ``bulk = False``, then no bulk folder is created.
 
-        The ``DefectEntry`` objects are also written to ``json`` files in the defect
+        The ``DefectEntry`` objects are also written to ``json.gz`` files in the defect
         folders, as well as ``self.defect_entries`` (``self.json_obj``) in the top
-        folder, to aid calculation provenance.
+        folder, to aid calculation provenance --- these can be reloaded directly
+        with ``loadfn()`` from ``monty.serialization``, or individually with
+        ``DefectEntry.from_json()``.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT`` settings,
@@ -2332,8 +2340,8 @@ class DefectsSet(MSONable):
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
 #  KPOINTS settings etc)
-# TODO: Ensure json serializability, and have optional parameter to output DefectRelaxSet jsons to
-#  written folders as well (but off by default)
+# TODO: Have optional parameter to output DefectRelaxSet jsons to written folders as well (but off by
+#  default)?
 # TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
 #  to `.defect_sets` etc?
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
