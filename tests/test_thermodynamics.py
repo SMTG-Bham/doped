@@ -555,7 +555,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test outputs of transition level functions for CdTe.
         """
         assert self.CdTe_defect_thermo.transition_level_map == {
-            "v_Cd": {0.46988348089141413: [0, -2]},
+            "v_Cd": {0.47047144459596113: [0, -2]},
             "Te_Cd": {},
             "Int_Te_3": {0.03497090517885537: [2, 1]},
         }
@@ -563,8 +563,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         tl_info = ["Defect: v_Cd", "Defect: Te_Cd"]
         tl_info_not_all = ["Transition level ε(0/-2) at 0.470 eV above the VBM"]
         tl_info_all = [
-            "Transition level ε(-1*/-2) at 0.397 eV above the VBM",
-            "Transition level ε(0/-1*) at 0.543 eV above the VBM",
+            "Transition level ε(-1*/-2) at 0.399 eV above the VBM",
+            "Transition level ε(0/-1*) at 0.542 eV above the VBM",
             "*",
         ]
 
@@ -707,8 +707,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
         assert tl_df.shape == (5, 5)
-        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(-1*/-2)", 0.397, True, 1]
-        assert list(tl_df.iloc[1]) == ["v_Cd", "ε(0/-1*)", 0.543, True, 1]
+        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(-1*/-2)", 0.399, True, 1]
+        assert list(tl_df.iloc[1]) == ["v_Cd", "ε(0/-1*)", 0.542, True, 1]
         assert list(tl_df.iloc[2]) == ["Te_Cd", "None", np.inf, False, 0]
         assert list(tl_df.iloc[3]) == ["Int_Te_3", "ε(+2/+1)", 0.035, True, 0]
         assert list(tl_df.iloc[4]) == ["Int_Te_3", "ε(+2/+1*)", 0.09, True, 1]
@@ -943,8 +943,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 -1.499,
                 "N/A",
                 0,
-                0.738,
-                3.607,
+                0.739,
+                3.608,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
             ],
             [
@@ -1279,8 +1279,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 -1.499,
                 -1.016,
                 -1.251,
-                0.738,
-                1.34,
+                0.739,
+                1.341,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
             ],
             [
@@ -1394,8 +1394,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             -6,
             -12,
             -1,
-            0.738,
-            -13.895,
+            0.739,
+            -13.893,
         ]
         assert list(manual_form_en_df.iloc[4])[:-1] == [
             "Int_Te_3",

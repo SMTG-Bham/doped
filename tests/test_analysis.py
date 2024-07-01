@@ -157,7 +157,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             7.661,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=1e-3)
+        # slightly higher atol here, due to LOCPOT sub-sampling for file compression on repo:
+        assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=2e-3)
         assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
 
     def _check_default_CdTe_DefectsParser_outputs(
@@ -346,7 +347,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_without_multiprocessing(self):
         shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz.gz"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
             os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
         )
         # test same behaviour without multiprocessing:
@@ -615,8 +616,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "Estimated error in the Kumagai (eFNV) ",
                 "charge correction for certain defects is greater than the `error_tolerance` (= "
                 "1.00e-03 eV):",
-                "v_Cd_-2: 1.13e-02 eV",
-                "v_Cd_-1: 7.91e-03 eV",
+                "v_Cd_-2: 1.",
+                "e-02 eV",
+                "v_Cd_-1:",
+                "e-03 eV",
                 "Int_Te_3_1: 3.10e-03 eV",
                 "Te_Cd_+1: 2.02e-03 eV",
                 "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
@@ -1340,8 +1343,6 @@ class DopedParsingTestCase(unittest.TestCase):
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             )
 
-        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
-
     def test_auto_charge_determination(self):
         """
         Test that the defect charge is correctly auto-determined.
@@ -1363,8 +1364,8 @@ class DopedParsingTestCase(unittest.TestCase):
                 "with specified charge_state, but beware!" in str(w[-1].message)
             )
             assert np.isclose(
-                parsed_v_cd_m1.corrections["freysoldt_charge_correction"], 0.26066457692529815
-            )
+                parsed_v_cd_m1.corrections["freysoldt_charge_correction"], 0.261, atol=1e-3
+            )  # slightly higher atol, due to LOCPOT sub-sampling for file compression on repo
 
         # test YTOS, has trickier POTCAR symbols with  Y_sv, Ti, S, O
         ytos_F_O_1 = defect_entry_from_paths(  # with corrections this time
@@ -1578,8 +1579,9 @@ class DopedParsingTestCase(unittest.TestCase):
             atol=3e-3,
         )  # uncorrected energy
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=1e-3
-        )  # -4.734 with old voronoi frac coords
+            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=2e-2
+        )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
+        # compression
 
         if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -1786,7 +1788,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
         # test float
@@ -1800,7 +1802,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
         # test int
@@ -1829,7 +1831,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
         # test 3x1 list
@@ -1844,7 +1846,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
         # test 3x3 array
@@ -1858,7 +1860,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
         # test 3x3 list
@@ -1873,7 +1875,7 @@ class DopedParsingTestCase(unittest.TestCase):
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
                 correction_energy,
-                atol=1e-3,
+                atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
             )
 
     def test_vacancy_parsing_and_freysoldt(self):
@@ -1918,12 +1920,12 @@ class DopedParsingTestCase(unittest.TestCase):
                 },
             ),
         ]:
-            assert np.isclose(parsed_vac_Cd_dict[name].get_ediff(), energy, atol=1e-3)
+            assert np.isclose(parsed_vac_Cd_dict[name].get_ediff(), energy, atol=2e-3)
             for correction_name, correction_energy in correction_dict.items():
                 assert np.isclose(
                     parsed_vac_Cd_dict[name].corrections[correction_name],
                     correction_energy,
-                    atol=1e-3,
+                    atol=2e-3,  # slightly higher atol due to LOCPOT sub-sampling for file compression
                 )
 
             # assert auto-determined vacancy site is correct
@@ -2209,16 +2211,20 @@ class DopedParsingTestCase(unittest.TestCase):
                 parse_projected_eigen=False,
             )  # check no correction error warning with default tolerance:
         print([str(warn.message) for warn in w])
+        assert any(  # break up warning message to allow slightly difference numbers after 3.XXe-04 eV:
+            f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is 3"
+            in str(warning.message)
+            for warning in w
+        )
         assert any(
-            f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is "
-            f"3.54e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
-            f"to check the accuracy of the correction by plotting the site potential differences (using "
-            f"`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
-            f"to unstable or shallow defect charge states (which can't be accurately modelled with "
-            f"the supercell approach; see "
-            f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
-            f"If this error is not acceptable, you may need to use a larger supercell for more "
-            f"accurate energies." in str(warning.message)
+            "e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
+            "to check the accuracy of the correction by plotting the site potential differences (using "
+            "`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
+            "to unstable or shallow defect charge states (which can't be accurately modelled with "
+            "the supercell approach; see "
+            "https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
+            "If this error is not acceptable, you may need to use a larger supercell for more "
+            "accurate energies." in str(warning.message)
             for warning in w
         )
 
@@ -2482,6 +2488,9 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                     f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz",
                     f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/vasprun.xml.gz",
                 )
+
+        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "bulk/vasp_std/voronoi_nodes.json"))
 
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
@@ -3181,6 +3190,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         reloaded_defect_dict = loadfn("test.json")
         bes, fig = reloaded_defect_dict["v_Cu_0"].get_eigenvalue_analysis()
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
+        os.remove("test.json")
 
         return fig
 
