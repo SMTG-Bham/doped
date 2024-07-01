@@ -622,23 +622,29 @@ class DefectThermodynamics(MSONable):
         Save the ``DefectThermodynamics`` object as a json file, which can be
         reloaded with the ``DefectThermodynamics.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
-            filename (PathLike): Filename to save json file as. If None, the filename will be
-                set as "{Chemical Formula}_defect_thermodynamics.json" where
+            filename (PathLike): Filename to save json file as. If None, the
+                filename will be set as
+                ``{Chemical Formula}_defect_thermodynamics.json.gz`` where
                 {Chemical Formula} is the chemical formula of the host material.
         """
         if filename is None:
             if self.bulk_formula is not None:
-                filename = f"{self.bulk_formula}_defect_thermodynamics.json"
+                filename = f"{self.bulk_formula}_defect_thermodynamics.json.gz"
             else:
-                filename = "defect_thermodynamics.json"
+                filename = "defect_thermodynamics.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: PathLike):
         """
-        Load a ``DefectThermodynamics`` object from a json file.
+        Load a ``DefectThermodynamics`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):

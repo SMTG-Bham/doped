@@ -39,10 +39,10 @@ class DefectPlottingTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CdTe_thermo = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_thermo.json")
+        self.CdTe_thermo = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_thermo.json.gz")
         self.CdTe_chempots = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_chempots.json")
         self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json")
+        self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json.gz")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
@@ -508,7 +508,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
     def test_CdTe_LZ_all_defects_plot(self):
         lz_cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
         CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
         return CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
@@ -517,7 +517,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
         # Matches SK Thesis Fig 6.1b
         lz_cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json")
+            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
         lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
         lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
@@ -527,7 +527,9 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
     def test_CdTe_FNV_all_defects_plot_default_old_names(self):
         # Tests naming handling when old/unrecognised defect names are used
-        cdte_defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json"))
+        cdte_defect_dict = loadfn(
+            os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json.gz")
+        )
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         with warnings.catch_warnings(record=True) as w:
             plot = cdte_defect_thermo.plot()

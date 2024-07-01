@@ -181,20 +181,25 @@ class DefectEntry(thermo.DefectEntry):
         Save the ``DefectEntry`` object to a json file, which can be reloaded
         with the ``DefectEntry.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
             filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as ``"{DefectEntry.name}.json"``.
+                be set as ``{DefectEntry.name}.json.gz``.
         """
         if filename is None:
-            filename = f"{self.name}.json"
+            filename = f"{self.name}.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``DefectEntry`` object from a json file.
+        Load a ``DefectEntry`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):
@@ -1947,20 +1952,25 @@ class Defect(core.Defect):
         Save the ``Defect`` object to a json file, which can be reloaded with
         the `` Defect``.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
             filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as "{Defect.name}.json".
+                be set as "{Defect.name}.json.gz".
         """
         if filename is None:
-            filename = f"{self.name}.json"
+            filename = f"{self.name}.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``Defect`` object from a json file.
+        Load a ``Defect`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):
