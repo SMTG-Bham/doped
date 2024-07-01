@@ -1399,6 +1399,32 @@ class DopedParsingTestCase(unittest.TestCase):
 
         Here we have mixed and matched `defect_entry_from_paths` and
         `DefectParser.from_paths()` as the results should be the same.
+
+        Note that we have manually edited the LOCPOTs in the examples
+        folders to reduce space, using the following code:
+
+        from pymatgen.io.vasp.outputs import Locpot
+        import numpy as np
+
+        filename = "..."
+        locpot = Locpot.from_file(filename)
+        locpot.is_spin_polarized = False
+
+        def blockwise_average_ND(a, factors):
+           # from https://stackoverflow.com/questions/37532184/
+           # downsize-3d-matrix-by-averaging-in-numpy-or-alike/73078468#73078468
+            # `a` is the N-dim input array
+            # `factors` is the blocksize on which averaging is to be performed
+
+            factors = np.asanyarray(factors)
+            sh = np.column_stack([a.shape//factors, factors]).ravel()
+            b = a.reshape(sh).mean(tuple(range(1, 2*a.ndim, 2)))
+
+            return b
+
+        locpot.data["total"] = blockwise_average_ND(locpot.data["total"], [2, 2, 2])
+        locpot.dim = [locpot.dim[0] // 2, locpot.dim[1] // 2, locpot.dim[2] // 2]
+        locpot.write_file(filename)
         """
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         fake_aniso_dielectric = [1, 2, 3]
