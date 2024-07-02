@@ -92,6 +92,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json.gz"))
 
