@@ -27,7 +27,7 @@ jobs:
         # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories
 
     runs-on: ${{ matrix.os }}
-    if: ${{ (github.event.inputs.os == '' && matrix.os != 'windows-latest') || github.event.inputs.os == matrix.os }}
+    if: (github.event.inputs.os == '' && matrix.os != 'windows-latest') || github.event.inputs.os == matrix.os
 
     steps:
       - uses: actions/checkout@v4
