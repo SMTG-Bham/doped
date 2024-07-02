@@ -32,7 +32,7 @@ jobs:
 
       - name: Install spglib
         run: |
-          conda install -c conda-forge spglib  # avoid spglib warnings
+          pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF  # avoid spglib warnings
 
       - name: Test
         run:  |
