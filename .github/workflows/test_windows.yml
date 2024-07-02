@@ -3,6 +3,10 @@ name: Windows Tests
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - 'develop'  # just develop for the moment
+
 jobs:
   build:
     strategy:
