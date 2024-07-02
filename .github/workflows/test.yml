@@ -2,6 +2,11 @@ name: Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      os:
+        description: 'Operating System (optional)'
+        required: false
+        default: ''
 
   push:
     branches:
@@ -13,7 +18,7 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, macos-14 ]
+        os: [ ubuntu-latest, macos-14, windows-latest ]
         python-version: [ '3.9', '3.10', '3.11' ]
         exclude:
           - os: macos-14
@@ -22,6 +27,7 @@ jobs:
         # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories
 
     runs-on: ${{ matrix.os }}
+    if: ${{ (github.event.inputs.os == '' && matrix.os != 'windows-latest') || github.event.inputs.os == matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +47,7 @@ jobs:
           pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF  # avoid spglib warnings
 
       - name: Install spglib on ubuntu
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest' }}
         run: |
           conda install -c conda-forge spglib  # avoid spglib warnings
 
@@ -56,7 +62,7 @@ jobs:
           pytest --mpl -m "mpl_image_compare" tests  # all plotting tests
           
       - name: Generate GH Actions test plots
-        if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
+        if: ${{ failure() && steps.plotting_tests.outcome == 'failure' }}  # Run only if plotting tests fail
         run: |
           # Generate the test plots in case there were any failures:
           pytest --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" tests
