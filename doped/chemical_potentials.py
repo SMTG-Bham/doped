@@ -6,9 +6,10 @@ energies.
 
 import contextlib
 import copy
+import itertools
 import os
 import warnings
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
@@ -17,19 +18,50 @@ from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.ext.matproj import MPRester
+from pymatgen.ext.matproj import MPRester, MPRestError
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
-pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
-
 # globally ignore:
 _ignore_pmg_warnings()
+
+pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
+
+elemental_diatomic_gases = ["H2", "O2", "N2", "F2", "Cl2"]
+
+old_MPRester_property_data = [  # properties to pull for Materials Project entries, if using legacy MP API
+    "pretty_formula",  # otherwise uses all fields in ``mpr.materials.thermo.available_fields``
+    "e_above_hull",
+    "band_gap",
+    "nsites",
+    "volume",
+    "icsd_id",
+    "icsd_ids",  # some entries have icsd_id and some have icsd_ids
+    "theoretical",
+    "formation_energy_per_atom",
+    "energy_per_atom",
+    "energy",
+    "total_magnetization",
+    "nelements",
+    "elements",
+]
+
+MP_API_property_keys = {
+    "legacy": {
+        "energy_above_hull": "e_above_hull",
+        "pretty_formula": "pretty_formula",
+    },
+    "new": {
+        "energy_above_hull": "energy_above_hull",
+        "pretty_formula": "formula_pretty",
+    },
+}
 
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
@@ -128,33 +160,49 @@ def make_molecule_in_a_box(element: str):
     return structure, formula, total_magnetization
 
 
-def _make_molecular_entry(computed_entry):
+def make_molecular_entry(computed_entry, legacy_MP=False):
     """
-    Generate a new ComputedStructureEntry for a molecule in a box, for the
-    input elemental ComputedEntry.
+    Generate a new ``ComputedStructureEntry`` for a molecule in a box, for the
+    input elemental ``ComputedEntry``.
+
+    The formula of the input ``computed_entry`` must be one of the
+    supported diatomic molecules (O2, N2, H2, F2, Cl2).
+
+    Args:
+        computed_entry (ComputedEntry):
+            ``ComputedEntry`` object for the elemental entry.
+        legacy_MP (bool):
+            If ``True``, use the legacy Materials Project property data fields
+            (i.e. ``"e_above_hull"``, ``"pretty_formula"`` etc.), rather than
+            the new Materials Project API format (``"energy_above_hull"``,
+            ``"formula_pretty"`` etc.).
+            Default is ``False``.
     """
+    property_key_dict = MP_API_property_keys["legacy"] if legacy_MP else MP_API_property_keys["new"]
     assert len(computed_entry.composition.elements) == 1  # Elemental!
-    struct, formula, total_magnetization = make_molecule_in_a_box(computed_entry.data["pretty_formula"])
+    struct, formula, total_magnetization = make_molecule_in_a_box(
+        computed_entry.data[property_key_dict["pretty_formula"]]
+    )
     molecular_entry = ComputedStructureEntry(
         structure=struct,
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
         composition=Composition(formula),
         parameters=None,
     )
-    molecular_entry.data["oxide_type"] = "None"
-    molecular_entry.data["pretty_formula"] = formula
-    molecular_entry.data["e_above_hull"] = 0
-    molecular_entry.data["band_gap"] = None
+    molecular_entry.data[property_key_dict["pretty_formula"]] = formula
+    molecular_entry.data[property_key_dict["energy_above_hull"]] = 0
     molecular_entry.data["nsites"] = 2
     molecular_entry.data["volume"] = 0
-    molecular_entry.data["icsd_id"] = None
     molecular_entry.data["formation_energy_per_atom"] = 0
     molecular_entry.data["energy_per_atom"] = computed_entry.data["energy_per_atom"]
     molecular_entry.data["energy"] = computed_entry.data["energy_per_atom"] * 2
-    molecular_entry.data["total_magnetization"] = total_magnetization
     molecular_entry.data["nelements"] = 1
     molecular_entry.data["elements"] = [formula]
     molecular_entry.data["molecule"] = True
+
+    molecular_entry.data["band_gap"] = None  # not included by default in new MP entries
+    molecular_entry.data["icsd_id"] = None
+    molecular_entry.data["total_magnetization"] = total_magnetization
 
     return molecular_entry
 
@@ -165,12 +213,13 @@ def _calculate_formation_energies(data: list, elemental: dict):
     elemental reference energies.
 
     Args:
-        data (list): List of dictionaries containing the energy data of the
+        data (list):
+            List of dictionaries containing the energy data of the
             phases to calculate formation energies for.
         elemental (dict): Dictionary of elemental reference energies.
 
     Returns:
-        pd.DataFrame: DataFrame formation energies of the input phases.
+        pd.DataFrame: ``DataFrame`` of formation energies of the input phases.
     """
     for d in data:
         for el in elemental:
@@ -226,7 +275,7 @@ def _calculate_formation_energies(data: list, elemental: dict):
 def _renormalise_entry(entry, renormalisation_energy_per_atom):
     """
     Regenerate the input entry with an energy per atom decreased by
-    renormalisation_energy_per_atom.
+    ``renormalisation_energy_per_atom``.
     """
     renormalised_entry_dict = entry.as_dict().copy()
     renormalised_entry_dict["energy"] = entry.energy - renormalisation_energy_per_atom * sum(
@@ -236,30 +285,376 @@ def _renormalise_entry(entry, renormalisation_energy_per_atom):
     return PDEntry.from_dict(renormalised_entry_dict)
 
 
-def get_chempots_from_phase_diagram(bulk_ce, phase_diagram):
+def get_chempots_from_phase_diagram(bulk_computed_entry, phase_diagram):
     """
     Get the chemical potential limits for the bulk computed entry in the
     supplied phase diagram.
 
     Args:
-        bulk_ce: ``ComputedStructureEntry`` object for bulk entry / supercell
+        bulk_computed_entry: ``ComputedStructureEntry`` object for the host composition.
         phase_diagram: ``PhaseDiagram`` object for the system of interest
     """
-    # append bulk_ce to phase diagram, if not present
+    # append bulk_computed_entry to phase diagram, if not present
     entries = phase_diagram.all_entries
     if not any(
-        (ent.composition == bulk_ce.composition and ent.energy == bulk_ce.energy) for ent in entries
+        (ent.composition == bulk_computed_entry.composition and ent.energy == bulk_computed_entry.energy)
+        for ent in entries
     ):
         entries.append(
             PDEntry(
-                bulk_ce.composition,
-                bulk_ce.energy,
+                bulk_computed_entry.composition,
+                bulk_computed_entry.energy,
                 attribute="Bulk Material",
             )
         )
         phase_diagram = PhaseDiagram(entries)
 
-    return phase_diagram.get_all_chempots(bulk_ce.composition.reduced_composition)
+    return phase_diagram.get_all_chempots(bulk_computed_entry.composition.reduced_composition)
+
+
+def _get_all_chemsyses(chemsys: Union[str, list[str]]):
+    """
+    Convert a chemical system (``chemsys``) string (in the old/usual "A-B-C" or
+    ["A", "B", "C"] formats, used on Materials Project website) to format
+    required for the new MP API (i.e. only returns AxBy phases for "A-B", and
+    no A-only or B-only phases).
+
+    See https://github.com/materialsproject/api/issues/918
+    """
+    if isinstance(chemsys, str):
+        chemsys = chemsys.split("-")
+    elements_set = set(chemsys)  # remove duplicate elements
+    all_chemsyses: list[str] = []
+    for i in range(len(elements_set)):
+        all_chemsyses.extend("-".join(sorted(els)) for els in itertools.combinations(elements_set, i + 1))
+
+    return all_chemsyses
+
+
+def get_entries_in_chemsys(
+    chemsys: Union[str, list[str]], api_key: Optional[str] = None, return_all_info: bool = False
+):
+    """
+    Convenience function to get a list of ``ComputedStructureEntry``s for an
+    input chemical system, using ``MPRester.get_entries_in_chemsys()``.
+
+    Automatically uses the appropriate format and syntax required for the
+    new or legacy Materials Project APIs, depending on the type of API key
+    supplied/present.
+
+    ``chemsys = ["Li", "Fe", "O"]`` will return a list of all entries in
+    the Li-Fe-O chemical system, i.e., all LixOy, FexOy, LixFey, LixFeyOz,
+    Li, Fe and O phases. Extremely useful for creating phase diagrams of
+    entire chemical systems.
+
+    The output entries list is sorted by energy above hull, then by the number
+    of elements in the formula, then alphabetically by formula.
+
+    Args:
+        chemsys (str, list[str]):
+            Chemical system to get entries for, in the format "A-B-C" or
+            ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
+        api_key (str):
+            Materials Project (MP) API key, needed to access the MP database
+            to obtain the corresponding ``ComputedStructureEntry``s. If not
+            supplied, will attempt to read from environment variable
+            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``)
+            - see the ``doped`` Installation docs page:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
+            -project-api
+        return_all_info (bool):
+            If ``True``, also returns the ``property_key_dict`` and ``property_data_fields``
+            objects, which list the appropriate keys and data field names for the new or legacy
+            Materials Project API (corresponding to the current API key). Mainly intended for
+            internal ``doped`` usage for provenance tracking.
+            Default is ``False``.
+
+    Returns:
+        list[ComputedStructureEntry], dict, list:
+            List of ``ComputedStructureEntry`` objects for the input chemical system.
+            If ``return_all_info`` is ``True``, also returns the ``property_key_dict`` and
+            ``property_data_fields`` objects, which list the appropriate keys and data field
+            names for the new or legacy Materials Project API (corresponding to the current API key).
+    """
+    api_key, legacy_MP = _parse_MP_API_key(api_key)
+
+    # use with MPRester() as mpr: if api_key is None, else use with MPRester(api_key)
+    with contextlib.ExitStack() as stack:
+        if api_key is None:
+            mpr = stack.enter_context(MPRester())
+        else:
+            mpr = stack.enter_context(MPRester(api_key))
+
+        if legacy_MP:
+            property_key_dict = MP_API_property_keys["legacy"]
+            property_data_fields = old_MPRester_property_data
+            entries_in_chemsys_kwargs = {
+                "property_data": property_data_fields,
+                "inc_structure": "initial",
+            }
+
+        else:
+            property_key_dict = MP_API_property_keys["new"]
+            property_data_fields = mpr.materials.thermo.available_fields
+            entries_in_chemsys_kwargs = {"property_data": property_data_fields}
+
+        # get all entries in the chemical system
+        MP_full_pd_entries = mpr.get_entries_in_chemsys(
+            chemsys,
+            **entries_in_chemsys_kwargs,
+        )
+
+    MP_full_pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically:
+        key=lambda x: _pd_entries_sorting_func(x, legacy_MP)
+    )
+
+    if return_all_info:
+        return MP_full_pd_entries, property_key_dict, property_data_fields
+
+    return MP_full_pd_entries
+
+
+def _parse_MP_API_key(api_key: Optional[str] = None):
+    """
+    Parse the Materials Project (MP) API key, either from the input argument or
+    from the environment variable ``PMG_MAPI_KEY``, and determine if it
+    corresponds to the new or legacy Materials Project API.
+
+    Args:
+        api_key (str):
+            Materials Project (MP) API key, needed to access the MP database
+            (for phase diagram analysis, competing phase generation etc). If
+            not supplied, will attempt to read from environment variable
+            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``)
+            - see the ``doped`` Installation docs page:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
+            -project-api
+
+    Returns:
+        api_key (str):
+            Materials Project API key, as supplied in the input argument or
+            read from the environment variable.
+        legacy_MP (bool):
+            ``True`` if the API key corresponds to the legacy Materials Project
+            API, ``False`` if it corresponds to the new Materials Project API
+    """
+    api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
+
+    # check api_key:
+    if api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
+        raise ValueError(
+            "No API key (either ``api_key`` parameter or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+            "``~/.config/.pmgrc.yaml``) was supplied. This is required for automatic competing "
+            "phase generation in doped, as detailed on the installation instructions:\n"
+            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+            "-project-api"
+        )
+    legacy_MP = True
+    if len(api_key) == 32:  # new API
+        legacy_MP = False
+    elif len(api_key) < 15 or len(api_key) > 20:  # looks like an invalid API key; check:
+        try:
+            with MPRester(api_key) as _mpr:
+                pass
+        except MPRestError as mp_exc:
+            raise ValueError(
+                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+                f"``~/.config/.pmgrc.yaml``; {api_key}) is not a valid Materials Project API "
+                f"key, which is required by doped for competing phase generation. See the doped "
+                f"installation instructions for details:\n"
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+                "-project-api"
+            ) from mp_exc
+
+    return api_key, legacy_MP
+
+
+def get_MP_summary_docs(
+    chemsys: Union[str, list[str]],
+    api_key: Optional[str] = None,
+    entries: Optional[list[ComputedEntry]] = None,
+    data_fields: Optional[list[str]] = None,
+    **kwargs,
+):
+    """
+    Get the corresponding Materials Project (MP) ``SummaryDoc`` documents for
+    computed entries in the input ``chemsys`` chemical system.
+
+    If ``entries`` is provided (which should be a list of ``ComputedEntry``s
+    from the Materials Project), then only ``SummaryDoc``s in this chemical
+    system which match one of these entries (based on the MPIDs given in
+    ``ComputedEntry.entry_id`` and ``SummaryDoc["material_id"]``) are returned.
+    Moreover, all data fields listed in ``data_fields`` (set to ``"band_gap"``,
+    ``"total_magnetization"`` and ``"database_IDs"`` by default) will be copied
+    from the corresponding ``SummaryDoc`` attribute to ``ComputedEntry.data``
+    for the matching ``ComputedEntry`` in ``entries``
+
+
+    Note that this function can only be used with the new Materials Project API,
+    as the legacy API does not have the ``SummaryDoc`` functionality (but most of
+    the same data is available through the ``property_data`` arguments for the
+    legacy-API-compatible functions).
+
+    Args:
+        chemsys (str, list[str]):
+            Chemical system to get entries for, in the format "A-B-C" or
+            ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
+        api_key (str):
+            Materials Project (MP) API key, needed to access the MP database
+            to obtain the corresponding ``SummaryDoc`` documents. Must be
+            a new (not legacy) MP API key! If not supplied, will attempt to
+            read from environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``
+            or ``~/.config/.pmgrc.yaml``) - see the ``doped`` Installation docs page:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
+            -project-api
+        entries (list[ComputedEntry]):
+            Optional input; list of ``ComputedEntry`` objects for the input chemical
+            system. If provided, only ``SummaryDoc``s which match one of these entries
+            (based on the MPIDs given in ``ComputedEntry.entry_id`` and
+            ``SummaryDoc["material_id"]``) are returned. Moreover, all data fields
+            listed in ``data_fields`` will be copied from the corresponding ``SummaryDoc``
+            attribute to ``ComputedEntry.data`` for the matching ``ComputedEntry`` in ``entries``.
+        data_fields (list[str]):
+            List of data fields to copy from the corresponding ``SummaryDoc``
+            attributes to the ``ComputedEntry.data`` objects, if ``entries`` is supplied.
+            If not set, defaults to ``["band_gap", "total_magnetization", "database_IDs"]``.
+        **kwargs:
+            Additional keyword arguments to pass to the Materials Project API
+            query, e.g. ``mpr.materials.summary.search()``.
+
+    Returns:
+        dict[str, SummaryDoc]:
+            Dictionary of ``SummaryDoc`` documents with MPIDs as keys.
+    """
+    api_key, legacy_MP = _parse_MP_API_key(api_key)
+    if legacy_MP:
+        raise ValueError(
+            "`get_MP_summary_docs` can only be used with the new Materials Project (MP) API (see "
+            "https://next-gen.materialsproject.org/api), but a legacy MP API key was supplied!"
+        )
+
+    # use with MPRester() as mpr: if api_key is None, else use with MPRester(api_key)
+    with contextlib.ExitStack() as stack:
+        if api_key is None:
+            mpr = stack.enter_context(MPRester())
+        else:
+            mpr = stack.enter_context(MPRester(api_key))
+
+        MP_full_pd_docs = {
+            doc["material_id"]: doc
+            for doc in mpr.materials.summary.search(
+                chemsys=_get_all_chemsyses("-".join(chemsys)), **kwargs
+            )
+        }
+
+    if not entries:
+        return MP_full_pd_docs
+
+    MP_docs = {
+        doc["material_id"]: doc
+        for doc in MP_full_pd_docs
+        if doc["material_id"] in [entry.entry_id for entry in entries]
+    }
+
+    if data_fields is None:
+        data_fields = ["band_gap", "total_magnetization", "database_IDs"]  # ICSD IDs and possibly others
+
+    for entry in entries:
+        doc = MP_docs[entry.entry_id]
+        for data_field in data_fields:
+            entry.data[data_field] = getattr(doc, data_field)
+
+    return MP_docs
+
+
+def _pd_entries_sorting_func(entry: ComputedEntry, legacy_MP=False):
+    """
+    Function to sort ``ComputedEntry``s by energy above hull, then by the
+    number of elements in the formula, then alphabetically by formula.
+
+    Usage: entries_list.sort(key=pd_entries_sorting_func)
+    """
+    return (
+        entry.data[MP_API_property_keys["legacy" if legacy_MP else "new"]["energy_above_hull"]],
+        len(Composition(entry.name).as_dict()),
+        entry.name,
+    )
+
+
+def prune_entries_to_border_candidates(
+    entries: list[PDEntry],
+    bulk_computed_entry: ComputedEntry,
+    phase_diagram: Optional[PhaseDiagram] = None,
+    e_above_hull: float = 0.1,
+):
+    """
+    Given an input list of ``PDEntry``s and a ``ComputedEntry`` object
+    for the host material (``bulk_computed_entry``), returns the subset
+    of ``PDEntry``s which `could` border the host on the phase diagram
+    (and therefore be a competing phase which determines the host chemical
+    potential limits), allowing for an error tolerance for the semi-local DFT
+    database energies (``e_above_hull``, set to ``self.e_above_hull``
+    0.1 eV/atom by default).
+
+    If ``phase_diagram`` is provided then this is used as the reference
+    phase diagram, otherwise it is generated from ``entries`` and
+    ``bulk_computed_entry``.
+
+    Args:
+        entries (list[PDEntry]):
+            List of ``PDEntry`` objects to prune down to potential host
+            border candidates on the phase diagram.
+        bulk_computed_entry (ComputedEntry):
+            ``ComputedEntry`` object for the host material.
+        phase_diagram (PhaseDiagram):
+            Optional input; ``PhaseDiagram`` object for the system of
+            interest. If provided, this is used as the reference phase
+            diagram from which to determine the (potential) chemical
+            potential limits, otherwise it is generated from ``entries``
+            and ``bulk_computed_entry``.
+        e_above_hull (float):
+            Maximum energy above hull (in eV/atom) of Materials Project
+            entries to be considered as competing phases. This is an
+            uncertainty range for the MP-calculated formation energies,
+            which may not be accurate due to functional choice (GGA vs
+            hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+            All phases that would border the host material on the phase
+            diagram, if their relative energy was downshifted by
+            ``e_above_hull``, are included.
+            (Default is 0.1 eV/atom).
+
+    Returns:
+        list[PDEntry]:
+            List of all ``PDEntry`` objects in ``entries`` which could border
+            the host material on the phase diagram (and thus set the chemical
+            potential limits), if their relative energy was downshifted by
+            ``e_above_hull`` eV/atom.
+    """
+    if not phase_diagram:
+        phase_diagram = PhaseDiagram(set(bulk_computed_entry, *entries))
+
+    # cull to only include any phases that would border the host material on the phase
+    # diagram, if their relative energy was downshifted by ``e_above_hull``:
+    MP_chempots = get_chempots_from_phase_diagram(bulk_computed_entry, phase_diagram)
+    MP_bordering_phases = {phase for limit in MP_chempots for phase in limit.split("-")}
+    bordering_entries = [
+        entry for entry in entries if entry.name in MP_bordering_phases or entry.is_element
+    ]
+    bordering_entry_names = [bordering_entry.name for bordering_entry in bordering_entries]
+
+    # add any phases that would border the host material on the phase diagram, if their
+    # relative energy was downshifted by ``e_above_hull``:
+    for entry in entries:  # only check if not already bordering; can just use names for this:
+        if entry.name not in bordering_entry_names:
+            # decrease entry energy per atom by ``e_above_hull`` eV/atom
+            renormalised_entry = _renormalise_entry(entry, e_above_hull)
+            new_phase_diagram = PhaseDiagram([*phase_diagram.entries, renormalised_entry])
+            shifted_MP_chempots = get_chempots_from_phase_diagram(bulk_computed_entry, new_phase_diagram)
+
+            if shifted_MP_chempots != MP_chempots:  # new bordering phase, add to list
+                bordering_entries.append(entry)
+
+    return bordering_entries
 
 
 class CompetingPhases:
@@ -271,12 +666,12 @@ class CompetingPhases:
         full_phase_diagram: bool = False,
     ):
         """
-        Class to generate the VASP input files for competing phases on the
-        phase diagram for the host material, which determine the chemical
-        potential limits for that compound.
+        Class to generate VASP input files for competing phases on the phase
+        diagram for the host material, which determine the chemical potential
+        limits for that compound.
 
         For this, the Materials Project (MP) database is queried using the
-        ``MPRester`` API, and any calculated compounds which _could_ border
+        ``MPRester`` API, and any calculated compounds which `could` border
         the host material within an error tolerance for the semi-local DFT
         database energies (``e_above_hull``, 0.1 eV/atom by default) are
         generated, along with the elemental reference phases.
@@ -294,7 +689,7 @@ class CompetingPhases:
                 uncertainty range for the MP-calculated formation energies,
                 which may not be accurate due to functional choice (GGA vs
                 hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                Any phases that (would) border the host material on the phase
+                All phases that would border the host material on the phase
                 diagram, if their relative energy was downshifted by
                 ``e_above_hull``, are included.
                 (Default is 0.1 eV/atom).
@@ -312,17 +707,11 @@ class CompetingPhases:
                 phases that would border the host material on the phase diagram (and
                 thus set the chemical potential limits), if their relative energy was
                 downshifted by ``e_above_hull`` eV/atom.
-                (Default is False).
+                (Default is ``False``).
         """
         self.e_above_hull = e_above_hull  # store parameters for reference
         self.full_phase_diagram = full_phase_diagram
-        warnings.filterwarnings(
-            "ignore", message="You are using the legacy MPRester"
-        )  # currently rely on this so shouldn't show warning, `message` only needs to match start
-        self.api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
-
-        # create list of entries
-        self._molecules_in_a_box = ["H2", "O2", "N2", "F2", "Cl2"]
+        self.api_key, self.legacy_MP = _parse_MP_API_key(api_key)
 
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
         #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
@@ -338,6 +727,11 @@ class CompetingPhases:
         # with a caution... From a quick test, this does cut down a good chunk of unnecessary phases,
         # but still not all as often there are several ICSD phases for e.g. metals with a load of known
         # polymorphs (at different temperatures/pressures).
+        # for new MP API; see https://github.com/materialsproject/api/issues/625 &
+        # https://github.com/materialsproject/api/issues/675 &
+        # https://github.com/materialsproject/api/issues/857 for accessing ICSD etc IDs (also
+        # doc.database_IDs etc)
+
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
         # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
         # entries for the same composition, warn the user (that if the groundstate phase at low/room
@@ -346,120 +740,43 @@ class CompetingPhases:
         # - Could have two optional EaH tolerances, a tight one (0.02 eV/atom?) that applies to all,
         # and a looser one (0.1 eV/atom?) that applies to phases with ICSD IDs?
 
-        # all data collected from materials project
-        self.data = [  # can see available fields with MPRester.*.available_fields on new API
-            "pretty_formula",
-            "e_above_hull",
-            "band_gap",
-            "nsites",
-            "volume",
-            "icsd_id",
-            "icsd_ids",  # some entries have icsd_id and some have icsd_ids
-            "theoretical",
-            "formation_energy_per_atom",
-            "energy_per_atom",
-            "energy",
-            "total_magnetization",
-            "nelements",
-            "elements",
-        ]
         self.bulk_composition = Composition(composition)
+        self.chemsys = list(self.bulk_composition.as_dict().keys())
 
-        # check api_key:
-        if self.api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
-            raise ValueError(
-                "No API key (either ``api_key`` parameter or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-                "``~/.config/.pmgrc.yaml``) was supplied. This is required for automatic competing "
-                "phase generation in doped, as detailed on the installation instructions:\n"
-                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-                "-project-api"
-            )
-        if len(self.api_key) == 32:
-            raise ValueError(
-                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-                f"``~/.config/.pmgrc.yaml``; {self.api_key}) corresponds to the new Materials Project "
-                f"(MP) API, which is not supported by doped. Please use the legacy MP API as detailed on "
-                f"the doped installation instructions:\n"
-                f"https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-                f"-project-api"
-            )
-        if 15 <= len(self.api_key) <= 20:
-            self.eah = "e_above_hull"
-        else:
-            raise ValueError(
-                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-                f"``~/.config/.pmgrc.yaml``; {self.api_key}) is not a valid legacy Materials Project "
-                f"API key, which is required by doped. See the doped installation instructions for "
-                f"details:\n"
-                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-                "-project-api"
-            )
+        # TODO: Update installation pages and any mentions of 'legacy' in code
+        # TODO: Add tests with new API keys
 
-        # use with MPRester() as mpr: if self.api_key is None, else use with MPRester(self.api_key)
-        with contextlib.ExitStack() as stack:
-            if self.api_key is None:
-                mpr = stack.enter_context(MPRester())
-            else:
-                mpr = stack.enter_context(MPRester(self.api_key))
-
-            # get all entries in the chemical system
-            self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                list(self.bulk_composition.as_dict().keys()),
-                inc_structure="initial",
-                property_data=self.data,
+        # get all entries in the chemical system:
+        self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
+            get_entries_in_chemsys(
+                self.chemsys,
+                api_key=self.api_key,
+                return_all_info=True,
             )
-
-        self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])  # sort by e_above_hull
+        )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
-        formatted_pd_entries: list[PDEntry] = []
-        # convert any gaseous elemental entries to molecules in a box:
-        for entry in self.MP_full_pd_entries.copy():
-            if (
-                entry.data["pretty_formula"] in self._molecules_in_a_box
-                and entry.data["e_above_hull"] == 0  # only once for each matching gaseous elemental entry
-            ):
-                molecular_entry = _make_molecular_entry(entry)
-                if not any(
-                    ent.data["molecule"]
-                    and ent.data["pretty_formula"] == molecular_entry.data["pretty_formula"]
-                    for ent in formatted_pd_entries
-                ):  # first entry only
-                    formatted_pd_entries.append(molecular_entry)
-                    self.MP_full_pd_entries.append(molecular_entry)
-
-            elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
-                entry.data["molecule"] = False
-                formatted_pd_entries.append(entry)
-
-        formatted_pd_entries.sort(key=lambda x: x.energy_per_atom)  # sort by energy per atom
-        temp_phase_diagram = PhaseDiagram(formatted_pd_entries)
-        for entry in formatted_pd_entries:
-            # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
-            entry.data["e_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
-
-        pd_entries = [
-            entry
-            for entry in temp_phase_diagram.all_entries
-            if entry.data["e_above_hull"] <= self.e_above_hull
-        ]
-        pd_entries.sort(key=lambda x: x.data["e_above_hull"])
-        phase_diagram = PhaseDiagram(pd_entries)
+        # convert any gaseous elemental entries to molecules in a box, and prune to a_above_hull range
+        pd_entries = self._generate_elemental_diatomic_phases(
+            self.MP_full_pd_entries, prune_to_e_above_hull=True
+        )
 
         # get bulk entry, and warn if not stable or not present on MP database:
         if bulk_entries := [
             entry
-            for entry in pd_entries  # sorted by e_above_hull above
+            for entry in pd_entries  # sorted by e_above_hull above in get_entries_in_chemsys
             if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
         ]:
-            bulk_ce = bulk_entries[0]  # lowest energy entry for bulk composition (after sorting)
+            bulk_computed_entry = bulk_entries[
+                0
+            ]  # lowest energy entry for bulk composition (after sorting)
         elif MP_bulk_entries := [  # no bulk entries in pruned phase diagram, check first if in original
             entry  # MP phase diagram (i.e. present in MP but not stable)
             for entry in self.MP_full_pd_entries  # sorted by e_above_hull too
             if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
         ]:
-            bulk_ce = MP_bulk_entries[0]
-            eah = phase_diagram.get_e_above_hull(bulk_ce)
+            bulk_computed_entry = MP_bulk_entries[0]
+            eah = PhaseDiagram(pd_entries).get_e_above_hull(bulk_computed_entry)
             warnings.warn(
                 f"Note that the Materials Project (MP) database entry for "
                 f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
@@ -471,9 +788,8 @@ class CompetingPhases:
                 f"Here we downshift the host compound entry to the convex hull energy, and then determine "
                 f"the possible competing phases with the same approach as usual."
             )
-            # decrease bulk_ce energy per atom by ``e_above_hull`` + 0.1 meV/atom
-            bulk_ce = _renormalise_entry(bulk_ce, eah + 1e-4)
-            phase_diagram = PhaseDiagram([bulk_ce, *pd_entries])
+            # decrease bulk_computed_entry energy per atom by ``e_above_hull`` + 0.1 meV/atom
+            bulk_computed_entry = _renormalise_entry(bulk_computed_entry, eah + 1e-4)
 
         else:  # composition not on MP, warn and add shifted bulk entry
             warnings.warn(
@@ -482,46 +798,33 @@ class CompetingPhases:
                 f"equal to the MP convex hull energy at the corresponding point in chemical space, and "
                 f"then determine the possible competing phases with the same approach as usual."
             )
-            bulk_ce = ComputedEntry(
+            bulk_computed_entry = ComputedEntry(
                 self.bulk_composition, self.MP_full_pd.get_hull_energy(self.bulk_composition) - 1e-4
             )
-            phase_diagram = PhaseDiagram([bulk_ce, *pd_entries])
 
-        self.MP_bulk_ce = bulk_ce
+        self.MP_bulk_computed_entry = bulk_computed_entry
 
-        if not self.full_phase_diagram:  # default
-            # cull to only include any phases that would border the host material on the phase
-            # diagram, if their relative energy was downshifted by ``e_above_hull``:
-            MP_chempots = get_chempots_from_phase_diagram(bulk_ce, phase_diagram)
-            MP_bordering_phases = {phase for limit in MP_chempots for phase in limit.split("-")}
-            self.entries = [
-                entry for entry in pd_entries if entry.name in MP_bordering_phases or entry.is_element
-            ]
-
-            # add any phases that would border the host material on the phase diagram, if their
-            # relative energy was downshifted by ``e_above_hull``:
-            for entry in pd_entries:
-                if entry.name not in MP_bordering_phases and not entry.is_element:
-                    # decrease entry energy per atom by ``e_above_hull`` eV/atom
-                    renormalised_entry = _renormalise_entry(entry, self.e_above_hull)
-                    new_phase_diagram = PhaseDiagram([*phase_diagram.entries, renormalised_entry])
-                    shifted_MP_chempots = get_chempots_from_phase_diagram(bulk_ce, new_phase_diagram)
-
-                    if shifted_MP_chempots != MP_chempots:
-                        # new bordering phase, add to list
-                        self.entries.append(entry)
+        if not self.full_phase_diagram:  # default, prune to only phases that would border the host
+            # material on the phase diagram, if their relative energy was downshifted by ``e_above_hull``:
+            self.entries: list[PDEntry] = prune_entries_to_border_candidates(
+                entries=self.entries,
+                bulk_computed_entry=self.MP_bulk_computed_entry,
+                e_above_hull=self.e_above_hull,
+            )
 
         else:  # self.full_phase_diagram = True
             self.entries = pd_entries
 
-        # sort entries by e_above_hull, and then by num_species, then alphabetically:
-        self.entries.sort(
-            key=lambda x: (
-                x.data["e_above_hull"],
-                len(Composition(x.name).as_dict()),
-                x.name,
-            )
+        self.entries.sort(  # sort by energy above hull, num_species, then alphabetically
+            key=lambda x: _pd_entries_sorting_func(x, self.legacy_MP)
         )
+
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
+            self.MP_docs = get_MP_summary_docs(
+                self.chemsys,
+                api_key=self.api_key,
+                entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
+            )
 
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
@@ -635,7 +938,7 @@ class CompetingPhases:
                 dict_set.write_input(fname, **kwargs)
 
     def _competing_phase_name(self, entry):
-        rounded_eah = round(entry.data["e_above_hull"], 4)
+        rounded_eah = round(entry.data[self.property_key_dict["energy_above_hull"]], 4)
         if np.isclose(rounded_eah, 0):
             return f"{entry.name}_EaH_0"
         return f"{entry.name}_EaH_{rounded_eah}"
@@ -781,7 +1084,79 @@ class CompetingPhases:
         incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
         incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
 
+    def _generate_elemental_diatomic_phases(
+        self, entries: list[ComputedEntry], prune_to_e_above_hull: bool = True
+    ):
+        """
+        Given an input list of ``ComputedEntry`` objects, adds a
+        ``ComputedStructureEntry`` for each diatomic elemental phase (O2, N2,
+        H2, F2, Cl2) to ``entries`` using ``make_molecular_entry``, and
+        generates an output list of ``PDEntry``s (``pd_entries``) containing
+        all entries in ``entries``, with energy above hull <=
+        ``self.e_above_hull`` if ``prune_to_e_above_hull`` is  ``True``
+        (default) and all diatomic elemental phases replaced by the single
+        molecule-in-a-box entry.
 
+        Also sets the ``ComputedEntry.data["molecule"]`` flag for each entry
+        in ``entries`` (``True`` for diatomic gases, ``False`` for all others).
+
+        The output entries list is sorted by energy above hull, then by the number
+        of elements in the formula, then alphabetically by formula.
+
+        Args:
+            entries (list[ComputedEntry]):
+                List of ``ComputedEntry`` objects for the input chemical system.
+            prune_to_e_above_hull (bool):
+                If ``True``, only include entries with energy above hull <=
+                ``self.e_above_hull`` in the output list. Default is ``True``.
+
+        Returns:
+            list[PDEntry]:
+                List of ``PDEntry`` objects for the input chemical system, with
+                diatomic elemental phases replaced by the single molecule-in-a-box
+                entry.
+        """
+        pd_entries: list[PDEntry] = []
+
+        for entry in entries.copy():
+            if (
+                entry.data[self.property_key_dict["pretty_formula"]] in elemental_diatomic_gases
+                and entry.data[self.property_key_dict["energy_above_hull"]] == 0
+            ):  # only once for each matching gaseous elemental entry
+                molecular_entry = make_molecular_entry(entry)
+                if not any(
+                    entry.data["molecule"]
+                    and entry.data[self.property_key_dict["pretty_formula"]]
+                    == molecular_entry.data[self.property_key_dict["pretty_formula"]]
+                    for entry in entries
+                ):  # first entry only
+                    entries.append(molecular_entry)
+                    pd_entries.append(molecular_entry)
+            elif entry.data[self.property_key_dict["pretty_formula"]] not in elemental_diatomic_gases:
+                entry.data["molecule"] = False
+                pd_entries.append(entry)
+
+        temp_phase_diagram = PhaseDiagram(pd_entries)
+        for entry in pd_entries:
+            # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
+            entry.data[self.property_key_dict["energy_above_hull"]] = temp_phase_diagram.get_e_above_hull(
+                entry
+            )
+
+        if prune_to_e_above_hull:
+            pd_entries = [
+                entry
+                for entry in temp_phase_diagram.all_entries
+                if entry.data[self.property_key_dict["energy_above_hull"]] <= self.e_above_hull
+            ]
+        pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically
+            key=lambda x: _pd_entries_sorting_func(x, self.legacy_MP)
+        )
+
+        return pd_entries
+
+
+# TODO: This doesn't need to be a whole extra class right? Better just amalgamated?
 class ExtrinsicCompetingPhases(CompetingPhases):
     """
     This class generates the competing phases that need to be calculated to
@@ -840,8 +1215,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 competing phase generation. If not supplied, will attempt to read from
                 environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
                 Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
-                This should correspond to the legacy MP API; from
-                https://legacy.materialsproject.org/open.
+                MP API key is available at https://next-gen.materialsproject.org/api#api-key
             full_phase_diagram (bool):
                 If ``True``, include all phases on the MP phase diagram (with energy
                 above hull < ``e_above_hull`` eV/atom) for the chemical system of
@@ -888,258 +1262,123 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             elif not self.full_sub_approach:
                 self.full_sub_approach = True
 
-        # TODO: Can we make this code below more succinct and efficient? Seems to have some duplicate calls
-        if self.full_sub_approach:  # can be time-consuming if several extrinsic_species supplied
-            if self.codoping:
-                # TODO: `full_sub_approach` shouldn't necessarily mean `full_phase_diagram =
-                #  True` right? As in can be non-full-phase-diagram intrinsic + extrinsic
-                #  entries, including limits with multiple extrinsic entries but still not the
-                #  full phase diagram? - To be updated!
+        if self.full_sub_approach and self.codoping:
+            # can be time-consuming if several extrinsic_species supplied
+            self.MP_full_pd_entries = get_entries_in_chemsys(
+                chemsys=self.intrinsic_species + self.extrinsic_species,
+                api_key=self.api_key,
+            )
+            self.entries = self._generate_elemental_diatomic_phases(
+                self.MP_full_pd_entries, prune_to_e_above_hull=True
+            )
 
-                with contextlib.ExitStack() as stack:
-                    if self.api_key is None:
-                        mpr = stack.enter_context(MPRester())
-                    else:
-                        mpr = stack.enter_context(MPRester(self.api_key))
+            if not full_phase_diagram:
+                self.entries = prune_entries_to_border_candidates(
+                    entries=self.entries,
+                    bulk_computed_entry=self.MP_bulk_computed_entry,
+                    e_above_hull=self.e_above_hull,
+                )  # prune using phase diagram with all extrinsic species
 
-                    # get all entries in the chemical system
-                    self.MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                        self.intrinsic_species + self.extrinsic_species,
-                        inc_structure="initial",
-                        property_data=self.data,
-                    )
-                self.MP_full_pd_entries = [
-                    e for e in self.MP_full_pd_entries if e.data["e_above_hull"] <= self.e_above_hull
-                ]
-
-                # sort by e_above_hull:
-                self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
-
-                for entry in self.MP_full_pd_entries.copy():
-                    if any(sub_el in entry.composition for sub_el in self.extrinsic_species):
-                        if (
-                            entry.data["pretty_formula"] in self._molecules_in_a_box
-                            and entry.data["e_above_hull"] == 0
-                        ):  # only first matching entry
-                            molecular_entry = _make_molecular_entry(entry)
-                            if not any(
-                                entry.data["molecule"]
-                                and entry.data["pretty_formula"] == molecular_entry.data["pretty_formula"]
-                                for entry in self.entries
-                            ):  # first entry only
-                                self.MP_full_pd_entries.append(molecular_entry)
-                                self.entries.append(molecular_entry)
-                        elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
-                            entry.data["molecule"] = False
-                            self.entries.append(entry)
-
-                # sort entries by e_above_hull, and then by num_species, then alphabetically:
-                self.entries.sort(
-                    key=lambda x: (
-                        x.data["e_above_hull"],
-                        len(Composition(x.name).as_dict()),
-                        x.name,
-                    )
-                )
-
-            else:  # full_sub_approach but not co-doping
-                self.MP_full_pd_entries = []
-                for sub_el in self.extrinsic_species:
-                    extrinsic_entries = []
-                    with contextlib.ExitStack() as stack:
-                        if self.api_key is None:
-                            mpr = stack.enter_context(MPRester())
-                        else:
-                            mpr = stack.enter_context(MPRester(self.api_key))
-
-                        MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                            [*self.intrinsic_species, sub_el],
-                            inc_structure="initial",
-                            property_data=self.data,
-                        )
-                    MP_full_pd_entries = [
-                        e for e in MP_full_pd_entries if e.data["e_above_hull"] <= self.e_above_hull
-                    ]
-                    # sort by e_above_hull:
-                    MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
-
-                    for entry in MP_full_pd_entries.copy():
-                        if entry not in self.MP_full_pd_entries:
-                            self.MP_full_pd_entries.append(entry)
-                        if sub_el in entry.composition:
-                            if (
-                                entry.data["pretty_formula"] in self._molecules_in_a_box
-                                and entry.data["e_above_hull"] == 0
-                            ):
-                                # only first matching entry
-                                molecular_entry = _make_molecular_entry(entry)
-                                if not any(
-                                    entry.data["molecule"]
-                                    and entry.data["pretty_formula"]
-                                    == molecular_entry.data["pretty_formula"]
-                                    for entry in self.entries
-                                ):  # first entry only
-                                    self.MP_full_pd_entries.append(molecular_entry)
-                                    extrinsic_entries.append(molecular_entry)
-
-                            elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
-                                entry.data["molecule"] = False
-                                extrinsic_entries.append(entry)
-
-                            # sort entries by e_above_hull, and then by num_species,
-                            # then alphabetically:
-                            extrinsic_entries.sort(
-                                key=lambda x: (
-                                    x.data["e_above_hull"],
-                                    len(Composition(x.name).as_dict()),
-                                    x.name,
-                                )
-                            )
-                            self.entries += extrinsic_entries
-
-        else:  # full_sub_approach = False; recommended approach for extrinsic species (assumes
-            # dilute concentrations)
-
-            # now compile substitution entries:
-            self.MP_full_pd_entries = []
-
+        else:  # full_sub_approach (for now, to get self.entries) but not co-doping
+            candidate_extrinsic_entries = []
             for sub_el in self.extrinsic_species:
-                extrinsic_pd_entries: list[PDEntry] = []
-                with contextlib.ExitStack() as stack:
-                    if self.api_key is None:
-                        mpr = stack.enter_context(MPRester())
-                    else:
-                        mpr = stack.enter_context(MPRester(self.api_key))
-
-                    MP_full_pd_entries = mpr.get_entries_in_chemsys(
-                        [*self.intrinsic_species, sub_el],
-                        inc_structure="initial",
-                        property_data=self.data,
-                    )
-                self.MP_full_pd_entries = [
-                    e for e in MP_full_pd_entries if e.data["e_above_hull"] <= self.e_above_hull
-                ]
-                # sort by e_above_hull:
-                self.MP_full_pd_entries.sort(key=lambda x: x.data["e_above_hull"])
-
-                for entry in self.MP_full_pd_entries.copy():
-                    if (
-                        entry.data["pretty_formula"] in self._molecules_in_a_box
-                        and entry.data["e_above_hull"] == 0
-                    ):
-                        # only first matching entry
-                        molecular_entry = _make_molecular_entry(entry)
-                        if not any(
-                            entry.data["molecule"]
-                            and entry.data["pretty_formula"] == molecular_entry.data["pretty_formula"]
-                            for entry in extrinsic_pd_entries
-                        ):  # first entry only
-                            self.MP_full_pd_entries.append(molecular_entry)
-                            extrinsic_pd_entries.append(molecular_entry)
-                    elif entry.data["pretty_formula"] not in self._molecules_in_a_box:
-                        entry.data["molecule"] = False
-                        extrinsic_pd_entries.append(entry)
-
-                # Adding substitutional phases to extrinsic competing phases list only when the
-                # phases in equilibria are those from the bulk phase diagram. This is essentially
-                # the assumption that the majority of elements in the total composition will be
-                # from the host composition rather than the extrinsic species (a good
-                # approximation for dilute concentrations)
-
-                if not extrinsic_pd_entries:
-                    raise ValueError(
-                        f"No Materials Project entries found for the given chemical "
-                        f"system: {[*self.intrinsic_species, sub_el]}"
-                    )
-
-                extrinsic_phase_diagram = PhaseDiagram(extrinsic_pd_entries)
-                MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
-                    self.MP_bulk_ce, extrinsic_phase_diagram
+                sub_el_MP_full_pd_entries = get_entries_in_chemsys(
+                    [*self.intrinsic_species, sub_el],
+                    api_key=self.api_key,
                 )
-                MP_extrinsic_bordering_phases = []
-
-                for limit in MP_extrinsic_gga_chempots:
-                    # if the number of intrinsic competing phases for this limit is equal to the
-                    # number of species in the bulk composition, then include the extrinsic phase(s)
-                    # for this limit (full_sub_approach = False approach)
-                    MP_intrinsic_bordering_phases = {
-                        phase for phase in limit.split("-") if sub_el not in phase
-                    }
-                    if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
-                        # add to list of extrinsic bordering phases, if not already present:
-                        MP_extrinsic_bordering_phases.extend(
-                            [
-                                phase
-                                for phase in limit.split("-")
-                                if sub_el in phase and phase not in MP_extrinsic_bordering_phases
-                            ]
-                        )
-
-                # add any phases that would border the host material on the phase diagram,
-                # if their relative energy was downshifted by `e_above_hull`:
-                for entry in MP_full_pd_entries:
-                    if (
-                        entry.name not in MP_extrinsic_bordering_phases
-                        and not entry.is_element
-                        and sub_el in entry.composition
-                    ):
-                        # decrease entry energy per atom by `e_above_hull` eV/atom
-                        renormalised_entry = _renormalise_entry(entry, self.e_above_hull)
-                        new_extrinsic_phase_diagram = PhaseDiagram(
-                            [*extrinsic_phase_diagram.entries, renormalised_entry]
-                        )
-                        new_MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
-                            self.MP_bulk_ce, new_extrinsic_phase_diagram
-                        )
-
-                        if new_MP_extrinsic_gga_chempots != MP_extrinsic_gga_chempots:
-                            # new bordering phase, check if not an over-dependent limit:
-
-                            for limit in new_MP_extrinsic_gga_chempots:
-                                if limit not in MP_extrinsic_gga_chempots:
-                                    # new limit, check if not an over-dependent limit:
-                                    MP_intrinsic_bordering_phases = {
-                                        phase for phase in limit.split("-") if sub_el not in phase
-                                    }
-                                    if len(MP_intrinsic_bordering_phases) == len(self.intrinsic_species):
-                                        MP_extrinsic_bordering_phases.extend(
-                                            [
-                                                phase
-                                                for phase in limit.split("-")
-                                                if sub_el in phase
-                                                and phase not in MP_extrinsic_bordering_phases
-                                            ]
-                                        )
-
-                extrinsic_entries = [
+                sub_el_pd_entries = self._generate_elemental_diatomic_phases(
+                    sub_el_MP_full_pd_entries, prune_to_e_above_hull=False
+                )
+                self.MP_full_pd_entries.extend(
+                    [entry for entry in sub_el_MP_full_pd_entries if entry not in self.MP_full_pd_entries]
+                )
+                sub_el_pd_entries = [  # now prune to e_above_hull, after adding to MP_full_pd_entries
                     entry
-                    for entry in extrinsic_pd_entries
-                    if entry.name in MP_extrinsic_bordering_phases
-                    or (entry.is_element and sub_el in entry.name)
+                    for entry in sub_el_pd_entries
+                    if entry.data[self.property_key_dict["energy_above_hull"]] <= self.e_above_hull
                 ]
 
-                # check that extrinsic competing phases list is not empty (can happen with
-                # 'over-dependent' limits); if so then set full_sub_approach = True and re-run
-                # the extrinsic phase addition process
-                if not extrinsic_entries:
-                    warnings.warn(
-                        "Determined chemical potentials to be over dependent on an extrinsic species. "
-                        "This means we need to revert to `full_sub_approach = True`; running now."
+                if not full_phase_diagram:  # default, prune to only phases that would border the host
+                    # material on the phase diagram, if their relative energy was downshifted by
+                    # `e_above_hull`; prune using phase diagrams for one extrinsic species at a time here
+                    sub_el_pd_entries = prune_entries_to_border_candidates(
+                        entries=sub_el_pd_entries,
+                        bulk_computed_entry=self.MP_bulk_computed_entry,
+                        e_above_hull=self.e_above_hull,
                     )
-                    self.full_sub_approach = True
-                    extrinsic_entries = [
-                        entry for entry in self.MP_full_pd_entries if sub_el in entry.composition
+
+                candidate_extrinsic_entries += [
+                    entry for entry in sub_el_pd_entries if sub_el in entry.composition
+                ]
+
+            if self.full_sub_approach:
+                self.entries = candidate_extrinsic_entries
+
+            else:  # not full_sub_approach; recommended approach for extrinsic species (assumes dilute
+                # concentrations). Here we only retain extrinsic competing phases when they border the
+                # host composition on the phase diagram with no other extrinsic phases in equilibrium
+                # at this limit. This is essentially the assumption that the majority of elements in
+                # the total composition will be from the host composition rather than the extrinsic
+                # species (a good approximation for dilute concentrations)
+                for sub_el in self.extrinsic_species:
+                    sub_el_entries = [
+                        entry for entry in candidate_extrinsic_entries if sub_el in entry.composition
                     ]
 
-                # sort entries by e_above_hull, and then by num_species, then alphabetically:
-                extrinsic_entries.sort(
-                    key=lambda x: (
-                        x.data["e_above_hull"],
-                        len(Composition(x.name).as_dict()),
-                        x.name,
+                    if not sub_el_entries:
+                        raise ValueError(
+                            f"No Materials Project entries found for the given chemical "
+                            f"system: {[*self.intrinsic_species, sub_el]}"
+                        )
+
+                    sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
+                    MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
+                        self.MP_bulk_computed_entry, sub_el_phase_diagram
                     )
-                )
-                self.entries += extrinsic_entries
+                    MP_extrinsic_bordering_phases: list[str] = []
+
+                    for limit in MP_extrinsic_gga_chempots:
+                        # note that the the number of phases in equilibria at each vertex (limit) is
+                        # equal to the number of elements in the chemical system (here being the
+                        # host composition plus the extrinsic species)
+                        extrinsic_bordering_phases = {
+                            phase for phase in limit.split("-") if sub_el in phase
+                        }
+                        # only add to MP_extrinsic_bordering_phases when only 1 extrinsic bordering phase
+                        # (i.e. ``full_sub_approach=False`` behaviour):
+                        if len(
+                            extrinsic_bordering_phases
+                        ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
+                            MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
+
+                    single_bordering_sub_el_entries = [
+                        entry
+                        for entry in candidate_extrinsic_entries
+                        if entry.name in MP_extrinsic_bordering_phases
+                        or (entry.is_element and sub_el in entry.name)
+                    ]
+
+                    # check that extrinsic competing phases list is not empty (can happen with
+                    # 'over-dependent' limits); if so then set full_sub_approach = True and re-run
+                    # the extrinsic phase addition process
+                    if not single_bordering_sub_el_entries:
+                        warnings.warn(
+                            f"Determined chemical potentials to be over dependent on the extrinsic "
+                            f"species {sub_el}, meaning we need to revert to `full_sub_approach = True` "
+                            f"for this species."
+                        )
+                        self.entries += sub_el_entries
+
+                    else:
+                        self.entries += single_bordering_sub_el_entries
+
+        self.MP_full_pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically
+            key=lambda x: _pd_entries_sorting_func(x, self.legacy_MP)
+        )
+        self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
+        self.entries.sort(  # sort by energy above hull, num_species, then alphabetically
+            key=lambda x: _pd_entries_sorting_func(x, self.legacy_MP)
+        )
 
 
 class CompetingPhasesAnalyzer:
@@ -1184,19 +1423,19 @@ class CompetingPhasesAnalyzer:
         ``CompetingPhasesAnalyzer`` object.
 
         Args:
-            path (list, str, pathlib Path):
+            path (PathLike or list):
                 Either a path to the base folder in which you have your
                 competing phase calculation outputs (e.g.
                 formula_EaH_X/vasp_std/vasprun.xml(.gz), or
                 formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
                 to vasprun.xml(.gz) files.
-            folder (str):
+            folder (PathLike):
                 The subfolder in which your vasprun.xml(.gz) output files
                 are located (e.g. a file-structure like:
                 formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
                 search for ``vasp_std`` subfolders, or directly in the
                 ``formula_EaH_X`` folder.
-            csv_path (str):
+            csv_path (PathLike):
                 If set will save the parsed data to a csv at this filepath.
                 Further customisation of the output csv can be achieved with
                 the CompetingPhasesAnalyzer.to_csv() method.
@@ -1218,10 +1457,11 @@ class CompetingPhasesAnalyzer:
 
         if isinstance(path, list):  # if path is just a list of all competing phases
             for p in path:
-                if "vasprun.xml" in Path(p).name and not Path(p).name.startswith("."):
-                    self.vasprun_paths.append(str(Path(p)))
+                if "vasprun.xml" in str(p) and not str(p).startswith("."):
+                    self.vasprun_paths.append(p)
 
                 # try to find the file - will always pick the first match for vasprun.xml*
+                # TODO: Deal with this:
                 elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
                     vsp = next(iter(Path(p).glob("vasprun.xml*")))
                     self.vasprun_paths.append(str(vsp))
@@ -1229,19 +1469,19 @@ class CompetingPhasesAnalyzer:
                 else:
                     skipped_folders.append(p)
 
-        elif isinstance(path, (PurePath, str)):
-            path = Path(path)
-            for p in path.iterdir():
-                if p.is_dir() and not p.name.startswith("."):
+        elif isinstance(path, PathLike):
+            for p in os.listdir(path):
+                if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
                     # add bulk simple properties
                     vr_path = "null_directory"
                     with contextlib.suppress(FileNotFoundError):
                         vr_path, multiple = _get_output_files_and_check_if_multiple(
-                            "vasprun.xml", p / folder
+                            "vasprun.xml", f"{p}/{folder}"
                         )
                         if multiple:
+                            folder_name = f"{p}/{folder}" if folder else p
                             warnings.warn(
-                                f"Multiple `vasprun.xml` files found in directory: {p/folder}. Using "
+                                f"Multiple `vasprun.xml` files found in directory: {folder_name}. Using "
                                 f"{vr_path} to parse the calculation energy and metadata."
                             )
 
@@ -1261,10 +1501,12 @@ class CompetingPhasesAnalyzer:
                             self.vasprun_paths.append(vr_path)
 
                         else:
-                            folder_name = str(PurePath(*p.parts[len(path.parts) :]))
-                            skipped_folders += [f"{folder_name} or {folder_name}/{folder}"]
+                            skipped_folders += [f"{p} or {p}/{folder}"]
         else:
-            raise ValueError("Path should either be a list of paths, a string or a pathlib Path object")
+            raise ValueError(
+                "`path` should either be a path to a folder (with competing phase "
+                "calculations), or a list of paths to vasprun.xml(.gz) files."
+            )
 
         # only warn about skipped folders that are recognised calculation folders (containing a material
         # composition in the name, or 'EaH' in the name)
@@ -1278,7 +1520,7 @@ class CompetingPhasesAnalyzer:
                 skipped_folders_for_warning.append(folder_name)
 
         if skipped_folders_for_warning and verbose:
-            parent_folder_string = f" (in {path})" if isinstance(path, (PurePath, str)) else ""
+            parent_folder_string = f" (in {path})" if isinstance(path, PathLike) else ""
             warnings.warn(
                 f"vasprun.xml files could not be found in the following "
                 f"directories{parent_folder_string}, and so they will be skipped for parsing:\n"
@@ -1443,13 +1685,14 @@ class CompetingPhasesAnalyzer:
         ]
         return [{k: v for k, v in d.items() if k not in keys_to_remove} for d in formation_energy_data]
 
-    def to_csv(self, csv_path, sort_by_energy=False, prune_polymorphs=False):
+    def to_csv(self, csv_path: PathLike, sort_by_energy: bool = False, prune_polymorphs: bool = False):
         """
-        Write parsed competing phases data to ``csv``. Can be re-loaded with
-        ``CompetingPhasesAnalyzer.from_csv()``.
+        Write parsed competing phases data to ``csv``.
+
+        Can be re-loaded with ``CompetingPhasesAnalyzer.from_csv()``.
 
         Args:
-            csv_path (str): Path to csv file to write to.
+            csv_path (Pathlike): Path to csv file to write to.
             sort_by_energy (bool):
                 If True, sorts the csv by formation energy (highest to lowest).
                 Default is False (sorting by formula).
@@ -1463,14 +1706,16 @@ class CompetingPhasesAnalyzer:
         pd.DataFrame(formation_energy_data).set_index("Formula").to_csv(csv_path)
         print(f"Competing phase formation energies have been saved to {csv_path}")
 
-    def from_csv(self, csv_path):
+    def from_csv(self, csv_path: PathLike):
         """
         Read in data from a previously parsed formation energies csv file.
 
         Args:
-            csv_path (str): Path to csv file. Must have columns 'Formula',
-            and 'DFT Energy per Formula Unit (ev/fu)' or
-            'DFT Energy per Atom (ev/atom)'
+            csv_path (PathLike):
+                Path to csv file. Must have columns 'Formula',
+                and 'DFT Energy per Formula Unit (ev/fu)' or
+                'DFT Energy per Atom (ev/atom)'.
+
         Returns:
             None, sets ``self.data`` and ``self.elemental_energies``.
         """
@@ -1521,7 +1766,7 @@ class CompetingPhasesAnalyzer:
     def calculate_chempots(
         self,
         extrinsic_species: Optional[str] = None,
-        csv_path: Optional[str] = None,
+        csv_path: Optional[PathLike] = None,
         sort_by: Optional[str] = None,
         verbose: bool = True,
     ):
@@ -1539,7 +1784,7 @@ class CompetingPhasesAnalyzer:
                 If set, will calculate the limiting chemical potential for the
                 specified extrinsic species at the intrinsic chemical potential
                 limits. Default is None.
-            csv_path (str):
+            csv_path (PathLike):
                 If set, will save the calculated chemical potential limits to ``csv_path``.
             sort_by (str):
                 If set, will sort the chemical potential limits in the output
@@ -1797,7 +2042,7 @@ class CompetingPhasesAnalyzer:
             self.calculate_chempots()
         return self._intrinsic_phase_diagram
 
-    def _cplap_input(self, dependent_variable=None, filename="input.dat"):
+    def _cplap_input(self, dependent_variable: Optional[str] = None, filename: PathLike = "input.dat"):
         """
         Generates an ``input.dat`` file for the ``CPLAP`` ``FORTRAN`` code
         (legacy code for computing and analysing chemical potential limits, no
@@ -1807,7 +2052,7 @@ class CompetingPhasesAnalyzer:
             dependent_variable (str):
                 Pick one of the variables as dependent, the first element in
                 the composition is chosen if this isn't set.
-            filename (str):
+            filename (PathLike):
                 Filename, should end in ``.dat``.
 
         Returns:
@@ -1849,7 +2094,7 @@ class CompetingPhasesAnalyzer:
                 != self.bulk_composition.reduced_composition
             ]
             # cull to only the lowest energy entries of each composition
-            culled_cplap_entries = {}
+            culled_cplap_entries: dict[str, dict] = {}
             for entry in entries_for_cplap:
                 reduced_comp = Composition(entry["Formula"]).reduced_composition
                 if (
@@ -2068,7 +2313,7 @@ def combine_extrinsic(first, second, extrinsic_species):
         v1[extrinsic_species] = v2.pop(extrinsic_species)
         new_limits[new_key] = v1
 
-    new_limits_wrt_el = {}
+    new_limits_wrt_el_refs = {}
     for (k1, v1), (k2, v2) in zip(
         list(cpa1["limits_wrt_el_refs"].items()),
         list(cpa2["limits_wrt_el_refs"].items()),
@@ -2079,7 +2324,7 @@ def combine_extrinsic(first, second, extrinsic_species):
             raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
 
         v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_limits_wrt_el[new_key] = v1
+        new_limits_wrt_el_refs[new_key] = v1
 
     new_elements = copy.deepcopy(cpa1["elemental_refs"])
     new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
@@ -2087,5 +2332,5 @@ def combine_extrinsic(first, second, extrinsic_species):
     return {
         "elemental_refs": new_elements,
         "limits": new_limits,
-        "limits_wrt_el_refs": new_limits_wrt_el,
+        "limits_wrt_el_refs": new_limits_wrt_el_refs,
     }
