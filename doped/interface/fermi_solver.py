@@ -9,10 +9,10 @@ implement a unified interface for both "backends".
 
 import contextlib
 import functools
+import warnings
 from copy import deepcopy
 from itertools import product
 from typing import TYPE_CHECKING, Any, Optional, Union
-from warnings import filterwarnings, warn
 
 import numpy as np
 import pandas as pd
@@ -71,18 +71,18 @@ class FermiSolver(MSONable):
         self,
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
-        chemical_potentials: Optional[dict] = None,
+        chempots: Optional[dict] = None,
     ):
         """
         Initialize the FermiSolver object.
         """
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr_path
-        self.chemical_potentials = chemical_potentials
+        self.chempots = chempots
 
-        if self.chemical_potentials is None and self.defect_thermodynamics.chempots is not None:
+        if self.chempots is None and self.defect_thermodynamics.chempots is not None:
             # if chempots not supplied, but present in DefectThermodynamics, then use them
-            self.chemical_potentials = self.defect_thermodynamics.chempots
+            self.chempots = self.defect_thermodynamics.chempots
 
         self._not_implemented_message = (
             "This method is implemented in the derived class, "
@@ -142,7 +142,7 @@ class FermiSolver(MSONable):
 
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                delayed(self._solve_and_append_chempots_pseudo)(
                     chempots=chempots,
                     quenched_temperature=quench_temp,
                     annealing_temperature=anneal_temp,
@@ -156,7 +156,7 @@ class FermiSolver(MSONable):
 
         elif annealing_temperature_range is None and quenching_temperature_range is None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials)(
+                delayed(self._solve_and_append_chempots)(
                     chempots=chempots, temperature=temperature, **kwargs
                 )
                 for temperature in temperature_range
@@ -169,7 +169,7 @@ class FermiSolver(MSONable):
             )
         return all_data_df
 
-    def scan_chemical_potentials(
+    def scan_chempots(
         self,
         chempots: list[dict[str, float]],
         temperature: float,
@@ -196,7 +196,7 @@ class FermiSolver(MSONable):
         """
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                delayed(self._solve_and_append_chempots_pseudo)(
                     chempots=chempots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
@@ -207,7 +207,7 @@ class FermiSolver(MSONable):
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials)(
+                delayed(self._solve_and_append_chempots)(
                     chempots=chempots, temperature=temperature, **kwargs
                 )
             )
@@ -288,7 +288,7 @@ class FermiSolver(MSONable):
 
         return all_data_df
 
-    def interpolate_chemical_potentials(
+    def interpolate_chempots(
         self,
         chem_pot_start: dict,
         chem_pot_end: dict,
@@ -320,7 +320,7 @@ class FermiSolver(MSONable):
         interpolated_chem_pots = self._get_interpolated_chempots(chem_pot_start, chem_pot_end, n_points)
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                delayed(self._solve_and_append_chempots_pseudo)(
                     chempots=chem_pots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
@@ -332,7 +332,7 @@ class FermiSolver(MSONable):
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials)(
+                delayed(self._solve_and_append_chempots)(
                     chempots=chem_pots, temperature=temperature, **kwargs
                 )
                 for chem_pots in interpolated_chem_pots
@@ -371,9 +371,7 @@ class FermiSolver(MSONable):
             for i in range(n_points)
         ]
 
-    def _solve_and_append_chemical_potentials(
-        self, chempots: dict[str, float], temperature: float, **kwargs
-    ):
+    def _solve_and_append_chempots(self, chempots: dict[str, float], temperature: float, **kwargs):
         """
         Solve for the defect concentrations at a given temperature and chemical
         potentials.
@@ -393,7 +391,7 @@ class FermiSolver(MSONable):
             results_df[key] = value
         return results_df
 
-    def _solve_and_append_chemical_potentials_pseudo(
+    def _solve_and_append_chempots_pseudo(
         self, chempots, quenched_temperature, annealing_temperature, **kwargs
     ):
         results_df = self.pseudo_equilibrium_solve(
@@ -411,9 +409,7 @@ class FermiSolver(MSONable):
     ):
         if "effective_dopant_concentration" not in kwargs:
             raise ValueError("You must specify the effective dopant concentration.")
-        results_df = self._solve_and_append_chemical_potentials(
-            chempots=chempots, temperature=temperature, **kwargs
-        )
+        results_df = self._solve_and_append_chempots(chempots=chempots, temperature=temperature, **kwargs)
         results_df["Dopant (cm^-3)"] = abs(kwargs["effective_dopant_concentration"])
         return results_df
 
@@ -426,7 +422,7 @@ class FermiSolver(MSONable):
     ):
         if "effective_dopant_concentration" not in kwargs:
             raise ValueError("You must specify the effective dopant concentration.")
-        results_df = self._solve_and_append_chemical_potentials_pseudo(
+        results_df = self._solve_and_append_chempots_pseudo(
             chempots=chempots,
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
@@ -438,7 +434,7 @@ class FermiSolver(MSONable):
     def scan_chemical_potential_grid(
         self,
         dependent_variable: str,
-        chemical_potentials=None,
+        chempots=None,
         n_points: int = 10,
         temperature: float = 300,
         annealing_temperature: Optional[float] = None,
@@ -453,7 +449,7 @@ class FermiSolver(MSONable):
 
         Args:
             dependent_variable (str): the dependent variable to scan
-            chemical_potentials (dict): chemical potentials to scan
+            chempots (dict): chemical potentials to scan
             n_points (int): number of points to scan
             temperature (float): temperature to solve at
             annealing_temperature (float): temperature to anneal at
@@ -465,16 +461,18 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
         """
-        if chemical_potentials is None:
-            chemical_potentials = self.chemical_potentials["limits_wrt_el_refs"]
+        if chempots is None:
+            if self.chempots is None or "limits_wrt_el_refs" not in self.chempots:
+                raise ValueError(
+                    "self.chempots or self.chempots['limits_wrt_el_refs'] is None or missing."
+                )
+            chempots = self.chempots["limits_wrt_el_refs"]
 
-        grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials).get_grid(
-            dependent_variable, n_points
-        )
+        grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(dependent_variable, n_points)
 
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                delayed(self._solve_and_append_chempots_pseudo)(
                     chempots=chempots[1].to_dict(),
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
@@ -486,7 +484,7 @@ class FermiSolver(MSONable):
 
         elif annealing_temperature is None and quenching_temperature is None:
             all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chemical_potentials)(
+                delayed(self._solve_and_append_chempots)(
                     chempots=chempots[1].to_dict(), temperature=temperature, **kwargs
                 )
                 for chempots in grid.iterrows()
@@ -505,7 +503,7 @@ class FermiSolver(MSONable):
         dependent_chempot,
         target,
         min_or_max,
-        chemical_potentials=None,
+        chempots=None,
         tolerance=0.01,
         n_points=10,
         temperature=300,
@@ -522,19 +520,19 @@ class FermiSolver(MSONable):
         chemical potential that minimizes or maximizes the target variable
         until the target value no longer changes by more than the tolerance.
         """
-        if chemical_potentials is None:
-            chemical_potentials = self.chemical_potentials["limits_wrt_el_refs"]
+        if chempots is None:
+            chempots = self.chempots["limits_wrt_el_refs"]
 
-        starting_grid = ChemicalPotentialGrid.from_chemical_potentials(chemical_potentials)
+        starting_grid = ChemicalPotentialGrid.from_chempots(chempots)
         current_vertices = starting_grid.vertices
-        chemical_potentials_labels = list(current_vertices.columns)
+        chempots_labels = list(current_vertices.columns)
         previous_value = None
 
         while True:
             # Solve and append chemical potentials
             if annealing_temperature is not None and quenching_temperature is not None:
                 all_data = Parallel(n_jobs=processes)(
-                    delayed(self._solve_and_append_chemical_potentials_pseudo)(
+                    delayed(self._solve_and_append_chempots_pseudo)(
                         chempots=chempots[1].to_dict(),
                         quenched_temperature=quenching_temperature,
                         annealing_temperature=annealing_temperature,
@@ -546,7 +544,7 @@ class FermiSolver(MSONable):
 
             elif annealing_temperature is None and quenching_temperature is None:
                 all_data = Parallel(n_jobs=processes)(
-                    delayed(self._solve_and_append_chemical_potentials)(
+                    delayed(self._solve_and_append_chempots)(
                         chempots=chempots[1].to_dict(), temperature=temperature, **kwargs
                     )
                     for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
@@ -561,12 +559,12 @@ class FermiSolver(MSONable):
             # Find chemical potentials value where target is lowest or highest
             if min_or_max == "min":
                 target_chem_pot = results_df[results_df[target] == results_df[target].min()][
-                    chemical_potentials_labels
+                    chempots_labels
                 ]
                 target_dataframe = results_df[results_df[target] == results_df[target].min()]
             elif min_or_max == "max":
                 target_chem_pot = results_df[results_df[target] == results_df[target].max()][
-                    chemical_potentials_labels
+                    chempots_labels
                 ]
                 target_dataframe = results_df[results_df[target] == results_df[target].max()]
 
@@ -589,7 +587,7 @@ class FermiSolver(MSONable):
 
             # Generate a new grid around the target_chem_pot that
             # does not go outside the bounds of the starting grid
-            new_vertices_df = pd.DataFrame(new_vertices[0], columns=chemical_potentials_labels)
+            new_vertices_df = pd.DataFrame(new_vertices[0], columns=chempots_labels)
             starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
         return target_dataframe
@@ -610,7 +608,7 @@ class FermiSolverDoped(FermiSolver):
         self,
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
-        chemical_potentials=None,
+        chempots=None,
     ):
         """
         Initialize the FermiSolverDoped object.
@@ -618,9 +616,9 @@ class FermiSolverDoped(FermiSolver):
         Args:
             defect_thermodynamics (DefectThermodynamics): A DefectThermodynamics object.
             bulk_dos_vr_path (str): Path to the VASP run XML file (vasprun.xml) for bulk DOS.
-            chemical_potentials (Optional): Chemical potentials, if any.
+            chempots (Optional): Chemical potentials, if any.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chemical_potentials)
+        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chempots)
 
         # Load the Vasprun object from the given file path
         bulk_dos_vr = Vasprun(bulk_dos_vr_path)
@@ -630,7 +628,7 @@ class FermiSolverDoped(FermiSolver):
             bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr)
         )
 
-        self.chemical_potentials = chemical_potentials
+        self.chempots = chempots
 
     def _get_fermi_level_and_carriers(
         self,
@@ -803,6 +801,7 @@ def _import_py_sc_fermi(cls):
     def wrapper(*args, **kwargs):
         if not hasattr(cls, "_py_sc_fermi_imported"):
             try:
+                # Suppress warnings before importing py_sc_fermi
                 from py_sc_fermi.defect_charge_state import DefectChargeState
                 from py_sc_fermi.defect_species import DefectSpecies
                 from py_sc_fermi.defect_system import DefectSystem
@@ -813,7 +812,7 @@ def _import_py_sc_fermi(cls):
                 cls.DefectChargeState = DefectChargeState
                 cls.DOS = DOS
             except ImportError:
-                warn("py-sc-fermi not installed, will only be able to use doped backend")
+                warnings.warn("py-sc-fermi not installed, will only be able to use doped backend")
             cls._py_sc_fermi_imported = True
         return cls(*args, **kwargs)
 
@@ -839,17 +838,17 @@ class FermiSolverPyScFermi(FermiSolver):
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
         multiplicity_scaling=None,
-        chemical_potentials=None,
-        supress_warnings=True,
+        chempots=None,
+        suppress_warnings=True,
     ):
         """
         Initialize the FermiSolverPyScFermi object.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chemical_potentials)
+        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chempots)
         vr = Vasprun(self.bulk_dos)
         self.bulk_dos = self.DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
-        self.supress_warnings = supress_warnings
+        self.suppress_warnings = suppress_warnings
 
         if multiplicity_scaling is None:
             ms = self.defect_thermodynamics.defect_entries[0].defect.structure.volume / self.volume
@@ -863,7 +862,7 @@ class FermiSolverPyScFermi(FermiSolver):
         else:
             self.multiplicity_scaling = multiplicity_scaling
 
-    def _handle_chemical_potentials(self, chempots: dict[str, float]) -> dict[str, float]:
+    def _handle_chempots(self, chempots: dict[str, float]) -> dict[str, float]:
         """
         Handle the chemical potentials for the py-sc-fermi backend.
 
@@ -873,7 +872,12 @@ class FermiSolverPyScFermi(FermiSolver):
         Returns:
             dict: The handled chemical potentials.
         """
-        return {k: v + self.chemical_potentials["elemental_refs"][k] for k, v in chempots.items()}
+        if self.chempots is not None and self.chempots.get("elemental_refs") is not None:
+            elemental_refs = self.chempots["elemental_refs"]
+        else:
+            # Handle the case where self.chempots or self.chempots["elemental_refs"] is None
+            raise ValueError("self.chempots or self.chempots['elemental_refs'] is None")
+        return {k: v + elemental_refs.get(k, 0) for k, v in chempots.items()}
 
     def _generate_dopant(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
@@ -905,7 +909,7 @@ class FermiSolverPyScFermi(FermiSolver):
     def generate_defect_system(
         self,
         temperature: float,
-        chemical_potentials: dict[str, float],
+        chempots: dict[str, float],
         effective_dopant_concentration: Optional[float] = None,
     ) -> "DefectSystem":
         """
@@ -914,7 +918,7 @@ class FermiSolverPyScFermi(FermiSolver):
 
         Args:
             temperature (float): Temperature in K.
-            chemical_potentials (dict): Chemical potentials for the elements.
+            chempots (dict): Chemical potentials for the elements.
             effective_dopant_concentration (float):
                 Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
                 material to include in the charge neutrality condition, in order to
@@ -930,14 +934,14 @@ class FermiSolverPyScFermi(FermiSolver):
         labels = {_get_label_and_charge(entry.name)[0] for entry in entries}
         defect_species: dict[str, Any] = {}
         defect_species = {label: {"charge_states": {}, "nsites": None, "name": label} for label in labels}
-        chemical_potentials = self._handle_chemical_potentials(chemical_potentials)
+        chempots = self._handle_chempots(chempots)
 
         for entry in entries:
             label, charge = _get_label_and_charge(entry.name)
             defect_species[label]["nsites"] = entry.defect.multiplicity / self.multiplicity_scaling
 
             formation_energy = self.defect_thermodynamics.get_formation_energy(
-                entry, chempots=chemical_potentials, fermi_level=0
+                entry, chempots=chempots, fermi_level=0
             )
             total_degeneracy = np.prod(list(entry.degeneracy_factors.values()))
             defect_species[label]["charge_states"][charge] = {
@@ -979,15 +983,14 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
             and the self consistent Fermi energy
         """
-        if self.supress_warnings:
-            filterwarnings("ignore", category=RuntimeWarning)
-
         defect_system = self.generate_defect_system(
-            chemical_potentials=chempots,
+            chempots=chempots,
             temperature=temperature,
             **kwargs,
         )
-        conc_dict = defect_system.concentration_dict()
+
+        with np.errstate(all="ignore"):
+            conc_dict = defect_system.concentration_dict()
         data = []
 
         for k, v in conc_dict.items():
@@ -1028,16 +1031,15 @@ class FermiSolverPyScFermi(FermiSolver):
             pd.DataFrame: DataFrame containing defect and carrier concentrations
                 and the self consistent Fermi energy
         """
-        if self.supress_warnings:
-            filterwarnings("ignore", category=RuntimeWarning)
-
         defect_system = self.generate_annealed_defect_system(
-            chemical_potentials=chempots,
+            chempots=chempots,
             quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
             **kwargs,
         )
-        conc_dict = defect_system.concentration_dict()
+
+        with np.errstate(all="ignore"):
+            conc_dict = defect_system.concentration_dict()
 
         data = []
         for k, v in conc_dict.items():
@@ -1060,7 +1062,7 @@ class FermiSolverPyScFermi(FermiSolver):
 
     def generate_annealed_defect_system(
         self,
-        chemical_potentials,
+        chempots,
         quenched_temperature,
         annealing_temperature,
         fix_charge_states=False,
@@ -1074,7 +1076,7 @@ class FermiSolverPyScFermi(FermiSolver):
         (quenching_temperature).
 
         Args:
-            chemical_potentials (dict[str, float]):
+            chempots (dict[str, float]):
                 Set of chemical potentials used to generate the ``DefectSystem``.
             annealing_temperature (float):
                 High temperature at which to generate the initial ``DefectSystem``
@@ -1112,12 +1114,12 @@ class FermiSolverPyScFermi(FermiSolver):
         if free_defects is None:
             free_defects = []
         defect_system = self.generate_defect_system(
-            chemical_potentials=chemical_potentials,
+            chempots=chempots,
             temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
         )
         initial_conc_dict = defect_system.concentration_dict()
-        chemical_potentials = self._handle_chemical_potentials(chemical_potentials)
+        chempots = self._handle_chempots(chempots)
 
         # Exclude the free_defects, carrier concentrations and
         # Fermi energy from fixing
@@ -1160,15 +1162,15 @@ class ChemicalPotentialGrid:
     vertices.
     """
 
-    def __init__(self, chemical_potentials: dict[str, Any]) -> None:
+    def __init__(self, chempots: dict[str, Any]) -> None:
         """
         Initializes the ChemicalPotentialGrid with chemical potential data.
 
         Parameters:
-        chemical_potentials (dict[str, Any]): A dictionary containing chemical
+        chempots (dict[str, Any]): A dictionary containing chemical
                                                potential information.
         """
-        self.vertices = pd.DataFrame.from_dict(chemical_potentials, orient="index")
+        self.vertices = pd.DataFrame.from_dict(chempots, orient="index")
 
     def get_grid(self, dependent_variable: str, n_points: int = 100) -> pd.DataFrame:
         """
@@ -1186,18 +1188,18 @@ class ChemicalPotentialGrid:
         return self.grid_from_dataframe(self.vertices, dependent_variable, n_points)
 
     @classmethod
-    def from_chemical_potentials(cls, chemical_potentials: dict[str, Any]) -> "ChemicalPotentialGrid":
+    def from_chempots(cls, chempots: dict[str, Any]) -> "ChemicalPotentialGrid":
         """
         Initializes the ChemicalPotentialGrid with chemical potential data.
 
         Parameters:
-        chemical_potentials (dict[str, Any]): A dictionary containing chemical
+        chempots (dict[str, Any]): A dictionary containing chemical
                                                potential information.
 
         Returns:
         ChemicalPotentialGrid: The initialized ChemicalPotentialGrid.
         """
-        return cls(chemical_potentials["limits_wrt_el_refs"])
+        return cls(chempots["limits_wrt_el_refs"])
 
     @staticmethod
     def grid_from_dataframe(
