@@ -2,10 +2,8 @@
 ## Chemical potential
 - Check through chemical potential TO-DOs. Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
-- Update chemical potential tools to work with new Materials Project API. Currently, supplying an API key for the new Materials Project API returns entries which do not have `e_above_hull` as a property, and so crashes. Ideally would be good to be compatible with both the legacy and new API, which should be fairly straightforward (try importing MPRester from mp_api client except ImportError import from pmg then will need to make a whole separate query/search because `band_gap` and `total_magnetisation` no longer accessible from `get_entries`). See https://docs.materialsproject.org/downloading-data/using-the-api
 - Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?) Also can see https://github.com/materialsproject/pymatgen-analysis-defects/blob/main/pymatgen/analysis/defects/plotting/phases.py for 2D chempot plotting.
   - Also see `Cs2SnTiI6` notebooks for template code for this.
-- Note in tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 
 ## Post-processing / analysis / plotting
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -88,6 +86,7 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
+- Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 - Quick-start tutorial suggested by Alex G
 - Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
