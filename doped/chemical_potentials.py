@@ -9,6 +9,7 @@ import copy
 import itertools
 import os
 import warnings
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
@@ -745,6 +746,7 @@ class CompetingPhases:
 
         # TODO: Update installation pages and any mentions of 'legacy' in code
         # TODO: Add tests with new API keys
+        # TODO: Update docs and tutorials
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
@@ -910,7 +912,7 @@ class CompetingPhases:
                 # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
                 #  out for cases where rounding can give same name (e.g. Te!) - should use
                 #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
-                #  rare cases of overwriting
+                #  rare cases of overwriting -- should use space-group in names!
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1169,7 +1171,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
     def __init__(
         self,
         composition: Union[str, Composition],
-        extrinsic_species: Union[str, list[str]],
+        extrinsic_species: Union[str, Iterable],
         e_above_hull: float = 0.1,
         full_sub_approach: bool = False,
         codoping: bool = False,
@@ -1185,8 +1187,12 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             composition (str, Composition):
                 Composition of host material (e.g. 'LiFePO4', or Composition('LiFePO4'),
                 or Composition({"Li":1, "Fe":1, "P":1, "O":4}))
-            extrinsic_species (str, list):
-                Extrinsic dopant/impurity species (e.g. "Mg" or ["Mg", "Na"])
+            extrinsic_species (str, Iterable):
+                Extrinsic dopant/impurity species to consider, to generate the relevant
+                competing phases to additionally determine their chemical potential
+                limits within the host. Can be a single element as a string (e.g. "Mg")
+                or an iterable of element strings (list, set, tuple, dict) (e.g. ["Mg",
+                "Na"]).
             e_above_hull (float):
                 Maximum energy-above-hull of Materials Project entries to be
                 considered as competing phases. This is an uncertainty range for the
@@ -1243,16 +1249,23 @@ class ExtrinsicCompetingPhases(CompetingPhases):
             extrinsic_species = [
                 extrinsic_species,
             ]
-        elif not isinstance(extrinsic_species, list):
+        elif not isinstance(extrinsic_species, Iterable):
             raise TypeError(
                 f"`extrinsic_species` must be a string (i.e. the extrinsic species "
-                f"symbol, e.g. 'Mg') or a list (e.g. ['Mg', 'Na']), got type "
-                f"{type(extrinsic_species)} instead!"
+                f"symbol, e.g. 'Mg') or an iterable object (list, set, tuple or dict; e.g. ['Mg', 'Na']), "
+                f"got type {type(extrinsic_species)} instead!"
             )
-        self.extrinsic_species = extrinsic_species
+        self.extrinsic_species = list(extrinsic_species)
+        if extrinsic_in_intrinsic := [
+            ext for ext in self.extrinsic_species if ext in self.intrinsic_species
+        ]:
+            raise ValueError(
+                f"Extrinsic species {extrinsic_in_intrinsic} are already present in the host composition "
+                f"({self.bulk_composition}), and so cannot be considered as extrinsic species!"
+            )
 
         if self.codoping:  # if codoping is True, should have multiple extrinsic species:
-            if len(extrinsic_species) < 2:
+            if len(self.extrinsic_species) < 2:
                 warnings.warn(
                     "`codoping` is set to True, but `extrinsic_species` only contains 1 element, "
                     "so `codoping` will be set to False."
@@ -1363,7 +1376,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     # the extrinsic phase addition process
                     if not single_bordering_sub_el_entries:
                         warnings.warn(
-                            f"Determined chemical potentials to be over dependent on the extrinsic "
+                            f"Determined chemical potentials to be over-dependent on the extrinsic "
                             f"species {sub_el}, meaning we need to revert to `full_sub_approach = True` "
                             f"for this species."
                         )
@@ -1413,8 +1426,9 @@ class CompetingPhasesAnalyzer:
         self.elements = [str(c) for c in self.bulk_composition.elements]
         self.extrinsic_elements: list[str] = []
 
-    # TODO: from_vaspruns and from_csv should be @classmethods so CompetingPhaseAnalyzer can be directly
-    #  initialised from them (like Structure.from_file or Distortions.from_structures in SnB etc)
+    # TODO: `from_vaspruns` should just be the default initialisation of CompetingPhasesAnalyzer,
+    #  which auto-parses vaspruns from the subdirectories (or optionally a list of vaspruns,
+    #  or a csv path); see shelved changes for this
     # TODO: Could add multiprocessing like DefectsParser to expedite parsing?
     def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None, verbose=True):
         """
@@ -1865,8 +1879,8 @@ class CompetingPhasesAnalyzer:
                 f"material is unstable and so has no chemical potential limits; though in reality the "
                 f"host may be stabilised by temperature effects etc, or just a metastable phase.\n"
                 f"Here we will determine a single chemical potential 'limit' corresponding to the least "
-                f"unstable point on the convex hull for the host material, as an approximation for the "
-                f"true chemical potentials."
+                f"unstable (i.e. closest) point on the convex hull for the host material, "
+                f"as an approximation for the true chemical potentials."
             )  # TODO: Add example of adjusting the entry energy after loading (if user has calculated
             # e.g. temperature effects) and link in this warning
             # decrease bulk_pde energy per atom by ``e_above_hull`` + 0.1 meV/atom
