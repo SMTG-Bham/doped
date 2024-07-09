@@ -744,9 +744,8 @@ class CompetingPhases:
         self.bulk_composition = Composition(composition)
         self.chemsys = list(self.bulk_composition.as_dict().keys())
 
-        # TODO: Update installation pages and any mentions of 'legacy' in code
+        # TODO: Update installation pages, docs and tutorials
         # TODO: Add tests with new API keys
-        # TODO: Update docs and tutorials
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
@@ -1351,16 +1350,16 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     MP_extrinsic_bordering_phases: list[str] = []
 
                     for limit in MP_extrinsic_gga_chempots:
-                        # note that the the number of phases in equilibria at each vertex (limit) is
-                        # equal to the number of elements in the chemical system (here being the
-                        # host composition plus the extrinsic species)
+                        # note that the number of phases in equilibria at each vertex (limit) is equal
+                        # to the number of elements in the chemical system (here being the host
+                        # composition plus the extrinsic species)
                         extrinsic_bordering_phases = {
                             phase for phase in limit.split("-") if sub_el in phase
                         }
                         # only add to MP_extrinsic_bordering_phases when only 1 extrinsic bordering phase
                         # (i.e. ``full_sub_approach=False`` behaviour):
-                        if len(
-                            extrinsic_bordering_phases
+                        if len(  # this should always give the same number of facets as the bulk PD
+                            extrinsic_bordering_phases  # TODO: Explicitly test this for all cases in tests
                         ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
                             MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
 
@@ -1371,19 +1370,25 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                         or (entry.is_element and sub_el in entry.name)
                     ]
 
-                    # check that extrinsic competing phases list is not empty (can happen with
-                    # 'over-dependent' limits); if so then set full_sub_approach = True and re-run
-                    # the extrinsic phase addition process
+                    # check that extrinsic competing phases list is not empty (according to PyCDT
+                    # chemical potential handling this can happen (despite purposely neglecting these
+                    # "over-dependent" facets above), but no known cases... (apart from when `extrinsic`
+                    # actually contains an intrinsic element, which we handle above anyway)
                     if not single_bordering_sub_el_entries:
-                        warnings.warn(
+                        # warnings.warn(
+                        #     f"Determined chemical potentials to be over-dependent on the extrinsic "
+                        #     f"species {sub_el}, meaning we need to revert to `full_sub_approach = True` "
+                        #     f"for this species."
+                        # )  # Revert to this handling if we ever find a case of this actually happening
+                        # self.entries += sub_el_entries
+                        raise RuntimeError(
                             f"Determined chemical potentials to be over-dependent on the extrinsic "
-                            f"species {sub_el}, meaning we need to revert to `full_sub_approach = True` "
-                            f"for this species."
+                            f"species {sub_el} despite `full_sub_approach=False`, which shouldn't happen. "
+                            f"Please report this to the developers on the GitHub issues page: "
+                            f"https://github.com/SMTG-Bham/doped/issues"
                         )
-                        self.entries += sub_el_entries
 
-                    else:
-                        self.entries += single_bordering_sub_el_entries
+                    self.entries += single_bordering_sub_el_entries
 
         self.MP_full_pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically
             key=lambda x: _pd_entries_sorting_func(x, self.legacy_MP)
