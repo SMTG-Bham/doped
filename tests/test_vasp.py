@@ -1118,12 +1118,8 @@ class DefectsSetTest(unittest.TestCase):
         # settings):
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
 
-        # Get the current locale setting
-        self.original_locale = locale.getlocale(locale.LC_CTYPE)  # should be UTF-8
-
     def tearDown(self):
-        # reset locale:
-        locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
+        locale.setlocale(locale.LC_ALL, "")  # reset locale
 
         for file in os.listdir():
             if file.endswith(".json.gz"):
@@ -1413,7 +1409,7 @@ class DefectsSetTest(unittest.TestCase):
                 user_incar_settings=self.CdTe_custom_test_incar_settings,
             )
             defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
-            locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
+            locale.setlocale(locale.LC_ALL, "")  # resets locale
 
             # assert that the same folders in self.CdTe_data_dir are present in the current directory
             self.check_generated_vasp_inputs(  # tests vasp_gam
