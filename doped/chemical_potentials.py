@@ -16,7 +16,6 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import pandas as pd
-from emmet.core.thermo import ThermoDoc
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Structure
@@ -343,6 +342,8 @@ def _get_property_key_dict(legacy_MP: bool):
         }
 
     else:
+        from emmet.core.thermo import ThermoDoc  # emmet only required if mp-api installed
+
         property_key_dict = MP_API_property_keys["new"]
         property_data_fields = list(ThermoDoc.model_json_schema()["properties"].keys())
         get_entries_kwargs = {"property_data": property_data_fields}
