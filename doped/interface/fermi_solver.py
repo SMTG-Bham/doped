@@ -803,7 +803,7 @@ class FermiSolverDoped(FermiSolver):
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
-                and the self consistent Fermi energy
+                and the self-consistent Fermi energy
         """
         (
             fermi_level,
@@ -811,7 +811,7 @@ class FermiSolverDoped(FermiSolver):
             holes,
             concentrations,
         ) = self.defect_thermodynamics.get_quenched_fermi_level_and_concentrations(
-            bulk_dos_vr=self.bulk_dos,
+            bulk_dos=self.bulk_dos,
             chempots=chempots,
             limit=None,
             annealing_temperature=annealing_temperature,
