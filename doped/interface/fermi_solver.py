@@ -175,7 +175,7 @@ class FermiSolver(MSONable):
 
         if chempots is None and limit is not None:
             chempots = self._get_limits(limit)
-        else:
+        elif chempots is None and limit is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
@@ -297,7 +297,7 @@ class FermiSolver(MSONable):
 
         if chempots is None and limit is not None:
             chempots = self._get_limits(limit)
-        else:
+        elif chempots is None and limit is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
         # Existing logic here, now correctly handling floats and lists
@@ -1298,7 +1298,7 @@ class ChemicalPotentialGrid:
         # Combine points with their corresponding interpolated values
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
-        return pd.DataFrame(  # convert to DataFrame and set column names
+        return pd.DataFrame(
             grid_with_values,
-            columns=[*list(independent_vars.columns), *dependent_variable],
+            columns=[*list(independent_vars.columns), dependent_variable],
         )
