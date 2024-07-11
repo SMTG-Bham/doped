@@ -55,7 +55,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=[1, 2, 3],
                 quenching_temperature_range=None,
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
         with pytest.raises(ValueError) as exc:
             self.fs.scan_temperature(
@@ -64,7 +64,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=None,
                 quenching_temperature_range=[1, 2, 3],
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
         with pytest.raises(ValueError) as exc:
             self.fs.scan_temperature(
@@ -73,7 +73,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=None,
                 quenching_temperature_range=None,
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
     def test_get_interpolated_chempots(self):
 
