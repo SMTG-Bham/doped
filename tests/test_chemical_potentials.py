@@ -143,83 +143,60 @@ class CompetingPhases(unittest.TestCase):
         Test generating CompetingPhases with a composition that's unstable on
         the Materials Project database.
         """
-        with warnings.catch_warnings(record=True) as w:
-            cp = chemical_potentials.CompetingPhases("Na2FePO4F", e_above_hull=0.02, api_key=self.api_key)
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert (
-            "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
-            "respect to competing phases, having an energy above hull of 0.1701 eV/atom."
-            in str(w[0].message)
-        )
-        assert (
-            "Formally, this means that the host material is unstable and so has no chemical "
-            "potential limits; though in reality there may be errors in the MP energies"
-            in str(w[0].message)
-        )
-        assert (
-            "Here we downshift the host compound entry to the convex hull energy, and then "
-            "determine the possible competing phases with the same approach as usual"
-        ) in str(w[0].message)
-        assert len(cp.entries) == 59
-        self.check_O2_entry(cp)
-
-        with warnings.catch_warnings(record=True) as w:
-            cp = chemical_potentials.CompetingPhases(
-                "Na2FePO4F", e_above_hull=0.02, api_key=self.api_key, full_phase_diagram=True
-            )
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert (
-            "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
-            "respect to competing phases, having an energy above hull of 0.1701 eV/atom."
-            in str(w[0].message)
-        )
-        assert (
-            "Formally, this means that the host material is unstable and so has no chemical "
-            "potential limits; though in reality there may be errors in the MP energies"
-            in str(w[0].message)
-        )
-        assert (
-            "Here we downshift the host compound entry to the convex hull energy, and then "
-            "determine the possible competing phases with the same approach as usual"
-        ) in str(w[0].message)
-        assert len(cp.entries) == 128
-        self.check_O2_entry(cp)
+        for cp_settings in [
+            {"composition": "Na2FePO4F", "e_above_hull": 0.02, "api_key": self.api_key},
+            {
+                "composition": "Na2FePO4F",
+                "e_above_hull": 0.02,
+                "api_key": self.api_key,
+                "full_phase_diagram": True,
+            },
+        ]:
+            print(f"Testing with settings: {cp_settings}")
+            with warnings.catch_warnings(record=True) as w:
+                cp = chemical_potentials.CompetingPhases(**cp_settings)
+            print([str(warning.message) for warning in w])  # for debugging
+            assert len([warning for warning in w if "You are using" not in str(warning.message)]) == 1
+            for sub_message in [
+                "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
+                "respect to competing phases, having an energy above hull of 0.1701 eV/atom.",
+                "Formally, this means that the host material is unstable and so has no chemical "
+                "potential limits; though in reality there may be errors in the MP energies",
+                "Here we downshift the host compound entry to the convex hull energy, and then "
+                "determine the possible competing phases with the same approach as usual",
+            ]:
+                print(sub_message)
+                assert sub_message in str(w[-1].message)
+            if cp_settings.get("full_phase_diagram"):
+                assert len(cp.entries) == 128
+            else:
+                assert len(cp.entries) == 60
+            self.check_O2_entry(cp)
 
     def test_unknown_host(self):
         """
         Test generating CompetingPhases with a composition that's not on the
         Materials Project database.
         """
-        with warnings.catch_warnings(record=True) as w:
-            cp = chemical_potentials.CompetingPhases("Cu2SiSe4", api_key=self.api_key)
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here we" in str(
-            w[0].message
-        )
-        assert len(cp.entries) == 37
-
-        with warnings.catch_warnings(record=True) as w:
-            cp = chemical_potentials.CompetingPhases("Cu2SiSe4", api_key=self.api_key, e_above_hull=0.0)
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here we" in str(
-            w[0].message
-        )
-        assert len(cp.entries) == 7
-
-        with warnings.catch_warnings(record=True) as w:
-            cp = chemical_potentials.CompetingPhases(
-                "Cu2SiSe4", api_key=self.api_key, full_phase_diagram=True
+        for cp_settings in [
+            {"composition": "Cu2SiSe4", "api_key": self.api_key},
+            {"composition": "Cu2SiSe4", "api_key": self.api_key, "e_above_hull": 0.0},
+            {"composition": "Cu2SiSe4", "api_key": self.api_key, "full_phase_diagram": True},
+        ]:
+            print(f"Testing with settings: {cp_settings}")
+            with warnings.catch_warnings(record=True) as w:
+                cp = chemical_potentials.CompetingPhases(**cp_settings)
+            print([str(warning.message) for warning in w])  # for debugging
+            assert len([warning for warning in w if "You are using" not in str(warning.message)]) == 1
+            assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
+                w[-1].message
             )
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1
-        assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here we" in str(
-            w[0].message
-        )
-        assert len(cp.entries) == 44
+            if cp_settings.get("full_phase_diagram"):
+                assert len(cp.entries) == 45
+            elif cp_settings.get("e_above_hull") == 0.0:
+                assert len(cp.entries) == 8
+            else:
+                assert len(cp.entries) == 38
 
     def test_api_keys_errors(self):
         api_key_error_start = ValueError(
@@ -232,25 +209,17 @@ class CompetingPhases(unittest.TestCase):
                 api_key="test",
             )
         assert str(api_key_error_start) in str(e.value)
+        #
         assert (
-            "is not a valid legacy Materials Project API key, which is required by doped. See the "
-            "doped installation instructions for details:\n"
+            "is not a valid Materials Project API "
+            "key, which is required by doped for competing phase generation. See the doped "
+            "installation instructions for details:\n"
             "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
             "-project-api"
         ) in str(e.value)
 
-        with pytest.raises(ValueError) as e:
-            chemical_potentials.CompetingPhases(
-                "ZrO2",
-                api_key="testabcdefghijklmnopqrstuvwxyz12",
-            )
-        assert str(api_key_error_start) in str(e.value)
-        assert (
-            "corresponds to the new Materials Project (MP) API, which is not supported by doped. "
-            "Please use the legacy MP API as detailed on the doped installation instructions:\n"
-            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-            "-project-api"
-        ) in str(e.value)
+        # test all works fine with key from new MP API:
+        assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=self.api_key)
@@ -350,7 +319,7 @@ class ExtrinsicCompetingPhasesTest(unittest.TestCase):
         assert cp.entries[3].name == "LaZr9O20"  # definite ordering
         assert cp.entries[4].name == "LaZr9O20"  # definite ordering
         assert all(entry.data["e_above_hull"] == 0 for entry in cp.entries[:2])
-        assert not any(entry.data["e_above_hull"] == 0 for entry in cp.entries[2:])
+        assert all(entry.data["e_above_hull"] != 0 for entry in cp.entries[2:])
         assert len(cp.intrinsic_entries) == 28
 
 
@@ -803,10 +772,9 @@ class ChemPotAnalyzerTest(unittest.TestCase):
         assert "Supplied csv does not contain the minimal columns required" in str(exc.value)
 
     def test_elements(self):
-        s, f, m = chemical_potentials.make_molecule_in_a_box("O2")
-        assert f == "O2"
-        assert m == 2
-        assert type(s) == Structure
+        struct, mag = chemical_potentials.make_molecule_in_a_box("O2")
+        assert mag == 2
+        assert type(struct) == Structure
 
         with pytest.raises(ValueError):
             chemical_potentials.make_molecule_in_a_box("R2")
