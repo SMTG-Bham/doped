@@ -1179,13 +1179,13 @@ class DefectThermodynamics(MSONable):
         dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
-        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
-        instead be used to calculate the Fermi level and defect concentrations
-        for a material grown/annealed at higher temperatures and then cooled
-        (quenched) to room/operating temperature (where defect concentrations
-        are assumed to remain fixed) - this is known as the frozen defect
-        approach and is typically the most valid approximation (see its
-        docstring for more information).
+        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``
+        can instead be used to calculate the Fermi level and defect
+        concentrations for a material grown/annealed at higher temperatures
+        and then cooled (quenched) to room/operating temperature (where defect
+        concentrations are assumed to remain fixed) - this is known as the
+        frozen defect approach and is typically the most valid approximation
+        (see its docstring for more information).
 
         The degeneracy/multiplicity factor "g" is an important parameter in the defect
         concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A
@@ -1375,39 +1375,6 @@ class DefectThermodynamics(MSONable):
             )
         return fdos
 
-    def _add_effective_dopant_concentration(
-        self, conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
-    ):
-        """
-        Add the effective dopant concentration to the concentration
-        ``DataFrame``.
-        """
-        if effective_dopant_concentration is not None:
-            eff_dopant_df = pd.DataFrame(
-                {
-                    "Defect": "Effective Dopant",
-                    "Charge": np.sign(effective_dopant_concentration),
-                    "Formation Energy (eV)": "N/A",
-                    "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
-                    "Charge State Population": "100.0%",
-                },
-                index=[0],
-            )
-            for col in conc_df.columns:
-                if col not in eff_dopant_df.columns:
-                    eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
-
-            if "Charge" not in conc_df.columns:
-                eff_dopant_df = eff_dopant_df.drop(
-                    columns=["Charge", "Formation Energy (eV)", "Charge State Population"]
-                )
-                eff_dopant_df = eff_dopant_df.set_index("Defect")  # Defect is index with summed conc df
-                return pd.concat([conc_df, eff_dopant_df])
-
-            return pd.concat([conc_df, eff_dopant_df], ignore_index=True)
-
-        return conc_df
-
     def get_equilibrium_fermi_level(
         self,
         bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
@@ -1431,13 +1398,13 @@ class DefectThermodynamics(MSONable):
         default, unless ``bulk_band_gap_vr`` is set during defect parsing.
 
         Note that this assumes `equilibrium` defect concentrations!
-        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
-        instead be used to calculate the Fermi level and defect concentrations
-        for a material grown/annealed at higher temperatures and then cooled
-        (quenched) to room/operating temperature (where defect concentrations
-        are assumed to remain fixed) - this is known as the frozen defect
-        approach and is typically the most valid approximation (see its
-        docstring for more information).
+        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``
+        can instead be used to calculate the Fermi level and defect
+        concentrations for a material grown/annealed at higher temperatures and
+        then cooled (quenched) to room/operating temperature (where defect
+        concentrations are assumed to remain fixed) - this is known as the
+        frozen defect approach and is typically the most valid approximation
+        (see its docstring for more information).
 
         Note that the bulk DOS calculation should be well-converged with respect to
         k-points for accurate Fermi level predictions!
@@ -3139,6 +3106,49 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n"
             f"{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def _add_effective_dopant_concentration(
+    conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
+):
+    """
+    Add the effective dopant concentration to the concentration ``DataFrame``.
+
+    Args:
+        conc_df (pd.DataFrame):
+            DataFrame of defect concentrations.
+        effective_dopant_concentration (float):
+            The effective dopant concentration to add to the DataFrame.
+
+    Returns:
+        pd.DataFrame: DataFrame of defect concentrations with the effective
+            dopant concentration
+    """
+    if effective_dopant_concentration is None:
+        return conc_df
+
+    eff_dopant_df = pd.DataFrame(
+        {
+            "Defect": "Effective Dopant",
+            "Charge": np.sign(effective_dopant_concentration),
+            "Formation Energy (eV)": "N/A",
+            "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
+            "Charge State Population": "100.0%",
+        },
+        index=[0],
+    )
+    for col in conc_df.columns:
+        if col not in eff_dopant_df.columns:
+            eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
+
+    if "Charge" not in conc_df.columns:
+        eff_dopant_df = eff_dopant_df.drop(
+            columns=["Charge", "Formation Energy (eV)", "Charge State Population"]
+        )
+        eff_dopant_df = eff_dopant_df.set_index("Defect")  # Defect is index with summed conc df
+        return pd.concat([conc_df, eff_dopant_df])
+
+    return pd.concat([conc_df, eff_dopant_df], ignore_index=True)
 
 
 def _group_defect_charge_state_concentrations(
