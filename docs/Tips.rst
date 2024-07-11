@@ -465,21 +465,21 @@ various stages in the tutorials, this can be achieved using the ``dumpfn``/``loa
 .. code-block:: python
 
     # save a DefectThermodynamics object to a JSON file
-    defect_thermo.to_json("MgO_DefectThermodynamics.json")
+    defect_thermo.to_json("MgO_DefectThermodynamics.json.gz")
 
     # then later in a different python session or notebook, we can reload the
     # DefectThermodynamics object from the JSON file, containing all the associated info
     from doped.thermodynamics import DefectThermodynamics
-    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json")
+    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json.gz")
 
     # alternatively, we can directly use the monty dumpfn/loadfn functions
     # directly on any doped object, e.g. with our ``DefectsSet`` object
     # containing all the info on the generated VASP input files:
     from monty.serialization import dumpfn, loadfn
-    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json")
+    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json.gz")
 
     # and again later reload the object from the JSON file
-    defects_set = loadfn("MgO_DefectsSet.json")
+    defects_set = loadfn("MgO_DefectsSet.json.gz")
 
 .. note::
 
