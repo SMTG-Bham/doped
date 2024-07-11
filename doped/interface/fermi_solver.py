@@ -23,6 +23,7 @@ from pymatgen.io.vasp import Vasprun
 from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 
+from doped.thermodynamics import get_rich_poor_limit_dict
 from doped.utils.parsing import get_neutral_nelect_from_vasprun
 
 if TYPE_CHECKING:
@@ -80,14 +81,27 @@ class FermiSolver(MSONable):
         self.bulk_dos = bulk_dos_vr_path
         self.chempots = chempots
 
-        if self.chempots is None and self.defect_thermodynamics.chempots is not None:
+        if self.chempots is not None:
+            self.chempots = chempots
+
+        elif self.defect_thermodynamics.chempots is not None:
             # if chempots not supplied, but present in DefectThermodynamics, then use them
             self.chempots = self.defect_thermodynamics.chempots
+        else:
+            raise ValueError(
+                "You must supply a chemical potentials dictionary "
+                "or have them present in the DefectThermodynamics object."
+            )
 
         self._not_implemented_message = (
             "This method is implemented in the derived class, "
             "use FermiSolverDoped or FermiSolverPyScFermi instead."
         )
+
+    def _get_limits(self, limit):
+        limit_dict = get_rich_poor_limit_dict(self.chempots)
+        limit = next(v for k, v in limit_dict.items() if k == limit)
+        return self.chempots["limits_wrt_el_refs"][limit]
 
     def equilibrium_solve(self, *args, **kwargs) -> None:
         """
@@ -103,8 +117,9 @@ class FermiSolver(MSONable):
 
     def scan_temperature(
         self,
-        chempots: dict[str, float],
         temperature_range: Union[float, list[float]],
+        chempots: Optional[dict[str, float]] = None,
+        limit: Optional[str] = None,
         annealing_temperature_range: Optional[Union[float, list[float]]] = None,
         quenching_temperature_range: Optional[Union[float, list[float]]] = None,
         processes: int = 1,
@@ -116,7 +131,25 @@ class FermiSolver(MSONable):
         temperature.
 
         Args:
-            chempots (dict[str, float]): chemical potentials to solve at
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level).
+                This can be a dictionary of chemical potentials for a
+                single limit (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            limit (str):
+                The chemical potential limit for which to
+                determine the equilibrium Fermi level. Can be either:
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["limits"]`` dictionary.
             temperature_range (Union[float, list[float]]): temperature range to solve over
             annealing_temperature_range (Optional[Union[float, list[float]]], optional):
               annealing temperature range to solve over. Defaults to None.
@@ -139,6 +172,11 @@ class FermiSolver(MSONable):
             annealing_temperature_range = [annealing_temperature_range]
         if quenching_temperature_range is not None and isinstance(quenching_temperature_range, float):
             quenching_temperature_range = [quenching_temperature_range]
+
+        if chempots is None and limit is not None:
+            chempots = self._get_limits(limit)
+        else:
+            raise ValueError("You must specify a limit or chempots dictionary.")
 
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
             all_data = Parallel(n_jobs=processes)(
@@ -222,8 +260,9 @@ class FermiSolver(MSONable):
 
     def scan_dopant_concentration(
         self,
-        chempots: dict[str, float],
         effective_dopant_concentration_range: Union[float, list[float]],
+        chempots: Optional[dict[str, float]] = None,
+        limit: Optional[str] = None,
         temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
@@ -235,9 +274,10 @@ class FermiSolver(MSONable):
         concentrations.
 
         Args:
-            chempots (dict[str, float]): Chemical potentials for the elements.
             effective_dopant_concentration_range (Union[float, list[float]]):
               The range of effective dopant concentrations.
+            chempots (dict[str, float]): Chemical potentials for the elements.
+            limit (str): The limit to solve at.
             temperature (Optional[float]): The temperature to solve at.
             annealing_temperature (Optional[float]): The temperature to anneal at.
             quenching_temperature (Optional[float]): The temperature to quench to.
@@ -254,6 +294,11 @@ class FermiSolver(MSONable):
         # Ensure effective_dopant_concentration_range is a list
         if isinstance(effective_dopant_concentration_range, float):
             effective_dopant_concentration_range = [effective_dopant_concentration_range]
+
+        if chempots is None and limit is not None:
+            chempots = self._get_limits(limit)
+        else:
+            raise ValueError("You must specify a limit or chempots dictionary.")
 
         # Existing logic here, now correctly handling floats and lists
         if annealing_temperature is not None and quenching_temperature is not None:
@@ -290,10 +335,10 @@ class FermiSolver(MSONable):
 
     def interpolate_chempots(
         self,
-        chem_pot_start: dict,
-        chem_pot_end: dict,
         n_points: int,
-        temperature=300.0,
+        temperature: Optional[float] = 300.0,
+        chempots: Optional[list[dict]] = None,
+        limits: Optional[list[str]] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
         processes: int = 1,
@@ -304,10 +349,10 @@ class FermiSolver(MSONable):
         defect concentrations and Fermi energy at each interpolated point.
 
         Args:
-            chem_pot_start (dict): The starting chemical potentials.
-            chem_pot_end (dict): The ending chemical potentials.
             n_points (int): The number of points to generate.
             temperature (float): The temperature to solve at.
+            chempots (list): The chemical potentials to interpolate between.
+            limits (list): The limits to interpolate between.
             annealing_temperature (float): The temperature to anneal at.
             quenching_temperature (float): The temperature to quench to.
             processes (int): The number of processes to use for parallelization.
@@ -317,16 +362,23 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations
         """
-        interpolated_chem_pots = self._get_interpolated_chempots(chem_pot_start, chem_pot_end, n_points)
+        if chempots is None and limits is not None:
+            chempots_1 = self._get_limits(limits[0])
+            chempots_2 = self._get_limits(limits[1])
+        elif chempots is not None:
+            chempots_1 = chempots[0]
+            chempots_2 = chempots[1]
+
+        interpolated_chem_pots = self._get_interpolated_chempots(chempots_1, chempots_2, n_points)
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
                 delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chem_pots,
+                    chempots=chempots,
                     quenched_temperature=quenching_temperature,
                     annealing_temperature=annealing_temperature,
                     **kwargs,
                 )
-                for chem_pots in interpolated_chem_pots
+                for chempots in interpolated_chem_pots
             )
             all_data_df = pd.concat(all_data)
 
@@ -618,7 +670,11 @@ class FermiSolverDoped(FermiSolver):
             bulk_dos_vr_path (str): Path to the VASP run XML file (vasprun.xml) for bulk DOS.
             chempots (Optional): Chemical potentials, if any.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chempots)
+        super().__init__(
+            defect_thermodynamics=defect_thermodynamics,
+            bulk_dos_vr_path=bulk_dos_vr_path,
+            chempots=chempots,
+        )
 
         # Load the Vasprun object from the given file path
         bulk_dos_vr = Vasprun(bulk_dos_vr_path)
@@ -627,8 +683,6 @@ class FermiSolverDoped(FermiSolver):
         self.bulk_dos = FermiDos(
             bulk_dos_vr.complete_dos, nelecs=get_neutral_nelect_from_vasprun(bulk_dos_vr)
         )
-
-        self.chempots = chempots
 
     def _get_fermi_level_and_carriers(
         self,
