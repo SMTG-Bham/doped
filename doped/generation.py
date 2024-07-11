@@ -9,7 +9,7 @@ import operator
 import warnings
 from functools import partial, reduce
 from itertools import chain
-from multiprocessing import Pool, Queue, cpu_count
+from multiprocessing import Pool, cpu_count
 from typing import Optional, Union, cast
 from unittest.mock import MagicMock
 
@@ -30,6 +30,7 @@ from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
+from pymatgen.util.typing import PathLike
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -39,8 +40,8 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
-    _guess_and_set_oxi_states_with_timeout,
     doped_defect_from_pmg_defect,
+    guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
 
@@ -145,15 +146,22 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
-def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
+def closest_site_info(
+    defect_entry_or_defect: Union[DefectEntry, Defect],
+    n: int = 1,
+    element_list: Optional[list[str]] = None,
+):
     """
     Return the element and distance (rounded to 2 decimal places) of the
-    closest site to the defect in the input DefectEntry or Defect object.
+    closest site to the defect in the input ``DefectEntry`` or ``Defect``
+    object.
 
-    If DefectEntry, uses defect_entry.defect_supercell_site if set, otherwise
-    defect_entry.sc_defect_frac_coords, with defect_entry.sc_entry.structure.
-    If Defect, uses defect.get_supercell_structure() with a 2x2x2 supercell to
-    ensure none of the detected sites are periodic images of the defect site.
+    If ``DefectEntry``, uses ``defect_entry.defect_supercell_site`` if set,
+    otherwise ``defect_entry.sc_defect_frac_coords``, with
+    ``defect_entry.sc_entry.structure``.
+    If ``Defect``, uses ``defect.get_supercell_structure()`` with a 2x2x2
+    supercell to ensure none of the detected sites are periodic images of
+    the defect site.
 
     Requires distances > 0.01 (i.e. so not the site itself), and if there are
     multiple elements with the same distance, sort by order of appearance of
@@ -224,7 +232,12 @@ def closest_site_info(defect_entry_or_defect, n=1, element_list=None):
     return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
 
-def get_defect_name_from_defect(defect, element_list=None, symm_ops=None, symprec=0.01):
+def get_defect_name_from_defect(
+    defect: Defect,
+    element_list: Optional[list[str]] = None,
+    symm_ops: Optional[list] = None,
+    symprec: float = 0.01,
+):
     """
     Get the doped/SnB defect name from Defect object.
 
@@ -395,7 +408,11 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
-def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
+def name_defect_entries(
+    defect_entries: list[DefectEntry],
+    element_list: Optional[list[str]] = None,
+    symm_ops: Optional[list] = None,
+):
     """
     Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
     objects, where the names are set according to the default doped algorithm;
@@ -500,7 +517,7 @@ def name_defect_entries(defect_entries, element_list=None, symm_ops=None):
 
         return defect_naming_dict, defect_name
 
-    defect_naming_dict = {}
+    defect_naming_dict: dict[str, DefectEntry] = {}
     for defect_entry in defect_entries:
         full_defect_name = get_defect_name_from_defect(defect_entry.defect, element_list, symm_ops)
         split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
@@ -789,10 +806,9 @@ def guess_defect_charge_states(
         possible_oxi_states, orig_oxi, max_host_oxi_magnitude, return_log=True
     )
 
-    charge_state_list = [
+    if charge_state_list := [
         k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
-    ]
-    if charge_state_list:
+    ]:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
         charge_state_range = (0, 0)
@@ -844,10 +860,9 @@ def guess_defect_charge_states(
         sorted(possible_charge_states.items(), key=lambda x: x[1]["probability"], reverse=True)
     )
 
-    charge_state_list = [
+    if charge_state_list := [
         k for k, v in sorted_charge_state_dict.items() if v["probability"] > probability_threshold
-    ]
-    if charge_state_list:
+    ]:
         charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
     else:
         # if no charge states are included, take most probable (if probability > 0.1*threshold)
@@ -1050,7 +1065,7 @@ class DefectsGenerator(MSONable):
         interstitial_coords: Optional[list] = None,
         generate_supercell: bool = True,
         charge_state_gen_kwargs: Optional[dict] = None,
-        supercell_gen_kwargs: Optional[dict] = None,
+        supercell_gen_kwargs: Optional[dict[str, Union[int, float, bool]]] = None,
         interstitial_gen_kwargs: Optional[dict] = None,
         target_frac_coords: Optional[list] = None,
         processes: Optional[int] = None,
@@ -1128,8 +1143,8 @@ class DefectsGenerator(MSONable):
                 defect site(s). Default (when interstitial_coords not specified) is
                 to automatically generate interstitial sites using Voronoi tessellation.
                 The input interstitial_coords are converted to
-                DefectsGenerator.prim_interstitial_coords, which are the corresponding
-                fractional coordinates in DefectsGenerator.primitive_structure (which
+                ``DefectsGenerator.prim_interstitial_coords``, which are the corresponding
+                fractional coordinates in ``DefectsGenerator.primitive_structure`` (which
                 is used for defect generation), along with the multiplicity and
                 equivalent coordinates, sorted according to the doped convention.
             generate_supercell (bool):
@@ -1182,6 +1197,8 @@ class DefectsGenerator(MSONable):
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
+        # SpglibDataset warning introduced in v2.4.1, can later remove when pymatgen updated to avoid this:
+        warnings.filterwarnings("ignore", message="dict interface")
         self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
@@ -1201,12 +1218,19 @@ class DefectsGenerator(MSONable):
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
         )
-        self.supercell_gen_kwargs = supercell_gen_kwargs if supercell_gen_kwargs is not None else {}
-        self.interstitial_gen_kwargs = (
+        self.supercell_gen_kwargs: dict[str, Union[int, float, bool]] = {
+            "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
+            "min_atoms": 50,  # different from current pymatgen-analysis-defects `min_atoms` ( = 80)
+            "ideal_threshold": 0.1,
+            "force_cubic": False,
+            "force_diagonal": False,
+        }
+        self.supercell_gen_kwargs.update(supercell_gen_kwargs if supercell_gen_kwargs is not None else {})
+        self.interstitial_gen_kwargs: dict[str, Union[int, float, bool]] = (
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
-        specified_min_image_distance = self.supercell_gen_kwargs.get("min_image_distance", 10)
+        specified_min_image_distance = self.supercell_gen_kwargs["min_image_distance"]
 
         if len(self.structure) == 1 and not self.generate_supercell:
             # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
@@ -1258,22 +1282,16 @@ class DefectsGenerator(MSONable):
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
                     supercell_matrix = get_ideal_supercell_matrix(
-                        primitive_structure,
-                        min_atoms=self.supercell_gen_kwargs.get("min_atoms", 50),  # different from current
-                        # pymatgen-analysis-defects default `min_atoms` ( = 80)
-                        min_image_distance=specified_min_image_distance,  # same as current
-                        # pymatgen-analysis-defects default `min_length` ( = 10)
-                        ideal_threshold=self.supercell_gen_kwargs.get("ideal_threshold", 0.1),
-                        force_cubic=self.supercell_gen_kwargs.get("force_cubic", False),
-                        force_diagonal=self.supercell_gen_kwargs.get("force_diagonal", False),
+                        structure=primitive_structure,
                         pbar=pbar,
+                        **self.supercell_gen_kwargs,  # type: ignore
                     )
 
             if not self.generate_supercell or (
                 input_min_image_distance >= specified_min_image_distance
                 and (primitive_structure * supercell_matrix).num_sites
                 >= self.structure.num_sites
-                >= self.supercell_gen_kwargs.get("min_atoms", 0)
+                >= self.supercell_gen_kwargs["min_atoms"]
             ):
                 if input_min_image_distance < 10:
                     # input structure is <10 Å in at least one direction, and generate_supercell=False,
@@ -1285,7 +1303,6 @@ class DefectsGenerator(MSONable):
                         f"using input structure as defect & bulk supercells. Caution advised!"
                     )
 
-                # else input structure is greater than ``min_image_distance`` Å in each direction, and
                 # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
                 # doped supercell, so use input structure:
 
@@ -1332,7 +1349,7 @@ class DefectsGenerator(MSONable):
                 )
 
             self._bulk_oxi_states: Union[bool, dict] = (
-                True  # to check if pymatgen can guess the bulk oxidation states
+                False  # to check if pymatgen can guess the bulk oxidation states
             )
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
@@ -1343,12 +1360,8 @@ class DefectsGenerator(MSONable):
                 }
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
-                queue: Queue = Queue()
-                self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
-                    self.primitive_structure, queue=queue
-                )
-                if self._bulk_oxi_states:
-                    self.primitive_structure = queue.get()
+                if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
+                    self.primitive_structure = prim_struct_w_oxi
                     self._bulk_oxi_states = {
                         el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
                     }
@@ -1987,35 +2000,42 @@ class DefectsGenerator(MSONable):
 
         return defects_generator
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``DefectsGenerator`` object as a json file, which can be
         reloaded with the ``DefectsGenerator.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
-            filename (str): Filename to save json file as. If None, the filename will be
-                set as "{Chemical Formula}_defects_generator.json" where {Chemical Formula}
-                is the chemical formula of the host material.
+            filename (PathLike):
+                Filename to save json file as. If None, the filename will be
+                set as ``{Chemical Formula}_defects_generator.json.gz`` where
+                {Chemical Formula} is the chemical formula of the host material.
         """
         if filename is None:
             formula = self.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]
-            filename = f"{formula}_defects_generator.json"
+            filename = f"{formula}_defects_generator.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
-    def from_json(cls, filename: str):
+    def from_json(cls, filename: PathLike):
         """
-        Load a DefectsGenerator object from a json file.
+        Load a ``DefectsGenerator`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
-            filename (str): Filename of json file to load DefectsGenerator
-            object from.
+            filename (PathLike):
+                Filename of json file to load DefectsGenerator
+                object from.
 
         Returns:
-            DefectsGenerator object
+            ``DefectsGenerator`` object
         """
         return loadfn(filename)
 
@@ -2162,7 +2182,7 @@ class DefectsGenerator(MSONable):
         )
 
 
-def _first_and_second_element(defect_name):
+def _first_and_second_element(defect_name: str):
     """
     Return a tuple of the first and second element in the defect name.
 
@@ -2179,7 +2199,9 @@ def _first_and_second_element(defect_name):
     )
 
 
-def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
+def _sort_defect_entries(
+    defect_entries_dict: dict, element_list: Optional[list] = None, symm_ops: Optional[list] = None
+):
     """
     Sort defect entries for deterministic behaviour (for output and when
     reloading DefectsGenerator objects, and with DefectThermodynamics entries
@@ -2191,13 +2213,12 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
     charge state (from positive to negative).
     """
     if element_list is None:
-        host_element_list = None
-        extrinsic_element_list = []
+        host_element_list = [
+            el.symbol
+            for el in next(iter(defect_entries_dict.values())).defect.structure.composition.elements
+        ]
+        extrinsic_element_list: list[str] = []
         for defect_entry in defect_entries_dict.values():
-            if host_element_list is None:  # first iteration
-                host_element_list = [
-                    el.symbol for el in defect_entry.defect.structure.composition.elements
-                ]
             extrinsic_element_list.extend(
                 el.symbol
                 for el in defect_entry.defect.defect_structure.composition.elements
@@ -2262,7 +2283,7 @@ def _sort_defect_entries(defect_entries_dict, element_list=None, symm_ops=None):
             raise value_err_2 from value_err
 
 
-def _sort_defects(defects_dict, element_list=None):
+def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     """
     Sort defect objects for deterministic behaviour (for output and when
     reloading DefectsGenerator objects.
@@ -2272,13 +2293,13 @@ def _sort_defects(defects_dict, element_list=None):
     alphabetically, then according to symmetry._frac_coords_sort_func.
     """
     if element_list is None:
-        all_elements = []
-        host_element_list = None
+        all_elements: list[str] = []
+        host_element_list = [
+            el.symbol for el in next(iter(defects_dict.values())).structure.composition.elements
+        ]
 
         for _defect_type, defect_list in defects_dict.items():
             for defect in defect_list:
-                if host_element_list is None:  # first iteration
-                    host_element_list = [el.symbol for el in defect.structure.composition.elements]
                 all_elements.extend(el.symbol for el in defect.defect_structure.composition.elements)
         extrinsic_element_list = list(set(all_elements) - set(host_element_list))
 

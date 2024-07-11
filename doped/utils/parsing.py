@@ -10,7 +10,7 @@ import re
 import warnings
 from collections import defaultdict
 from functools import lru_cache
-from typing import TYPE_CHECKING, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 from monty.serialization import loadfn
@@ -20,11 +20,9 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import pbc_diff
+from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
@@ -100,7 +98,7 @@ def parse_projected_eigen_no_mag(elem):
 Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
 
 
-def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
+def get_vasprun(vasprun_path: PathLike, **kwargs):
     """
     Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
@@ -124,7 +122,7 @@ def get_vasprun(vasprun_path: Union[str, "Path"], **kwargs):
     return vasprun
 
 
-def get_locpot(locpot_path: Union[str, "Path"]):
+def get_locpot(locpot_path: PathLike):
     """
     Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
     """
@@ -139,7 +137,7 @@ def get_locpot(locpot_path: Union[str, "Path"]):
     return locpot
 
 
-def get_outcar(outcar_path: Union[str, "Path"]):
+def get_outcar(outcar_path: PathLike):
     """
     Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
     """
@@ -154,7 +152,7 @@ def get_outcar(outcar_path: Union[str, "Path"]):
     return outcar
 
 
-def get_procar(procar_path: Union[str, "Path"]):
+def get_procar(procar_path: PathLike):
     """
     Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
     ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
@@ -196,7 +194,7 @@ def get_procar(procar_path: Union[str, "Path"]):
     return procar
 
 
-def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path="."):
+def _get_output_files_and_check_if_multiple(output_file: PathLike = "vasprun.xml", path: PathLike = "."):
     """
     Search for all files with filenames matching ``output_file``, case-
     insensitive.
@@ -205,11 +203,11 @@ def _get_output_files_and_check_if_multiple(output_file="vasprun.xml", path=".")
     ``True`` if multiple matching files are found.
 
     Args:
-        output_file (str):
+        output_file (PathLike):
             The filename to search for (case-insensitive).
             Should be either ``vasprun.xml``, ``OUTCAR``,
             ``LOCPOT`` or ``PROCAR``.
-        path (str): The path to the directory to search in.
+        path (PathLike): The path to the directory to search in.
     """
     if output_file.lower() == "vasprun.xml":
         search_patterns = ["vasprun", ".xml"]
@@ -687,7 +685,7 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
     new_structure = Structure.from_sites(reordered_sites)
 
-    if not len(new_structure) == len(s1_structure):
+    if len(new_structure) != len(s1_structure):
         raise ValueError("Structure reordering failed: structures have different number of sites?")
 
     return new_structure

@@ -7,27 +7,32 @@ import contextlib
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import reduce
-from itertools import combinations_with_replacement
-from multiprocessing import Process, Queue, current_process
+from multiprocessing import Process, SimpleQueue, current_process
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
+from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped import _doped_obj_properties_methods
 
 if TYPE_CHECKING:
-    from pathlib import Path
 
     from easyunfold.procar import Procar as EasyunfoldProcar
+
+
+# SpglibDataset warning introduced in v2.4.1, can be ignored for now
+warnings.filterwarnings("ignore", message="dict interface")
+
 
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
@@ -148,6 +153,10 @@ class DefectEntry(thermo.DefectEntry):
     # codes etc)
     equivalent_supercell_sites: list[PeriodicSite] = field(default_factory=list)
     bulk_supercell: Optional[Structure] = None
+    _bulk_entry_energy: Optional[float] = None
+    _bulk_entry_hash: Optional[int] = None
+    _sc_entry_energy: Optional[float] = None
+    _sc_entry_hash: Optional[int] = None
 
     def __post_init__(self):
         """
@@ -167,54 +176,33 @@ class DefectEntry(thermo.DefectEntry):
                 f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
 
-    def _check_if_multiple_finite_size_corrections(self):
-        """
-        Checks that there is no double counting of finite-size charge
-        corrections, in the defect_entry.corrections dict.
-        """
-        matching_finite_size_correction_keys = {
-            key
-            for key in self.corrections
-            if any(x in key for x in ["FNV", "freysoldt", "Freysoldt", "Kumagai", "kumagai"])
-        }
-        if len(matching_finite_size_correction_keys) > 1:
-            warnings.warn(
-                f"It appears there are multiple finite-size charge corrections in the corrections dict "
-                f"attribute for defect {self.name}. These are:"
-                f"\n{matching_finite_size_correction_keys}."
-                f"\nPlease ensure there is no double counting / duplication of energy corrections!"
-            )
-
-    @property
-    def corrected_energy(self) -> float:
-        """
-        The energy of the defect entry with `all` corrections applied.
-        """
-        self._check_if_multiple_finite_size_corrections()
-        return self.sc_entry.energy + sum(self.corrections.values())
-
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``DefectEntry`` object to a json file, which can be reloaded
         with the ``DefectEntry.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as ``"{DefectEntry.name}.json"``.
+                be set as ``{DefectEntry.name}.json.gz``.
         """
         if filename is None:
-            filename = f"{self.name}.json"
+            filename = f"{self.name}.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``DefectEntry`` object from a json file.
+        Load a ``DefectEntry`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename of json file to load ``DefectEntry`` from.
 
         Returns:
@@ -304,14 +292,14 @@ class DefectEntry(thermo.DefectEntry):
     def get_freysoldt_correction(
         self,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-        defect_locpot: Optional[Union[str, Locpot, dict]] = None,
-        bulk_locpot: Optional[Union[str, Locpot, dict]] = None,
+        defect_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
+        bulk_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
         plot: bool = False,
-        filename: Optional[str] = None,
+        filename: Optional[PathLike] = None,
         axis=None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
-        style_file: Optional[str] = None,
+        style_file: Optional[PathLike] = None,
         **kwargs,
     ) -> CorrectionResult:
         """
@@ -352,7 +340,7 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the FNV electrostatic potential plots (for
                 manually checking the behaviour of the charge correction here).
-            filename (str):
+            filename (PathLike):
                 Filename to save the FNV electrostatic potential plots to.
                 If None, plots are not saved.
             axis (int or None):
@@ -369,7 +357,7 @@ class DefectEntry(thermo.DefectEntry):
                 If the estimated error in the charge correction, based on the
                 variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            style_file (str):
+            style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
@@ -434,13 +422,13 @@ class DefectEntry(thermo.DefectEntry):
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         defect_region_radius: Optional[float] = None,
         excluded_indices: Optional[list[int]] = None,
-        defect_outcar: Optional[Union[str, Outcar]] = None,
-        bulk_outcar: Optional[Union[str, Outcar]] = None,
+        defect_outcar: Optional[Union[PathLike, Outcar]] = None,
+        bulk_outcar: Optional[Union[PathLike, Outcar]] = None,
         plot: bool = False,
-        filename: Optional[str] = None,
+        filename: Optional[PathLike] = None,
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
-        style_file: Optional[str] = None,
+        style_file: Optional[PathLike] = None,
         **kwargs,
     ):
         """
@@ -485,12 +473,12 @@ class DefectEntry(thermo.DefectEntry):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
-            defect_outcar (str or Outcar):
+            defect_outcar (PathLike or Outcar):
                 Path to the output VASP OUTCAR file from the defect supercell
                 calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``defect_supercell_site_potentials``
                 from the ``defect_entry`` ``calculation_metadata`` if available.
-            bulk_outcar (str or Outcar):
+            bulk_outcar (PathLike or Outcar):
                 Path to the output VASP OUTCAR file from the bulk supercell
                 calculation, or the corresponding ``pymatgen`` Outcar object.
                 If None, will try to use the ``bulk_supercell_site_potentials``
@@ -498,7 +486,7 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
                 manually checking the behaviour of the charge correction here).
-            filename (str):
+            filename (PathLike):
                 Filename to save the Kumagai site potential plots to.
                 If None, plots are not saved.
             return_correction_error (bool):
@@ -510,7 +498,7 @@ class DefectEntry(thermo.DefectEntry):
                 If the estimated error in the charge correction, based on the
                 variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            style_file (str):
+            style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
@@ -570,10 +558,10 @@ class DefectEntry(thermo.DefectEntry):
 
     def _load_and_parse_eigenvalue_data(
         self,
-        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        bulk_vr: Optional[Union[PathLike, Vasprun]] = None,
+        bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[PathLike, Vasprun]] = None,
+        defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
         force_reparse: bool = False,
     ):
         """
@@ -581,7 +569,7 @@ class DefectEntry(thermo.DefectEntry):
         present in the ``calculation_metadata``.
 
         Args:
-            bulk_vr (str, Path, Vasprun):
+            bulk_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
@@ -589,7 +577,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if projected eigenvalue data available from ``bulk_vr``
                 (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
@@ -597,7 +585,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
                 calculation. If ``None`` (default), tries to load from a
                 ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
-            defect_vr (str, Path, Vasprun):
+            defect_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
                 calculation. If ``None`` (default), tries to load the ``Vasprun``
@@ -605,7 +593,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (str, Path, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if projected eigenvalue data available from ``defect_vr``
                 (i.e. ``vasprun.xml(.gz)`` file from ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
@@ -714,11 +702,11 @@ class DefectEntry(thermo.DefectEntry):
     def get_eigenvalue_analysis(
         self,
         plot: bool = True,
-        filename: Optional[str] = None,
-        bulk_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        bulk_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
-        defect_vr: Optional[Union[str, "Path", Vasprun]] = None,
-        defect_procar: Optional[Union[str, "Path", "EasyunfoldProcar", Procar]] = None,
+        filename: Optional[PathLike] = None,
+        bulk_vr: Optional[Union[PathLike, Vasprun]] = None,
+        bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
+        defect_vr: Optional[Union[PathLike, Vasprun]] = None,
+        defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
         force_reparse: bool = False,
         **kwargs,
     ):
@@ -749,10 +737,10 @@ class DefectEntry(thermo.DefectEntry):
             plot (bool):
                 Whether to plot the single-particle eigenvalues.
                 (Default: True)
-            filename (str):
+            filename (PathLike):
                 Filename to save the eigenvalue plot to (if ``plot = True``).
                 If ``None`` (default), plots are not saved.
-            bulk_vr (str, Path, Vasprun):
+            bulk_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -763,7 +751,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (str, Path, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -773,7 +761,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` ``Procar`` object, for the reference bulk supercell
                 calculation. If ``None`` (default), tries to load from a
                 ``PROCAR(.gz)`` file at ``self.calculation_metadata["bulk_path"]``.
-            defect_vr (str, Path, Vasprun):
+            defect_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -784,7 +772,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (str, Path, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, EasyunfoldProcar, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing with ``doped``,
                 data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -888,6 +876,53 @@ class DefectEntry(thermo.DefectEntry):
             if el in elt_changes
         )
 
+    def get_ediff(self) -> float:
+        """
+        Get the energy difference between the defect and bulk supercell
+        calculations, including finite-size corrections.
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if self.bulk_entry is None:
+            raise RuntimeError(
+                "Attempting to compute the energy difference without a defined bulk entry for the "
+                "DefectEntry object!"
+            )
+        return self.corrected_energy - self.bulk_entry_energy
+
+    @property
+    def corrected_energy(self) -> float:
+        """
+        Get the energy of the defect supercell calculation, with `all`
+        corrections (in ``DefectEntry.corrections``) applied.
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        self._check_if_multiple_finite_size_corrections()
+        return self.sc_entry_energy + sum(self.corrections.values())
+
+    def _check_if_multiple_finite_size_corrections(self):
+        """
+        Checks that there is no double counting of finite-size charge
+        corrections, in the defect_entry.corrections dict.
+        """
+        matching_finite_size_correction_keys = {
+            key
+            for key in self.corrections
+            if any(x in key for x in ["FNV", "freysoldt", "Freysoldt", "Kumagai", "kumagai"])
+        }
+        if len(matching_finite_size_correction_keys) > 1:
+            warnings.warn(
+                f"It appears there are multiple finite-size charge corrections in the corrections dict "
+                f"attribute for defect {self.name}. These are:"
+                f"\n{matching_finite_size_correction_keys}."
+                f"\nPlease ensure there is no double counting / duplication of energy corrections!"
+            )
+
     def formation_energy(
         self,
         chempots: Optional[dict] = None,
@@ -942,12 +977,14 @@ class DefectEntry(thermo.DefectEntry):
                 provided/present in format generated by ``doped`` (see tutorials).
                 (Default: None)
             vbm (float):
-                VBM eigenvalue in the bulk supercell, to use as Fermi level reference
-                point for calculating formation energy. If None (default), will use
-                "vbm" from the calculation_metadata dict attribute if present.
+                VBM eigenvalue to use as Fermi level reference point for calculating
+                formation energy. If ``None`` (default), will use ``"vbm"`` from the
+                ``calculation_metadata`` dict attribute if present -- which corresponds
+                to the VBM of the `bulk supercell` calculation by default, unless
+                ``bulk_band_gap_vr`` is set during defect parsing).
             fermi_level (float):
-                Value corresponding to the electron chemical potential,
-                referenced to the VBM. Default is 0 (i.e. the VBM).
+                Value corresponding to the electron chemical potential, referenced
+                to the VBM eigenvalue. Default is 0 (i.e. the VBM).
 
         Returns:
             Formation energy value (float)
@@ -1063,6 +1100,7 @@ class DefectEntry(thermo.DefectEntry):
         vbm: Optional[float] = None,
         per_site: bool = False,
         symprec: Optional[float] = None,
+        formation_energy: Optional[float] = None,
     ) -> float:
         r"""
         Compute the `equilibrium` concentration (in cm^-3) for the
@@ -1129,15 +1167,18 @@ class DefectEntry(thermo.DefectEntry):
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium concentration.
             vbm (float):
-                VBM eigenvalue in the bulk supercell, to use as Fermi level reference
-                point for calculating formation energy. If None (default), will use
-                "vbm" from the calculation_metadata dict attribute if present.
+                VBM eigenvalue to use as Fermi level reference point for calculating
+                the formation energy. If ``None`` (default), will use ``"vbm"`` from the
+                ``calculation_metadata`` dict attribute if present -- which corresponds
+                to the VBM of the `bulk supercell` calculation by default, unless
+                ``bulk_band_gap_vr`` is set during defect parsing).
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. Default is 0 (i.e. the VBM).
             per_site (bool):
                 Whether to return the concentration as fractional concentration per site,
-                rather than the default of per cm^3. (default: False)
+                rather than the default of per cm^3. Multiply by 100 for concentration in
+                percent. (default: False)
             symprec (float):
                 Symmetry tolerance for ``spglib`` to use when determining relaxed defect
                 point symmetries and thus orientational degeneracies. Default is ``0.1``
@@ -1149,6 +1190,13 @@ class DefectEntry(thermo.DefectEntry):
                 If ``symprec`` is set, then the point symmetries and corresponding
                 orientational degeneracy will be re-parsed/computed even if already
                 present in the ``DefectEntry`` object ``calculation_metadata``.
+            formation_energy (float):
+                Pre-calculated formation energy to use for the defect concentration
+                calculation, in order to reduce compute times (e.g. when looping over
+                many chemical potential / temperature / etc ranges). Only really intended
+                for internal ``doped`` usage. If ``None`` (default), will calculate the
+                formation energy using the input ``chempots``, ``limit``, ``el_refs``,
+                ``vbm`` and ``fermi_level`` arguments. (Default: None)
 
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
@@ -1186,25 +1234,36 @@ class DefectEntry(thermo.DefectEntry):
         if self.calculation_metadata.get("periodicity_breaking_supercell", False):
             warnings.warn(_orientational_degeneracy_warning)
 
-        formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
-            chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
-        )
+        if formation_energy is None:
+            formation_energy = self.formation_energy(  # if chempots is None, this will throw warning
+                chempots=chempots, limit=limit, el_refs=el_refs, vbm=vbm, fermi_level=fermi_level
+            )
 
         with np.errstate(over="ignore"):
             exp_factor = np.exp(
                 -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
             )
 
-        degeneracy_factor = (
-            reduce(lambda x, y: x * y, self.degeneracy_factors.values()) if self.degeneracy_factors else 1
-        )
-        if per_site:
-            return exp_factor * degeneracy_factor
+            degeneracy_factor = (
+                reduce(lambda x, y: x * y, self.degeneracy_factors.values())
+                if self.degeneracy_factors
+                else 1
+            )
+            if per_site:
+                return exp_factor * degeneracy_factor
 
-        volume_in_cm3 = self.defect.structure.volume * 1e-24  # convert volume in Å^3 to cm^3
+            return self.bulk_site_concentration * degeneracy_factor * exp_factor
 
-        with np.errstate(over="ignore"):
-            return self.defect.multiplicity * degeneracy_factor * exp_factor / volume_in_cm3
+    @property
+    def bulk_site_concentration(self):
+        """
+        Return the site concentration (in cm^-3) of the corresponding atomic
+        site of the defect in the pristine bulk material (e.g. if the defect is
+        V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
+        oxygen atoms in SrTiO3).
+        """
+        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
+        return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
         """
@@ -1229,9 +1288,54 @@ class DefectEntry(thermo.DefectEntry):
     def __eq__(self, other):
         """
         Determine whether two ``DefectEntry`` objects are equal, by comparing
-        self.name and self.sc_entry.
+        ``self.name``, ``self.sc_entry``, ``self.bulk_entry`` and
+        ``self.corrections`` (i.e. name and energy match).
         """
-        return self.name == other.name and self.sc_entry == other.sc_entry
+        return (
+            self.name == other.name
+            and self.sc_entry == other.sc_entry
+            and self.bulk_entry == other.bulk_entry
+            and self.corrections == other.corrections
+        )
+
+    @property
+    def bulk_entry_energy(self):
+        r"""
+        Get the raw energy of the bulk supercell calculation (i.e.
+        ``bulk_entry.energy``).
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if self.bulk_entry is None:
+            return None
+
+        if hasattr(self, "_bulk_entry_energy") and self._bulk_entry_hash == hash(self.bulk_entry):
+            return self._bulk_entry_energy
+
+        self._bulk_entry_hash = hash(self.bulk_entry)
+        self._bulk_entry_energy = self.bulk_entry.energy
+
+        return self._bulk_entry_energy
+
+    @property
+    def sc_entry_energy(self):
+        r"""
+        Get the raw energy of the defect supercell calculation (i.e.
+        ``sc_entry.energy``).
+
+        Refactored from ``pymatgen-analysis-defects`` to be more efficient,
+        reducing compute times when looping over formation energy /
+        concentration functions.
+        """
+        if hasattr(self, "_sc_entry_energy") and self._sc_entry_hash == hash(self.sc_entry):
+            return self._sc_entry_energy
+
+        self._sc_entry_hash = hash(self.sc_entry)
+        self._sc_entry_energy = self.sc_entry.energy
+
+        return self._sc_entry_energy
 
     def plot_site_displacements(
         self,
@@ -1239,7 +1343,7 @@ class DefectEntry(thermo.DefectEntry):
         relative_to_defect: Optional[bool] = False,
         vector_to_project_on: Optional[list] = None,
         use_plotly: Optional[bool] = False,
-        mpl_style_file: Optional[str] = "",
+        mpl_style_file: Optional[PathLike] = "",
     ):
         """
         Plot the site displacements as a function of distance from the defect
@@ -1260,7 +1364,7 @@ class DefectEntry(thermo.DefectEntry):
                 in the cartesian basis x, y, z).
             use_plotly (bool):
                 Whether to use plotly (True) or matplotlib (False).
-            mpl_style_file (str):
+            mpl_style_file (PathLike):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
@@ -1312,9 +1416,36 @@ def _get_dft_chempots(chempots, el_refs, limit):
     return chempots
 
 
-def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, queue=None):
+def _guess_and_set_struct_oxi_states(structure):
     """
-    Tries to guess (and set) the oxidation states of the input structure.
+    Tries to guess (and set) the oxidation states of the input structure, using
+    the ``pymatgen`` ``BVAnalyzer`` class.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    bv_analyzer = BVAnalyzer()
+    with contextlib.suppress(ValueError), warnings.catch_warnings():
+        # ValueError raised if oxi states can't be assigned, and SpglibDataset warning introduced in
+        # v2.4.1, can be ignored for now:
+        warnings.filterwarnings("ignore", message="dict interface")
+        oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
+        if all(
+            np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
+        ):
+            return oxi_dec_structure
+
+    return False  # if oxi states could not be guessed
+
+
+def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=False):
+    """
+    Tries to guess (and set) the oxidation states of the input structure, using
+    the ``pymatgen``-tabulated ICSD oxidation state probabilities.
 
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
@@ -1322,26 +1453,24 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
             Whether to try to guess the oxidation states
             without using the ``max_sites=-1`` argument (``True``)(which attempts
             to use the reduced composition for guessing oxi states) or not (``False``).
-        queue (Queue):
-            A multiprocessing queue to put the guessed structure in, if provided.
-            Only really intended for use internally in ``doped``, during defect
-            generation.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
     """
+    structure = structure.copy()  # don't modify original structure
     if try_without_max_sites:
         with contextlib.suppress(Exception):
             structure.add_oxidation_state_by_guess()
             # check all oxidation states are whole numbers:
             if all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-                if queue is not None:
-                    queue.put(structure)
-                return
+                return structure
 
     # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
     try:
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
-        # check oxi_states assigned and not all zero:
-        while (
+        while (  # check oxi_states assigned and not all zero:
             attempt < 3
             and all(specie.oxi_state == 0 for specie in structure.species)
             or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
@@ -1354,15 +1483,111 @@ def _guess_and_set_struct_oxi_states(structure, try_without_max_sites=False, que
     except Exception:
         structure.add_oxidation_state_by_guess()
 
-    if queue is not None:
-        queue.put(structure)
+    if all(hasattr(site.specie, "oxi_state") for site in structure.sites) and all(
+        isinstance(site.specie.oxi_state, (int, float)) for site in structure.sites
+    ):
+        return structure
+
+    return False
 
 
-def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15, queue=None) -> bool:
+def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
+    """
+    Tries to guess (and set) the oxidation states of the input structure, first
+    using the ``pymatgen`` ``BVAnalyzer`` class, and if that fails, using the
+    ICSD oxidation state probabilities to guess.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        try_without_max_sites (bool):
+            Whether to try to guess the oxidation states
+            without using the ``max_sites=-1`` argument (``True``)(which attempts
+            to use the reduced composition for guessing oxi states) or not (``False``),
+            when using the ICSD oxidation state probability guessing.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states(structure):
+        return structure_with_oxi
+
+    return _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
+
+
+def guess_and_set_oxi_states_with_timeout(
+    structure, timeout_1=10, timeout_2=15, break_early_if_expensive=False
+) -> bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, with
     a timeout catch for cases where the structure is complex and oxi state
     guessing will take a very very long time.
+
+    Tries first without using the ``pymatgen`` ``BVAnalyzer`` class, and if
+    this fails, tries using the ICSD oxidation state probabilities (with
+    timeouts) to guess.
+
+    Args:
+        structure (Structure): The structure for which to guess the oxidation states.
+        timeout_1 (float):
+            Timeout in seconds for the second attempt to guess the oxidation states,
+            using ICSD oxidation state probabilities (with ``max_sites=-1``).
+            Default is 10 seconds.
+        timeout_2 (float):
+            Timeout in seconds for the third attempt to guess the oxidation states,
+            using ICSD oxidation state probabilities (without ``max_sites=-1``).
+            Default is 15 seconds.
+        break_early_if_expensive (bool):
+            Whether to stop the function if the first oxi state guessing attempt
+            (with ``BVAnalyzer``) fails and the cost estimate for the ICSD probability
+            guessing is high (expected to take a long time; > 10 seconds).
+            Default is ``False``.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states(structure):
+        return structure_with_oxi  # BVAnalyzer succeeded
+
+    if (  # if BVAnalyzer failed and cost estimate is high, break early:
+        (
+            break_early_if_expensive or current_process().daemon
+        )  # if in a daemon process, can't spawn new `Process`s
+        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
+    ):
+        return False
+
+    if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+        return _guess_and_set_struct_oxi_states_icsd_prob(structure)
+
+    return _guess_and_set_oxi_states_with_timeout_icsd_prob(structure, timeout_1, timeout_2)
+
+
+def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
+    """
+    Implements the ``_guess_and_set_struct_oxi_states_icsd_prob`` function
+    above, but also putting the results into the supplied ``multiprocessing``
+    queue object (for use with timeouts via ``Process``).
+
+    For internal ``doped`` usage.
+    """
+    if structure_with_oxi := _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites):
+        queue.put(structure_with_oxi)
+    else:
+        queue.put(False)
+
+
+def _guess_and_set_oxi_states_with_timeout_icsd_prob(
+    structure,
+    timeout_1=10,
+    timeout_2=15,
+) -> bool:
+    """
+    Tries to guess (and set) the oxidation states of the input structure using
+    the ICSD oxidation state probabilities approach, with a timeout catch for
+    cases where the structure is complex and oxi state guessing will take a
+    very very long time.
 
     Tries first without using the ``max_sites=-1`` argument with ``pymatgen``'s
     oxidation state guessing functions (which attempts to use the reduced
@@ -1371,25 +1596,21 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
 
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
-        queue (Queue):
-            A multiprocessing queue to put the guessed structure in, if provided.
-            Only really intended for use internally in ``doped``, during defect
-            generation.
         timeout_1 (float):
             Timeout in seconds for the first attempt to guess the oxidation states
             (with ``max_sites=-1``). Default is 10 seconds.
         timeout_2 (float):
             Timeout in seconds for the second attempt to guess the oxidation states
             (without ``max_sites=-1``). Default is 15 seconds.
+
+    Returns:
+        Structure: The structure with oxidation states guessed and set, or ``False``
+        if oxidation states could not be guessed.
     """
-    if queue is None:
-        queued_struct = False
-        queue = Queue()
-    else:
-        queued_struct = True
+    queue: SimpleQueue = SimpleQueue()
 
     guess_oxi_process_wout_max_sites = Process(
-        target=_guess_and_set_struct_oxi_states, args=(structure, True, queue)
+        target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
     )  # try without max sites first, if fails, try with max sites
     guess_oxi_process_wout_max_sites.start()
     guess_oxi_process_wout_max_sites.join(timeout=timeout_1)
@@ -1399,8 +1620,8 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
         guess_oxi_process_wout_max_sites.join()
 
         guess_oxi_process = Process(
-            target=_guess_and_set_struct_oxi_states,
-            args=(structure, False, queue),
+            target=_guess_and_set_struct_oxi_states_icsd_prob_process,
+            args=(structure, queue, False),
         )
         guess_oxi_process.start()
         guess_oxi_process.join(timeout=timeout_2)  # wait for pymatgen to guess oxi states,
@@ -1412,20 +1633,15 @@ def _guess_and_set_oxi_states_with_timeout(structure, timeout_1=10, timeout_2=15
 
             return False
 
-    if not queued_struct:
-        # apply oxi states to structure:
-        structure_from_subprocess = queue.get()
-        structure.add_oxidation_state_by_element(
-            {el.symbol: el.oxi_state for el in structure_from_subprocess.composition.elements}
-        )
-
-    return True
+    # apply oxi states to structure:
+    return queue.get()
 
 
-def _rough_oxi_state_cost_from_comp(comp: Union[str, Composition], max_sites=True) -> float:
+def _rough_oxi_state_cost_icsd_prob_from_comp(comp: Union[str, Composition], max_sites=True) -> float:
     """
     A cost function which roughly estimates the computational cost of guessing
-    the oxidation states of a given composition.
+    the oxidation states of a given composition, using the ICSD oxidation state
+    probabilities approach.
     """
     if isinstance(comp, str):
         comp = Composition(comp)
@@ -1435,13 +1651,16 @@ def _rough_oxi_state_cost_from_comp(comp: Union[str, Composition], max_sites=Tru
 
     el_amt = comp.get_el_amt_dict()
     elements = list(el_amt)
+
+    def num_possible_combinations(n, r):
+        from math import factorial
+
+        return factorial(n + r - 1) / factorial(r) / factorial(n - 1)
+
     return np.prod(
         [
-            sum(
-                1
-                for _i in combinations_with_replacement(
-                    Element(el).icsd_oxidation_states or Element(el).oxidation_states, int(el_amt[el])
-                )
+            num_possible_combinations(
+                len(Element(el).icsd_oxidation_states or Element(el).oxidation_states), int(el_amt[el])
             )
             for el in elements
         ]
@@ -1530,26 +1749,24 @@ class Defect(core.Defect):
             all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
             and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
         ):
-            if _rough_oxi_state_cost_from_comp(self.structure.composition) > 1e6:
-                self.oxi_state = "Undetermined"  # likely will take very long to guess oxi_state
+            # try guess oxi-states but with timeout:
+            if struct_w_oxi := guess_and_set_oxi_states_with_timeout(
+                self.structure, timeout_1=5, timeout_2=5, break_early_if_expensive=True
+            ):
+                self.structure = struct_w_oxi
+                if self.defect_type != core.DefectType.Interstitial:
+                    self._defect_site = min(
+                        self.structure.get_sites_in_sphere(
+                            self.site.coords,
+                            0.5,
+                        ),
+                        key=lambda x: x[1],
+                    )
+            else:
+                self.oxi_state = "Undetermined"
                 return
 
-            if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
-                _guess_and_set_struct_oxi_states(self.structure)
-                self.oxi_state = self._guess_oxi_state()
-                return
-
-            # else try guess oxi-states but with timeout, using new `Process`s:
-            _guess_and_set_oxi_states_with_timeout(self.structure, timeout_1=5, timeout_2=5)
-
-        if not (  # oxi states unable to be parsed, set to "Undetermined"
-            all(hasattr(site.specie, "oxi_state") for site in self.structure.sites)
-            and all(isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites)
-        ):
-            self.oxi_state = "Undetermined"
-
-        else:
-            self.oxi_state = self._guess_oxi_state()
+        self.oxi_state = self._guess_oxi_state()
 
     @classmethod
     def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
@@ -1781,28 +1998,33 @@ class Defect(core.Defect):
         """
         return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
 
-    def to_json(self, filename: Optional[str] = None):
+    def to_json(self, filename: Optional[PathLike] = None):
         """
         Save the ``Defect`` object to a json file, which can be reloaded with
         the `` Defect``.from_json()`` class method.
 
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as "{Defect.name}.json".
+                be set as "{Defect.name}.json.gz".
         """
         if filename is None:
-            filename = f"{self.name}.json"
+            filename = f"{self.name}.json.gz"
 
         dumpfn(self, filename)
 
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``Defect`` object from a json file.
+        Load a ``Defect`` object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
 
         Args:
-            filename (str):
+            filename (PathLike):
                 Filename of json file to load ``Defect`` from.
 
         Returns:
@@ -1839,6 +2061,46 @@ class Defect(core.Defect):
             charges = [*range(oxi_state - padding, padding + 1)]
 
         return charges
+
+    @property
+    def defect_site(self) -> PeriodicSite:
+        """
+        The defect site in the structure.
+
+        Re-written from ``pymatgen-analysis-defects`` version to
+        be far more efficient, when used in loops (e.g. for calculating
+        defect concentrations as functions of chemical potentials,
+        temperature etc.).
+        """
+        if self.defect_type == core.DefectType.Interstitial:
+            return self.site  # same as self.defect_site
+
+        # else defect_site is the closest site in ``structure`` to the provided ``site``:
+        if not hasattr(self, "_defect_site"):
+            self._defect_site = min(
+                self.structure.get_sites_in_sphere(
+                    self.site.coords,
+                    0.5,
+                ),
+                key=lambda x: x[1],
+            )
+
+        return self._defect_site
+
+    @property
+    def volume(self) -> float:
+        """
+        The volume (in Å³) of the structure in which the defect is created
+        (i.e. ``Defect.structure``).
+
+        Ensures volume is only computed once when calculating defect
+        concentrations in loops (e.g. for calculating defect concentrations as
+        functions of chemical potentials, temperature etc.).
+        """
+        if not hasattr(self, "_volume"):
+            self._volume = self.structure.volume
+
+        return self._volume
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):

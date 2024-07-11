@@ -503,6 +503,10 @@ def find_ideal_supercell(
     (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)),
     so can be slow for certain cases.
 
+    Note that this function is used by default to generate defect supercells with
+    the ``doped`` ``DefectsGenerator`` class, unless specific supercell settings
+    are used.
+
     Args:
         cell (np.ndarray): Unit cell matrix for which to find a supercell.
         target_size (int): Target supercell size (in number of ``cell``\s).

@@ -1,6 +1,33 @@
 Change Log
 ==========
 
+v.2.4.7
+----------
+- Update doping/carrier concentration functions to be more accurate and robust (following logic discussed
+  here: https://github.com/materialsproject/pymatgen/pull/3879).
+- Improve reverse-supercell-matrix determination for `generate_supercell=False`
+- Refactor `bulk_band_gap_path` to `bulk_band_gap_vr` in `DefectsParser`/`DefectParser`,
+- Update docstrings to reiterate that bulk supercell VBM is used as VBM reference point for the Fermi level
+  by default, unless alternative `bulk_band_gap_vr` provided.
+
+v.2.4.6
+----------
+- Update ``Defect``, ``DefectEntry`` and ``DefectThermodynamics`` properties/methods to be even more
+  efficient with calculations of formation energies and concentrations. Gives ~10x speedup in Fermi
+  solving and concentration calculations (e.g. from 2 hours to 12 minutes for 2D chempot vs temp CdTe grid
+  in thermodynamics tutorial).
+- Avoid unnecessary ``DeprecationWarning``s from latest ``spglib`` release.
+
+v.2.4.5
+----------
+- Enforce ``shakenbreak>=2.3.4`` requirement.
+
+v.2.4.4
+----------
+- Make oxidation state guessing more efficient, semi-significant speed up in generation/parsing for tough cases.
+- Add `bulk_site_concentration` property to `DefectEntry`, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
+- Minor updates to ensure compatibility with recent ``pymatgen`` and ``ASE`` releases.
+
 v.2.4.3
 ----------
 - Remove ``spglib<=2.0.2`` dependency (set to avoid unnecessary warnings), and update installation instructions accordingly.
