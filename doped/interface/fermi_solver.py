@@ -23,7 +23,7 @@ from pymatgen.io.vasp import Vasprun
 from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 
-from doped.thermodynamics import get_rich_poor_limit_dict
+from doped.thermodynamics import _parse_chempots, get_rich_poor_limit_dict
 from doped.utils.parsing import get_neutral_nelect_from_vasprun
 
 if TYPE_CHECKING:
@@ -60,6 +60,9 @@ def _get_label_and_charge(name: str) -> tuple[str, int]:
 
 # TODO: Add link to Beth & Jiayi paper in py-sc-fermi tutorial, showing the utility of the effective
 #  dopant concentration analysis
+# TODO: Docstrings, typing
+# TODO: Update DefectThermodynamics docstrings after `py-sc-fermi` interface written, to point toward it
+#  for more advanced analysis
 
 
 class FermiSolver(MSONable):
@@ -73,24 +76,24 @@ class FermiSolver(MSONable):
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
         chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
     ):
         """
         Initialize the FermiSolver object.
         """
         self.defect_thermodynamics = defect_thermodynamics
         self.bulk_dos = bulk_dos_vr_path
-        self.chempots = chempots
 
-        if self.chempots is not None:
-            self.chempots = chempots
+        # Parse chemical potentials, either using input values (after formatting them in the doped format)
+        # or using the class attributes if set:
+        self.chempots, self.el_refs = _parse_chempots(
+            chempots or self.defect_thermodynamics.chempots, el_refs or self.defect_thermodynamics.el_refs
+        )
 
-        elif self.defect_thermodynamics.chempots is not None:
-            # if chempots not supplied, but present in DefectThermodynamics, then use them
-            self.chempots = self.defect_thermodynamics.chempots
-        else:
+        if self.chempots is None:
             raise ValueError(
-                "You must supply a chemical potentials dictionary "
-                "or have them present in the DefectThermodynamics object."
+                "You must supply a chemical potentials dictionary or have them present in the "
+                "DefectThermodynamics object."
             )
 
         self._not_implemented_message = (
@@ -175,7 +178,7 @@ class FermiSolver(MSONable):
 
         if chempots is None and limit is not None:
             chempots = self._get_limits(limit)
-        elif chempots is None and limit is None:
+        elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
         if annealing_temperature_range is not None and quenching_temperature_range is not None:
@@ -297,7 +300,7 @@ class FermiSolver(MSONable):
 
         if chempots is None and limit is not None:
             chempots = self._get_limits(limit)
-        elif chempots is None and limit is None:
+        elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
         # Existing logic here, now correctly handling floats and lists
@@ -660,7 +663,8 @@ class FermiSolverDoped(FermiSolver):
         self,
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
-        chempots=None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
     ):
         """
         Initialize the FermiSolverDoped object.
@@ -669,6 +673,7 @@ class FermiSolverDoped(FermiSolver):
             defect_thermodynamics (DefectThermodynamics): A DefectThermodynamics object.
             bulk_dos_vr_path (str): Path to the VASP run XML file (vasprun.xml) for bulk DOS.
             chempots (Optional): Chemical potentials, if any.
+            el_refs (Optional): Elemental reference energies for the chemical potentials, if any.
         """
         super().__init__(
             defect_thermodynamics=defect_thermodynamics,
@@ -810,7 +815,7 @@ class FermiSolverDoped(FermiSolver):
             electrons,
             holes,
             concentrations,
-        ) = self.defect_thermodynamics.get_quenched_fermi_level_and_concentrations(
+        ) = self.defect_thermodynamics.get_quenched_fermi_level_and_concentrations(  # type: ignore
             bulk_dos=self.bulk_dos,
             chempots=chempots,
             limit=None,
@@ -884,7 +889,7 @@ class FermiSolverPyScFermi(FermiSolver):
     Args:
         defect_thermodynamics (DefectThermodynamics): The DefectThermodynamics object
           to use for the calculations.
-        bulk_dos_vr (str): The path to the vasprun.xml file containing the bulk DOS.
+        bulk_dos_vr_path (str): The path to the vasprun.xml file containing the bulk DOS.
     """
 
     def __init__(
@@ -892,7 +897,8 @@ class FermiSolverPyScFermi(FermiSolver):
         defect_thermodynamics: "DefectThermodynamics",
         bulk_dos_vr_path: str,
         multiplicity_scaling=None,
-        chempots=None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
         suppress_warnings=True,
     ):
         """
@@ -1218,7 +1224,7 @@ class ChemicalPotentialGrid:
 
     def __init__(self, chempots: dict[str, Any]) -> None:
         """
-        Initializes the ChemicalPotentialGrid with chemical potential data.
+        Initializes the ``ChemicalPotentialGrid`` with chemical potential data.
 
         Parameters:
         chempots (dict[str, Any]): A dictionary containing chemical
@@ -1242,9 +1248,13 @@ class ChemicalPotentialGrid:
         return self.grid_from_dataframe(self.vertices, dependent_variable, n_points)
 
     @classmethod
-    def from_chempots(cls, chempots: dict[str, Any]) -> "ChemicalPotentialGrid":
+    def from_chempots(
+        cls,
+        chempots: dict[str, Any],
+        el_refs: Optional[dict] = None,
+    ) -> "ChemicalPotentialGrid":
         """
-        Initializes the ChemicalPotentialGrid with chemical potential data.
+        Initializes the ``ChemicalPotentialGrid`` with chemical potential data.
 
         Parameters:
         chempots (dict[str, Any]): A dictionary containing chemical
@@ -1253,6 +1263,9 @@ class ChemicalPotentialGrid:
         Returns:
         ChemicalPotentialGrid: The initialized ChemicalPotentialGrid.
         """
+        if el_refs is not None:
+            chempots, _el_refs = _parse_chempots(chempots, el_refs)
+
         return cls(chempots["limits_wrt_el_refs"])
 
     @staticmethod
