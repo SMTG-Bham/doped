@@ -23,7 +23,11 @@ from pymatgen.io.vasp import Vasprun
 from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 
-from doped.thermodynamics import _parse_chempots, get_rich_poor_limit_dict
+from doped.thermodynamics import (
+    _add_effective_dopant_concentration,
+    _parse_chempots,
+    get_rich_poor_limit_dict,
+)
 from doped.utils.parsing import get_neutral_nelect_from_vasprun
 
 if TYPE_CHECKING:
@@ -489,7 +493,8 @@ class FermiSolver(MSONable):
     def scan_chemical_potential_grid(
         self,
         dependent_variable: str,
-        chempots=None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
         n_points: int = 10,
         temperature: float = 300,
         annealing_temperature: Optional[float] = None,
@@ -504,7 +509,8 @@ class FermiSolver(MSONable):
 
         Args:
             dependent_variable (str): the dependent variable to scan
-            chempots (dict): chemical potentials to scan
+            chempots (dict): chemical potentials to scan. Uses ``self.chempots`` if not provided.
+            el_refs (dict): elemental reference energies for the chemical potentials (optional)
             n_points (int): number of points to scan
             temperature (float): temperature to solve at
             annealing_temperature (float): temperature to anneal at
@@ -516,13 +522,10 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing the Fermi energy solutions at the grid points
         """
-        if chempots is None:
-            if self.chempots is None or "limits_wrt_el_refs" not in self.chempots:
-                raise ValueError(
-                    "self.chempots or self.chempots['limits_wrt_el_refs'] is None or missing."
-                )
-            chempots = self.chempots["limits_wrt_el_refs"]
-
+        # Parse chemical potentials, either using input values (after formatting them in the doped format)
+        # or using the class attributes if set:
+        chempots, _el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
+        assert chempots is not None
         grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(dependent_variable, n_points)
 
         if annealing_temperature is not None and quenching_temperature is not None:
@@ -558,7 +561,8 @@ class FermiSolver(MSONable):
         dependent_chempot,
         target,
         min_or_max,
-        chempots=None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
         tolerance=0.01,
         n_points=10,
         temperature=300,
@@ -575,9 +579,8 @@ class FermiSolver(MSONable):
         chemical potential that minimizes or maximizes the target variable
         until the target value no longer changes by more than the tolerance.
         """
-        if chempots is None:
-            chempots = self.chempots["limits_wrt_el_refs"]
-
+        chempots, _el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
+        assert chempots is not None
         starting_grid = ChemicalPotentialGrid.from_chempots(chempots)
         current_vertices = starting_grid.vertices
         chempots_labels = list(current_vertices.columns)
@@ -585,6 +588,8 @@ class FermiSolver(MSONable):
 
         while True:
             # Solve and append chemical potentials
+            print(f"Scanning with grid size {starting_grid.vertices.shape}")
+            print(starting_grid.vertices)  # debugging, remove when fixed! TODO
             if annealing_temperature is not None and quenching_temperature is not None:
                 all_data = Parallel(n_jobs=processes)(
                     delayed(self._solve_and_append_chempots_pseudo)(
@@ -762,7 +767,7 @@ class FermiSolverDoped(FermiSolver):
             per_site=False,
             skip_formatting=False,
         )
-        concentrations = self.defect_thermodynamics._add_effective_dopant_concentration(
+        concentrations = _add_effective_dopant_concentration(
             concentrations, effective_dopant_concentration
         )
         new_columns = {
