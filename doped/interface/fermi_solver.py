@@ -633,13 +633,9 @@ class FermiSolver(MSONable):
             previous_value = current_value
             target_chem_pot = target_chem_pot.drop_duplicates(ignore_index=True)
 
-            new_vertices = []
-            for row in target_chem_pot.iterrows():
-                datum = row[1]
-                # get midpoint between current vertices and target_chem_pot
-                new_vertex = (current_vertices + datum) / 2
-                new_vertices.append(new_vertex)
-
+            new_vertices = [  # get midpoint between current vertices and target_chem_pot
+                (current_vertices + row[1]) / 2 for row in target_chem_pot.iterrows()
+            ]
             # Generate a new grid around the target_chem_pot that
             # does not go outside the bounds of the starting grid
             new_vertices_df = pd.DataFrame(new_vertices[0], columns=chempots_labels)
@@ -656,7 +652,7 @@ class FermiSolverDoped(FermiSolver):
     Args:
         defect_thermodynamics (DefectThermodynamics): The DefectThermodynamics object
           to use for the calculations.
-        bulk_dos_vr (str): The path to the vasprun.xml file containing the bulk DOS.
+        bulk_dos_vr_path (str): The path to the vasprun.xml file containing the bulk DOS.
     """
 
     def __init__(
@@ -679,6 +675,7 @@ class FermiSolverDoped(FermiSolver):
             defect_thermodynamics=defect_thermodynamics,
             bulk_dos_vr_path=bulk_dos_vr_path,
             chempots=chempots,
+            el_refs=el_refs,
         )
 
         # Load the Vasprun object from the given file path
@@ -717,7 +714,7 @@ class FermiSolverDoped(FermiSolver):
             float: hole concentration
         """
         fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
-            bulk_dos_vr=self.bulk_dos,
+            bulk_dos=self.bulk_dos,
             chempots=chempots,
             limit=None,
             temperature=temperature,
@@ -899,16 +896,14 @@ class FermiSolverPyScFermi(FermiSolver):
         multiplicity_scaling=None,
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,
-        suppress_warnings=True,
     ):
         """
         Initialize the FermiSolverPyScFermi object.
         """
-        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chempots)
+        super().__init__(defect_thermodynamics, bulk_dos_vr_path, chempots, el_refs)
         vr = Vasprun(self.bulk_dos)
         self.bulk_dos = self.DOS.from_vasprun(self.bulk_dos, nelect=vr.parameters["NELECT"])
         self.volume = vr.final_structure.volume
-        self.suppress_warnings = suppress_warnings
 
         if multiplicity_scaling is None:
             ms = self.defect_thermodynamics.defect_entries[0].defect.structure.volume / self.volume

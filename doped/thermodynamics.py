@@ -1721,8 +1721,6 @@ class DefectThermodynamics(MSONable):
             ``(fermi_level, e_conc, h_conc, conc_df, annealing_fermi_level, annealing_e_conc,
             annealing_h_conc, annealing_conc_df)``.
         """
-        # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
-        #  advanced analysis
         if kwargs and any(i not in ["verbose", "tol", "skip_check"] for i in kwargs):
             raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
 
