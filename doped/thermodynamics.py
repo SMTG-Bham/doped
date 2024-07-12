@@ -1522,7 +1522,7 @@ class DefectThermodynamics(MSONable):
                 lean=True,
             )
             # add effective dopant concentration if supplied:
-            conc_df = self._add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+            conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
             qd_tot += get_doping(
                 fermi_dos=self.fermi_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
@@ -1779,7 +1779,7 @@ class DefectThermodynamics(MSONable):
                 per_charge=False,  # give total concentrations for each defect
                 lean=True,
             )
-            annealing_defect_concentrations = self._add_effective_dopant_concentration(
+            annealing_defect_concentrations = _add_effective_dopant_concentration(
                 annealing_defect_concentrations, effective_dopant_concentration
             )  # add effective dopant concentration if supplied
             total_concentrations = dict(  # {Defect: Total Concentration (cm^-3)}
@@ -1801,7 +1801,7 @@ class DefectThermodynamics(MSONable):
                     skip_formatting=True,
                     lean=lean,
                 )
-                conc_df = self._add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+                conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
                 conc_df["Total Concentration (cm^-3)"] = conc_df["Defect"].map(total_concentrations)
                 conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
                     conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
