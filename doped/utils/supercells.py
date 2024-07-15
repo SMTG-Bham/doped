@@ -181,7 +181,7 @@ def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
     return np.min(np.linalg.norm(length_vecs, axis=1))
 
 
-def cell_metric(cell_matrix: np.ndarray, target: str = "SC") -> float:
+def cell_metric(cell_matrix: np.ndarray, target: str = "SC", rms=True) -> float:
     """
     Calculates the deviation of the given cell matrix from an ideal simple
     cubic (if target = "SC") or face-centred cubic (if target = "FCC") matrix,
@@ -212,32 +212,33 @@ def cell_metric(cell_matrix: np.ndarray, target: str = "SC") -> float:
             deviation score from. Either "SC" for simple cubic or
             "FCC" for face-centred cubic.
             Default = "SC"
+        rms (bool):
+            Whether to return the `root` mean square (RMS) difference of
+            the vector lengths from that of the idealised values (default),
+            or just the mean square difference (to reduce computation time
+            when scanning over many possible matrices).
+
 
     Returns:
         float: Cell metric (0 is perfect score)
     """
-    eff_cubic_length = float(abs(np.linalg.det(cell_matrix)) ** (1 / 3))
-    norms = np.linalg.norm(cell_matrix, axis=0)
+    eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
+    norms = np.linalg.norm(cell_matrix, axis=1)
 
-    if target.upper() == "SC":
-        return round(
-            np.sqrt(  # get rms difference to eff cubic
-                np.sum(((norms - eff_cubic_length) / eff_cubic_length) ** 2)
-            ),
-            4,
-        )  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
+    if target.upper() == "SC":  # get rms/msd difference to eff cubic
+        deviations = (norms - eff_cubic_length) / eff_cubic_length
 
-    if target.upper() != "FCC":
+    elif target.upper() == "FCC":
+        # FCC is characterised by 60 degree angles & lattice vectors = 2**(1/6) times the eff cubic length
+        eff_fcc_length = eff_cubic_length * 2 ** (1 / 6)
+        deviations = (norms - eff_fcc_length) / eff_fcc_length
+
+    else:
         raise ValueError(f"Allowed values for `target` are 'SC' or 'FCC'. Got {target}")
 
-    # FCC is characterised by 60 degree angles & lattice vectors = 2**(1/6) times the eff cubic length
-    eff_fcc_length = eff_cubic_length * 2 ** (1 / 6)
-    return round(
-        np.sqrt(  # get rms difference to eff cubic
-            np.sum(((norms - eff_fcc_length) / eff_fcc_length) ** 2)
-        ),
-        4,
-    )  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
+    msd = np.sum(deviations**2)
+    # round to 4 decimal places to avoid tiny numerical differences messing with sorting:
+    return round(np.sqrt(msd), 4) if rms else round(msd, 4)
 
 
 def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> tuple[Any, ...]:
@@ -297,7 +298,9 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     Returns:
         tuple: Tuple of sorting criteria values
     """
-    cubic_metric = cell_metric(np.matmul(P, cell)) if cell is not None else cell_metric(P)
+    cubic_metric = (
+        cell_metric(np.matmul(P, cell), rms=False) if cell is not None else cell_metric(P, rms=False)
+    )
     symmetric = np.allclose(P, P.T)
     abs_sum_off_diag = np.sum(np.abs(P) - np.abs(np.diag(np.diag(P))))
 
@@ -783,12 +786,14 @@ def find_optimal_cell_shape(
         label=target_shape,
     )
 
-    score_list = [cell_metric(cell_matrix, target=target_shape) for cell_matrix in unique_cell_matrices]
-    best_score = np.min(score_list)
+    score_list = [
+        cell_metric(cell_matrix, target=target_shape, rms=False) for cell_matrix in unique_cell_matrices
+    ]
+    best_msd = np.min(score_list)
     if verbose:
-        print(f"Best score: {best_score}")
+        print(f"Best score: {np.sqrt(best_msd)}")
 
-    best_score_indices = np.where(np.array(score_list) == best_score)[0]
+    best_score_indices = np.where(np.array(score_list) == best_msd)[0]
 
     optimal_P = _get_optimal_P(
         valid_P=valid_P,
@@ -801,7 +806,4 @@ def find_optimal_cell_shape(
         cell=cell,
     )
 
-    if verbose:
-        print(f"Score: {best_score}")
-
-    return (optimal_P, best_score) if return_score else optimal_P
+    return (optimal_P, np.sqrt(best_msd)) if return_score else optimal_P
