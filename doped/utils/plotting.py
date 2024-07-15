@@ -157,7 +157,7 @@ def format_defect_name(
     Format defect name for plot titles.
 
     (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$ or $Cd_{i_{C3v}}^{0}$).
-    Note this assumes "V_" means vacancy not Vanadium.
+    Note this assumes "V_..." means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):

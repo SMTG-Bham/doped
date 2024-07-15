@@ -1,7 +1,8 @@
-sphinx
-myst-nb
+sphinx>=7
+myst-nb>=1.0
 recommonmark
-renku-sphinx-theme
+renku-sphinx-theme>=0.4.0  # can update to >0.5.0 when https://github.com/SwissDataScienceCenter/renku-sphinx-theme/pull/26 merged
+sphinx_rtd_theme>=1.3.0  # can update to >2.0 when https://github.com/SwissDataScienceCenter/renku-sphinx-theme/pull/26 merged
 sphinx_click
 sphinx_design
 ase

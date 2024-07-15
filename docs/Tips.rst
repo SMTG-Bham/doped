@@ -500,10 +500,12 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
   ``DefectsParser(output_path=".")`` – written to ``output_path``. The JSON filename can be set with e.g.
   ``DefectsParser(json_filename="custom_name.json")``, but the default is
   ``{Host Chemical Formula}_defect_dict.json``.
+
     - Additionally, a ``voronoi_nodes.json`` file is saved to the bulk supercell calculation directory if
       any interstitial defects are parsed. This contains information about the Voronoi tessellation nodes
       in the host structure, which are used for analysing interstitial positions but can be somewhat costly
       to calculate – so are automatically saved to file once initially computed to reduce parsing times.
+
 - Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
   the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
   containing distortion information about all defects) and to each defect directory (containing just the
