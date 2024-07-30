@@ -485,7 +485,6 @@ class FermiSolver(MSONable):
 
     def scan_chemical_potential_grid(
         self,
-        dependent_variable: str,
         chempots=None,
         n_points: int = 10,
         temperature: float = 300,
@@ -500,7 +499,6 @@ class FermiSolver(MSONable):
         the grid points.
 
         Args:
-            dependent_variable (str): the dependent variable to scan
             chempots (dict): chemical potentials to scan
             n_points (int): number of points to scan
             temperature (float): temperature to solve at
@@ -520,7 +518,8 @@ class FermiSolver(MSONable):
                 )
             chempots = self.chempots["limits_wrt_el_refs"]
 
-        grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(dependent_variable, n_points)
+        grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(n_points)
+        print(len(grid))
 
         if annealing_temperature is not None and quenching_temperature is not None:
             all_data = Parallel(n_jobs=processes)(
@@ -552,7 +551,6 @@ class FermiSolver(MSONable):
 
     def min_max_X(
         self,
-        dependent_chempot,
         target,
         min_or_max,
         chempots=None,
@@ -577,8 +575,10 @@ class FermiSolver(MSONable):
 
         starting_grid = ChemicalPotentialGrid.from_chempots(chempots)
         current_vertices = starting_grid.vertices
+        print(current_vertices)
         chempots_labels = list(current_vertices.columns)
         previous_value = None
+        print(starting_grid)
 
         while True:
             # Solve and append chemical potentials
@@ -590,7 +590,7 @@ class FermiSolver(MSONable):
                         annealing_temperature=annealing_temperature,
                         **kwargs,
                     )
-                    for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
+                    for chempots in starting_grid.get_grid(n_points).iterrows()
                 )
                 results_df = pd.concat(all_data)
 
@@ -599,7 +599,7 @@ class FermiSolver(MSONable):
                     delayed(self._solve_and_append_chempots)(
                         chempots=chempots[1].to_dict(), temperature=temperature, **kwargs
                     )
-                    for chempots in starting_grid.get_grid(dependent_chempot, n_points).iterrows()
+                    for chempots in starting_grid.get_grid(n_points).iterrows()
                 )
                 results_df = pd.concat(all_data)
 
@@ -1226,20 +1226,19 @@ class ChemicalPotentialGrid:
         """
         self.vertices = pd.DataFrame.from_dict(chempots, orient="index")
 
-    def get_grid(self, dependent_variable: str, n_points: int = 100) -> pd.DataFrame:
+    def get_grid(self, n_points: int = 100) -> pd.DataFrame:
         """
         Generates a grid within the convex hull of the vertices and
         interpolates the dependent variable values.
 
         Parameters:
-        dependent_variable (str): The name of the column in vertices representing the dependent variable.
         n_points (int): The number of points to generate along each axis of the grid.
 
         Returns:
         pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
-                    interpolated dependent variable values.
+                    interpolated chemical potential values.
         """
-        return self.grid_from_dataframe(self.vertices, dependent_variable, n_points)
+        return self.grid_from_dataframe(self.vertices, n_points)
 
     @classmethod
     def from_chempots(cls, chempots: dict[str, Any]) -> "ChemicalPotentialGrid":
@@ -1256,24 +1255,23 @@ class ChemicalPotentialGrid:
         return cls(chempots["limits_wrt_el_refs"])
 
     @staticmethod
-    def grid_from_dataframe(
-        mu_dataframe: pd.DataFrame, dependent_variable: str, n_points: int = 100
-    ) -> pd.DataFrame:
+    def grid_from_dataframe(mu_dataframe: pd.DataFrame, n_points: int = 100) -> pd.DataFrame:
         """
-        Generates a grid within the convex hull of the vertices and
-        interpolates the dependent variable values.
+        Generates a grid within the convex hull of the vertices.
 
         Parameters:
-        dependent_variable (str): The name of the column in vertices representing the dependent variable.
-        n_points (int): The number of points to generate along each axis of the grid.
+        n_points (int): The number of points to generate along each axis of the grid. Note that this will
+                        not always be the number of points in the final grid, as points outside the convex
+                        hull will be excluded.
 
         Returns:
         pd.DataFrame: A DataFrame of points within the convex hull with their corresponding
                     interpolated dependent variable values.
         """
         # Exclude the dependent variable from the vertices
-        independent_vars = mu_dataframe.drop(columns=dependent_variable)
+        dependent_variable = mu_dataframe.columns[-1]
         dependent_var = mu_dataframe[dependent_variable].to_numpy()
+        independent_vars = mu_dataframe.drop(columns=dependent_variable)
 
         # Generate the complex number for grid spacing
         complex_num = complex(0, n_points)
@@ -1297,6 +1295,9 @@ class ChemicalPotentialGrid:
 
         # Combine points with their corresponding interpolated values
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
+
+        # add vertices to the grid
+        grid_with_values = np.vstack((grid_with_values, mu_dataframe.to_numpy()))
 
         return pd.DataFrame(
             grid_with_values,
