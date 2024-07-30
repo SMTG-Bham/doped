@@ -845,12 +845,12 @@ class CompetingPhases:
         """
         self.e_above_hull = e_above_hull  # store parameters for reference
         self.full_phase_diagram = full_phase_diagram
-        # get API key, and print info message if it corresponds to legacy MP -- remove this (and legacy
-        # MP API warning filter) in future versions (TODO)
+        # get API key, and print info message if it corresponds to legacy MP -- remove this and legacy
+        # MP API warning filter in future versions (TODO)
         self.api_key, self.legacy_MP = _parse_MP_API_key(api_key, legacy_MP_info=True)
         warnings.filterwarnings(  # Remove in future when users have been given time to transition
             "ignore", message="You are using the legacy MPRester"
-        )  # currently rely on this so shouldn't show warning, `message` only needs to match start
+        )  # previously relied on this so shouldn't show warning, `message` only needs to match start
 
         # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
         #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
