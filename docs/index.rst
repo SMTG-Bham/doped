@@ -94,14 +94,14 @@ Studies using ``doped``, so far
 
 - Z\. Yuan & G. Hautier **First-principles study of defects and doping limits in CaO** `Applied Physics Letters <https://doi.org/10.1063/5.0211707>`_ 2024
 - B\. E. Murdock et al. **Li-Site Defects Induce Formation of Li-Rich Impurity Phases: Implications for Charge Distribution and Performance of LiNi** :sub:`0.5-x` **M** :sub:`x` **Mn** :sub:`1.5` **O** :sub:`4`  **Cathodes (M = Fe and Mg; x = 0.05–0.2)** `Advanced Materials <https://doi.org/10.1002/adma.202400343>`_ 2024
-- A\. G. Squires et al. **Oxygen dimerization as a defect-driven process in bulk LiNiO₂** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-lcmkj>`_ 2024
+- A\. G. Squires et al. **Oxygen dimerization as a defect-driven process in bulk LiNiO₂** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-lcmkj>`__ 2024
 - Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>** `arXiv <https://doi.org/10.48550/arXiv.2401.02257>`_ 2024
-- S\. Hachmioune et al. **Exploring the Thermoelectric Potential of MgB4: Electronic Band Structure, Transport Properties, and Defect Chemistry** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.4c00584>`_ 2024
-- J\. Hu et al. **Enabling ionic transport in Li3AlP2 the roles of defects and disorder** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-3s0kh>`_ 2024
+- S\. Hachmioune et al. **Exploring the Thermoelectric Potential of MgB4: Electronic Band Structure, Transport Properties, and Defect Chemistry** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.4c00584>`__ 2024
+- J\. Hu et al. **Enabling ionic transport in Li3AlP2 the roles of defects and disorder** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-3s0kh>`__ 2024
 - X\. Wang et al. **Upper efficiency limit of Sb₂Se₃ solar cells** `Joule <https://doi.org/10.1016/j.joule.2024.05.004>`_ 2024
-- I\. Mosquera-Lois et al. **Machine-learning structural reconstructions for accelerated point defect calculations** `npj Computational Materials <https://doi.org/10.1038/s41524-024-01303-9>`_ 2024
+- I\. Mosquera-Lois et al. **Machine-learning structural reconstructions for accelerated point defect calculations** `npj Computational Materials <https://doi.org/10.1038/s41524-024-01303-9>`__ 2024
 - W\. Dou et al. **Band Degeneracy and Anisotropy Enhances Thermoelectric Performance from Sb₂Si₂Te₆ to Sc₂Si₂Te₆** `Journal of the American Chemical Society <https://doi.org/10.1021/jacs.4c01838>`_ 2024
-- K\. Li et al. **Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb₂O₅** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.3c03257>`_ 2024
+- K\. Li et al. **Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb₂O₅** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.3c03257>`__ 2024
 - X\. Wang et al. **Four-electron negative-U vacancy defects in antimony selenide** `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`_ 2023
 - Y\. Kumagai et al. **Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation** `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **Mixed-Cation Vacancy-Ordered Perovskites (Cs₂Ti** :sub:`1–x` **Sn** :sub:`x` **X₆; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability** `Journal of Physical Chemistry C`_ 2023
@@ -111,7 +111,7 @@ Studies using ``doped``, so far
 - J\. Willis, K. B. Spooner, D. O. Scanlon. **On the possibility of p-type doping in barium stannate** `Applied Physics Letters <https://doi.org/10.1063/5.0170552>`__ 2023
 - J\. Cen et al. **Cation disorder dominates the defect chemistry of high-voltage LiMn** :sub:`1.5` **Ni** :sub:`0.5` **O₄ (LMNO) spinel cathodes** `Journal of Materials Chemistry A`_ 2023
 - J\. Willis & R. Claes et al. **Limits to Hole Mobility and Doping in Copper Iodide** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.3c01628>`__ 2023
-- I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon **Identifying the ground state structures of point defects in solids** `npj Computational Materials`_ 2023
+- I\. Mosquera-Lois & S. R. Kavanagh, A. Walsh, D. O. Scanlon **Identifying the ground state structures of point defects in solids** `npj Computational Materials <https://www.nature.com/articles/s41524-023-00973-1>`__ 2023
 - Y\. T. Huang & S. R. Kavanagh et al. **Strong absorption and ultrafast localisation in NaBiS₂ nanocrystals with slow charge-carrier recombination** `Nature Communications`_ 2022
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh, C. Freysoldt **Impact of metastable defect structures on carrier recombination in solar cells** `Faraday Discussions`_ 2022
 - Y-S\. Choi et al. **Intrinsic Defects and Their Role in the Phase Transition of Na-Ion Anode Na₂Ti₃O₇** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.2c03466>`__ 2022
@@ -129,7 +129,6 @@ Studies using ``doped``, so far
 
 .. _Journal of Physical Chemistry C: https://doi.org/10.1021/acs.jpcc.3c05204
 .. _Journal of Materials Chemistry A: https://doi.org/10.1039/D3TA00532A
-.. _npj Computational Materials: https://www.nature.com/articles/s41524-023-00973-1
 .. _Nature Communications: https://www.nature.com/articles/s41467-022-32669-3
 .. _Faraday Discussions: https://doi.org/10.1039/D2FD00043A
 .. _Chemical Science: https://doi.org/10.1039/D1SC03775G

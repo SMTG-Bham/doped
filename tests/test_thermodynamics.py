@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
+from pymatgen.core.composition import Composition
 
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
@@ -101,6 +102,14 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.MgO_defect_dict = deepcopy(self.orig_MgO_defect_dict)
         self.Sb2O5_defect_thermo = deepcopy(self.orig_Sb2O5_defect_thermo)
         self.ZnS_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
+
+        self.cdte_chempot_warning_message = (
+            "Note that the raw (DFT) energy of the bulk supercell calculation (-3.37 eV/atom) differs "
+            "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. This "
+            "will likely give inaccuracies of similar magnitude in the predicted formation energies! "
+            "\nYou can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
+            "False`."
+        )
 
     @classmethod
     def setUpClass(cls):
@@ -376,6 +385,17 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._set_and_check_dist_tol(1.0, defect_thermo, 4)
         self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
+        # test mismatching chempot warnings:
+        print("Checking mismatching chempots")
+        mismatch_chempots = {el: -3 for el in Composition(defect_thermo.bulk_formula).as_dict()}
+        with warnings.catch_warnings(record=True) as w:
+            defect_thermo.chempots = mismatch_chempots
+        print([str(warning.message) for warning in w])  # for debugging
+        assert any(
+            "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warning.message)
+            for warning in w
+        )
+
     def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
         print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
         tl_df = defect_thermo.get_transition_levels()
@@ -435,6 +455,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
+
+        print(f"Checking {name} with mismatching chempots")
+        with warnings.catch_warnings(record=True) as w:
+            _defect_thermo = DefectThermodynamics(self.CdTe_defect_dict, chempots={"Cd": -1.0, "Te": -6})
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1  # only chempot incompatibility warning
+        assert str(w[0].message) == self.cdte_chempot_warning_message
 
     def test_DefectsParser_thermo_objs(self):
         """
@@ -1369,7 +1396,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             el_refs={"Cd": -12, "Te": -1},
         )
         assert "Fermi level was not set" not in output
-        assert not w
+        assert len(w) == 1  # only mis-matching chempot warning
         assert manual_form_en_df.shape == (7, 10)
         # test sum of formation energy terms equals total and other formation energy df properties:
         self._check_form_en_df(manual_form_en_df, fermi_level=3, defect_thermo=self.CdTe_defect_thermo)
@@ -1939,6 +1966,31 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         (e.g. transferring from old doped versions, from pymatgen-analysis-
         defects objects etc).
         """
+        # TODO
+
+    def test_incompatible_chempots_warning(self):
+        """
+        Test that we get the expected warnings when we provide incompatible
+        chemical potentials for our DefectThermodynamics object.
+        """
+        slightly_off_chempots = {"Cd": -1.0, "Te": -6}
+        for func in [
+            self.CdTe_defect_thermo.get_equilibrium_concentrations,
+            self.CdTe_defect_thermo.get_dopability_limits,
+            self.CdTe_defect_thermo.get_doping_windows,
+            self.CdTe_defect_thermo.get_formation_energies,
+            self.CdTe_defect_thermo.plot,
+        ]:
+            _result, _tl_output, w = _run_func_and_capture_stdout_warnings(
+                func, chempots=slightly_off_chempots
+            )
+            assert any(str(warning.message) == self.cdte_chempot_warning_message for warning in w)
+
+        with warnings.catch_warnings(record=True) as w:
+            self.CdTe_defect_thermo.chempots = slightly_off_chempots
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1  # only chempot incompatibility warning
+        assert str(w[0].message) == self.cdte_chempot_warning_message
 
 
 def belas_linear_fit(T):  #

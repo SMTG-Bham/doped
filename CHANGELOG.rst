@@ -67,11 +67,11 @@ v.2.3.3
 ----------
 - General robustness updates:
     - Updated file parsing to avoid hidden files.
-    - Sanity check in `DefectsGenerator` if input symmetry is `P1`.
-    - Add `NKRED` to `INCAR` mismatch tests.
+    - Sanity check in ``DefectsGenerator`` if input symmetry is ``P1``.
+    - Add ``NKRED`` to ``INCAR`` mismatch tests.
     - Re-parse config & spin degeneracies in concentration/symmetry functions if data not already present
-      (if user is porting `DefectEntry`s from older `doped` versions or manually).
-    - Avoid unnecessary `DeprecationWarning`s
+      (if user is porting ``DefectEntry``s from older ``doped`` versions or manually).
+    - Avoid unnecessary ``DeprecationWarning``s
 - Updated docs and linting
 
 v.2.3.2
