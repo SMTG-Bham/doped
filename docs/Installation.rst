@@ -20,6 +20,9 @@ by running the following in Python, and confirming that the same version numbers
    print(spglib.__version__)
    print(spglib.spg_get_version_full())
 
+In some cases, you might need to first uninstall ``spglib`` with both ``conda uninstall spglib`` and
+``pip uninstall spglib`` (to ensure no duplicate installations), before reinstalling.
+
 Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 
 .. code-block:: bash
