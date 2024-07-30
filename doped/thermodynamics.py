@@ -191,6 +191,41 @@ def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = N
     return chempots, chempots.get("elemental_refs")
 
 
+def raw_energy_from_chempots(composition: Union[str, dict, Composition], chempots: dict) -> float:
+    """
+    Given an input composition (as a ``str``, ``dict`` or ``pymatgen``
+    ``Composition`` object) and chemical potentials dictionary, get the
+    corresponding raw energy of the composition (i.e. taking the energies given
+    in the ``'limits'`` subdicts of ``chempots``, in the ``doped`` chemical
+    potentials dictionary format).
+
+    Args:
+        composition (Union[str, dict, Composition]):
+            Composition to get the raw energy of.
+        chempots (dict):
+            Chemical potentials dictionary.
+
+    Returns:
+        Raw energy of the composition.
+    """
+    if not isinstance(composition, Composition):
+        composition = Composition(composition)
+
+    if "limits" not in chempots:
+        chempots, _el_refs = _parse_chempots(chempots)
+
+    raw_energies_dict = dict(next(iter(chempots["limits"].values())))
+
+    if any(el.symbol not in raw_energies_dict for el in composition.elements):
+        raise ValueError(
+            f"The chemical potentials dictionary (with elements {list(raw_energies_dict.keys())} does not "
+            f"contain all the elements in the host composition "
+            f"({[el.symbol for el in composition.elements]})!"
+        )
+
+    return sum(raw_energies_dict.get(el.symbol, 0) * stoich for el, stoich in composition.items())
+
+
 def group_defects_by_distance(
     entry_list: list[DefectEntry], dist_tol: float = 1.5
 ) -> dict[str, dict[tuple, list[DefectEntry]]]:
@@ -540,7 +575,7 @@ class DefectThermodynamics(MSONable):
                 )
 
         # order entries for deterministic behaviour (particularly for plotting)
-        self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
+        self._sort_parse_and_check_entries()
 
         bulk_entry = self.defect_entries[0].bulk_entry
         if bulk_entry is not None:
@@ -550,10 +585,11 @@ class DefectThermodynamics(MSONable):
         else:
             self.bulk_formula = None
 
-    def _sort_parse_and_check_entries(self, check_compatibility: bool = True):
+    def _sort_parse_and_check_entries(self):
         """
         Sort the defect entries, parse the transition levels, and check the
-        compatibility of the bulk entries (if check_compatibility is True).
+        compatibility of the bulk entries (if ``self.check_compatibility`` is
+        ``True``).
         """
         defect_entries_dict: dict[str, DefectEntry] = {}
         for entry in self.defect_entries:  # rename defect entry names in dict if necessary ("_a", "_b"...)
@@ -572,8 +608,9 @@ class DefectThermodynamics(MSONable):
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
             warnings.filterwarnings("ignore", message="No chemical potentials")
             self._parse_transition_levels()
-        if check_compatibility:
+        if self.check_compatibility:
             self._check_bulk_compatibility()
+            self._check_bulk_chempots_compatibility(self._chempots)
 
     def as_dict(self):
         """
@@ -661,7 +698,11 @@ class DefectThermodynamics(MSONable):
         Parse chemical potentials, either using input values (after formatting
         them in the doped format) or using the class attributes if set.
         """
-        return _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
+        chempots, el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
+        if self.check_compatibility:
+            self._check_bulk_chempots_compatibility(chempots)
+
+        return chempots, el_refs
 
     def _parse_transition_levels(self):
         r"""
@@ -890,7 +931,7 @@ class DefectThermodynamics(MSONable):
         """
         Helper function to quickly check if all entries have compatible bulk
         calculation settings, by checking that the energy of
-        defect_entry.bulk_entry is the same for all defect entries.
+        ``defect_entry.bulk_entry`` is the same for all defect entries.
 
         By proxy checks that same bulk/defect calculation settings were used in
         all cases, from each bulk/defect combination already being checked when
@@ -907,8 +948,8 @@ class DefectThermodynamics(MSONable):
                 f"eV. This can lead to inaccuracies in predicted formation energies! The bulk energies of "
                 f"defect entries in `defect_entries` are:\n"
                 f"{[(entry.name, entry.bulk_entry.energy) for entry in self.defect_entries]}\n"
-                f"You can suppress this warning by setting `check_compatibility=False` in "
-                "`DefectThermodynamics` initialisation."
+                f"You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
+                f"False`."
             )
 
     def _check_bulk_defects_compatibility(self):
@@ -918,7 +959,7 @@ class DefectThermodynamics(MSONable):
 
         Currently not used, as the bulk/defect compatibility is checked when
         parsing, and the compatibility across bulk calculations is checked with
-        _check_bulk_compatibility().
+        ``_check_bulk_compatibility()``.
         """
         # check each defect entry against its own bulk, and also check each bulk against each other
         reference_defect_entry = self.defect_entries[0]
@@ -964,6 +1005,55 @@ class DefectThermodynamics(MSONable):
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
 
+    def _check_bulk_chempots_compatibility(self, chempots: Optional[dict] = None):
+        r"""
+        Helper function to quickly check if the supplied chemical potentials
+        dictionary matches the bulk supercell used for the defect calculations,
+        by comparing the raw energies (from the bulk supercell calculation, and
+        that corresponding to the chemical potentials supplied).
+
+        Args:
+            chempots (dict, optional):
+                Dictionary of chemical potentials to check compatibility with
+                the bulk supercell calculations (``DefectEntry.bulk_entry``\s),
+                in the ``doped`` format.
+
+                If ``None`` (default), will use ``self.chempots`` (= 0 for all
+                chemical potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)), or alternatively a dictionary of chemical
+                potentials for a single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+        """
+        if chempots is None and self.chempots is None:
+            return
+
+        bulk_entry = next(entry.bulk_entry for entry in self.defect_entries)
+        bulk_supercell_energy_per_atom = bulk_entry.energy / bulk_entry.composition.num_atoms
+        bulk_chempot_energy_per_atom = (
+            raw_energy_from_chempots(bulk_entry.composition, chempots or self.chempots)
+            / bulk_entry.composition.num_atoms
+        )
+
+        if abs(bulk_supercell_energy_per_atom - bulk_chempot_energy_per_atom) > 0.025:
+            warnings.warn(  # 0.05 eV intrinsic defect formation energy error tolerance, taking per-atom
+                # chempot error and multiplying by 2 to account for how this would affect antisite
+                # formation energies (extreme case)
+                f"Note that the raw (DFT) energy of the bulk supercell calculation ("
+                f"{bulk_supercell_energy_per_atom:.2f} eV/atom) differs from that expected from the "
+                f"supplied chemical potentials ({bulk_chempot_energy_per_atom:.2f} eV/atom) by >0.025 eV. "
+                f"This will likely give inaccuracies of similar magnitude in the predicted formation "
+                f"energies! \n"
+                f"You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
+                f"False`."
+            )
+
     def add_entries(
         self,
         defect_entries: Union[list[DefectEntry], dict[str, DefectEntry]],
@@ -986,6 +1076,7 @@ class DefectThermodynamics(MSONable):
                 entry (i.e. that all reference bulk energies are the same).
                 (Default: True)
         """
+        self.check_compatibility = check_compatibility
         if isinstance(defect_entries, dict):
             defect_entries = list(defect_entries.values())
 
@@ -996,7 +1087,7 @@ class DefectThermodynamics(MSONable):
             )
 
         self._defect_entries += defect_entries
-        self._sort_parse_and_check_entries(check_compatibility=check_compatibility)
+        self._sort_parse_and_check_entries()
 
     @property
     def defect_entries(self):
@@ -1061,6 +1152,8 @@ class DefectThermodynamics(MSONable):
         (Default: None)
         """
         self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
+        if self.check_compatibility:
+            self._check_bulk_chempots_compatibility(self._chempots)
 
     @property
     def el_refs(self):
