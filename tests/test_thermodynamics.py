@@ -411,6 +411,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         defect_thermo.print_transition_levels()
         defect_thermo.print_transition_levels(all=True)
 
+    def _clear_symmetry_degeneracy_info(self, defect_thermo):
+        for defect_entry in defect_thermo.defect_entries:
+            for key in list(defect_entry.calculation_metadata.keys()):
+                if "symmetry" in key:
+                    del defect_entry.calculation_metadata[key]
+            for key in list(defect_entry.degeneracy_factors.keys()):
+                del defect_entry.degeneracy_factors[key]
+
     def test_initialisation_and_attributes(self):
         """
         Test initialisation and attributes of DefectsThermodynamics.
@@ -764,8 +772,37 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.iloc[4]) == ["Int_Te_3_a", "None", np.inf, False, 0]
         assert list(tl_df.iloc[5]) == ["Int_Te_3_b", "None", np.inf, False, 0]
 
-    def test_get_symmetries_degeneracies_CdTe(self):
-        sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
+    def test_get_symmetries_degeneracies(self):
+        """
+        Test symmetry and degeneracy functions.
+
+        Also tests that the symmetry and degeneracy functions still work if the
+        symmetry and degeneracy metadata wasn't parsed earlier for any reason
+        (e.g. transferring from old doped versions, from pymatgen-analysis-
+        defects objects etc), with ``reset_thermo=True``.
+        """
+        for reset_thermo in [False, True]:
+            for check_func, thermo in [
+                (self._check_CdTe_symmetries_degeneracies, self.CdTe_defect_thermo),
+                (
+                    self._check_MgO_symmetries_degeneracies,
+                    loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json.gz"),
+                ),
+                (self._check_YTOS_symmetries_degeneracies, self.YTOS_defect_thermo),
+                (self._check_Sb2O5_symmetries_degeneracies, self.Sb2O5_defect_thermo),
+            ]:
+                print(
+                    f"Checking symmetries & degeneracies for {thermo.bulk_formula}, reset_thermo"
+                    f"={reset_thermo}"
+                )
+                if reset_thermo:
+                    self._clear_symmetry_degeneracy_info(thermo)
+                check_func(thermo)
+
+            self.setUp()  # reset thermo objects on 2nd run (with ``reset_thermo=True``)
+
+    def _check_CdTe_symmetries_degeneracies(self, CdTe_defect_thermo: DefectThermodynamics):
+        sym_degen_df = CdTe_defect_thermo.get_symmetries_and_degeneracies()
         print(sym_degen_df)
         assert sym_degen_df.shape == (7, 8)
         assert list(sym_degen_df.columns) == [
@@ -799,12 +836,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(cdte_sym_degen_lists):
-            row[1] = int(row[1])
+            row[1] = int(row[1])  # type: ignore
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
-    def test_get_symmetries_degeneracies_MgO(self):
-        MgO_thermo = loadfn(f"{module_path}/../examples/MgO/MgO_thermo.json.gz")
-        sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies()
+    def _check_MgO_symmetries_degeneracies(self, MgO_defect_thermo: DefectThermodynamics):
+        sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies()
         # print(sym_degen_df)
         assert sym_degen_df.shape == (5, 8)
         assert list(sym_degen_df.columns) == [
@@ -831,47 +867,49 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(i, row)
             assert list(sym_degen_df.iloc[i]) == row
 
-        non_formatted_sym_degen_df = MgO_thermo.get_symmetries_and_degeneracies(skip_formatting=True)
-        # print(non_formatted_sym_degen_df)  # for debugging
+        non_formatted_sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies(
+            skip_formatting=True
+        )
+        print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(mgo_sym_degen_lists):
-            row[1] = int(row[1])
+            row[1] = int(row[1])  # type: ignore
             assert list(non_formatted_sym_degen_df.iloc[i]) == row
 
-    def test_get_symmetries_degeneracies_YTOS(self):
-        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies()
+    def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
+        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies()
         # hardcoded tests to ensure symmetry determination working as expected:
         assert any(
             list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
+        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
         assert any(
             list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = self.YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.01)
+        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.01)
         assert any(
             list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "Cs", 1.0, 1, 1.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-    def test_get_symmetries_degeneracies_Sb2O5(self):
-        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies()
+    def _check_Sb2O5_symmetries_degeneracies(self, Sb2O5_defect_thermo: DefectThermodynamics):
+        sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies()
         # hardcoded tests to ensure symmetry determination working as expected:
         assert any(
             list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
+        sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
         assert any(
             list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = self.Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.2)
+        sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.2)
         assert any(
             list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "Ci", 0.5, 2, 1.0, 4.0]
             for i in range(sym_degen_df.shape[0])
@@ -1737,34 +1775,29 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
 
             # test adjusting symprec:
-            if defect_entry.name == "vac_1_Cd_0":
+            if defect_entry.name in [
+                "vac_1_Cd_0",
+                "as_1_Te_on_Cd_0",
+                "Int_Te_3_unperturbed_0",
+                "as_2_Te_on_Cd_C3v_metastable_1",
+            ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
-            elif defect_entry.name == "vac_1_Cd_Td_0":
+            elif defect_entry.name in [
+                "vac_1_Cd_Td_0",
+                "as_1_Cd_on_Te_2",
+            ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "D2d"
-            elif defect_entry.name == "vac_2_Te_orig_metastable_-1":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
             elif defect_entry.name == "vac_2_Te_orig_non_JT_distorted_0":
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C3v"
-            elif defect_entry.name == "vac_2_Te_shaken_-2":
+            elif defect_entry.name in [
+                "as_1_Cd_on_Te_1",
+                "as_2_Cd_on_Te_metastable_0",
+                "vac_2_Te_orig_metastable_-1",
+                "vac_2_Te_shaken_-2",
+                "Int_Te_3_C3v_meta_2",
+                "Int_Te_3_unperturbed_1",
+            ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
-            elif defect_entry.name == "as_1_Cd_on_Te_2":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "D2d"
-            elif (
-                defect_entry.name == "as_1_Cd_on_Te_1" or defect_entry.name == "as_2_Cd_on_Te_metastable_0"
-            ):
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
-            elif defect_entry.name == "as_1_Te_on_Cd_0":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
-            elif defect_entry.name == "as_1_Te_on_Cd_-1":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
-            elif defect_entry.name == "as_2_Te_on_Cd_C3v_metastable_1":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
-            elif (
-                defect_entry.name == "Int_Te_3_C3v_meta_2" or defect_entry.name == "Int_Te_3_unperturbed_1"
-            ):
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
-            elif defect_entry.name == "Int_Te_3_unperturbed_0":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
             else:
                 assert (
                     point_symmetry(defect_entry.defect_supercell, symprec=0.01)
@@ -1791,13 +1824,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(sym_degen_df.iloc[i]) == row
 
         # delete symmetry info to force re-parsing, to test symmetry/degeneracy functions
-        thermo_wout_symm_meta = deepcopy(cdte_defect_thermo)
-        for defect_entry in thermo_wout_symm_meta.defect_entries:
-            for key in list(defect_entry.calculation_metadata.keys()):
-                if "symmetry" in key or "degeneracy" in key:
-                    del defect_entry.calculation_metadata[key]
-
-        sym_degen_df = thermo_wout_symm_meta.get_symmetries_and_degeneracies()
+        self._clear_symmetry_degeneracy_info(cdte_defect_thermo)
+        sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
         for i, row in enumerate(cdte_sym_degen_lists):
             print(i, row)
             if row[0] == "Int_Te_3_C3v_meta":
@@ -1958,15 +1986,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert val == reloaded_df_row.iloc[j]
 
         os.remove("test.csv")
-
-    def test_symmetry_degeneracy_unparsed(self):
-        """
-        Test that the symmetry and degeneracy functions still work if the
-        symmetry and degeneracy metadata wasn't parsed earlier for any reason
-        (e.g. transferring from old doped versions, from pymatgen-analysis-
-        defects objects etc).
-        """
-        # TODO
 
     def test_incompatible_chempots_warning(self):
         """
