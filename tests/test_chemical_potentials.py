@@ -4,8 +4,11 @@ Tests for the `doped.chemical_potentials` module.
 
 import os
 import shutil
+import sys
 import unittest
 import warnings
+from functools import wraps
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -26,45 +29,77 @@ def _compare_chempot_dicts(dict1, dict2):
             assert np.isclose(val, dict2[key], atol=1e-5)
 
 
-class CompetingPhases(unittest.TestCase):
+def parameterized_subtest(api_key_dict=None):
+    """
+    A test decorator to allow running competing phases tests with both the
+    legacy and new Materials Project API keys.
+    """
+    if api_key_dict is None:  # set to SK MP Imperial email (GitHub) A/C keys by default
+        api_key_dict = {"legacy": "c2LiJRMiBeaN5iXsH", "new": "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"}
+
+    def decorator(test_func):
+        @wraps(test_func)
+        def wrapper(self, *args, **kwargs):
+            for name, api_key in api_key_dict.items():
+                with self.subTest(api_key=api_key):
+                    print(f"Testing with {name} API")
+                    test_func(self, api_key, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.path = Path(__file__).parents[0]
-        self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
+        self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
+        self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
 
     def tearDown(self) -> None:
         if Path("competing_phases").is_dir():
             shutil.rmtree("competing_phases")
 
-    def test_init(self):
-        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=self.api_key)
+    @parameterized_subtest()
+    def test_init(self, api_key):
+        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
+
         assert len(cp.entries) == 13
-        assert cp.entries[0].name == "O2"
+        assert [entry.name for entry in cp.entries] == [
+            "O2",
+            "Zr",
+            "Zr3O",
+            "ZrO2",
+            "Zr3O",
+            "Zr3O",
+            "Zr2O",
+            "ZrO2",
+            "ZrO2",
+            "Zr",
+            "ZrO2",
+            "ZrO2",
+            "ZrO2",
+        ]
         assert cp.entries[0].data["total_magnetization"] == 2
-        assert cp.entries[0].data["e_above_hull"] == 0
-        assert cp.entries[0].data["molecule"]
+        for i, entry in enumerate(cp.entries):
+            print(entry.name, entry.energy)
+            if i < 4:
+                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
+            else:
+                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) > 0
+
+            if entry.name == "O2":
+                assert entry.data["molecule"]
+            else:
+                assert not entry.data["molecule"]
+
         assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
         assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
-        assert cp.entries[1].name == "Zr"
         assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
-        assert cp.entries[1].data["e_above_hull"] == 0
-        assert not cp.entries[1].data["molecule"]
-        assert cp.entries[2].name == "Zr3O"
-        assert cp.entries[2].data["e_above_hull"] == 0
-        assert cp.entries[3].name == "ZrO2"
-        assert cp.entries[3].data["e_above_hull"] == 0
-        assert cp.entries[4].name == "Zr3O"
-        assert cp.entries[5].name == "Zr3O"
-        assert cp.entries[6].name == "Zr2O"
-        assert cp.entries[7].name == "ZrO2"
-        assert cp.entries[8].name == "ZrO2"
-        assert cp.entries[9].name == "Zr"
-        assert cp.entries[10].name == "ZrO2"
-        assert cp.entries[11].name == "ZrO2"
-        assert cp.entries[12].name == "ZrO2"
+        assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
 
-        assert "Zr4O" not in [e.name for e in cp.entries]
-
-    def test_init_ZnSe(self):
+    @parameterized_subtest()
+    def test_init_ZnSe(self, api_key):
         """
         As noted by Savya Aggarwal, the legacy MP API code didn't return ZnSe2
         as a competing phase despite being on the hull and bordering ZnSe,
@@ -76,54 +111,64 @@ class CompetingPhases(unittest.TestCase):
         Updated code which re-calculates the energy above hull avoids this
         issue.
         """
-        cp = chemical_potentials.CompetingPhases("ZnSe", api_key=self.api_key)
+        cp = chemical_potentials.CompetingPhases("ZnSe", api_key=api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
         assert len(cp.entries) == 14  # ZnSe2 now present
         znse2_entry = next(e for e in cp.entries if e.name == "ZnSe2")
-        assert znse2_entry.data["e_above_hull"] == 0
+        assert znse2_entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
         assert not znse2_entry.data["molecule"]
         assert np.isclose(znse2_entry.data["energy_per_atom"], -3.080017)
         assert np.isclose(znse2_entry.data["energy"], -3.080017 * 12)
 
-    def test_init_full_phase_diagram(self):
+    @parameterized_subtest()
+    def test_init_full_phase_diagram(self, api_key):
         cp = chemical_potentials.CompetingPhases(
-            "ZrO2", e_above_hull=0.03, api_key=self.api_key, full_phase_diagram=True
+            "ZrO2", e_above_hull=0.03, api_key=api_key, full_phase_diagram=True
         )
+
         assert len(cp.entries) == 14  # Zr4O now present
-        assert cp.entries[0].name == "O2"
+        assert [entry.name for entry in cp.entries] == [
+            "O2",
+            "Zr",
+            "Zr3O",
+            "Zr4O",
+            "ZrO2",
+            "Zr3O",
+            "Zr3O",
+            "Zr2O",
+            "ZrO2",
+            "ZrO2",
+            "Zr",
+            "ZrO2",
+            "ZrO2",
+            "ZrO2",
+        ]
         assert cp.entries[0].data["total_magnetization"] == 2
-        assert cp.entries[0].data["e_above_hull"] == 0
-        assert cp.entries[0].data["molecule"]
+        for i, entry in enumerate(cp.entries):
+            print(entry.name, entry.energy)
+            if i < 5:
+                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
+            else:
+                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) > 0
+
+            if entry.name == "O2":
+                assert entry.data["molecule"]
+            else:
+                assert not entry.data["molecule"]
+
         assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
         assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
-        assert cp.entries[1].name == "Zr"
         assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
-        assert cp.entries[1].data["e_above_hull"] == 0
-        assert not cp.entries[1].data["molecule"]
-        assert cp.entries[2].name == "Zr3O"
-        assert cp.entries[2].data["e_above_hull"] == 0
-        assert cp.entries[3].name == "Zr4O"  # new entry!
-        assert cp.entries[3].data["e_above_hull"] == 0
-        assert cp.entries[4].name == "ZrO2"
-        assert cp.entries[4].data["e_above_hull"] == 0
-        assert cp.entries[5].name == "Zr3O"
-        assert cp.entries[6].name == "Zr3O"
-        assert cp.entries[7].name == "Zr2O"
-        assert cp.entries[8].name == "ZrO2"
-        assert cp.entries[9].name == "ZrO2"
-        assert cp.entries[10].name == "Zr"
-        assert cp.entries[11].name == "ZrO2"
-        assert cp.entries[12].name == "ZrO2"
-        assert cp.entries[13].name == "ZrO2"
 
-    def test_init_ytos(self):
+    @parameterized_subtest()
+    def test_init_ytos(self, api_key):
         # 144 phases on Y-Ti-O-S MP phase diagram
-        cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1, api_key=self.api_key)
+        cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1, api_key=api_key)
         assert len(cp.entries) == 115  # 115 phases with default algorithm
         self.check_O2_entry(cp)
 
         cp = chemical_potentials.CompetingPhases(
-            "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True, api_key=self.api_key
+            "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True, api_key=api_key
         )
         assert len(cp.entries) == 140  # 144 phases on Y-Ti-O-S MP phase diagram, 4 extra O2 phases removed
         self.check_O2_entry(cp)
@@ -134,21 +179,22 @@ class CompetingPhases(unittest.TestCase):
         assert len(result) == 1
         assert result[0].name == "O2"
         assert result[0].data["total_magnetization"] == 2
-        assert result[0].data["e_above_hull"] == 0
+        assert result[0].data[cp.property_key_dict["energy_above_hull"]] == 0
         assert result[0].data["molecule"]
         assert np.isclose(result[0].data["energy_per_atom"], -4.94795546875)
 
-    def test_unstable_host(self):
+    @parameterized_subtest()
+    def test_unstable_host(self, api_key):
         """
         Test generating CompetingPhases with a composition that's unstable on
         the Materials Project database.
         """
         for cp_settings in [
-            {"composition": "Na2FePO4F", "e_above_hull": 0.02, "api_key": self.api_key},
+            {"composition": "Na2FePO4F", "e_above_hull": 0.02, "api_key": api_key},
             {
                 "composition": "Na2FePO4F",
                 "e_above_hull": 0.02,
-                "api_key": self.api_key,
+                "api_key": api_key,
                 "full_phase_diagram": True,
             },
         ]:
@@ -179,9 +225,9 @@ class CompetingPhases(unittest.TestCase):
         Materials Project database.
         """
         for cp_settings in [
-            {"composition": "Cu2SiSe4", "api_key": self.api_key},
-            {"composition": "Cu2SiSe4", "api_key": self.api_key, "e_above_hull": 0.0},
-            {"composition": "Cu2SiSe4", "api_key": self.api_key, "full_phase_diagram": True},
+            {"composition": "Cu2SiSe4", "api_key": self.legacy_api_key},
+            {"composition": "Cu2SiSe4", "api_key": self.legacy_api_key, "e_above_hull": 0.0},
+            {"composition": "Cu2SiSe4", "api_key": self.legacy_api_key, "full_phase_diagram": True},
         ]:
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
@@ -198,31 +244,9 @@ class CompetingPhases(unittest.TestCase):
             else:
                 assert len(cp.entries) == 38
 
-    def test_api_keys_errors(self):
-        api_key_error_start = ValueError(
-            "The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-            "``~/.config/.pmgrc.yaml``;"
-        )
-        with pytest.raises(ValueError) as e:
-            chemical_potentials.CompetingPhases(
-                "ZrO2",
-                api_key="test",
-            )
-        assert str(api_key_error_start) in str(e.value)
-        #
-        assert (
-            "is not a valid Materials Project API "
-            "key, which is required by doped for competing phase generation. See the doped "
-            "installation instructions for details:\n"
-            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-            "-project-api"
-        ) in str(e.value)
-
-        # test all works fine with key from new MP API:
-        assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")
-
-    def test_convergence_setup(self):
-        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=self.api_key)
+    @parameterized_subtest()
+    def test_convergence_setup(self, api_key):
+        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
         # potcar spec doesn't need potcars set up for pmg and it still works
         cp.convergence_setup(potcar_spec=True)
         assert len(cp.metals) == 6
@@ -247,8 +271,9 @@ class CompetingPhases(unittest.TestCase):
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
 
-    def test_vasp_std_setup(self):
-        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=self.api_key)
+    @parameterized_subtest()
+    def test_vasp_std_setup(self, api_key):
+        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
         cp.vasp_std_setup(potcar_spec=True)
         assert len(cp.nonmetals) == 6
         assert len(cp.metals) == 6
@@ -283,36 +308,84 @@ class CompetingPhases(unittest.TestCase):
         assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
 
+    def test_api_keys_errors(self):
+        api_key_error_start = ValueError(
+            "The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
+            "``~/.config/.pmgrc.yaml``;"
+        )
+        with pytest.raises(ValueError) as e:
+            chemical_potentials.CompetingPhases(
+                "ZrO2",
+                api_key="test",
+            )
+        assert str(api_key_error_start) in str(e.value)
+        #
+        assert (
+            "is not a valid Materials Project API "
+            "key, which is required by doped for competing phase generation. See the doped "
+            "installation instructions for details:\n"
+            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+            "-project-api"
+        ) in str(e.value)
 
-class ExtrinsicCompetingPhasesTest(unittest.TestCase):
+        # test all works fine with key from new MP API:
+        assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")
+
+    def test_legacy_API_message(self):
+        """
+        Quick test to check that the message about doped now supporting the new
+        Materials Project API is printed to stdout as expected.
+        """
+        original_stdout = sys.stdout  # Save a reference to the original standard output
+        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
+
+        try:
+            chemical_potentials.CompetingPhases("Si", api_key=self.legacy_api_key)
+            output = sys.stdout.getvalue()  # Return a str containing the printed output
+        finally:
+            sys.stdout = original_stdout  # Reset standard output to its original value.
+
+        print(output)  # for debugging
+        assert (
+            "Note that doped now supports the new Materials Project API, which can be used by updating "
+            "your API key in ~/.pmgrc.yaml or ~/.config/.pmgrc.yaml: "
+            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+            "-project-api"
+        ) in output
+
+
+class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
+    # TODO: Merge with CompetingPhases tests once actual classes merged
     # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
     def setUp(self) -> None:
         self.path = Path(__file__).parents[0]
-        self.api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email A/C
-        self.ex_cp = chemical_potentials.ExtrinsicCompetingPhases(
-            "ZrO2", extrinsic_species="La", e_above_hull=0, api_key=self.api_key
-        )
+        self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
+        self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
 
     def tearDown(self) -> None:
         if Path("competing_phases").is_dir():
             shutil.rmtree("competing_phases")
 
-    def test_init(self):
-        assert len(self.ex_cp.entries) == 2
-        assert self.ex_cp.entries[0].name == "La"  # definite ordering
-        assert self.ex_cp.entries[1].name == "La2Zr2O7"  # definite ordering
-        assert [(entry.data["e_above_hull"] == 0) for entry in self.ex_cp.entries]
+    @parameterized_subtest()
+    def test_init(self, api_key):
+        ex_cp = chemical_potentials.ExtrinsicCompetingPhases(
+            "ZrO2", extrinsic_species="La", e_above_hull=0, api_key=api_key
+        )
+        assert len(ex_cp.entries) == 2
+        assert ex_cp.entries[0].name == "La"  # definite ordering
+        assert ex_cp.entries[1].name == "La2Zr2O7"  # definite ordering
+        assert [(entry.data["e_above_hull"] == 0) for entry in ex_cp.entries]
 
         # names of intrinsic entries: ['O2', 'Zr', 'Zr3O', 'ZrO2']
-        assert len(self.ex_cp.intrinsic_entries) == 4
-        assert self.ex_cp.intrinsic_entries[0].name == "O2"
-        assert self.ex_cp.intrinsic_entries[1].name == "Zr"
-        assert self.ex_cp.intrinsic_entries[2].name == "Zr3O"
-        assert self.ex_cp.intrinsic_entries[3].name == "ZrO2"
-        assert all(entry.data["e_above_hull"] == 0 for entry in self.ex_cp.intrinsic_entries)
+        assert len(ex_cp.intrinsic_entries) == 4
+        assert ex_cp.intrinsic_entries[0].name == "O2"
+        assert ex_cp.intrinsic_entries[1].name == "Zr"
+        assert ex_cp.intrinsic_entries[2].name == "Zr3O"
+        assert ex_cp.intrinsic_entries[3].name == "ZrO2"
+        assert all(entry.data["e_above_hull"] == 0 for entry in ex_cp.intrinsic_entries)
 
         cp = chemical_potentials.ExtrinsicCompetingPhases(
-            "ZrO2", extrinsic_species="La", api_key=self.api_key
+            "ZrO2", extrinsic_species="La", api_key=api_key
         )  # default e_above_hull=0.1
         assert len(cp.entries) == 5
         assert cp.entries[2].name == "La"  # definite ordering, same 1st & 2nd as before
@@ -323,7 +396,7 @@ class ExtrinsicCompetingPhasesTest(unittest.TestCase):
         assert len(cp.intrinsic_entries) == 28
 
 
-class ChemPotAnalyzerTest(unittest.TestCase):
+class ChemPotAnalyzerTestCase(unittest.TestCase):
     def setUp(self):
         self.path = Path(__file__).parents[1].joinpath("examples/competing_phases")
         self.stable_system = "ZrO2"
