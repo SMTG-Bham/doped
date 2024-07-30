@@ -14,9 +14,8 @@ from unittest.mock import patch
 import matplotlib as mpl
 import numpy as np
 import pytest
-from pymatgen.core.sites import PeriodicSite
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.util.testing import PymatgenTest
 from test_analysis import if_present_rm
 
 from doped import analysis
@@ -30,15 +29,15 @@ module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
 
 
-class FiniteSizeChargeCorrectionTest(PymatgenTest):
+class FiniteSizeChargeCorrectionTest(unittest.TestCase):
     """
-    Test functions for getting freysoldt and kumagai corrections.
+    Test functions for getting Freysoldt (FNV) and Kumagai (eFNV) corrections.
     """
 
     def setUp(self):
         self.dielectric = 15.0
 
-        struct = PymatgenTest.get_structure("VO2")
+        struct = Structure.from_file(os.path.join(data_dir, "VO2_POSCAR"))
         struct.make_supercell(3)
         vac = Vacancy(struct, struct.sites[0], charge=-3)
 

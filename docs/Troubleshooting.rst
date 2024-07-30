@@ -14,7 +14,7 @@ message about the origin of the problem, it is likely to be an issue with your v
 
 .. code:: bash
 
-  pip install pymatgen pymatgen-analysis-defects --upgrade
+  pip install pymatgen pymatgen-analysis-defects monty --upgrade
   pip install doped --upgrade
 
 If this does not solve your issue, please check the specific cases noted below. If your issue still isn't
@@ -139,4 +139,4 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
-    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.

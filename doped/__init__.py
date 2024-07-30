@@ -64,16 +64,15 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
     warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
 
-    warnings.filterwarnings("ignore", message="get_vasp_input")  # deprecation warning introduced
-    # in pymatgen>2024.1.6, fixed in our PR: https://github.com/materialsproject/pymatgen/pull/3601
-    # (now merged) -- delete later if pymatgen requirement is updated beyond this
-
     # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
     # otherwise) for the bulk):
     warnings.filterwarnings("ignore", message="Not all sites have property")
 
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
+
+    # SpglibDataset warning introduced in v2.4.1
+    warnings.filterwarnings("ignore", message="dict interface")
 
 
 _ignore_pmg_warnings()

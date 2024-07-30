@@ -26,6 +26,8 @@ from doped.utils.parsing import (
     _get_unrelaxed_defect_structure,
 )
 
+warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
+
 
 def _set_spglib_warnings_env_var():
     """
@@ -48,8 +50,11 @@ def _check_spglib_version():
         warnings.warn(
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by installing spglib with `conda install -c "
-            f"conda-forge spglib` or `pip install git+https://github.com/spglib/spglib "
+            f"spglib warning messages, but can be avoided by:\n"
+            f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
+            f"(to ensure no duplicate installations).\n"
+            f"- Then, install spglib with `conda install -c conda-forge spglib` or "
+            f"`pip install git+https://github.com/spglib/spglib "
             f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
             f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
         )
@@ -299,8 +304,20 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     returns the supercell matrix to convert from the rotated prim_struct to the
     target_struct.
     """
-    # first rotate primitive structure to match target structure:
-    mapping = prim_struct.lattice.find_mapping(target_struct.lattice)
+    possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
+    mapping = next(
+        iter(  # get possible mappings, then sort by R*S, S, R, then return first
+            sorted(
+                possible_mappings,
+                key=lambda x: (
+                    _lattice_matrix_sorting_func(np.dot(x[1].T, x[2])),
+                    _lattice_matrix_sorting_func(x[2]),
+                    _lattice_matrix_sorting_func(x[1]),
+                ),
+            )
+        )
+    )
+
     rotation_matrix = mapping[1]
     if np.allclose(rotation_matrix, -1 * np.eye(3)):
         # pymatgen sometimes gives a rotation matrix of -1 * identity matrix, which is
@@ -309,6 +326,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         supercell_matrix = -1 * mapping[2]
     else:
         supercell_matrix = mapping[2]
+
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
@@ -341,20 +359,19 @@ def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
     """
     try:
         # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
-        transformation_matrix = np.rint(
-            target_struct.lattice.matrix @ np.linalg.inv(prim_struct.lattice.matrix)
+        transformation_matrix = np.dot(
+            target_struct.lattice.matrix, np.linalg.inv(prim_struct.lattice.matrix)
         )
-        if not np.allclose(
-            (prim_struct * transformation_matrix).lattice.matrix,
-            target_struct.lattice.matrix,
-            rtol=5e-3,
-        ):
+        if not np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
             raise ValueError  # if non-integer transformation matrix
 
-        return prim_struct, transformation_matrix
+        return prim_struct, np.rint(transformation_matrix)
 
     except ValueError:  # if non-integer transformation matrix
         prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(prim_struct, target_struct)
+
+    if np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
+        return prim_struct, np.rint(transformation_matrix)
 
     return prim_struct, transformation_matrix
 
@@ -1083,6 +1100,7 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Returns:
         str: Defect point symmetry.
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
@@ -1182,6 +1200,7 @@ def point_symmetry_from_defect_entry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
@@ -1487,6 +1506,7 @@ def point_symmetry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
 

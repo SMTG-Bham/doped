@@ -10,7 +10,7 @@ publication-quality outputs.
 import contextlib
 import os
 import warnings
-from multiprocessing import Pool, Queue, cpu_count
+from multiprocessing import Pool, cpu_count
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
@@ -20,13 +20,15 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
+from pymatgen.core.structure import Structure
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
+from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
-from doped.core import DefectEntry, _guess_and_set_oxi_states_with_timeout, _rough_oxi_state_cost_from_comp
+from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.parsing import (
@@ -162,7 +164,11 @@ def check_and_set_defect_entry_name(
 
 
 def defect_from_structures(
-    bulk_supercell, defect_supercell, return_all_info=False, bulk_voronoi_node_dict=None, oxi_state=None
+    bulk_supercell: Structure,
+    defect_supercell: Structure,
+    return_all_info: bool = False,
+    bulk_voronoi_node_dict: Optional[dict] = None,
+    oxi_state: Optional[Union[int, float, str]] = None,
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
@@ -217,6 +223,7 @@ def defect_from_structures(
             Dictionary of bulk supercell Voronoi node information, for
             further expedited site-matching.
     """
+    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     try:
         def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
     except RuntimeError as exc:
@@ -273,7 +280,7 @@ def defect_from_structures(
                     )
                     raise FileNotFoundError
 
-                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]
+                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
 
             except Exception:  # first time parsing
                 from shakenbreak.input import _get_voronoi_nodes
@@ -339,7 +346,7 @@ def defect_from_structures(
     )
 
 
-def defect_name_from_structures(bulk_structure, defect_structure):
+def defect_name_from_structures(bulk_structure: Structure, defect_structure: Structure):
     """
     Get the doped/SnB defect name using the bulk and defect structures.
 
@@ -362,14 +369,14 @@ def defect_name_from_structures(bulk_structure, defect_structure):
 
 
 def defect_entry_from_paths(
-    defect_path: str,
-    bulk_path: str,
+    defect_path: PathLike,
+    bulk_path: PathLike,
     dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
     charge_state: Optional[int] = None,
-    initial_defect_structure_path: Optional[str] = None,
+    initial_defect_structure_path: Optional[PathLike] = None,
     skip_corrections: bool = False,
     error_tolerance: float = 0.05,
-    bulk_band_gap_path: Optional[str] = None,
+    bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
     **kwargs,
 ):
     """
@@ -386,9 +393,9 @@ def defect_entry_from_paths(
     sets (for site-matching and finite-size charge corrections to work appropriately).
 
     Args:
-        defect_path (str):
+        defect_path (PathLike):
             Path to defect supercell folder (containing at least vasprun.xml(.gz)).
-        bulk_path (str):
+        bulk_path (PathLike):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Ionic + static contributions to the dielectric constant, in the same xyz
@@ -398,7 +405,7 @@ def defect_entry_from_paths(
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
             from the defect calculation outputs.
-        initial_defect_structure_path (str):
+        initial_defect_structure_path (PathLike):
             Path to the initial/unrelaxed defect structure. Only recommended for use
             if structure matching with the relaxed defect structure(s) fails (rare).
             Default is None.
@@ -410,14 +417,24 @@ def defect_entry_from_paths(
             If the estimated error in the defect charge correction, based on the
             variance of the potential in the sampling region is greater than this
             value (in eV), then a warning is raised. (default: 0.05 eV)
-        bulk_band_gap_path (str):
-            Path to bulk OUTCAR file for determining the band gap. If the VBM/CBM
-            occur at reciprocal space points not included in the bulk supercell
-            calculation, you should use this tag to point to a bulk bandstructure
-            calculation instead. Alternatively, you can edit/add the "gap" and "vbm"
-            entries in self.defect_entry.calculation_metadata to match the correct
+        bulk_band_gap_vr (PathLike or Vasprun):
+            Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+            object, from which to determine the bulk band gap and band edge positions.
+            If the VBM/CBM occur at `k`-points which are not included in the bulk
+            supercell calculation, then this parameter should be used to provide the
+            output of a bulk bandstructure calculation so that these are correctly
+            determined.
+            Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+            ``self.defect_entry.calculation_metadata`` to match the correct
             (eigen)values.
-            If None, will use DefectEntry.calculation_metadata["bulk_path"].
+            If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
+            the bulk supercell calculation output).
+
+            Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+            reference for the Fermi level values output by ``doped`` (as this VBM
+            eigenvalue is used as the zero reference), thus affecting the position of
+            the band edges in the defect formation energy plots and doping window /
+            dopability limit functions, and the reference of the reported Fermi levels.
         **kwargs:
             Keyword arguments to pass to ``DefectParser()`` methods
             (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
@@ -436,7 +453,7 @@ def defect_entry_from_paths(
         initial_defect_structure_path=initial_defect_structure_path,
         skip_corrections=skip_corrections,
         error_tolerance=error_tolerance,
-        bulk_band_gap_path=bulk_band_gap_path,
+        bulk_band_gap_vr=bulk_band_gap_vr,
         **kwargs,
     )
     return dp.defect_entry
@@ -445,15 +462,15 @@ def defect_entry_from_paths(
 class DefectsParser:
     def __init__(
         self,
-        output_path: str = ".",
+        output_path: PathLike = ".",
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-        subfolder: Optional[str] = None,
-        bulk_path: Optional[str] = None,
+        subfolder: Optional[PathLike] = None,
+        bulk_path: Optional[PathLike] = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_path: Optional[str] = None,
+        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
         processes: Optional[int] = None,
-        json_filename: Optional[Union[str, bool]] = None,
+        json_filename: Optional[Union[PathLike, bool]] = None,
         parse_projected_eigen: Optional[bool] = None,
         **kwargs,
     ):
@@ -487,7 +504,7 @@ class DefectsParser:
         corrections to work appropriately).
 
         Args:
-            output_path (str):
+            output_path (PathLike):
                 Path to the output directory containing the defect calculation
                 folders (likely the same ``output_path`` used with ``DefectsSet``
                 for file generation in ``doped.vasp``). Default = current directory.
@@ -496,7 +513,7 @@ class DefectsParser:
                 xyz Cartesian basis as the supercell calculations. If not provided,
                 charge corrections cannot be computed and so ``skip_corrections``
                 will be set to ``True``.
-            subfolder (str):
+            subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in the
                 ``output_path`` directory) containing the VASP calculation files to
                 parse (e.g. ``vasp_ncl``, ``vasp_std``, ``vasp_gam`` etc.). If not
@@ -506,7 +523,7 @@ class DefectsParser:
                 (ncl > std > gam) found as ``subfolder``, otherwise uses the defect
                 calculation folder itself with no subfolder (set
                 ``subfolder = "."`` to enforce this).
-            bulk_path (str):
+            bulk_path (PathLike):
                 Path to bulk supercell reference calculation folder. If not
                 specified, searches for folder with name "X_bulk" in the
                 ``output_path`` directory (matching the default ``doped`` name for
@@ -519,27 +536,37 @@ class DefectsParser:
                 If the estimated error in any charge correction, based on the
                 variance of the potential in the sampling region, is greater than
                 this value (in eV), then a warning is raised. (default: 0.05 eV)
-            bulk_band_gap_path (str):
-                Path to bulk OUTCAR file for determining the band gap. If the
-                VBM/CBM occur at reciprocal space points not included in the bulk
-                supercell calculation, you should use this tag to point to a bulk
-                band structure calculation instead. Alternatively, you can edit/add
-                the "gap" and "vbm" entries in
-                ``DefectParser.defect_entry.calculation_metadata`` to match the
-                correct eigenvalues. If ``None`` (default), will calculate
-                "gap"/"vbm" using the outputs at:
-                ``DefectParser.defect_entry.calculation_metadata["bulk_path"]``
+            bulk_band_gap_vr (PathLike or Vasprun):
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+                object, from which to determine the bulk band gap and band edge
+                positions. If the VBM/CBM occur at `k`-points which are not included
+                in the bulk supercell calculation, then this parameter should be used
+                to provide the output of a bulk bandstructure calculation so that
+                these are correctly determined.
+                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                ``self.defect_entry.calculation_metadata`` to match the correct
+                (eigen)values.
+                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
+                (i.e. the bulk supercell calculation output).
+
+                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                reference for the Fermi level values output by ``doped`` (as this VBM
+                eigenvalue is used as the zero reference), thus affecting the position
+                of the band edges in the defect formation energy plots and doping
+                window / dopability limit functions, and the reference of the reported
+                Fermi levels.
             processes (int):
                 Number of processes to use for multiprocessing for expedited parsing.
                 If not set, defaults to one less than the number of CPUs available.
-            json_filename (str):
+                Set to 1 for no multiprocessing.
+            json_filename (PathLike):
                 Filename to save the parsed defect entries dict
                 (``DefectsParser.defect_dict``) to in ``output_path``, to avoid
                 having to re-parse defects when later analysing further and aiding
                 calculation provenance. Can be reloaded using the ``loadfn`` function
                 from ``monty.serialization`` (and then input to ``DefectThermodynamics``
                 etc.). If ``None`` (default), set as
-                ``{Host Chemical Formula}_defect_dict.json``.
+                ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
@@ -575,7 +602,10 @@ class DefectsParser:
         self.error_tolerance = error_tolerance
         self.bulk_path = bulk_path
         self.subfolder = subfolder
-        self.bulk_band_gap_path = bulk_band_gap_path
+        if bulk_band_gap_vr and not isinstance(bulk_band_gap_vr, Vasprun):
+            self.bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
+        else:
+            self.bulk_band_gap_vr = bulk_band_gap_vr
         self.processes = processes
         self.json_filename = json_filename
         self.parse_projected_eigen = parse_projected_eigen
@@ -628,6 +658,7 @@ class DefectsParser:
             }
             # take first entry with non-zero count, else use defect folder itself:
             self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
+        self.subfolder = str(self.subfolder)
 
         possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in str(dir).lower()]
         if self.bulk_path is None:  # determine bulk_path to use
@@ -706,18 +737,14 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
-        if _rough_oxi_state_cost_from_comp(self.bulk_vr.final_structure.composition) > 1e6:
-            self._bulk_oxi_states: Union[dict, bool] = False  # will take very long to guess oxi_state
-        else:
-            queue: Queue = Queue()
-            self._bulk_oxi_states = _guess_and_set_oxi_states_with_timeout(
-                self.bulk_vr.final_structure, queue=queue
-            )
-            if self._bulk_oxi_states:
-                self.bulk_vr.final_structure = queue.get()  # oxi-state decorated structure
-                self._bulk_oxi_states = {
-                    el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements
-                }
+        self._bulk_oxi_states: Union[dict, bool] = False
+        if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
+            self.bulk_vr.final_structure, break_early_if_expensive=True
+        ):
+            self.bulk_vr.final_structure = bulk_struct_w_oxi
+            self._bulk_oxi_states = {
+                el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements  # type: ignore
+            }
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
@@ -1140,7 +1167,7 @@ class DefectsParser:
                 formula = next(
                     iter(self.defect_dict.values())
                 ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-                self.json_filename = f"{formula}_defect_dict.json"
+                self.json_filename = f"{formula}_defect_dict.json.gz"
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
 
@@ -1159,7 +1186,8 @@ class DefectsParser:
         pbar.update()
 
         if result[0] is not None:
-            defect_folder = result[0].calculation_metadata["defect_path"].split("/")[-2]
+            i = -1 if self.subfolder == "." else -2
+            defect_folder = result[0].calculation_metadata["defect_path"].replace("/.", "").split("/")[i]
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
@@ -1203,7 +1231,7 @@ class DefectsParser:
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
-                bulk_band_gap_path=self.bulk_band_gap_path,
+                bulk_band_gap_vr=self.bulk_band_gap_vr,
                 oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
                 parse_projected_eigen=self.parse_projected_eigen,
                 **self.kwargs,
@@ -1288,9 +1316,16 @@ class DefectsParser:
                 provided in format generated by ``doped`` (see tutorials).
                 (Default: None)
             vbm (float):
-                VBM energy to use as Fermi level reference point for analysis.
-                If None (default), will use "vbm" from the calculation_metadata
-                dict attributes of the parsed DefectEntry objects.
+                VBM eigenvalue to use as Fermi level reference point for analysis.
+                If None (default), will use ``"vbm"`` from the ``calculation_metadata``
+                dict attributes of the parsed ``DefectEntry`` objects, which by default
+                is taken from the bulk supercell VBM (unless ``bulk_band_gap_vr`` is set
+                during parsing).
+                Note that ``vbm`` should only affect the reference for the Fermi level
+                values output by ``doped`` (as this VBM eigenvalue is used as the zero
+                reference), thus affecting the position of the band edges in the defect
+                formation energy plots and doping window / dopability limit functions,
+                and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
                 If None (default), will use "gap" from the calculation_metadata
@@ -1344,9 +1379,9 @@ class DefectsParser:
 
 
 def _parse_vr_and_poss_procar(
-    vr_path: str,
+    vr_path: PathLike,
     parse_projected_eigen: Optional[bool] = None,
-    output_path: Optional[str] = None,
+    output_path: Optional[PathLike] = None,
     label: str = "bulk",
     parse_procar: bool = True,
 ):
@@ -1400,9 +1435,9 @@ class DefectParser:
         Create a ``DefectParser`` object, which has methods for parsing the
         results of defect supercell calculations.
 
-        Direct initiation with ``DefectParser()`` is typically not recommended. Rather
-        ``DefectParser.from_paths()`` or ``defect_entry_from_paths()`` are preferred as
-        shown in the doped parsing tutorials.
+        Direct initialisation with ``DefectParser()`` is typically not recommended.
+        Rather ``DefectParser.from_paths()`` or ``defect_entry_from_paths()`` are
+        preferred as shown in the ``doped`` parsing tutorials.
 
         Args:
             defect_entry (DefectEntry):
@@ -1449,16 +1484,16 @@ class DefectParser:
     @classmethod
     def from_paths(
         cls,
-        defect_path: str,
-        bulk_path: Optional[str] = None,
+        defect_path: PathLike,
+        bulk_path: Optional[PathLike] = None,
         bulk_vr: Optional[Vasprun] = None,
         bulk_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
         dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
         charge_state: Optional[int] = None,
-        initial_defect_structure_path: Optional[str] = None,
+        initial_defect_structure_path: Optional[PathLike] = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_path: Optional[str] = None,
+        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
         parse_projected_eigen: Optional[bool] = None,
         **kwargs,
     ):
@@ -1475,9 +1510,9 @@ class DefectParser:
         sets (for site-matching and finite-size charge corrections to work appropriately).
 
         Args:
-            defect_path (str):
+            defect_path (PathLike):
                 Path to defect supercell folder (containing at least ``vasprun.xml(.gz)``).
-            bulk_path (str):
+            bulk_path (PathLike):
                 Path to bulk supercell folder (containing at least ``vasprun.xml(.gz)``).
                 Not required if ``bulk_vr`` is provided.
             bulk_vr (Vasprun):
@@ -1496,7 +1531,7 @@ class DefectParser:
                 Charge state of defect. If not provided, will be automatically determined
                 from defect calculation outputs, or if that fails, using the defect folder
                 name (must end in "_+X" or "_-X" where +/-X is the defect charge state).
-            initial_defect_structure_path (str):
+            initial_defect_structure_path (PathLike):
                 Path to the initial/unrelaxed defect structure. Only recommended for use
                 if structure matching with the relaxed defect structure(s) fails (rare).
                 Default is ``None``.
@@ -1508,15 +1543,24 @@ class DefectParser:
                 If the estimated error in the defect charge correction, based on the
                 variance of the potential in the sampling region, is greater than this
                 value (in eV), then a warning is raised. (default: 0.05 eV)
-            bulk_band_gap_path (str):
-                Path to bulk ``OUTCAR`` file for determining the band gap. If the
-                VBM/CBM occur at reciprocal space points not included in the bulk
-                supercell calculation, you should use this tag to point to a bulk
-                band structure calculation instead. Alternatively, you can edit/add the
-                "gap"/"vbm" entries in ``DefectParser.defect_entry.calculation_metadata``
-                to match the correct eigenvalues.
-                If ``None``, will calculate "gap"/"vbm" using the outputs at:
-                ``DefectParser.defect_entry.calculation_metadata["bulk_path"]``
+            bulk_band_gap_vr (PathLike or Vasprun):
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+                object, from which to determine the bulk band gap and band edge positions.
+                If the VBM/CBM occur at `k`-points which are not included in the bulk
+                supercell calculation, then this parameter should be used to provide the
+                output of a bulk bandstructure calculation so that these are correctly
+                determined.
+                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                ``self.defect_entry.calculation_metadata`` to match the correct
+                (eigen)values.
+                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
+                the bulk supercell calculation output).
+
+                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                reference for the Fermi level values output by ``doped`` (as this VBM
+                eigenvalue is used as the zero reference), thus affecting the position of
+                the band edges in the defect formation energy plots and doping window /
+                dopability limit functions, and the reference of the reported Fermi levels.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & orbitals from the bulk and
                 defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
@@ -1829,7 +1873,7 @@ class DefectParser:
         defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
         defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
-        dp.load_bulk_gap_data(bulk_band_gap_path=bulk_band_gap_path)  # Load band gap data
+        dp.load_bulk_gap_data(bulk_band_gap_vr=bulk_band_gap_vr)  # Load band gap data
 
         if not skip_corrections and defect_entry.charge_state != 0:
             # no finite-size charge corrections by default for neutral defects
@@ -1989,7 +2033,7 @@ class DefectParser:
 
         return skip_corrections
 
-    def load_FNV_data(self, bulk_locpot_dict=None):
+    def load_FNV_data(self, bulk_locpot_dict: Optional[dict] = None):
         """
         Load metadata required for performing Freysoldt correction (i.e. LOCPOT
         planar-averaged potential dictionary).
@@ -2046,31 +2090,31 @@ class DefectParser:
 
         return bulk_locpot_dict
 
-    def load_eFNV_data(self, bulk_site_potentials=None):
+    def load_eFNV_data(self, bulk_site_potentials: Optional[list] = None):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
         site potentials from the OUTCAR files).
 
         Requires "bulk_path" and "defect_path" to be present in
-        DefectEntry.calculation_metadata, and VASP OUTCAR files to be
-        present in these directories. Can read compressed "OUTCAR.gz"
+        ``DefectEntry.calculation_metadata``, and ``VASP`` ``OUTCAR`` files
+        to be present in these directories. Can read compressed ``OUTCAR.gz``
         files. The bulk_site_potentials can be supplied if already
         parsed, for expedited parsing of multiple defects.
 
         Saves the ``bulk_site_potentials`` and ``defect_site_potentials``
         lists (containing the atomic site electrostatic potentials, from
-        -1*np.array(Outcar.electrostatic_potential)) to
-        DefectEntry.calculation_metadata, for use with
-        DefectEntry.get_kumagai_correction().
+        ``-1*np.array(Outcar.electrostatic_potential)``) to
+        ``DefectEntry.calculation_metadata``, for use with
+        ``DefectEntry.get_kumagai_correction()``.
 
         Args:
-            bulk_site_potentials (dict): Atomic site potentials for the
-                bulk supercell, if already parsed. If None (default), will
-                load from OUTCAR(.gz) file in
-                defect_entry.calculation_metadata["bulk_path"]
+            bulk_site_potentials (list):
+                Atomic site potentials for the bulk supercell, if already
+                parsed. If ``None`` (default), will load from ``OUTCAR(.gz)``
+                file in ``defect_entry.calculation_metadata["bulk_path"]``
 
         Returns:
-            bulk_site_potentials for reuse in parsing other defect entries
+            ``bulk_site_potentials`` for reuse in parsing other defect entries
         """
         from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
 
@@ -2198,25 +2242,47 @@ class DefectParser:
 
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
-    def load_bulk_gap_data(self, bulk_band_gap_path=None, use_MP=False, mpid=None, api_key=None):
-        """
-        Get bulk band gap data from a bulk ``vasprun.xml(.gz)`` file located
-        in/at ``bulk_band_gap_path``.
+    def load_bulk_gap_data(
+        self,
+        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
+        use_MP: bool = False,
+        mpid: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        r"""
+        Load the ``"gap"`` and ``"vbm"`` values for the parsed
+        ``DefectEntry``\s.
+
+        If ``bulk_band_gap_vr`` is provided, then these values are parsed from it,
+        else taken from the parsed bulk supercell calculation.
 
         Alternatively, one can specify query the Materials Project (MP) database
         for the bulk gap data, using ``use_MP = True``, in which case the MP entry
         with the lowest number ID and composition matching the bulk will be used,
-        or the MP ID (mpid) of the bulk material to use can be specified. This is
-        not recommended as it will correspond to a severely-underestimated GGA DFT
+        or the MP ID (``mpid``) of the bulk material to use can be specified. This
+        is not recommended as it will correspond to a severely-underestimated GGA DFT
         bandgap!
 
         Args:
-            bulk_band_gap_path (str):
-                Path to bulk ``vasprun.xml(.gz)`` file for determining the band gap.
-                If the VBM/CBM occur at reciprocal space points not included in the bulk
-                supercell calculation, you should use this tag to point to a bulk
-                band-structure calculation instead. If None, will use
-                ``self.defect_entry.calculation_metadata["bulk_path"]``.
+            bulk_band_gap_vr (PathLike or Vasprun):
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+                object, from which to determine the bulk band gap and band edge
+                positions. If the VBM/CBM occur at `k`-points which are not included
+                in the bulk supercell calculation, then this parameter should be used
+                to provide the output of a bulk bandstructure calculation so that
+                these are correctly determined.
+                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                ``self.defect_entry.calculation_metadata`` to match the correct
+                (eigen)values.
+                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
+                (i.e. the bulk supercell calculation output).
+
+                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                reference for the Fermi level values output by ``doped`` (as this VBM
+                eigenvalue is used as the zero reference), thus affecting the position
+                of the band edges in the defect formation energy plots and doping
+                window / dopability limit functions, and the reference of the reported
+                Fermi levels.
             use_MP (bool):
                 If True, will query the Materials Project database for the bulk gap data.
             mpid (str):
@@ -2243,7 +2309,6 @@ class DefectParser:
             )
 
         bulk_sc_structure = self.bulk_vr.initial_structure
-
         band_gap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
         gap_calculation_metadata = {}
 
@@ -2307,7 +2372,7 @@ class DefectParser:
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
 
-        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_path) and (
+        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_vr) and (
             mpid and band_gap is None
         ):
             warnings.warn(
@@ -2316,18 +2381,11 @@ class DefectParser:
             )
             gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
-        if bulk_band_gap_path:
-            bulk_gap_vr_path, multiple = _get_output_files_and_check_if_multiple(
-                "vasprun.xml", bulk_band_gap_path
-            )
-            if multiple:
-                warnings.warn(
-                    f"Multiple `vasprun.xml` files found in specified directory: "
-                    f"{bulk_band_gap_path}. Using {os.path.basename(bulk_gap_vr_path)} to "
-                    f"{_vasp_file_parsing_action_dict['vasprun.xml']}."
-                )
-            bulk_gap_vr = get_vasprun(bulk_gap_vr_path, parse_projected_eigen=False)
-            band_gap, cbm, vbm, _ = bulk_gap_vr.eigenvalue_band_properties
+        if bulk_band_gap_vr:
+            if not isinstance(bulk_band_gap_vr, Vasprun):
+                bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
+
+            band_gap, cbm, vbm, _ = bulk_band_gap_vr.eigenvalue_band_properties
 
         gap_calculation_metadata = {
             "mpid": mpid,

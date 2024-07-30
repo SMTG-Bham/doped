@@ -4,7 +4,7 @@ Tests for the `doped.vasp` module.
 
 import contextlib
 import filecmp
-import json
+import gzip
 import locale
 import os
 import random
@@ -15,13 +15,11 @@ from threading import Thread
 import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
-from monty.json import MontyEncoder
 from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Structure
-from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
-from test_generation import if_present_rm
+from test_generation import _compare_attributes, if_present_rm
 
 from doped.generation import DefectsGenerator
 from doped.vasp import (
@@ -106,8 +104,7 @@ class DefectDictSetTest(unittest.TestCase):
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
-        aaa = AseAtomsAdaptor()
-        self.agcu = aaa.get_structure(atoms)
+        self.agcu = Structure.from_ase_atoms(atoms)
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
@@ -582,7 +579,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json.gz")
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
 
         self.prim_MgO = Structure.from_file(f"{self.example_dir}/MgO/Bulk_relax/CONTCAR")
@@ -599,7 +596,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             ):
                 if_present_rm(i)
 
-        if_present_rm("MgO_defects_generator.json")
+        if_present_rm("MgO_defects_generator.json.gz")
 
     def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
         dds_test_list = [
@@ -751,7 +748,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             elif defect_gen_name == "SQS AgSbTe2 defect_gen":
                 defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
             else:
-                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz")
 
             # randomly choose a defect entry from the defect_gen dict:
             defect_entry = random.choice(list(defect_gen.values()))
@@ -789,7 +786,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cu_defect_gen",
         ]:
             print(f"Testing: {defect_gen_name}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz")
             defect_entry = random.choice(list(defect_gen.values()))
             print(f"Testing DefectRelaxSet with: {defect_entry.name}")
             drs = DefectRelaxSet(defect_entry)
@@ -885,7 +882,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cd_i_supercell_defect_gen",
         ]:
             defect_gen_test_list.append(
-                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz"), defect_gen_name)
             )
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
@@ -946,7 +943,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not drs.bulk_vasp_ncl
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
-        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
+        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json.gz")
         defect_entries = random.sample(list(defect_gen.values()), min(5, len(defect_gen)))
 
         for defect_entry in defect_entries:
@@ -978,7 +975,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         defect_gen_test_list = [
             (
-                DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"),
+                DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz"),
                 defect_gen_name,
             )
             for defect_gen_name in [
@@ -1112,7 +1109,7 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test = DefectRelaxSetTest()
         self.drs_test.setUp()
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json.gz")
         self.structure_matcher = StructureMatcher(
             comparator=ElementComparator(), primitive_cell=False
         )  # ignore oxidation states when comparing structures
@@ -1121,15 +1118,11 @@ class DefectsSetTest(unittest.TestCase):
         # settings):
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
 
-        # Get the current locale setting
-        self.original_locale = locale.getlocale(locale.LC_CTYPE)  # should be UTF-8
-
     def tearDown(self):
-        # reset locale:
-        locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
+        locale.setlocale(locale.LC_ALL, "")  # reset locale
 
         for file in os.listdir():
-            if file.endswith(".json"):
+            if file.endswith(".json.gz"):
                 if_present_rm(file)
 
         for folder in os.listdir():
@@ -1271,8 +1264,13 @@ class DefectsSetTest(unittest.TestCase):
         assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
         # check_generated_vasp_inputs also checks bulk folders
 
-        assert os.path.exists("CdTe_defects_generator.json")
+        assert os.path.exists("CdTe_defects_generator.json.gz")
         CdTe_se_defect_gen.to_json("test_CdTe_defects_generator.json")
+        with (
+            gzip.open("CdTe_defects_generator.json.gz", "rt") as f,
+            open("CdTe_defects_generator.json", "w") as f_out,
+        ):
+            f_out.write(f.read())
         assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
@@ -1411,7 +1409,7 @@ class DefectsSetTest(unittest.TestCase):
                 user_incar_settings=self.CdTe_custom_test_incar_settings,
             )
             defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
-            locale.setlocale(locale.LC_CTYPE, self.original_locale)  # should be UTF-8
+            locale.setlocale(locale.LC_ALL, "")  # resets locale
 
             # assert that the same folders in self.CdTe_data_dir are present in the current directory
             self.check_generated_vasp_inputs(  # tests vasp_gam
@@ -1478,7 +1476,7 @@ class DefectsSetTest(unittest.TestCase):
 
         def initialise_and_write_files(defect_gen_json):
             print(f"Initialising and testing: {defect_gen_json}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json.gz")
             defects_set = DefectsSet(defect_gen)
             if _potcars_available():
                 defects_set.write_files()
@@ -1599,11 +1597,11 @@ class DefectsSetTest(unittest.TestCase):
                 reloaded_defect_entry.sc_defect_frac_coords,
                 ref_defect_entry.sc_defect_frac_coords,
             )
-            assert json.dumps(reloaded_defect_entry, sort_keys=True, cls=MontyEncoder) == json.dumps(
-                ref_defect_entry, sort_keys=True, cls=MontyEncoder
-            )
+            _compare_attributes(reloaded_defect_entry, ref_defect_entry)
 
-        _check_reloaded_defect_entry("Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+        )
 
         if _potcars_available():
             drs.write_nkred_std()
@@ -1617,7 +1615,7 @@ class DefectsSetTest(unittest.TestCase):
         drs.write_nkred_std(unperturbed_poscar=True)
         _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std", defect_entry.defect_supercell)
         _check_reloaded_defect_entry(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json", defect_entry
+            "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
         )
 
         assert not any(i in os.listdir("Ag_Sb_Cs_Te2.90_-2") for i in ["vasp_gam", "vasp_ncl"])
@@ -1627,7 +1625,9 @@ class DefectsSetTest(unittest.TestCase):
         _check_agsbte2_vasp_folder(
             "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, unperturbed_poscar=True
         )  # unperturbed_poscar True by default when write_gam called directly
-        _check_reloaded_defect_entry("Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+        )
 
         if _potcars_available():
             drs.write_ncl()
@@ -1636,7 +1636,7 @@ class DefectsSetTest(unittest.TestCase):
                 "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, unperturbed_poscar=False
             )
             _check_reloaded_defect_entry(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json", defect_entry
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
             )
             assert "bulk" not in os.listdir()  # no bulk folders written yet
 
@@ -1650,7 +1650,7 @@ class DefectsSetTest(unittest.TestCase):
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=False
                 )
                 _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
                 )
 
         if _potcars_available():
@@ -1664,7 +1664,9 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
             )
-            _check_reloaded_defect_entry(f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+            _check_reloaded_defect_entry(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            )
         assert "bulk" not in os.listdir()  # no bulk folders written by default
 
         if _potcars_available():
@@ -1675,7 +1677,7 @@ class DefectsSetTest(unittest.TestCase):
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
                 )
                 _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
                 )
             _check_agsbte2_vasp_folder(
                 "AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, unperturbed_poscar=True
@@ -1690,7 +1692,7 @@ class DefectsSetTest(unittest.TestCase):
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=False
                 )
                 _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
                 )
                 _check_agsbte2_vasp_folder(
                     f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
@@ -1738,7 +1740,7 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"test_pop/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
             )
-            _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+            _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry)
 
         if_present_rm("Ag_Sb_Cs_Te2.90_-2")
         if_present_rm("AgSbTe2_bulk")
@@ -1766,7 +1768,9 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
             )
-            _check_reloaded_defect_entry(f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json", defect_entry)
+            _check_reloaded_defect_entry(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            )
             _check_agsbte2_vasp_folder(
                 f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
             )
