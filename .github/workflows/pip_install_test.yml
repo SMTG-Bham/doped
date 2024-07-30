@@ -40,7 +40,16 @@ jobs:
           sleep 360  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
           pip install doped[tests]  # install only from PyPI
+
+      - name: Install spglib on macOS
+        if: matrix.os == 'macos-14'
+        run: |
           pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF  # avoid spglib warnings
+
+      - name: Install spglib on ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          conda install -c conda-forge spglib  # avoid spglib warnings
 
       - name: Test
         run: |

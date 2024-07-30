@@ -15,7 +15,7 @@ from doped.interface.fermi_solver import FermiSolver, FermiSolverDoped, FermiSol
 
 class FermiSolverTestCase(unittest.TestCase):
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json"
+        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
         self.bulk_dos_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
         self.thermo = loadfn(self.thermo_path)
         self.fs = FermiSolver(self.thermo, self.bulk_dos_path)
@@ -55,7 +55,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=[1, 2, 3],
                 quenching_temperature_range=None,
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
         with pytest.raises(ValueError) as exc:
             self.fs.scan_temperature(
@@ -64,7 +64,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=None,
                 quenching_temperature_range=[1, 2, 3],
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
         with pytest.raises(ValueError) as exc:
             self.fs.scan_temperature(
@@ -73,7 +73,7 @@ class FermiSolverTestCase(unittest.TestCase):
                 annealing_temperature_range=None,
                 quenching_temperature_range=None,
             )
-            print(exc.value)  # for debugging
+        print(exc.value)  # for debugging
 
     def test_get_interpolated_chempots(self):
 
@@ -89,7 +89,7 @@ class FermiSolverTestCase(unittest.TestCase):
 
 class FermiSolverDopedTestCase(unittest.TestCase):
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json"
+        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
         self.bulk_dos_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
         self.thermo = loadfn(self.thermo_path)
         self.fs = FermiSolverDoped(self.thermo, self.bulk_dos_path)
@@ -153,7 +153,7 @@ class FermiSolverDopedTestCase(unittest.TestCase):
 
 class FermiSolverPyScFermiTestCase(unittest.TestCase):
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json"
+        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
         self.bulk_dos_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
         self.thermo = loadfn(self.thermo_path)
         self.fs = FermiSolverPyScFermi(self.thermo, self.bulk_dos_path, multiplicity_scaling=32)
