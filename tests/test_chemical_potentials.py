@@ -113,12 +113,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         """
         cp = chemical_potentials.CompetingPhases("ZnSe", api_key=api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
-        assert len(cp.entries) == 14  # ZnSe2 now present
+        assert len(cp.entries) in {14, 16}  # ZnSe2 present; 2 new Zn entries (mp-264...) with new MP API
         znse2_entry = next(e for e in cp.entries if e.name == "ZnSe2")
         assert znse2_entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
         assert not znse2_entry.data["molecule"]
-        assert np.isclose(znse2_entry.data["energy_per_atom"], -3.080017)
-        assert np.isclose(znse2_entry.data["energy"], -3.080017 * 12)
+        assert np.isclose(znse2_entry.energy_per_atom, -3.394683861)
+        assert np.isclose(znse2_entry.energy, -3.394683861 * 12)
 
     @parameterized_subtest()
     def test_init_full_phase_diagram(self, api_key):
@@ -161,16 +161,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
 
     @parameterized_subtest()
-    def test_init_ytos(self, api_key):
+    def test_init_YTOS(self, api_key):
         # 144 phases on Y-Ti-O-S MP phase diagram
         cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", e_above_hull=0.1, api_key=api_key)
-        assert len(cp.entries) == 115  # 115 phases with default algorithm
+        assert len(cp.entries) in {109, 113}  # legacy and new MP APIs
         self.check_O2_entry(cp)
 
         cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", e_above_hull=0.1, full_phase_diagram=True, api_key=api_key
         )
-        assert len(cp.entries) == 140  # 144 phases on Y-Ti-O-S MP phase diagram, 4 extra O2 phases removed
+        # 144/149 phases on Y-Ti-O-S legacy/new MP phase diagram, 4 extra O2 phases removed
+        assert len(cp.entries) in {140, 145}  # legacy and new MP APIs
         self.check_O2_entry(cp)
 
     def check_O2_entry(self, cp):
@@ -212,11 +213,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 "determine the possible competing phases with the same approach as usual",
             ]:
                 print(sub_message)
-                assert sub_message in str(w[-1].message)
+                assert any(sub_message in str(warning.message) for warning in w)
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 128
             else:
-                assert len(cp.entries) == 60
+                assert len(cp.entries) == 50
             self.check_O2_entry(cp)
 
     def test_unknown_host(self):

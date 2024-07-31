@@ -52,13 +52,15 @@ old_MPRester_property_data = [  # properties to pull for Materials Project entri
     "icsd_id",
     "icsd_ids",  # some entries have icsd_id and some have icsd_ids
     "theoretical",
-    "formation_energy_per_atom",
-    "energy_per_atom",
-    "energy",
+    "formation_energy_per_atom",  # uncorrected with legacy MP API, corrected with new API
+    "energy_per_atom",  # note that with legacy MP API this is uncorrected, but is corrected with new API
+    "energy",  # note that with legacy MP API this is uncorrected, but is corrected with new API
     "total_magnetization",
     "nelements",
     "elements",
-]
+]  # note that, because the energy values in the ``data`` dict are uncorrected with legacy MP API and
+# corrected with the new MP API, we should refrain from using these values when possible. The ``energy``
+# and ``energy_per_atom`` attributes are consistent (corrected in both cases)
 
 MP_API_property_keys = {
     "legacy": {
@@ -76,6 +78,14 @@ MP_API_property_keys = {
 # TODO: Add chemical potential diagram plotting functionality that we had before
 #  with `plot_cplap_ternary` -- using ``ChemicalPotentialGrid`` from Alex PR; code from
 #  pymatgen/analysis/defects/plotting/phases.py may be useful
+
+
+def _get_pretty_formula(entry_data: dict):
+    return entry_data.get("pretty_formula", entry_data.get("formula_pretty", "N/A"))
+
+
+def _get_e_above_hull(entry_data: dict):
+    return entry_data.get("e_above_hull", entry_data.get("energy_above_hull", 0.0))
 
 
 def make_molecule_in_a_box(element: str):
@@ -141,7 +151,7 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     """
     property_key_dict = MP_API_property_keys["legacy"] if legacy_MP else MP_API_property_keys["new"]
     assert len(computed_entry.composition.elements) == 1  # Elemental!
-    formula = computed_entry.data[property_key_dict["pretty_formula"]]
+    formula = _get_pretty_formula(computed_entry.data)
     element = formula[0].upper()
     struct, total_magnetization = make_molecule_in_a_box(element)
     molecular_entry = ComputedStructureEntry(
@@ -430,14 +440,11 @@ def get_entries_in_chemsys(
 
     if e_above_hull is not None:
         MP_full_pd_entries = [
-            entry
-            for entry in MP_full_pd_entries
-            if entry.data[property_key_dict["energy_above_hull"]] <= e_above_hull
+            entry for entry in MP_full_pd_entries if _get_e_above_hull(entry.data) <= e_above_hull
         ]
 
-    MP_full_pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically:
-        key=lambda x: _entries_sorting_func(x, legacy_MP)
-    )
+    # sort by energy above hull, num_species, then alphabetically:
+    MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
 
     if return_all_info:
         return MP_full_pd_entries, property_key_dict, property_data_fields
@@ -491,9 +498,8 @@ def get_entries(
             **kwargs,
         )
 
-    entries.sort(  # sort by energy above hull, num_species, then alphabetically:
-        key=lambda x: _entries_sorting_func(x, legacy_MP)
-    )
+    # sort by energy above hull, num_species, then alphabetically:
+    entries.sort(key=lambda x: _entries_sorting_func(x))
 
     return entries
 
@@ -569,15 +575,16 @@ def _parse_MP_API_key(api_key: Optional[str] = None, legacy_MP_info: bool = Fals
 
 
 def get_MP_summary_docs(
-    chemsys: Union[str, list[str]],
-    api_key: Optional[str] = None,
     entries: Optional[list[ComputedEntry]] = None,
+    chemsys: Optional[Union[str, list[str]]] = None,
+    api_key: Optional[str] = None,
     data_fields: Optional[list[str]] = None,
     **kwargs,
 ):
     """
     Get the corresponding Materials Project (MP) ``SummaryDoc`` documents for
-    computed entries in the input ``chemsys`` chemical system.
+    computed entries in the input ``entries`` list or ``chemsys`` chemical
+    system.
 
     If ``entries`` is provided (which should be a list of ``ComputedEntry``s
     from the Materials Project), then only ``SummaryDoc``s in this chemical
@@ -589,24 +596,12 @@ def get_MP_summary_docs(
     from the corresponding ``SummaryDoc`` attribute to ``ComputedEntry.data``
     for the matching ``ComputedEntry`` in ``entries``
 
-
     Note that this function can only be used with the new Materials Project API,
     as the legacy API does not have the ``SummaryDoc`` functionality (but most of
     the same data is available through the ``property_data`` arguments for the
     legacy-API-compatible functions).
 
     Args:
-        chemsys (str, list[str]):
-            Chemical system to get entries for, in the format "A-B-C" or
-            ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
-        api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding ``SummaryDoc`` documents. Must be
-            a new (not legacy) MP API key! If not supplied, will attempt to
-            read from environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``
-            or ``~/.config/.pmgrc.yaml``) - see the ``doped`` Installation docs page:
-            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
-            -project-api
         entries (list[ComputedEntry]):
             Optional input; list of ``ComputedEntry`` objects for the input chemical
             system. If provided, only ``SummaryDoc``s which match one of these entries
@@ -615,6 +610,18 @@ def get_MP_summary_docs(
             returned. Moreover, all data fields listed in ``data_fields`` will be copied
             from the corresponding ``SummaryDoc`` attribute to ``ComputedEntry.data`` for
             the matching ``ComputedEntry`` in ``entries``.
+        chemsys (str, list[str]):
+            Optional input; chemical system to get entries for, in the format "A-B-C" or
+            ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"]. Either ``entries`` or
+            ``chemsys`` must be provided!
+        api_key (str):
+            Materials Project (MP) API key, needed to access the MP database
+            to obtain the corresponding ``SummaryDoc`` documents. Must be
+            a new (not legacy) MP API key! If not supplied, will attempt to
+            read from environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``
+            or ``~/.config/.pmgrc.yaml``) - see the ``doped`` Installation docs page:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
+            -project-api
         data_fields (list[str]):
             List of data fields to copy from the corresponding ``SummaryDoc``
             attributes to the ``ComputedEntry.data`` objects, if ``entries`` is supplied.
@@ -633,23 +640,23 @@ def get_MP_summary_docs(
             "`get_MP_summary_docs` can only be used with the new Materials Project (MP) API (see "
             "https://next-gen.materialsproject.org/api), but a legacy MP API key was supplied!"
         )
+    if entries is None and chemsys is None:
+        raise ValueError("Either `entries` or `chemsys` must be provided!")
+
+    if entries:
+        summary_search_kwargs = {
+            "material_ids": [entry.data["material_id"] for entry in entries],
+            **kwargs,
+        }
+    else:
+        assert chemsys is not None
+        summary_search_kwargs = {"chemsys": _get_all_chemsyses("-".join(chemsys)), **kwargs}
 
     with MPRester(api_key) as mpr:
-        MP_full_pd_docs = {
-            doc.material_id: doc
-            for doc in mpr.materials.summary.search(
-                chemsys=_get_all_chemsyses("-".join(chemsys)), **kwargs
-            )
-        }
+        MP_docs = {doc.material_id: doc for doc in mpr.materials.summary.search(**summary_search_kwargs)}
 
     if not entries:
-        return MP_full_pd_docs
-
-    MP_docs = {
-        material_id: doc
-        for material_id, doc in MP_full_pd_docs.items()
-        if material_id in [entry.data["material_id"] for entry in entries]
-    }
+        return MP_docs
 
     if data_fields is None:
         data_fields = ["band_gap", "total_magnetization", "database_IDs"]  # ICSD IDs and possibly others
@@ -676,22 +683,16 @@ def get_MP_summary_docs(
     return MP_docs
 
 
-def _entries_sorting_func(entry: ComputedEntry, legacy_MP=False, use_e_per_atom: bool = False):
+def _entries_sorting_func(entry: ComputedEntry, use_e_per_atom: bool = False):
     """
     Function to sort ``ComputedEntry``s by energy above hull, then by the
     number of elements in the formula, then alphabetically by formula.
 
-    Usage: entries_list.sort(key=_entries_sorting_func)
+    Usage: ``entries_list.sort(key=_entries_sorting_func)``
 
     Args:
         entry (ComputedEntry):
             ComputedEntry object to sort.
-        legacy_MP (bool):
-            If ``True``, use the legacy Materials Project property data fields
-            (i.e. ``"e_above_hull"``, ``"pretty_formula"`` etc.), rather than
-            the new Materials Project API format (``"energy_above_hull"``,
-            ``"formula_pretty"`` etc.).
-            Default is ``False``.
         use_e_per_atom (bool):
             If ``True``, sort by energy per atom rather than energy above hull.
             Default is ``False``.
@@ -702,11 +703,7 @@ def _entries_sorting_func(entry: ComputedEntry, legacy_MP=False, use_e_per_atom:
             in the formula, and formula name of the entry.
     """
     return (
-        (
-            entry.energy_per_atom
-            if use_e_per_atom
-            else entry.data[MP_API_property_keys["legacy" if legacy_MP else "new"]["energy_above_hull"]]
-        ),
+        entry.energy_per_atom if use_e_per_atom else _get_e_above_hull(entry.data),
         len(Composition(entry.name).as_dict()),
         entry.name,
     )
@@ -775,18 +772,40 @@ def prune_entries_to_border_candidates(
         bordering_entry.name for bordering_entry in bordering_entries
     ]  # compositions which border the host with EaH=0, according to MP, so we include all phases with
     # these compositions up to EaH=e_above_hull (which we've already pruned to)
+    # for determining phases which alter the chemical potential limits when renormalised, only need to
+    # retain the EaH=0 entries from above, so we use this reduced PD to save compute time when looping
+    # below:
+    reduced_pd_entries = {
+        entry
+        for entry in bordering_entries
+        if entry.data.get("energy_above_hull", entry.data.get("e_above_hull", 0)) == 0
+    }
 
     # then add any other phases that would border the host material on the phase diagram, if their
     # relative energy was downshifted by ``e_above_hull``:
-    for entry in entries:  # only check if not already bordering; can just use names for this:
-        if entry.name not in bordering_entry_names:
+    # only check if not already bordering; can just use names for this:
+    entries_to_test = [entry for entry in entries if entry.name not in bordering_entry_names]
+    entries_to_test.sort(key=_entries_sorting_func)  # sort by energy above hull
+    # to save unnecessary looping, whenever we encounter a phase that is not being added to the border
+    # candidates list, skip all following phases with this composition (because they have higher
+    # energies above hull (because we've sorted by this) and so will also not border the host):
+    compositions_to_skip = []
+    for entry in entries_to_test:
+        if entry.name not in compositions_to_skip:
             # decrease entry energy per atom by ``e_above_hull`` eV/atom
             renormalised_entry = _renormalise_entry(entry, e_above_hull)
-            new_phase_diagram = PhaseDiagram([*phase_diagram.entries, renormalised_entry])
+            new_phase_diagram = PhaseDiagram(
+                [*reduced_pd_entries, bulk_computed_entry, renormalised_entry]
+            )
             shifted_MP_chempots = get_chempots_from_phase_diagram(bulk_computed_entry, new_phase_diagram)
+            shifted_MP_bordering_phases = {
+                phase for limit in shifted_MP_chempots for phase in limit.split("-")
+            }
 
-            if shifted_MP_chempots != MP_chempots:  # new bordering phase, add to list
+            if shifted_MP_bordering_phases != MP_bordering_phases:  # new bordering phase, add to list
                 bordering_entries.append(entry)
+            else:
+                compositions_to_skip.append(entry.name)
 
     return bordering_entries
 
@@ -887,7 +906,7 @@ class CompetingPhases:
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
-            get_entries_in_chemsys(
+            get_entries_in_chemsys(  # get all entries in the chemical system, with EaH<``e_above_hull``
                 self.chemsys,
                 api_key=self.api_key,
                 e_above_hull=self.e_above_hull,
@@ -896,7 +915,7 @@ class CompetingPhases:
         )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
-        # convert any gaseous elemental entries to molecules in a box, and prune to a_above_hull range
+        # convert any gaseous elemental entries to molecules in a box
         formatted_entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
         # get bulk entry, and warn if not stable or not present on MP database:
@@ -904,7 +923,7 @@ class CompetingPhases:
             entry
             for entry in formatted_entries  # sorted by e_above_hull above in get_entries_in_chemsys
             if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
-            and entry.data[self.property_key_dict["energy_above_hull"]] == 0.0
+            and _get_e_above_hull(entry.data) == 0.0
         ]:
             bulk_computed_entry = bulk_entries[0]  # lowest energy entry for bulk (after sorting)
         else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
@@ -971,15 +990,13 @@ class CompetingPhases:
         else:  # self.full_phase_diagram = True
             self.entries = formatted_entries
 
-        self.entries.sort(  # sort by energy above hull, num_species, then alphabetically
-            key=lambda x: _entries_sorting_func(x, self.legacy_MP)
-        )
+        # sort by energy above hull, num_species, then alphabetically:
+        self.entries.sort(key=lambda x: _entries_sorting_func(x))
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
             self.MP_docs = get_MP_summary_docs(
-                self.chemsys,
-                api_key=self.api_key,
                 entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
+                api_key=self.api_key,
             )
 
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
@@ -1094,7 +1111,7 @@ class CompetingPhases:
                 dict_set.write_input(fname, **kwargs)
 
     def _competing_phase_name(self, entry):
-        rounded_eah = round(entry.data[self.property_key_dict["energy_above_hull"]], 4)
+        rounded_eah = round(_get_e_above_hull(entry.data), 4)
         if np.isclose(rounded_eah, 0):
             return f"{entry.name}_EaH_0"
         return f"{entry.name}_EaH_{rounded_eah}"
@@ -1271,25 +1288,23 @@ class CompetingPhases:
 
         for entry in entries.copy():
             if (
-                entry.data[self.property_key_dict["pretty_formula"]] in elemental_diatomic_gases
-                and entry.data[self.property_key_dict["energy_above_hull"]] == 0.0
+                _get_pretty_formula(entry.data) in elemental_diatomic_gases
+                and _get_e_above_hull(entry.data) == 0.0
             ):  # only once for each matching gaseous elemental entry
                 molecular_entry = make_molecular_entry(entry, legacy_MP=self.legacy_MP)
                 if not any(
                     entry.data["molecule"]
-                    and entry.data[self.property_key_dict["pretty_formula"]]
-                    == molecular_entry.data[self.property_key_dict["pretty_formula"]]
+                    and _get_pretty_formula(entry.data) == _get_pretty_formula(molecular_entry.data)
                     for entry in formatted_entries
                 ):  # first entry only
                     entries.append(molecular_entry)
                     formatted_entries.append(molecular_entry)
-            elif entry.data[self.property_key_dict["pretty_formula"]] not in elemental_diatomic_gases:
+            elif _get_pretty_formula(entry.data) not in elemental_diatomic_gases:
                 entry.data["molecule"] = False
                 formatted_entries.append(entry)
 
-        formatted_entries.sort(  # sort by energy above hull, num_species, then alphabetically
-            key=lambda x: _entries_sorting_func(x, self.legacy_MP)
-        )
+        # sort by energy above hull, num_species, then alphabetically:
+        formatted_entries.sort(key=lambda x: _entries_sorting_func(x))
 
         return formatted_entries
 
@@ -1520,13 +1535,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
                     self.entries += single_bordering_sub_el_entries
 
-        self.MP_full_pd_entries.sort(  # sort by energy above hull, num_species, then alphabetically
-            key=lambda x: _entries_sorting_func(x, self.legacy_MP)
-        )
+        # sort all entries by energy above hull, num_species, then alphabetically:
+        self.MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
-        self.entries.sort(  # sort by energy above hull, num_species, then alphabetically
-            key=lambda x: _entries_sorting_func(x, self.legacy_MP)
-        )
+        self.entries.sort(key=lambda x: _entries_sorting_func(x))
 
 
 class CompetingPhasesAnalyzer:
