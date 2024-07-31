@@ -649,7 +649,7 @@ def get_MP_summary_docs(
             **kwargs,
         }
     else:
-        assert chemsys is not None
+        assert chemsys is not None  # typing
         summary_search_kwargs = {"chemsys": _get_all_chemsyses("-".join(chemsys)), **kwargs}
 
     with MPRester(api_key) as mpr:
