@@ -203,21 +203,22 @@ class CompetingPhasesTestCase(unittest.TestCase):
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
             print([str(warning.message) for warning in w])  # for debugging
-            assert len([warning for warning in w if "You are using" not in str(warning.message)]) == 1
-            for sub_message in [
-                "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
-                "respect to competing phases, having an energy above hull of 0.1701 eV/atom.",
-                "Formally, this means that the host material is unstable and so has no chemical "
-                "potential limits; though in reality there may be errors in the MP energies",
-                "Here we downshift the host compound entry to the convex hull energy, and then "
-                "determine the possible competing phases with the same approach as usual",
-            ]:
-                print(sub_message)
-                assert any(sub_message in str(warning.message) for warning in w)
+            if len(api_key) != 32:  # recalculated energy for Na2FePO4F on new MP API, now on hull
+                assert len([warning for warning in w if "You are using" not in str(warning.message)]) == 1
+                for sub_message in [
+                    "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
+                    "respect to competing phases, having an energy above hull of 0.1701 eV/atom.",
+                    "Formally, this means that the host material is unstable and so has no chemical "
+                    "potential limits; though in reality there may be errors in the MP energies",
+                    "Here we downshift the host compound entry to the convex hull energy, and then "
+                    "determine the possible competing phases with the same approach as usual",
+                ]:
+                    print(sub_message)
+                    assert any(sub_message in str(warning.message) for warning in w)
             if cp_settings.get("full_phase_diagram"):
-                assert len(cp.entries) == 128
+                assert len(cp.entries) in {128, 173}  # legacy, new MP APIs
             else:
-                assert len(cp.entries) == 50
+                assert len(cp.entries) in {50, 68}  # legacy, new MP APIs
             self.check_O2_entry(cp)
 
     def test_unknown_host(self):
