@@ -26,8 +26,6 @@ from doped.utils.parsing import (
     _get_unrelaxed_defect_structure,
 )
 
-warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
-
 
 def _set_spglib_warnings_env_var():
     """
@@ -50,13 +48,15 @@ def _check_spglib_version():
         warnings.warn(
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by:\n"
-            f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
-            f"(to ensure no duplicate installations).\n"
-            f"- Then, install spglib with `conda install -c conda-forge spglib` or "
-            f"`pip install git+https://github.com/spglib/spglib "
-            f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
-            f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
+            f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
+            f"spglib`."
+            # No longer required as of spglib v2.5:
+            # f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
+            # f"(to ensure no duplicate installations).\n"
+            # f"- Then, install spglib with `conda install -c conda-forge spglib` or "
+            # f"`pip install git+https://github.com/spglib/spglib "
+            # f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
+            # f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
         )
 
 
@@ -1100,7 +1100,6 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Returns:
         str: Defect point symmetry.
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
@@ -1200,7 +1199,6 @@ def point_symmetry_from_defect_entry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
@@ -1506,7 +1504,6 @@ def point_symmetry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
 
