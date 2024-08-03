@@ -810,7 +810,7 @@ def prune_entries_to_border_candidates(
     return bordering_entries
 
 
-def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=False):
+def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=False, ndigits=3) -> str:
     """
     Get the ``doped`` name for a competing phase entry from the Materials
     Project (MP) database.
@@ -829,6 +829,9 @@ def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=F
             Whether to regenerate the ``doped`` name for the competing
             phase, if ``entry.data["doped_name"]`` already set.
             Default is False.
+        ndigits (int):
+            Number of digits to round the energy above hull value (in
+            eV/atom) to. Default is 3.
 
     Returns:
         doped_name (str):
@@ -836,7 +839,7 @@ def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=F
             name when generating calculation inputs.
     """
     if not entry.data.get("doped_name") or regenerate:  # not set, so generate
-        rounded_eah = round(_get_e_above_hull(entry.data), 4)
+        rounded_eah = round(_get_e_above_hull(entry.data), ndigits)
         if np.isclose(rounded_eah, 0):
             rounded_eah = 0
         entry.data["doped_name"] = (
@@ -844,6 +847,33 @@ def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=F
         )
 
     return entry.data.get("doped_name")
+
+
+def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
+    """
+    Given an input list of ``ComputedStructureEntry`` objects, sets the
+    ``entry.data["doped_name"]`` values using
+    ``get_and_set_competing_phase_name``, and increases ``ndigits`` (rounding
+    for energy above hull in name) dynamically from 3 -> 4 -> 5 to ensure no
+    duplicate names.
+    """
+    ndigits = 3
+    entry_names = [get_and_set_competing_phase_name(entry, ndigits=ndigits) for entry in entries]
+    while duplicate_entries := [
+        entries[i] for i, name in enumerate(entry_names) if entry_names.count(name) > 1
+    ]:
+        if ndigits == 5:
+            warnings.warn(
+                f"Duplicate entry names found for generated competing phases: "
+                f"{get_and_set_competing_phase_name(duplicate_entries[0])}!"
+            )
+            break
+        ndigits += 1
+        _duplicate_entry_names = [
+            get_and_set_competing_phase_name(entry, regenerate=True, ndigits=ndigits)
+            for entry in duplicate_entries
+        ]
+        entry_names = [get_and_set_competing_phase_name(entry) for entry in entries]
 
 
 class CompetingPhases:
@@ -1035,7 +1065,7 @@ class CompetingPhases:
 
         # sort by energy above hull, num_species, then alphabetically:
         self.entries.sort(key=lambda x: _entries_sorting_func(x))
-        _names = [get_and_set_competing_phase_name(entry) for entry in self.entries]  # set names
+        _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
             self.MP_docs = get_MP_summary_docs(
@@ -1582,7 +1612,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         self.MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
         self.entries.sort(key=lambda x: _entries_sorting_func(x))
-        _names = [get_and_set_competing_phase_name(entry) for entry in self.entries]  # set doped names
+        _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
 
 class CompetingPhasesAnalyzer:
