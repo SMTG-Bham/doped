@@ -713,7 +713,7 @@ def prune_entries_to_border_candidates(
     entries: list[ComputedEntry],
     bulk_computed_entry: ComputedEntry,
     phase_diagram: Optional[PhaseDiagram] = None,
-    e_above_hull: float = 0.1,
+    e_above_hull: float = 0.05,
 ):
     """
     Given an input list of ``ComputedEntry``/``ComputedStructureEntry``s
@@ -722,7 +722,7 @@ def prune_entries_to_border_candidates(
     border the host on the phase diagram (and therefore be a competing phase
     which determines the host chemical potential limits), allowing for an error
     tolerance for the semi-local DFT database energies (``e_above_hull``, set
-    to ``self.e_above_hull`` 0.1 eV/atom by default).
+    to ``self.e_above_hull`` 0.05 eV/atom by default).
 
     If ``phase_diagram`` is provided then this is used as the reference
     phase diagram, otherwise it is generated from ``entries`` and
@@ -749,7 +749,7 @@ def prune_entries_to_border_candidates(
             All phases that would border the host material on the phase
             diagram, if their relative energy was downshifted by
             ``e_above_hull``, are included.
-            (Default is 0.1 eV/atom).
+            (Default is 0.05 eV/atom).
 
     Returns:
         list[ComputedEntry]:
@@ -850,7 +850,7 @@ class CompetingPhases:
     def __init__(
         self,
         composition: Union[str, Composition],
-        e_above_hull: float = 0.1,
+        e_above_hull: float = 0.05,
         api_key: Optional[str] = None,
         full_phase_diagram: bool = False,
     ):
@@ -862,10 +862,14 @@ class CompetingPhases:
         For this, the Materials Project (MP) database is queried using the
         ``MPRester`` API, and any calculated compounds which `could` border
         the host material within an error tolerance for the semi-local DFT
-        database energies (``e_above_hull``, 0.1 eV/atom by default) are
+        database energies (``e_above_hull``, 0.05 eV/atom by default) are
         generated, along with the elemental reference phases.
         Diatomic gaseous molecules are generated as molecules-in-a-box as
         appropriate (e.g. for O2, F2, H2 etc).
+
+        Often ``e_above_hull`` can be lowered to reduce the number of
+        calculations while retaining good accuracy relative to the typical
+        error of defect calculations.
 
         Args:
             composition (str, ``Composition``):
@@ -881,7 +885,10 @@ class CompetingPhases:
                 All phases that would border the host material on the phase
                 diagram, if their relative energy was downshifted by
                 ``e_above_hull``, are included.
-                (Default is 0.1 eV/atom).
+                Often ``e_above_hull`` can be lowered to reduce the number of
+                calculations while retaining good accuracy relative to the
+                typical error of defect calculations.
+                (Default is 0.05 eV/atom).
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
                 database for competing phase generation. If not supplied, will
@@ -1350,7 +1357,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         self,
         composition: Union[str, Composition],
         extrinsic_species: Union[str, Iterable],
-        e_above_hull: float = 0.1,
+        e_above_hull: float = 0.05,
         full_sub_approach: bool = False,
         codoping: bool = False,
         api_key: Optional[str] = None,
@@ -1360,6 +1367,10 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         This code uses the Materials Project (MP) phase diagram data along with
         the ``e_above_hull`` error range to generate potential competing
         phases.
+
+        Often ``e_above_hull`` can be lowered to reduce the number of
+        calculations while retaining good accuracy relative to the typical
+        error of defect calculations.
 
         Args:
             composition (str, Composition):
@@ -1378,7 +1389,12 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
                 Any phases that would border the host material on the phase diagram, if their
                 relative energy was downshifted by ``e_above_hull``, are included.
-                Default is 0.1 eV/atom.
+
+                Often ``e_above_hull`` can be lowered to reduce the number of
+                calculations while retaining good accuracy relative to the typical
+                error of defect calculations.
+
+                Default is 0.05 eV/atom.
             full_sub_approach (bool):
                 Generate competing phases by considering the full phase diagram, including
                 chemical potential limits with multiple extrinsic phases. Only recommended when
