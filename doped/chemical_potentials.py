@@ -810,6 +810,42 @@ def prune_entries_to_border_candidates(
     return bordering_entries
 
 
+def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=False):
+    """
+    Get the ``doped`` name for a competing phase entry from the Materials
+    Project (MP) database.
+
+    The default naming convention in ``doped`` for competing phases is:
+    ``"{Chemical Formula}_{Space Group}_EaH_{MP Energy above Hull}"``.
+    This is stored in the ``entry.data["doped_name"]`` key-value pair.
+    If this value is already set, then this function just returns the
+    previously-generated ``doped`` name, unless ``regenerate=True``.
+
+    Args:
+        entry (ComputedStructureEntry):
+            ``pymatgen`` ``ComputedStructureEntry`` object for the
+            competing phase.
+        regenerate (bool):
+            Whether to regenerate the ``doped`` name for the competing
+            phase, if ``entry.data["doped_name"]`` already set.
+            Default is False.
+
+    Returns:
+        doped_name (str):
+            The ``doped`` name for the competing phase, to use as folder
+            name when generating calculation inputs.
+    """
+    if not entry.data.get("doped_name") or regenerate:  # not set, so generate
+        rounded_eah = round(_get_e_above_hull(entry.data), 4)
+        if np.isclose(rounded_eah, 0):
+            rounded_eah = 0
+        entry.data["doped_name"] = (
+            f"{entry.name}_{entry.structure.get_space_group_info()[0]}_EaH_{rounded_eah}"
+        )
+
+    return entry.data.get("doped_name")
+
+
 class CompetingPhases:
     def __init__(
         self,
@@ -992,6 +1028,7 @@ class CompetingPhases:
 
         # sort by energy above hull, num_species, then alphabetically:
         self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        _names = [get_and_set_competing_phase_name(entry) for entry in self.entries]  # set names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
             self.MP_docs = get_MP_summary_docs(
@@ -1077,13 +1114,9 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
+                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
                 # TODO: competing_phases folder name should be an optional parameter, and rename default
                 #  to something that isn't so ugly? CompetingPhases?
-                # TODO: Naming should be done in __init__ to ensure consistency and efficiency. Watch
-                #  out for cases where rounding can give same name (e.g. Te!) - should use
-                #  {formula}_MP_{mpid}_EaH_{round(e_above_hull,4)} as naming convention, to prevent any
-                #  rare cases of overwriting -- should use space-group in names!
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1107,14 +1140,8 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"competing_phases/{self._competing_phase_name(e)}/kpoint_converge/{kname}"
+                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
-
-    def _competing_phase_name(self, entry):
-        rounded_eah = round(_get_e_above_hull(entry.data), 4)
-        if np.isclose(rounded_eah, 0):
-            return f"{entry.name}_EaH_0"
-        return f"{entry.name}_EaH_{rounded_eah}"
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
@@ -1189,7 +1216,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
+            fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1206,7 +1233,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
+            fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -1230,7 +1257,7 @@ class CompetingPhases:
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
-                fname = f"competing_phases/{self._competing_phase_name(e)}/vasp_std"
+                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
                 dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
@@ -1539,6 +1566,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         self.MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
         self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        _names = [get_and_set_competing_phase_name(entry) for entry in self.entries]  # set doped names
 
 
 class CompetingPhasesAnalyzer:
