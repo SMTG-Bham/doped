@@ -862,18 +862,18 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
     while duplicate_entries := [
         entries[i] for i, name in enumerate(entry_names) if entry_names.count(name) > 1
     ]:
+        ndigits += 1
         if ndigits == 5:
             warnings.warn(
                 f"Duplicate entry names found for generated competing phases: "
                 f"{get_and_set_competing_phase_name(duplicate_entries[0])}!"
             )
             break
-        ndigits += 1
         _duplicate_entry_names = [
             get_and_set_competing_phase_name(entry, regenerate=True, ndigits=ndigits)
             for entry in duplicate_entries
         ]
-        entry_names = [get_and_set_competing_phase_name(entry) for entry in entries]
+        entry_names = [get_and_set_competing_phase_name(entry, regenerate=False) for entry in entries]
 
 
 class CompetingPhases:

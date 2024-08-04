@@ -185,6 +185,61 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(result[0].data["energy_per_atom"], -4.94795546875)
 
     @parameterized_subtest()
+    def test_entry_naming(self, api_key):
+        """
+        Test the naming functions for competing phase entries in ``doped``,
+        including rounding to "_0" and increasing the number of digits if
+        duplicates are encountered.
+        """
+        cdte_cp = chemical_potentials.CompetingPhases("CdTe", api_key=api_key)
+        if len(api_key) != 32:
+            assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
+                "Cd_P6_3/mmc_EaH_0",
+                "Te_P3_121_EaH_0",
+                "CdTe_F-43m_EaH_0",
+                "Te_P3_221_EaH_0",
+                "Cd_Fm-3m_EaH_0.001",
+                "Cd_R-3m_EaH_0.001",
+                "CdTe_P6_3mc_EaH_0.003",
+                "CdTe_Cmc2_1_EaH_0.006",
+                "Cd_P6_3/mmc_EaH_0.018",
+                "Te_C2/m_EaH_0.044",
+                "Te_Pm-3m_EaH_0.047",
+                "Te_Pmma_EaH_0.047",
+                "Te_Pmc2_1_EaH_0.049",
+            ]
+        else:  # slightly different for new MP API, Te entries the same
+            for i in [
+                "Te_P3_121_EaH_0",
+                "Te_P3_221_EaH_0",
+                "Te_C2/m_EaH_0.044",
+                "Te_Pm-3m_EaH_0.047",
+                "Te_Pmma_EaH_0.047",
+                "Te_Pmc2_1_EaH_0.049",
+            ]:
+                assert i in [entry.data["doped_name"] for entry in cdte_cp.entries]
+
+        # test case when the EaH rounding needs to be dynamically updated:
+        # (this will be quite a rare case, as it requires two phases with the same formula, space group
+        # and energy above hull to 1 meV/atom
+        from copy import deepcopy
+
+        cds_cp = chemical_potentials.CompetingPhases("CdS", api_key=api_key)
+        assert "S_Pnnm_EaH_0.014" in [entry.data["doped_name"] for entry in cds_cp.entries]
+        new_entry = deepcopy(
+            next([entry for entry in cds_cp.entries if entry.data["doped_name"] == "S_Pnnm_EaH_0.014"])
+        )  # duplicate entry to force renaming
+        if len(api_key) != 32:
+            new_entry.data["e_above_hull"] += 2e-4
+        else:
+            new_entry.data["energy_above_hull"] += 2e-4
+        chemical_potentials._name_entries_and_handle_duplicates([*cds_cp.entries, new_entry])
+        entry_names = [entry.data["doped_name"] for entry in [*cds_cp.entries, new_entry]]
+        assert "S_Pnnm_EaH_0.014" not in entry_names
+        assert "S_Pnnm_EaH_0.0141" in entry_names
+        assert "S_Pnnm_EaH_0.0143" in entry_names
+
+    @parameterized_subtest()
     def test_unstable_host(self, api_key):
         """
         Test generating CompetingPhases with a composition that's unstable on
