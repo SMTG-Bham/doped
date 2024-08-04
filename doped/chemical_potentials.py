@@ -810,7 +810,9 @@ def prune_entries_to_border_candidates(
     return bordering_entries
 
 
-def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=False, ndigits=3) -> str:
+def get_and_set_competing_phase_name(
+    entry: Union[ComputedStructureEntry, ComputedEntry], regenerate=False, ndigits=3
+) -> str:
     """
     Get the ``doped`` name for a competing phase entry from the Materials
     Project (MP) database.
@@ -822,7 +824,7 @@ def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=F
     previously-generated ``doped`` name, unless ``regenerate=True``.
 
     Args:
-        entry (ComputedStructureEntry):
+        entry (ComputedStructureEntry, ComputedEntry):
             ``pymatgen`` ``ComputedStructureEntry`` object for the
             competing phase.
         regenerate (bool):
@@ -842,9 +844,8 @@ def get_and_set_competing_phase_name(entry: ComputedStructureEntry, regenerate=F
         rounded_eah = round(_get_e_above_hull(entry.data), ndigits)
         if np.isclose(rounded_eah, 0):
             rounded_eah = 0
-        entry.data["doped_name"] = (
-            f"{entry.name}_{entry.structure.get_space_group_info()[0]}_EaH_{rounded_eah}"
-        )
+        space_group = entry.structure.get_space_group_info()[0] if hasattr(entry, "structure") else "NA"
+        entry.data["doped_name"] = f"{entry.name}_{space_group}_EaH_{rounded_eah}"
 
     return entry.data.get("doped_name")
 
@@ -1151,9 +1152,7 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
-                # TODO: competing_phases folder name should be an optional parameter, and rename default
-                #  to something that isn't so ugly? CompetingPhases?
+                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1177,7 +1176,7 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
+                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
 
     # TODO: Add vasp_ncl_setup()
@@ -1253,7 +1252,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
+            fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1270,7 +1269,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
+            fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -1294,7 +1293,7 @@ class CompetingPhases:
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
-                fname = f"competing_phases/{get_and_set_competing_phase_name(e)}/vasp_std"
+                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
                 dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
@@ -1373,16 +1372,7 @@ class CompetingPhases:
         return formatted_entries
 
 
-# TODO: This doesn't need to be a whole extra class right? Better just amalgamated?
 class ExtrinsicCompetingPhases(CompetingPhases):
-    """
-    This class generates the competing phases that need to be calculated to
-    obtain the chemical potential limits when doping with extrinsic species /
-    impurities.
-
-    Ensures that only the necessary additional competing phases are generated.
-    """
-
     def __init__(
         self,
         composition: Union[str, Composition],
@@ -1394,9 +1384,22 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         full_phase_diagram: bool = False,
     ):
         """
-        This code uses the Materials Project (MP) phase diagram data along with
-        the ``e_above_hull`` error range to generate potential competing
-        phases.
+        Class to generate VASP input files for competing phases involving
+        extrinsic (dopant/impurity) elements, which determine the chemical
+        potential limits for those elements in the host compound.
+
+        Only extrinsic competing phases are contained in the
+         ``ExtrinsicCompetingPhases.entries`` list (used for input file generation),
+         while the `intrinsic` competing phases for the host compound are stored in
+         ``ExtrinsicCompetingPhases.intrinsic_entries``.
+
+        For this, the Materials Project (MP) database is queried using the
+        ``MPRester`` API, and any calculated compounds which `could` border
+        the host material within an error tolerance for the semi-local DFT
+        database energies (``e_above_hull``, 0.05 eV/atom by default) are
+        generated, along with the elemental reference phases.
+        Diatomic gaseous molecules are generated as molecules-in-a-box as
+        appropriate (e.g. for O2, F2, H2 etc).
 
         Often ``e_above_hull`` can be lowered to reduce the number of
         calculations while retaining good accuracy relative to the typical
@@ -1455,8 +1458,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 downshifted by ``e_above_hull`` eV/atom.
                 (Default is ``False``).
         """
-        # competing phases & entries of the OG system:
-        super().__init__(
+        super().__init__(  # competing phases & entries of the OG system:
             composition=composition,
             e_above_hull=e_above_hull,
             api_key=api_key,
@@ -1651,7 +1653,7 @@ class CompetingPhasesAnalyzer:
     #  which auto-parses vaspruns from the subdirectories (or optionally a list of vaspruns,
     #  or a csv path); see shelved changes for this
     # TODO: Could add multiprocessing like DefectsParser to expedite parsing?
-    def from_vaspruns(self, path="competing_phases", folder="vasp_std", csv_path=None, verbose=True):
+    def from_vaspruns(self, path="CompetingPhases", folder="vasp_std", csv_path=None, verbose=True):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the

@@ -3,13 +3,12 @@ Tests for the `doped.chemical_potentials` module.
 """
 
 import os
-import shutil
 import sys
 import unittest
 import warnings
+from copy import deepcopy
 from functools import wraps
 from io import StringIO
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -52,13 +51,11 @@ def parameterized_subtest(api_key_dict=None):
 
 class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.path = Path(__file__).parents[0]
         self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
         self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
 
     def tearDown(self) -> None:
-        if Path("competing_phases").is_dir():
-            shutil.rmtree("competing_phases")
+        if_present_rm("CompetingPhases")
 
     @parameterized_subtest()
     def test_init(self, api_key):
@@ -113,7 +110,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         """
         cp = chemical_potentials.CompetingPhases("ZnSe", api_key=api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
-        assert len(cp.entries) in {14, 16}  # ZnSe2 present; 2 new Zn entries (mp-264...) with new MP API
+        assert len(cp.entries) in {11, 12}  # ZnSe2 present; 2 new Zn entries (mp-264...) with new MP API
         znse2_entry = next(e for e in cp.entries if e.name == "ZnSe2")
         assert znse2_entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
         assert not znse2_entry.data["molecule"]
@@ -222,12 +219,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # test case when the EaH rounding needs to be dynamically updated:
         # (this will be quite a rare case, as it requires two phases with the same formula, space group
         # and energy above hull to 1 meV/atom
-        from copy import deepcopy
-
         cds_cp = chemical_potentials.CompetingPhases("CdS", api_key=api_key)
         assert "S_Pnnm_EaH_0.014" in [entry.data["doped_name"] for entry in cds_cp.entries]
         new_entry = deepcopy(
-            next([entry for entry in cds_cp.entries if entry.data["doped_name"] == "S_Pnnm_EaH_0.014"])
+            next(entry for entry in cds_cp.entries if entry.data["doped_name"] == "S_Pnnm_EaH_0.014")
         )  # duplicate entry to force renaming
         if len(api_key) != 32:
             new_entry.data["e_above_hull"] += 2e-4
@@ -295,11 +290,16 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 w[-1].message
             )
             if cp_settings.get("full_phase_diagram"):
-                assert len(cp.entries) == 45
+                assert len(cp.entries) == 29
             elif cp_settings.get("e_above_hull") == 0.0:
                 assert len(cp.entries) == 8
             else:
-                assert len(cp.entries) == 38
+                assert len(cp.entries) == 26
+
+            # check naming of fake entry
+            assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
+
+            # TODO: Test file generation functions for an unknown host!
 
     @parameterized_subtest()
     def test_convergence_setup(self, api_key):
@@ -310,20 +310,20 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert cp.metals[0].data["band_gap"] == 0
         assert not cp.nonmetals[0].data["molecule"]
         # this shouldn't exist - don't need to convergence test for molecules
-        assert not Path("competing_phases/O2_EaH_0.0").is_dir()
+        assert not os.path.exists("CompetingPhases/O2_Pmmm_EaH_0")
 
         # test if it writes out the files correctly
-        path1 = "competing_phases/ZrO2_EaH_0.0088/kpoint_converge/k2,1,1/"
-        assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
+        Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1/"
+        assert os.path.exists(Zro2_EaH_0pt009_folder)
+        with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "2 1 1\n"
 
-        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
+        with open(f"{Zro2_EaH_0pt009_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[0] == "Zr_sv\n"
 
-        with open(f"{path1}/INCAR", encoding="utf-8") as file:
+        with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
@@ -340,28 +340,28 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert cp.molecules[0].data["molecule"]
         assert not cp.nonmetals[0].data["molecule"]
 
-        path1 = "competing_phases/ZrO2_EaH_0/vasp_std/"
-        assert Path(path1).is_dir()
-        with open(f"{path1}/KPOINTS", encoding="utf-8") as file:
+        ZrO2_EaH_0_std_folder = "CompetingPhases/ZrO2_P2_1/c_EaH_0/vasp_std/"
+        assert os.path.exists(ZrO2_EaH_0_std_folder)
+        with open(f"{ZrO2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert "KPOINTS from doped, with reciprocal_density = 64/Å" in contents[0]
             assert contents[3] == "4 4 4\n"
 
-        with open(f"{path1}/POTCAR.spec", encoding="utf-8") as file:
+        with open(f"{ZrO2_EaH_0_std_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
-        with open(f"{path1}/INCAR", encoding="utf-8") as file:
+        with open(f"{ZrO2_EaH_0_std_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        path2 = "competing_phases/O2_EaH_0/vasp_std"
-        assert Path(path2).is_dir()
-        with open(f"{path2}/KPOINTS", encoding="utf-8") as file:
+        O2_EaH_0_std_folder = "CompetingPhases/O2_Pmmm_EaH_0/vasp_std"
+        assert os.path.exists(O2_EaH_0_std_folder)
+        with open(f"{O2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "1 1 1\n"
 
-        struct = Structure.from_file(f"{path2}/POSCAR")
+        struct = Structure.from_file(f"{O2_EaH_0_std_folder}/POSCAR")
         assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
 
@@ -411,17 +411,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ) in output
 
 
-class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
-    # TODO: Merge with CompetingPhases tests once actual classes merged
+class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tearDown as above
     # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
-    def setUp(self) -> None:
-        self.path = Path(__file__).parents[0]
-        self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
-        self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
+    def setUp(self):
+        CompetingPhasesTestCase.setUp(self)
 
-    def tearDown(self) -> None:
-        if Path("competing_phases").is_dir():
-            shutil.rmtree("competing_phases")
+    def tearDown(self):
+        CompetingPhasesTestCase.tearDown(self)
 
     @parameterized_subtest()
     def test_init(self, api_key):
@@ -443,40 +439,36 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):
 
         cp = chemical_potentials.ExtrinsicCompetingPhases(
             "ZrO2", extrinsic_species="La", api_key=api_key
-        )  # default e_above_hull=0.1
-        assert len(cp.entries) == 5
+        )  # default e_above_hull=0.05
+        assert len(cp.entries) == 3
         assert cp.entries[2].name == "La"  # definite ordering, same 1st & 2nd as before
-        assert cp.entries[3].name == "LaZr9O20"  # definite ordering
-        assert cp.entries[4].name == "LaZr9O20"  # definite ordering
         assert all(entry.data["e_above_hull"] == 0 for entry in cp.entries[:2])
         assert all(entry.data["e_above_hull"] != 0 for entry in cp.entries[2:])
-        assert len(cp.intrinsic_entries) == 28
+        assert len(cp.intrinsic_entries) == 18
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
     def setUp(self):
-        self.path = Path(__file__).parents[1].joinpath("examples/competing_phases")
+        self.examples_path = "../examples/CompetingPhases"
         self.stable_system = "ZrO2"
         self.unstable_system = "Zr2O"
         self.extrinsic_species = "La"
-        self.csv_path = self.path / "zro2_competing_phase_energies.csv"
-        self.csv_path_ext = self.path / "zro2_la_competing_phase_energies.csv"
-        self.parsed_chempots = loadfn(self.path / "zro2_chempots.json")
-        self.parsed_ext_chempots = loadfn(self.path / "zro2_la_chempots.json")
+        self.csv_path = f"{self.examples_path}/zro2_competing_phase_energies.csv"
+        self.csv_path_ext = f"{self.examples_path}/zro2_la_competing_phase_energies.csv"
+        self.parsed_chempots = loadfn(f"{self.examples_path}/zro2_chempots.json")
+        self.parsed_ext_chempots = loadfn(f"{self.examples_path}/zro2_la_chempots.json")
+        self.parsed_ext_y_chempots = loadfn(f"{self.examples_path}/zro2_la_chempots.json")
 
-    def tearDown(self) -> None:
-        if Path("chempot_limits.csv").is_file():
-            os.remove("chempot_limits.csv")
+        self.zro2_path = os.path.join(self.examples_path, "ZrO2")
+        self.la_zro2_path = os.path.join(self.examples_path, "La_ZrO2")
 
-        if Path("competing_phases.csv").is_file():
-            os.remove("competing_phases.csv")
+    def tearDown(self):
+        for i in ["chempot_limits.csv", "CompetingPhases.csv", "input.dat"]:
+            if_present_rm(i)
 
-        if Path("input.dat").is_file():
-            os.remove("input.dat")
-
-        for i in os.listdir(self.path / "ZrO2"):
+        for i in os.listdir(os.path.join(self.examples_path, "ZrO2")):
             if i.startswith("."):
-                if_present_rm(self.path / "ZrO2" / i)
+                if_present_rm(os.path.join(self.examples_path, "ZrO2", i))
 
     def test_cpa_csv(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -496,7 +488,6 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             -119.619571095,
         )
 
-    # test chempots
     def test_cpa_chempots(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         stable_cpa.from_csv(self.csv_path)
@@ -574,11 +565,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with pytest.raises(KeyError):
             stable_cpa.calculate_chempots(sort_by="M")
 
-    # test vaspruns
     def test_vaspruns(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
         assert len(cpa.elements) == 2
         assert cpa.data[0]["Formula"] == "O2"
 
@@ -590,8 +579,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             cpa_no.from_vaspruns(path=0)
 
         ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path2 = self.path / "La_ZrO2"
-        ext_cpa.from_vaspruns(path=path2, folder="relax", csv_path=self.csv_path_ext)
+        ext_cpa.from_vaspruns(path=self.la_zro2_path, folder="relax", csv_path=self.csv_path_ext)
         assert len(ext_cpa.elements) == 3
         assert len(ext_cpa.extrinsic_elements) == 1
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
@@ -651,48 +639,45 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         # check if it works from a list
         all_paths = []
-        for p in path.iterdir():
-            if not p.name.startswith("."):
-                pp = p / "relax" / "vasprun.xml"
-                ppgz = p / "relax" / "vasprun.xml.gz"
-                if pp.is_file():
-                    all_paths.append(pp)
-                elif ppgz.is_file():
-                    all_paths.append(ppgz)
+        for subfolder in os.listdir(self.zro2_path):
+            if os.path.isdir(os.path.join(self.zro2_path, subfolder)) and "relax" in os.listdir(
+                os.path.join(self.zro2_path, subfolder)
+            ):
+                all_paths.extend(
+                    os.path.join(self.zro2_path, subfolder, "relax", vr_file)
+                    for vr_file in os.listdir(os.path.join(self.zro2_path, subfolder, "relax"))
+                    if vr_file.startswith("vasprun.xml")
+                )
         lst_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         lst_cpa.from_vaspruns(path=all_paths)
         assert len(lst_cpa.elements) == 2
         assert len(lst_cpa.vasprun_paths) == 8
 
-        all_fols = [p / "relax" for p in path.iterdir() if not p.name.startswith(".")]
+        all_folders = [path.split("/relax")[0] for path in all_paths]
         lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        lst_fols_cpa.from_vaspruns(path=all_fols)
+        lst_fols_cpa.from_vaspruns(path=all_folders)
         assert len(lst_fols_cpa.elements) == 2
 
     def test_vaspruns_hidden_files(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path = self.path / "ZrO2"
-
-        with open(f"{path}/._OUTCAR", "w") as f:
+        with open(f"{self.zro2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
-        with open(f"{path}/._vasprun.xml", "w") as f:
+        with open(f"{self.zro2_path}/._vasprun.xml", "w") as f:
             f.write("test pop")
-        with open(f"{path}/._LOCPOT", "w") as f:
+        with open(f"{self.zro2_path}/._LOCPOT", "w") as f:
             f.write("test pop")
-        with open(f"{path}/.DS_Store", "w") as f:
+        with open(f"{self.zro2_path}/.DS_Store", "w") as f:
             f.write("test pop")
 
         with warnings.catch_warnings(record=True) as w:
-            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+            cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
     def test_vaspruns_none_parsed(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path = Path(__file__).parents[1].joinpath("examples/competing_phases")
-
         with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
-            cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+            cpa.from_vaspruns(path=self.examples_path, folder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
         assert "vasprun.xml files could not be found in the following directories (in" in str(w[0].message)
         assert "ZrO2 or ZrO2/relax" in str(w[0].message)
@@ -704,7 +689,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         cpa.from_csv(self.csv_path)
         cpa._cplap_input(dependent_variable="O")
 
-        assert Path("input.dat").is_file()
+        assert os.path.exists("input.dat")
 
         with open("input.dat", encoding="utf-8") as file:
             contents = file.readlines()
@@ -729,8 +714,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_latex_table(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax", csv_path=self.csv_path)
+        cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
 
         string = cpa.to_LaTeX_table(splits=1)
         assert (
@@ -783,9 +767,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         stable_cpa.from_csv(self.csv_path)
         stable_cpa_data = stable_cpa._get_and_sort_formation_energy_data()
 
-        stable_cpa.to_csv("competing_phases.csv")
+        stable_cpa.to_csv("CompetingPhases.csv")
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        reloaded_cpa.from_csv("competing_phases.csv")
+        reloaded_cpa.from_csv("CompetingPhases.csv")
         reloaded_cpa_data = reloaded_cpa._get_and_sort_formation_energy_data()
         print(
             pd.DataFrame(stable_cpa_data).to_dict(), pd.DataFrame(reloaded_cpa_data).to_dict()
@@ -797,9 +781,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         self.ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         self.ext_cpa.from_csv(self.csv_path_ext)
-        self.ext_cpa.to_csv("competing_phases.csv")
+        self.ext_cpa.to_csv("CompetingPhases.csv")
         reloaded_ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        reloaded_ext_cpa.from_csv("competing_phases.csv")
+        reloaded_ext_cpa.from_csv("CompetingPhases.csv")
         reloaded_ext_cpa._get_and_sort_formation_energy_data()
 
         assert reloaded_ext_cpa.formation_energy_df.round(4).equals(
@@ -807,16 +791,16 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
 
         # test pruning:
-        self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
-        reloaded_ext_cpa.from_csv("competing_phases.csv")
+        self.ext_cpa.to_csv("CompetingPhases.csv", prune_polymorphs=True)
+        reloaded_ext_cpa.from_csv("CompetingPhases.csv")
         assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
         assert len(self.ext_cpa.data) == 11
 
         formulas = [i["Formula"] for i in reloaded_ext_cpa.data]
         assert len(formulas) == len(set(formulas))  # no polymorphs
 
-        reloaded_cpa.to_csv("competing_phases.csv", prune_polymorphs=True)
-        reloaded_cpa.from_csv("competing_phases.csv")
+        reloaded_cpa.to_csv("CompetingPhases.csv", prune_polymorphs=True)
+        reloaded_cpa.from_csv("CompetingPhases.csv")
 
         # check chem limits the same:
         _compare_chempot_dicts(reloaded_cpa.chempots, stable_cpa.chempots)
@@ -834,9 +818,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert self.ext_cpa.chempots["elemental_refs"] == self.parsed_ext_chempots["elemental_refs"]
 
         # test correct sorting:
-        self.ext_cpa.to_csv("competing_phases.csv", prune_polymorphs=True, sort_by_energy=True)
+        self.ext_cpa.to_csv("CompetingPhases.csv", prune_polymorphs=True, sort_by_energy=True)
         reloaded_ext_cpa_energy_sorted = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        reloaded_ext_cpa_energy_sorted.from_csv("competing_phases.csv")
+        reloaded_ext_cpa_energy_sorted.from_csv("CompetingPhases.csv")
         assert len(reloaded_ext_cpa.data) == 8  # polymorphs pruned
 
         assert reloaded_ext_cpa_energy_sorted.data != reloaded_ext_cpa.data  # different order
@@ -854,18 +838,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         self.tearDown()  # clear out previous csvs
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        path = self.path / "ZrO2"
-        cpa.from_vaspruns(path=path, folder="relax")
+        cpa.from_vaspruns(path=self.zro2_path, folder="relax")
         formation_energy_data = cpa._get_and_sort_formation_energy_data()
         formation_energy_df = pd.DataFrame(formation_energy_data)
 
         # drop all but the formula and energy_per_fu columns:
         for i in ["DFT Energy (eV/fu)", "DFT Energy (eV/atom)"]:
             minimal_formation_energy_df = formation_energy_df[["Formula", i]]
-            minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
+            minimal_formation_energy_df.to_csv("CompetingPhases.csv", index=False)
 
             reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-            reloaded_cpa.from_csv("competing_phases.csv")
+            reloaded_cpa.from_csv("CompetingPhases.csv")
             assert not cpa.formation_energy_df.round(4).equals(
                 reloaded_cpa.formation_energy_df.round(4)
             )  # no kpoints or raw energy, but should have formula, energy_per_fu, energy_per_atom,
@@ -895,10 +878,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         # test ValueError without energy_per_fu/energy_per_atom column:
         too_minimal_formation_energy_df = formation_energy_df[["Formula"]]
-        too_minimal_formation_energy_df.to_csv("competing_phases.csv", index=False)
+        too_minimal_formation_energy_df.to_csv("CompetingPhases.csv", index=False)
         reloaded_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with pytest.raises(ValueError) as exc:
-            reloaded_cpa.from_csv("competing_phases.csv")
+            reloaded_cpa.from_csv("CompetingPhases.csv")
         assert "Supplied csv does not contain the minimal columns required" in str(exc.value)
 
     def test_elements(self):
@@ -958,18 +941,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         # lowest energy ZrO2:
         assert np.isclose(formation_energy_df["Formation Energy (eV/fu)"][4], -10.975428440000002)
 
-
-class CombineExtrinsicTestCase(unittest.TestCase):
-    def setUp(self) -> None:
-        self.path = Path(__file__).parents[1].joinpath("examples/competing_phases")
-        first = self.path / "zro2_la_chempots.json"
-        second = self.path / "zro2_y_chempots.json"
-        self.first = loadfn(first)
-        self.second = loadfn(second)
-        self.extrinsic_species = "Y"
-
     def test_combine_extrinsic(self):
-        d = chemical_potentials.combine_extrinsic(self.first, self.second, self.extrinsic_species)
+        d = chemical_potentials.combine_extrinsic(
+            self.parsed_ext_chempots, self.parsed_ext_y_chempots, "Y"
+        )
         assert len(d["elemental_refs"].keys()) == 4
         limits = list(d["limits"].keys())
         assert limits[0].rsplit("-", 1)[1] == "Y2Zr2O7"
@@ -977,10 +952,12 @@ class CombineExtrinsicTestCase(unittest.TestCase):
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}
         with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(d, self.second, self.extrinsic_species)
+            chemical_potentials.combine_extrinsic(d, self.parsed_ext_y_chempots, "Y")
 
         with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(self.first, d, self.extrinsic_species)
+            chemical_potentials.combine_extrinsic(self.parsed_ext_chempots, d, "Y")
 
         with pytest.raises(ValueError):
-            chemical_potentials.combine_extrinsic(self.first, self.second, "R")
+            chemical_potentials.combine_extrinsic(
+                self.parsed_ext_chempots, self.parsed_ext_y_chempots, "R"
+            )
