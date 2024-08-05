@@ -18,6 +18,7 @@ from pymatgen.core.structure import Structure
 from test_analysis import if_present_rm
 
 from doped import chemical_potentials
+from doped.utils.symmetry import get_primitive_structure
 
 
 def _compare_chempot_dicts(dict1, dict2):
@@ -53,6 +54,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
         self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
+
+        self.cdte = Structure.from_file("../examples/CdTe/relaxed_primitive_POSCAR")
+        self.na2fepo4f = Structure.from_file("data/Na2FePO4F_MP_POSCAR")
+        self.cu2sise3 = Structure.from_file("data/Cu2SiSe3_MP_POSCAR")
+        self.cu2sise4 = self.cu2sise3.get_primitive_structure().copy()
+        self.cu2sise4.append("Se", [0.5, 0.5, 0.5])
+        self.cu2sise4.append("Se", [0.5, 0.75, 0.5])
 
     def tearDown(self) -> None:
         if_present_rm("CompetingPhases")
@@ -410,6 +418,63 @@ class CompetingPhasesTestCase(unittest.TestCase):
             "-project-api"
         ) in output
 
+    @parameterized_subtest()
+    def test_structure_input(self, api_key):
+        for struct, name in [
+            (self.cdte, "CdTe_F-43m_EaH_0"),
+            (self.cdte * 2, "CdTe_F-43m_EaH_0"),  # supercell
+            (self.na2fepo4f, "Na2FePO4F_Pbcn_EaH_0.17"),
+            (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
+        ]:
+            with warnings.catch_warnings(record=True) as w:
+                cp = chemical_potentials.CompetingPhases(
+                    struct.composition.reduced_formula, api_key=api_key
+                )
+                cp_struct_input = chemical_potentials.CompetingPhases(struct, api_key=api_key)
+
+            _check_structure_input(cp, cp_struct_input, struct, name, w, api_key)
+
+
+def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=False):
+    print([str(warning.message) for warning in w])  # for debugging
+    user_warnings = [warning for warning in w if warning.category is UserWarning]
+    if "Na2FePO4F" in name and len(api_key) != 32:  # stable in new MP
+        assert len(user_warnings) == 2
+        assert "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable" in str(
+            user_warnings[0].message
+        )
+    elif "Cu2SiSe4" in name:
+        assert len(user_warnings) == 2
+        assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4" in str(
+            user_warnings[0].message
+        )
+    else:
+        assert not user_warnings
+
+    struct_entries = cp_struct_input.entries if not extrinsic else cp_struct_input.intrinsic_entries
+    cp_entries = cp.entries if not extrinsic else cp.intrinsic_entries
+    for entry in struct_entries:
+        if entry.name != "Cu2SiSe4":  # differs in this case due to doubled formula in unit cell
+            assert entry in cp_entries  # structure not compared with ``__eq__`` for entries
+        if entry.name == struct.composition.reduced_formula:
+            if "Na2FePO4F" not in name or len(api_key) != 32:
+                assert entry.data["doped_name"] == name
+            else:
+                assert entry.data["doped_name"] == "Na2FePO4F_Pbcn_EaH_0"  # stable in new MP
+            if entry.name != "CdTe" or len(struct) != 16:
+                assert entry.structure == struct
+            else:  # with supercell input, structure reduced to the primitive cell
+                assert entry.structure == get_primitive_structure(struct)
+
+    for entry in cp_entries:
+        if entry.name != struct.composition.reduced_formula:
+            assert entry in struct_entries
+
+    assert len(struct_entries) <= len(cp_entries)
+    assert (
+        len([entry for entry in struct_entries if entry.name == struct.composition.reduced_formula]) == 1
+    )
+
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tearDown as above
     # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
@@ -445,6 +510,30 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         assert all(entry.data["e_above_hull"] == 0 for entry in cp.entries[:2])
         assert all(entry.data["e_above_hull"] != 0 for entry in cp.entries[2:])
         assert len(cp.intrinsic_entries) == 18
+
+    @parameterized_subtest()
+    def test_structure_input(self, api_key):
+        for struct, name in [
+            (self.cdte, "CdTe_F-43m_EaH_0"),
+            (self.cdte * 2, "CdTe_F-43m_EaH_0"),  # supercell
+            (self.na2fepo4f, "Na2FePO4F_Pbcn_EaH_0.17"),
+            (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
+        ]:
+            with warnings.catch_warnings(record=True) as w:
+                cp = chemical_potentials.ExtrinsicCompetingPhases(
+                    struct.composition.reduced_formula, api_key=api_key, extrinsic_species={"K"}
+                )
+                cp_struct_input = chemical_potentials.ExtrinsicCompetingPhases(
+                    struct, api_key=api_key, extrinsic_species={"K"}
+                )
+
+            _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=True)
+
+        for entries_list in [cp_struct_input.entries, cp.entries]:
+            assert len(entries_list) >= 1
+            for extrinsic_entry in entries_list:
+                assert "K" in extrinsic_entry.data["doped_name"]
+                assert "K" in extrinsic_entry.name
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):

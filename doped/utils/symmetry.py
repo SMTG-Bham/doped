@@ -5,7 +5,7 @@ Utility code and functions for symmetry analysis of structures and defects.
 import contextlib
 import os
 import warnings
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from pymatgen.analysis.defects.core import DefectType
@@ -551,10 +551,15 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
     return new_structure
 
 
-def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: bool = True):
+def get_primitive_structure(
+    sga_or_struct: Union[SpacegroupAnalyzer, Structure],
+    ignored_species: Optional[list] = None,
+    clean: bool = True,
+    **kwargs,
+):
     """
     Get a consistent/deterministic primitive structure from a
-    SpacegroupAnalyzer object.
+    ``SpacegroupAnalyzer`` object, or ``pymatgen`` ``Structure``.
 
     For some materials (e.g. zinc blende), there are multiple equivalent
     primitive cells, so for reproducibility and in line with most structure
@@ -562,10 +567,28 @@ def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: 
     fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
     (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
 
-    If ignored_species is set, then the sorting function used to determine the
+    If ``ignored_species`` is set, then the sorting function used to determine the
     ideal primitive structure will ignore sites with species in
-    ignored_species.
+    ``ignored_species``.
+
+    Args:
+        sga_or_struct:
+            ``SpacegroupAnalyzer`` object or ``Structure`` object to get the
+            corresponding primitive structure of. If a ``Structure`` object,
+            then additional kwargs are passed to the ``_get_sga`` function
+            which obtains the ``SpacegroupAnalyzer`` object for this structure.
+        ignored_species:
+            List of species to ignore when determining the ideal primitive
+            structure. (Default: None)
+        clean:
+            Whether to return a 'clean' version of the primitive structure,
+            with the lattice matrix in a standardised form. (Default: True)
+        **kwargs:
+            Additional keyword arguments to pass to the ``_get_sga`` function
+            (e.g. ``symprec`` etc).
     """
+    sga = _get_sga(sga_or_struct, **kwargs) if isinstance(sga_or_struct, Structure) else sga_or_struct
+
     possible_prim_structs = []
     for _i in range(4):
         struct = sga.get_primitive_standard_structure()
