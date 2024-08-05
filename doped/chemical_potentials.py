@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from monty.serialization import loadfn
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import (
     ComputedEntry,
@@ -33,6 +34,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
+from doped.utils.symmetry import get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 # globally ignore:
@@ -880,7 +882,7 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
 class CompetingPhases:
     def __init__(
         self,
-        composition: Union[str, Composition],
+        composition: Union[str, Composition, Structure],
         e_above_hull: float = 0.05,
         api_key: Optional[str] = None,
         full_phase_diagram: bool = False,
@@ -903,10 +905,14 @@ class CompetingPhases:
         error of defect calculations.
 
         Args:
-            composition (str, ``Composition``):
+            composition (str, ``Composition``, ``Structure``):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
                 ``Composition('LiFePO4')``, or
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
+                Alternatively a ``pymatgen`` ``Structure`` object for the
+                host material can be supplied (recommended), in which case
+                the primitive structure will be used as the only host
+                composition phase, reducing the number of calculations.
             e_above_hull (float):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
@@ -972,11 +978,20 @@ class CompetingPhases:
         # - Could have two optional EaH tolerances, a tight one (0.02 eV/atom?) that applies to all,
         # and a looser one (0.1 eV/atom?) that applies to phases with ICSD IDs?
 
-        self.bulk_composition = Composition(composition)
-        self.chemsys = list(self.bulk_composition.as_dict().keys())
+        if isinstance(composition, Structure):
+            # if structure is not primitive, reduce to primitive:
+            primitive_structure = get_primitive_structure(composition)
+            if len(primitive_structure) < len(composition):
+                self.bulk_structure = primitive_structure
+            else:
+                self.bulk_structure = composition
+            self.bulk_composition = self.bulk_structure.composition
 
-        # TODO: Update installation pages, docs and tutorials
-        # TODO: Add tests with new API keys
+        else:
+            self.bulk_structure = None
+            self.bulk_composition = Composition(composition)
+
+        self.chemsys = list(self.bulk_composition.as_dict().keys())
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
@@ -993,18 +1008,24 @@ class CompetingPhases:
         formatted_entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
         # get bulk entry, and warn if not stable or not present on MP database:
-        if bulk_entries := [
+        bulk_entries = [
             entry
             for entry in formatted_entries  # sorted by e_above_hull above in get_entries_in_chemsys
             if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
-            and _get_e_above_hull(entry.data) == 0.0
+        ]
+        if zero_eah_bulk_entries := [
+            entry for entry in bulk_entries if _get_e_above_hull(entry.data) == 0.0
         ]:
-            bulk_computed_entry = bulk_entries[0]  # lowest energy entry for bulk (after sorting)
+            self.MP_bulk_computed_entry = bulk_computed_entry = zero_eah_bulk_entries[
+                0
+            ]  # lowest energy entry for bulk (after sorting)
         else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
-            if MP_bulk_entries := get_entries(  # composition present in MP, but not stable
+            if bulk_entries := get_entries(  # composition present in MP, but not stable
                 self.bulk_composition.reduced_formula, api_key=self.api_key
             ):
-                bulk_computed_entry = MP_bulk_entries[0]  # already sorted by energy in get_entries()
+                self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
+                    0
+                ]  # already sorted by energy in get_entries()
                 eah = PhaseDiagram(formatted_entries).get_e_above_hull(bulk_computed_entry)
                 warnings.warn(
                     f"Note that the Materials Project (MP) database entry for "
@@ -1034,7 +1055,7 @@ class CompetingPhases:
                     f"space, and then determine the possible competing phases with the same approach as "
                     f"usual."
                 )
-                bulk_computed_entry = ComputedEntry(
+                self.MP_bulk_computed_entry = bulk_computed_entry = ComputedEntry(
                     self.bulk_composition,
                     self.MP_full_pd.get_hull_energy(self.bulk_composition) - 1e-4,
                     data={
@@ -1048,16 +1069,46 @@ class CompetingPhases:
                 )  # TODO: Later need to add handling for file writing for this (POTCAR and INCAR assuming
                 # non-metallic, non-magnetic, with warning and recommendations
 
-            if bulk_computed_entry not in formatted_entries:
-                formatted_entries.append(bulk_computed_entry)
+            if self.MP_bulk_computed_entry not in formatted_entries:
+                formatted_entries.append(self.MP_bulk_computed_entry)
 
-        self.MP_bulk_computed_entry = bulk_computed_entry
+        if self.bulk_structure:  # prune all bulk phases to this structure
+            manual_bulk_entry = None
+
+            if bulk_entries := [
+                entry
+                for entry in formatted_entries  # sorted by e_above_hull above in get_entries_in_chemsys
+                if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
+            ]:
+                sm = StructureMatcher()
+                matching_bulk_entries = [
+                    entry
+                    for entry in bulk_entries
+                    if hasattr(entry, "structure") and sm.fit(self.bulk_structure, entry.structure)
+                ]
+                matching_bulk_entries.sort(key=lambda x: sm.get_rms_dist(self.bulk_structure, x.structure))
+                if matching_bulk_entries:
+                    matching_bulk_entry = matching_bulk_entries[0]
+                    manual_bulk_entry = matching_bulk_entry
+                    manual_bulk_entry._structure = self.bulk_structure
+
+            if manual_bulk_entry is None:  # take the lowest energy bulk entry
+                manual_bulk_entry_dict = self.MP_bulk_computed_entry.as_dict()
+                manual_bulk_entry_dict["structure"] = self.bulk_structure.as_dict()
+                manual_bulk_entry = ComputedStructureEntry.from_dict(manual_bulk_entry_dict)
+
+            formatted_entries = [  # remove bulk entries from formatted_entries and add the new bulk entry
+                entry
+                for entry in formatted_entries
+                if entry.composition.reduced_composition != self.bulk_composition.reduced_composition
+            ]
+            formatted_entries.append(manual_bulk_entry)
 
         if not self.full_phase_diagram:  # default, prune to only phases that would border the host
             # material on the phase diagram, if their relative energy was downshifted by ``e_above_hull``:
             self.entries: list[ComputedEntry] = prune_entries_to_border_candidates(
                 entries=formatted_entries,
-                bulk_computed_entry=self.MP_bulk_computed_entry,
+                bulk_computed_entry=bulk_computed_entry,
                 e_above_hull=self.e_above_hull,
             )
 
@@ -1375,7 +1426,7 @@ class CompetingPhases:
 class ExtrinsicCompetingPhases(CompetingPhases):
     def __init__(
         self,
-        composition: Union[str, Composition],
+        composition: Union[str, Composition, Structure],
         extrinsic_species: Union[str, Iterable],
         e_above_hull: float = 0.05,
         full_sub_approach: bool = False,
@@ -1389,9 +1440,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         potential limits for those elements in the host compound.
 
         Only extrinsic competing phases are contained in the
-         ``ExtrinsicCompetingPhases.entries`` list (used for input file generation),
-         while the `intrinsic` competing phases for the host compound are stored in
-         ``ExtrinsicCompetingPhases.intrinsic_entries``.
+         ``ExtrinsicCompetingPhases.entries`` list (used for input file
+         generation), while the `intrinsic` competing phases for the host
+         compound are stored in ``ExtrinsicCompetingPhases.intrinsic_entries``.
 
         For this, the Materials Project (MP) database is queried using the
         ``MPRester`` API, and any calculated compounds which `could` border
@@ -1406,57 +1457,70 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         error of defect calculations.
 
         Args:
-            composition (str, Composition):
-                Composition of host material (e.g. 'LiFePO4', or Composition('LiFePO4'),
-                or Composition({"Li":1, "Fe":1, "P":1, "O":4}))
+            composition (str, ``Composition``, ``Structure``):
+                Composition of the host material (e.g. ``'LiFePO4'``, or
+                ``Composition('LiFePO4')``, or
+                ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
+                Alternatively a ``pymatgen`` ``Structure`` object for the
+                host material can be supplied (recommended), in which case
+                the primitive structure will be used as the only host
+                composition phase, reducing the number of calculations.
             extrinsic_species (str, Iterable):
-                Extrinsic dopant/impurity species to consider, to generate the relevant
-                competing phases to additionally determine their chemical potential
-                limits within the host. Can be a single element as a string (e.g. "Mg")
-                or an iterable of element strings (list, set, tuple, dict) (e.g. ["Mg",
-                "Na"]).
+                Extrinsic dopant/impurity species to consider, to generate
+                the relevant competing phases to additionally determine their
+                chemical potential limits within the host. Can be a single
+                element as a string (e.g. "Mg") or an iterable of element
+                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]).
             e_above_hull (float):
                 Maximum energy-above-hull of Materials Project entries to be
-                considered as competing phases. This is an uncertainty range for the
-                MP-calculated formation energies, which may not be accurate due to functional
-                choice (GGA vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                Any phases that would border the host material on the phase diagram, if their
-                relative energy was downshifted by ``e_above_hull``, are included.
+                considered as competing phases. This is an uncertainty range
+                for the MP-calculated formation energies, which may not be
+                accurate due to functional choice (GGA vs hybrid DFT / GGA+U
+                / RPA etc.), lack of vdW corrections etc.
+                Any phases that would border the host material on the phase
+                diagram, if their relative energy was downshifted by
+                ``e_above_hull``, are included.
 
                 Often ``e_above_hull`` can be lowered to reduce the number of
-                calculations while retaining good accuracy relative to the typical
-                error of defect calculations.
+                calculations while retaining good accuracy relative to the
+                typical error of defect calculations.
 
                 Default is 0.05 eV/atom.
             full_sub_approach (bool):
-                Generate competing phases by considering the full phase diagram, including
-                chemical potential limits with multiple extrinsic phases. Only recommended when
-                looking at high (non-dilute) doping concentrations.
-                Default is ``False``.
-                The default approach (``full_sub_approach = False``) for extrinsic elements is to
-                only consider chemical potential limits where the host composition borders a maximum
-                of 1 extrinsic phase (composition with extrinsic element(s)). This is a valid
-                approximation for the case of dilute dopant/impurity concentrations. For high
-                (non-dilute) concentrations of extrinsic species, use ``full_sub_approach = True``.
+                Generate competing phases by considering the full phase
+                diagram, including chemical potential limits with multiple
+                extrinsic phases. Only recommended when looking at high
+                (non-dilute) doping concentrations. Default is ``False``.
+
+                The default approach (``full_sub_approach = False``) for
+                extrinsic elements is to only consider chemical potential
+                limits where the host composition borders a maximum of 1
+                extrinsic phase (composition with extrinsic element(s)).
+                This is a valid approximation for the case of dilute
+                dopant/impurity concentrations. For high (non-dilute)
+                concentrations of extrinsic species, use ``full_sub_approach = True``.
             codoping (bool):
-                Whether to consider extrinsic competing phases containing multiple
-                extrinsic species. Only relevant to high (non-dilute) co-doping concentrations.
-                If set to True, then ``full_sub_approach`` is also set to ``True``.
+                Whether to consider extrinsic competing phases containing
+                multiple extrinsic species. Only relevant to high (non-dilute)
+                co-doping concentrations. If set to True, then
+                ``full_sub_approach`` is also set to ``True``.
                 Default is ``False``.
             api_key (str):
-                Materials Project (MP) API key, needed to access the MP database for
-                competing phase generation. If not supplied, will attempt to read from
-                environment variable ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml``) - see the ``doped``
-                Installation docs page: https://doped.readthedocs.io/en/latest/Installation.html
+                Materials Project (MP) API key, needed to access the MP database
+                for competing phase generation. If not supplied, will attempt
+                to read from environment variable ``PMG_MAPI_KEY`` (in
+                ``~/.pmgrc.yaml``) - see the ``doped`` Installation docs page:
+                https://doped.readthedocs.io/en/latest/Installation.html.
                 MP API key is available at https://next-gen.materialsproject.org/api#api-key
             full_phase_diagram (bool):
-                If ``True``, include all phases on the MP phase diagram (with energy
-                above hull < ``e_above_hull`` eV/atom) for the chemical system of
-                the input composition and extrinsic species (not recommended). If ``False``,
-                only includes phases that would border the host material on the phase diagram
-                (and thus set the chemical potential limits), if their relative energy was
-                downshifted by ``e_above_hull`` eV/atom.
-                (Default is ``False``).
+                If ``True``, include all phases on the MP phase diagram (with
+                energy above hull < ``e_above_hull`` eV/atom) for the chemical
+                system of the input composition and extrinsic species (not
+                recommended). If ``False``, only includes phases that would border
+                the host material on the phase diagram (and thus set the chemical
+                potential limits), if their relative energy was downshifted by
+                ``e_above_hull`` eV/atom.
+                Default is ``False``.
         """
         super().__init__(  # competing phases & entries of the OG system:
             composition=composition,
