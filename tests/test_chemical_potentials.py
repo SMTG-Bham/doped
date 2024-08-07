@@ -529,11 +529,11 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
             _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=True)
 
-        for entries_list in [cp_struct_input.entries, cp.entries]:
-            assert len(entries_list) >= 1
-            for extrinsic_entry in entries_list:
-                assert "K" in extrinsic_entry.data["doped_name"]
-                assert "K" in extrinsic_entry.name
+            for entries_list in [cp_struct_input.entries, cp.entries]:
+                assert len(entries_list) >= 1
+                for extrinsic_entry in entries_list:
+                    assert "K" in extrinsic_entry.data["doped_name"]
+                    assert "K" in extrinsic_entry.name
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):

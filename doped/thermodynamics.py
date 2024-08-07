@@ -430,7 +430,7 @@ class DefectThermodynamics(MSONable):
         plots.
 
         Args:
-            defect_entries ([DefectEntry] or {str: DefectEntry}):
+            defect_entries (list[DefectEntry] or dict[str, DefectEntry]):
                 A list or dict of DefectEntry objects. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
