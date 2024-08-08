@@ -62,7 +62,6 @@ def _get_label_and_charge(name: str) -> tuple[str, int]:
     return label, charge
 
 
-# TODO: Docstrings, typing
 # TODO: Update DefectThermodynamics docstrings after `py-sc-fermi` interface written, to point toward it
 #  for more advanced analysis
 
@@ -699,7 +698,7 @@ class FermiSolver(MSONable):
         the specified tolerance.
 
         Args:
-            target (str): The target variable to minimize or maximize, e.g., "electron concentration".
+            target (str): The target variable to minimize or maximize, e.g., "Electrons (cm^-3)".
             min_or_max (str): Specify whether to "minimize" or "maximize" the target variable.
             chempots (Optional[dict]): A dictionary of initial chemical potentials to use.
                 If not provided, default potentials from `self.chempots` are used.
@@ -733,8 +732,8 @@ class FermiSolver(MSONable):
         current_vertices = starting_grid.vertices
         chempots_labels = list(current_vertices.columns)
         previous_value = None
+
         while True:
-            # Solve and append chemical potentials
             if annealing_temperature is not None and quenching_temperature is not None:
                 all_data = Parallel(n_jobs=processes)(
                     delayed(self._solve_and_append_chempots_pseudo)(
@@ -762,19 +761,50 @@ class FermiSolver(MSONable):
                 )
 
             # Find chemical potentials value where target is lowest or highest
-            if min_or_max == "min":
-                target_chem_pot = results_df[results_df[target] == results_df[target].min()][
-                    chempots_labels
-                ]
-                target_dataframe = results_df[results_df[target] == results_df[target].min()]
-            elif min_or_max == "max":
-                target_chem_pot = results_df[results_df[target] == results_df[target].max()][
-                    chempots_labels
-                ]
-                target_dataframe = results_df[results_df[target] == results_df[target].max()]
+            if target in results_df.columns:
+                if min_or_max == "min":
+                    target_chem_pot = results_df[results_df[target] == results_df[target].min()][
+                        chempots_labels
+                    ]
+                    target_dataframe = results_df[results_df[target] == results_df[target].min()]
+                elif min_or_max == "max":
+                    target_chem_pot = results_df[results_df[target] == results_df[target].max()][
+                        chempots_labels
+                    ]
+                    target_dataframe = results_df[results_df[target] == results_df[target].max()]
+                current_value = (
+                    results_df[target].min() if min_or_max == "min" else results_df[target].max()
+                )
+
+            else:
+                # Filter the DataFrame for the specific defect
+                filtered_df = results_df[results_df.index == target]
+                # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
+                if min_or_max == "min":
+                    min_value = filtered_df["Concentration (cm^-3)"].min()
+                    target_chem_pot = results_df.loc[results_df["Concentration (cm^-3)"] == min_value][
+                        chempots_labels
+                    ]
+                    target_dataframe = results_df[
+                        results_df[chempots_labels].eq(target_chem_pot.iloc[0]).all(axis=1)
+                    ]
+
+                elif min_or_max == "max":
+                    max_value = filtered_df["Concentration (cm^-3)"].max()
+                    target_chem_pot = results_df.loc[results_df["Concentration (cm^-3)"] == max_value][
+                        chempots_labels
+                    ]
+                    target_dataframe = results_df[
+                        results_df[chempots_labels].eq(target_chem_pot.iloc[0]).all(axis=1)
+                    ]
+                current_value = (
+                    filtered_df["Concentration (cm^-3)"].min()
+                    if min_or_max == "min"
+                    else filtered_df["Concentration (cm^-3)"].max()
+                )
+                # get the
 
             # Check if the change in the target value is less than the tolerance
-            current_value = results_df[target].min() if min_or_max == "min" else results_df[target].max()
             if (
                 previous_value is not None
                 and abs((current_value - previous_value) / previous_value) < tolerance
@@ -1014,7 +1044,6 @@ class FermiSolverDoped(FermiSolver):
         for column, value in new_columns.items():
             concentrations[column] = value
 
-        # trimmed_concentrations =
         trimmed_concentrations_sub_duplicates = concentrations.drop_duplicates()
         excluded_columns = ["Defect"]
         for column in concentrations.columns.difference(excluded_columns):
