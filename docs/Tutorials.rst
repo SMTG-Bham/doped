@@ -15,6 +15,6 @@ tutorials:
    thermodynamics_tutorial
    chemical_potentials_tutorial
    advanced_analysis_tutorial
-   py_sc_fermi_interface_tutorial
+   fermisolver_tutorial
    plotting_customisation_tutorial
    GGA_workflow_tutorial

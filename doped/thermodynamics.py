@@ -1679,7 +1679,7 @@ class DefectThermodynamics(MSONable):
         defects/charge states are considered fixed and some are allowed to
         re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
         these specific cases is demonstrated in:
-        https://doped.readthedocs.io/en/latest/py_sc_fermi_interface_tutorial.html
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
 
         This function works by calculating the self-consistent Fermi level and total
         concentration of each defect at the annealing temperature, then fixing the
