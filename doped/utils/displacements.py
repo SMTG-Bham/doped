@@ -553,3 +553,7 @@ def plot_site_displacements(
             # Set separation between subplots
             fig.subplots_adjust(wspace=0.07)
     return fig
+
+
+def print_a():
+    print("a")
