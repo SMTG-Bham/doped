@@ -438,8 +438,6 @@ class DefectEntry(thermo.DefectEntry):
 
         The correction is added to the ``defect_entry.corrections`` dictionary
         (to be used in following formation energy calculations).
-        If this correction is used, please cite the Kumagai & Oba paper:
-        10.1103/PhysRevB.89.195205
 
         Typically for reasonably well-converged supercell sizes, the default
         ``defect_region_radius`` works perfectly well. However, for certain materials
@@ -456,6 +454,13 @@ class DefectEntry(thermo.DefectEntry):
         of the sampled site potential differences, multiplied by the defect charge.
         This is expected to be a lower bound estimate of the true charge correction
         error.
+
+        If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
+        10.1103/PhysRevB.89.195205
+        and the ``pydefect`` paper:
+        "Insights into oxygen vacancies from high-throughput first-principles calculations"
+        Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+        Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -730,8 +735,10 @@ class DefectEntry(thermo.DefectEntry):
         files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
         files if present.
 
-        This function uses code from ``pydefect``:
-        Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
+        This function uses code from ``pydefect``, so please cite the ``pydefect`` paper:
+        "Insights into oxygen vacancies from high-throughput first-principles calculations"
+        Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+        Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
         Args:
             plot (bool):

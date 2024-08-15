@@ -337,6 +337,15 @@ PHS on the transition level diagram with a clear circle is shown on the right.
     It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
     the defect state to confirm the identification of a PHS.
 
+.. note::
+
+   As mentioned above, the eigenvalue analysis functions use code from ``pydefect``, so please cite the
+   ``pydefect`` paper if using these analyses in your work:
+
+   "Insights into oxygen vacancies from high-throughput first-principles calculations"
+   Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+   Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
+
 Spin Polarisation
 -----------------
 Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
