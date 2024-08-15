@@ -329,8 +329,12 @@ def get_kumagai_correction(
 
     This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_kumagai_correction method does).
-    If this correction is used, please cite the Kumagai & Oba paper:
+    If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
     10.1103/PhysRevB.89.195205
+    and the ``pydefect`` paper:
+    "Insights into oxygen vacancies from high-throughput first-principles calculations"
+    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
     Typically for reasonably well-converged supercell sizes, the default
     ``defect_region_radius`` works perfectly well. However, for certain materials
