@@ -21,6 +21,7 @@ from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
@@ -1299,6 +1300,8 @@ class DefectsParser:
         band_gap: Optional[float] = None,
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
+        bulk_dos: Optional[FermiDos] = None,
+        skip_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
         Generates a DefectThermodynamics object from the parsed ``DefectEntry``
@@ -1366,6 +1369,26 @@ class DefectsParser:
                 Whether to check the compatibility of the bulk entry for each defect
                 entry (i.e. that all reference bulk energies are the same).
                 (Default: True)
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating Fermi level positions and defect/carrier concentrations.
+                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
+                ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
+                Can also be provided later when using ``get_equilibrium_fermi_level()``,
+                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
+
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+                (Default: None)
+            skip_check (bool):
+                Whether to skip the warning about the DOS VBM differing from the defect
+                entries VBM by >0.05 eV. Should only be used when the reason for this
+                difference is known/acceptable. (Default: False)
 
         Returns:
             doped DefectThermodynamics object (``DefectThermodynamics``)
@@ -1385,6 +1408,8 @@ class DefectsParser:
             band_gap=band_gap,
             dist_tol=dist_tol,
             check_compatibility=check_compatibility,
+            bulk_dos=bulk_dos,
+            skip_check=skip_check,
         )
 
     def __repr__(self):

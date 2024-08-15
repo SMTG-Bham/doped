@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.dos import FermiDos
 from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
@@ -349,7 +350,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # integration test using parsed CdTe thermo and chempots for plotting:
-        default_thermo = default_dp.get_defect_thermodynamics()
+        default_thermo = default_dp.get_defect_thermodynamics(
+            bulk_dos=os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
+        )  # test providing bulk DOS
+        assert isinstance(default_thermo.bulk_dos, FermiDos)
+        assert np.isclose(default_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
 
         return default_thermo.plot(chempots=self.CdTe_chempots, limit="CdTe-Te")
 

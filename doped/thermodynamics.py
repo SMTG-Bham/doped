@@ -419,6 +419,8 @@ class DefectThermodynamics(MSONable):
         band_gap: Optional[float] = None,
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
+        bulk_dos: Optional[FermiDos] = None,
+        skip_check: bool = False,
     ):
         r"""
         Create a DefectThermodynamics object, which can be used to analyse the
@@ -496,6 +498,26 @@ class DefectThermodynamics(MSONable):
                 Whether to check the compatibility of the bulk entry for each defect
                 entry (i.e. that all reference bulk energies are the same).
                 (Default: True)
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating Fermi level positions and defect/carrier concentrations.
+                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
+                ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
+                Can also be provided later when using ``get_equilibrium_fermi_level()``,
+                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
+
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+                (Default: None)
+            skip_check (bool):
+                Whether to skip the warning about the DOS VBM differing from the defect
+                entries VBM by >0.05 eV. Should only be used when the reason for this
+                difference is known/acceptable. (Default: False)
 
         Key Attributes:
             defect_entries (dict[str, DefectEntry]):
@@ -524,6 +546,14 @@ class DefectThermodynamics(MSONable):
                 entry (i.e. that all reference bulk energies are the same).
             bulk_formula (str):
                 The reduced formula of the bulk structure (e.g. "CdTe").
+            bulk_dos (FermiDos):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states
+                (DOS), used for calculating Fermi level positions and defect/carrier
+                concentrations.
+            skip_check (bool):
+                Whether to skip the warning about the DOS VBM differing from the defect
+                entries VBM by >0.05 eV. Should only be used when the reason for this
+                difference is known/acceptable.
         """
         if not defect_entries:
             raise ValueError(
@@ -537,6 +567,7 @@ class DefectThermodynamics(MSONable):
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
         self._dist_tol = dist_tol
         self.check_compatibility = check_compatibility
+        self.skip_check = skip_check
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -576,6 +607,8 @@ class DefectThermodynamics(MSONable):
                     f"No {name} was supplied or able to be parsed from the defect entries "
                     f"(calculation_metadata attributes). Please specify the {name} in the function input."
                 )
+
+        self.bulk_dos = bulk_dos  # use setter method, needs to be after setting VBM
 
         # order entries for deterministic behaviour (particularly for plotting)
         self._sort_parse_and_check_entries()
@@ -630,6 +663,10 @@ class DefectThermodynamics(MSONable):
             "vbm": self.vbm,
             "band_gap": self.band_gap,
             "dist_tol": self.dist_tol,
+            "check_compatibility": self.check_compatibility,
+            "bulk_formula": self.bulk_formula,
+            "bulk_dos": self.bulk_dos,
+            "skip_check": self.skip_check,
         }
 
     @classmethod
@@ -667,6 +704,9 @@ class DefectThermodynamics(MSONable):
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
             dist_tol=d.get("dist_tol"),
+            check_compatibility=d.get("check_compatibility"),
+            bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
+            skip_check=d.get("skip_check"),
         )
 
     def to_json(self, filename: Optional[PathLike] = None):
@@ -1211,6 +1251,39 @@ class DefectThermodynamics(MSONable):
         self._chempots, self._el_refs = _parse_chempots(self._chempots, input_el_refs, update_el_refs=True)
 
     @property
+    def bulk_dos(self):
+        """
+        Get the ``pymatgen``  ``FermiDos`` for the bulk electronic density of
+        states (DOS), for calculating Fermi level positions and defect/carrier
+        concentrations, if set.
+
+        Otherwise, returns None.
+        """
+        return self._bulk_dos
+
+    @bulk_dos.setter
+    def bulk_dos(self, input_bulk_dos: Union[FermiDos, Vasprun, PathLike]):
+        r"""
+        Set the ``pymatgen``  ``FermiDos`` for the bulk electronic density of
+        states (DOS), for calculating Fermi level positions and defect/carrier
+        concentrations.
+
+        Should be a ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, a
+        ``pymatgen`` ``Vasprun`` object or path to the  ``vasprun.xml(.gz)``
+        output of a bulk DOS calculation in VASP.
+        Can also be provided later when using ``get_equilibrium_fermi_level()``,
+        ``get_quenched_fermi_level_and_concentrations`` etc.
+
+        Usually this is a static calculation with the `primitive` cell of the bulk
+        material, with relatively dense `k`-point sampling (especially for materials
+        with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+        level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+        convergence wrt `k`-point sampling. Consistent functional settings should be
+        used for the bulk DOS and defect supercell calculations.
+        """
+        self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_check=self.skip_check)
+
+    @property
     def defect_names(self):
         """
         List of names of defects in the ``DefectThermodynamics`` set.
@@ -1473,8 +1546,11 @@ class DefectThermodynamics(MSONable):
         )
 
     def _parse_fermi_dos(
-        self, bulk_dos: Union[PathLike, Vasprun, FermiDos], skip_check: bool = False
+        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_check: bool = False
     ) -> FermiDos:
+        if bulk_dos is None:
+            return None
+
         if isinstance(bulk_dos, FermiDos):
             fdos = bulk_dos
             # most similar settings to Vasprun.eigenvalue_band_properties:
@@ -1565,7 +1641,7 @@ class DefectThermodynamics(MSONable):
                 used for the bulk DOS and defect supercell calculations.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
-                been provided and parsed, and thus is set as the ``self.fermi_dos`` attribute.
+                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level).
@@ -1621,11 +1697,12 @@ class DefectThermodynamics(MSONable):
             corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
         """
         if bulk_dos is not None:
-            self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
-        elif not hasattr(self, "fermi_dos"):
+            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
+
+        if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
                 "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
-                "`DefectThermodynamics.fermi_dos`, which is required for calculating carrier "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
 
@@ -1647,7 +1724,7 @@ class DefectThermodynamics(MSONable):
             )
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
             qd_tot += get_doping(
-                fermi_dos=self.fermi_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
+                fermi_dos=self.bulk_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
             )
             return qd_tot
 
@@ -1658,7 +1735,7 @@ class DefectThermodynamics(MSONable):
             eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
             if return_concs:
                 e_conc, h_conc = get_e_h_concs(
-                    self.fermi_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
+                    self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
                 )
                 return eq_fermi_level, e_conc, h_conc
 
@@ -1746,7 +1823,7 @@ class DefectThermodynamics(MSONable):
                 used for the bulk DOS and defect supercell calculations.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
-                been provided and parsed, and thus is set as the ``self.fermi_dos`` attribute.
+                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level).
@@ -1840,14 +1917,15 @@ class DefectThermodynamics(MSONable):
             raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
 
         if bulk_dos is not None:
-            self.fermi_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
-        elif not hasattr(self, "fermi_dos"):
+            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
+
+        if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
                 "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
-                "`DefectThermodynamics.fermi_dos`, which is required for calculating carrier "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
-        orig_fermi_dos = deepcopy(self.fermi_dos)  # can get modified during annealing loops
+        orig_fermi_dos = deepcopy(self.bulk_dos)  # can get modified during annealing loops
 
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
@@ -1857,11 +1935,11 @@ class DefectThermodynamics(MSONable):
             _no_chempots_warning()
 
         annealing_dos = (
-            self.fermi_dos
+            self.bulk_dos
             if delta_gap == 0
             else scissor_dos(
                 delta_gap,
-                self.fermi_dos,
+                self.bulk_dos,
                 verbose=kwargs.get("verbose", False),
                 tol=kwargs.get("tol", 1e-8),
             )
@@ -1882,7 +1960,7 @@ class DefectThermodynamics(MSONable):
                 # gap not 0
             )
             assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
-            self.fermi_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
+            self.bulk_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
 
             annealing_defect_concentrations = self.get_equilibrium_concentrations(
                 chempots=chempots,

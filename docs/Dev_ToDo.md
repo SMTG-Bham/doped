@@ -19,7 +19,7 @@
 
 ## Housekeeping
 - Tutorials general structure clean-up
-- Clean up repo, removing old unnecessary git blobs
+- Remnant TODOs in code
 
 - Docs:
   - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
@@ -87,6 +87,7 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
+- Clean up repo, removing old unnecessary git blobs
 - Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 - Quick-start tutorial suggested by Alex G
 - Test chempot grid plotting tool.
