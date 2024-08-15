@@ -19,6 +19,7 @@ import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
+from pymatgen.electronic_structure.dos import FermiDos
 
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
@@ -180,6 +181,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
         cls.orig_Se_ext_no_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
         cls.orig_Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
+
+        # cls.CdTe_fermi_dos = get_fermi_dos(
+        #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
+        # )  # not used twice yet
 
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
@@ -475,12 +480,33 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
 
-        print(f"Checking {name} with mismatching chempots")
+        print("Checking CdTe with mismatching chempots")
         with warnings.catch_warnings(record=True) as w:
-            _defect_thermo = DefectThermodynamics(self.CdTe_defect_dict, chempots={"Cd": -1.0, "Te": -6})
+            defect_thermo = DefectThermodynamics(self.CdTe_defect_dict, chempots={"Cd": -1.0, "Te": -6})
         print([str(warning.message) for warning in w])  # for debugging
         assert len(w) == 1  # only chempot incompatibility warning
         assert str(w[0].message) == self.cdte_chempot_warning_message
+
+        assert defect_thermo.bulk_dos is None
+        defect_thermo.bulk_dos = os.path.join(
+            self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
+        )
+        assert isinstance(defect_thermo.bulk_dos, FermiDos)
+        assert np.isclose(defect_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
+
+        defect_thermo.bulk_dos = defect_thermo.bulk_dos  # test setting with FermiDos input
+        assert np.isclose(defect_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
+
+        print("Checking CdTe with fermi dos")
+        with warnings.catch_warnings(record=True) as w:
+            defect_thermo = DefectThermodynamics(
+                self.CdTe_defect_dict,
+                bulk_dos=os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 0  # no warning (e.g. VBM mismatch)
+        assert isinstance(defect_thermo.bulk_dos, FermiDos)
+        assert np.isclose(defect_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
 
     def test_DefectsParser_thermo_objs(self):
         """
