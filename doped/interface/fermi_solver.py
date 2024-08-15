@@ -17,12 +17,12 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
 from monty.json import MSONable
 from pymatgen.electronic_structure.dos import FermiDos, Spin
 from pymatgen.io.vasp import Vasprun
 from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
+from tqdm import tqdm
 
 from doped.thermodynamics import (
     _add_effective_dopant_concentration,
@@ -157,6 +157,7 @@ class FermiSolver(MSONable):
                 calculation in VASP, a ``pymatgen`` ``Vasprun`` object or a
                 ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
                 calculating carrier concentrations.
+                If not provided, uses ``DefectThermodynamics.bulk_dos`` if present.
 
                 Usually this is a static calculation with the `primitive` cell of
                 the bulk material, with relatively dense `k`-point sampling
@@ -165,6 +166,9 @@ class FermiSolver(MSONable):
                 (tetrahedron smearing) is usually recommended for best convergence
                 wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
+
+                Note that the ``DefectThermodynamics.bulk_dos`` will be set to match
+                this input, if provided.
             chempots (Optional[dict]):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level), under
@@ -198,16 +202,32 @@ class FermiSolver(MSONable):
                 can be either ``"doped"`` or ``"py-sc-fermi"``. ``"py-sc-fermi"``
                 allows the use of ``free_defects`` for advanced constrained defect
                 equilibria (i.e. mobile defects, see advanced thermodynamics tutorial),
-                while ``"doped"`` is usually quicker. Default is ``doped``, but will
-                attempt to switch to ``py-sc-fermi`` if required (and installed).
+                while ``"doped"`` is usually (but not always) quicker. Default is
+                ``doped``, but will attempt to switch to ``py-sc-fermi`` if required
+                (and installed).
             skip_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 ``DefectThermodynamics.vbm`` by >0.05 eV. Should only be used when the
                 reason for this difference is known/acceptable. Default is ``False``.
         """
+        # Note: In theory multiprocessing could be introduced to make thermodynamic calculations
+        # over large grids faster, but with the current code there seems to be issues with thread
+        # locking / synchronisation (which shouldn't be necessary...). Worth keeping in mind if
+        # needed in future.
+        # TODO: List class attributes in docstring
         self.defect_thermodynamics = defect_thermodynamics
-        fermi_dos = self.defect_thermodynamics._parse_fermi_dos(bulk_dos, skip_check=skip_check)
-        self.volume = fermi_dos.volume
+        self.skip_check = skip_check
+        if bulk_dos is not None:
+            self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
+                bulk_dos, skip_check=self.skip_check
+            )
+        if self.defect_thermodynamics.bulk_dos is None:
+            raise ValueError(
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
+                "concentrations and solving for Fermi level position."
+            )
+        self.volume = self.defect_thermodynamics.bulk_dos.volume
 
         if "fermi" in backend.lower():
             if bool(importlib.util.find_spec("py_sc_fermi")):
@@ -221,8 +241,8 @@ class FermiSolver(MSONable):
         else:
             raise ValueError(f"Unrecognised `backend`: {backend}")
 
-        self.bulk_dos = fermi_dos
         self.multiplicity_scaling = 1
+        self.py_sc_fermi_dos = None
         self._DefectSystem = self._DefectSpecies = self._DefectChargeState = self._DOS = None
 
         if self.backend == "py-sc-fermi":
@@ -263,9 +283,9 @@ class FermiSolver(MSONable):
         self._DefectChargeState = DefectChargeState
         self._DOS = DOS
 
-        if isinstance(self.bulk_dos, FermiDos):
-            self.bulk_dos = get_py_sc_fermi_dos_from_fermi_dos(
-                self.bulk_dos,
+        if isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
+            self.py_sc_fermi_dos = get_py_sc_fermi_dos_from_fermi_dos(
+                self.defect_thermodynamics.bulk_dos,
                 vbm=self.defect_thermodynamics.vbm,
                 bandgap=self.defect_thermodynamics.band_gap,
             )
@@ -291,7 +311,7 @@ class FermiSolver(MSONable):
         """
         raise_error = False
         if required_backend.lower() == "doped":
-            if not isinstance(self.bulk_dos, FermiDos):
+            if not isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
                 raise_error = True
         else:
             if self._DOS is None:
@@ -339,13 +359,12 @@ class FermiSolver(MSONable):
         """
         self._check_required_backend_and_error("doped")
         fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
-            bulk_dos=self.bulk_dos,
             chempots=chempots,
             limit=None,
             temperature=temperature,
             return_concs=True,
             effective_dopant_concentration=effective_dopant_concentration,
-        )
+        )  # use already-set bulk dos
         return fermi_level, electrons, holes
 
     def _get_limits(self, limit):
@@ -588,13 +607,12 @@ class FermiSolver(MSONable):
                 holes,
                 concentrations,
             ) = self.defect_thermodynamics.get_quenched_fermi_level_and_concentrations(  # type: ignore
-                bulk_dos=self.bulk_dos,
                 chempots=chempots,
                 limit=None,
                 annealing_temperature=annealing_temperature,
                 quenched_temperature=quenched_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
-            )
+            )  # use already-set bulk dos
             concentrations = concentrations.drop(
                 columns=[
                     "Charge",
@@ -659,12 +677,11 @@ class FermiSolver(MSONable):
 
     def scan_temperature(
         self,
-        temperature_range: Union[float, list[float]],
+        temperature_range: Optional[Union[float, list[float]]] = None,
         chempots: Optional[dict[str, float]] = None,
         limit: Optional[str] = None,
         annealing_temperature_range: Optional[Union[float, list[float]]] = None,
         quenching_temperature_range: Optional[Union[float, list[float]]] = None,
-        processes: int = 1,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -695,7 +712,6 @@ class FermiSolver(MSONable):
                 range to solve over. Defaults to None.
             quenching_temperature_range (Optional[Union[float, list[float]]]): Quenching temperature
                 range to solve over. Defaults to None.
-            processes (int): Number of processes to use for parallelization. Defaults to 1.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -722,8 +738,12 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations.
         """
+        _check_temperature_choices(
+            temperature_range, annealing_temperature_range, quenching_temperature_range, range=True
+        )
+
         # Ensure temperature ranges are lists
-        if isinstance(temperature_range, float):
+        if temperature_range is not None and isinstance(temperature_range, float):
             temperature_range = [temperature_range]
         if annealing_temperature_range is not None and isinstance(annealing_temperature_range, float):
             annealing_temperature_range = [annealing_temperature_range]
@@ -735,37 +755,35 @@ class FermiSolver(MSONable):
         elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
-        if annealing_temperature_range is not None and quenching_temperature_range is not None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chempots,
-                    quenched_temperature=quench_temp,
-                    annealing_temperature=anneal_temp,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-                for quench_temp, anneal_temp in product(
-                    quenching_temperature_range, annealing_temperature_range
-                )
+        if temperature_range is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chempots,
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                    )
+                    for temperature in tqdm(temperature_range)
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        elif annealing_temperature_range is None and quenching_temperature_range is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                )
-                for temperature in temperature_range
+        elif annealing_temperature_range is not None and quenching_temperature_range is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quench_temp,
+                        annealing_temperature=anneal_temp,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for quench_temp, anneal_temp in tqdm(
+                        product(quenching_temperature_range, annealing_temperature_range)
+                    )
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        else:
-            raise ValueError(
-                "You must specify both annealing and quenching temperature, or just temperature."
-            )
         return all_data_df
 
     def scan_chempots(
@@ -774,7 +792,6 @@ class FermiSolver(MSONable):
         temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        processes: int = 1,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -794,7 +811,6 @@ class FermiSolver(MSONable):
                 `quenching_temperature` must also be specified.
             quenching_temperature (Optional[float]): The temperature to quench to. If provided,
                 `annealing_temperature` must also be specified.
-            processes (int): The number of processes to use for parallelization. Defaults to 1.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -822,32 +838,33 @@ class FermiSolver(MSONable):
             pd.DataFrame: A DataFrame containing defect and carrier concentrations for each set
             of chemical potentials. Each row corresponds to a different set of chemical potentials.
         """
-        if annealing_temperature is not None and quenching_temperature is not None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chempots,
-                    quenched_temperature=quenching_temperature,
-                    annealing_temperature=annealing_temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-            )
-            all_data_df = pd.concat(all_data)
+        # TODO: This code needs to be either fixed or cut
+        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
+        all_data_df = pd.DataFrame()
 
-        elif annealing_temperature is None and quenching_temperature is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                )
+        if temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chempots,
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                    )
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        else:
-            raise ValueError(
-                "You must specify both annealing and quenching temperature, or just temperature."
+        elif annealing_temperature is not None and quenching_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quenching_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                ]
             )
 
         return all_data_df
@@ -860,7 +877,6 @@ class FermiSolver(MSONable):
         temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        processes: int = 1,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
@@ -884,7 +900,6 @@ class FermiSolver(MSONable):
                 Must be specified if `quenching_temperature` is provided.
             quenching_temperature (Optional[float]): The temperature to which the system is quenched.
                 Must be specified if `annealing_temperature` is provided.
-            processes (int): The number of parallel processes to use for the calculations. Defaults to 1.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -904,6 +919,9 @@ class FermiSolver(MSONable):
             effective dopant concentration. Each row represents the concentrations for a different
             dopant concentration.
         """
+        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
+        all_data_df = pd.DataFrame()
+
         if isinstance(effective_dopant_concentration_range, float):
             effective_dopant_concentration_range = [effective_dopant_concentration_range]
 
@@ -912,37 +930,33 @@ class FermiSolver(MSONable):
         elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
-        # Existing logic here, now correctly handling floats and lists
-        if annealing_temperature is not None and quenching_temperature is not None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chempots,
-                    quenched_temperature=quenching_temperature,
-                    annealing_temperature=annealing_temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-                for effective_dopant_concentration in effective_dopant_concentration_range
+        if temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chempots,
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        elif annealing_temperature is None and quenching_temperature is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots)(
-                    chempots=chempots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-                for effective_dopant_concentration in effective_dopant_concentration_range
-            )
-            all_data_df = pd.concat(all_data)
-
-        else:
-            raise ValueError(
-                "You must specify both annealing and quenching temperature, or just temperature."
+        elif annealing_temperature is not None and quenching_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quenching_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
+                ]
             )
 
         return all_data_df
@@ -955,7 +969,6 @@ class FermiSolver(MSONable):
         limits: Optional[list[str]] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        processes: int = 1,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -980,7 +993,6 @@ class FermiSolver(MSONable):
                 Must be specified if `quenching_temperature` is provided.
             quenching_temperature (Optional[float]): The temperature to which the system is quenched.
                 Must be specified if `annealing_temperature` is provided.
-            processes (int): The number of parallel processes to use for the calculations. Defaults to 1.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1009,6 +1021,9 @@ class FermiSolver(MSONable):
             interpolated set of chemical potentials. Each row represents the concentrations for
             a different interpolated point.
         """
+        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
+        all_data_df = pd.DataFrame()
+
         if chempots is None and limits is not None:
             chempots_1 = self._get_limits(limits[0])
             chempots_2 = self._get_limits(limits[1])
@@ -1017,34 +1032,32 @@ class FermiSolver(MSONable):
             chempots_2 = chempots[1]
 
         interpolated_chem_pots = self._get_interpolated_chempots(chempots_1, chempots_2, n_points)
-        if annealing_temperature is not None and quenching_temperature is not None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chempots,
-                    quenched_temperature=quenching_temperature,
-                    annealing_temperature=annealing_temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-                for chempots in interpolated_chem_pots
-            )
-            all_data_df = pd.concat(all_data)
 
-        elif annealing_temperature is None and quenching_temperature is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots)(
-                    chempots=chem_pots,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                )
-                for chem_pots in interpolated_chem_pots
+        if temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chem_pots,
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                    )
+                    for chem_pots in tqdm(interpolated_chem_pots)
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        else:
-            raise ValueError(
-                "You must specify both annealing and quenching temperature, or just temperature."
+        elif annealing_temperature is not None and quenching_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quenching_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for chempots in tqdm(interpolated_chem_pots)
+                ]
             )
 
         return all_data_df
@@ -1143,10 +1156,9 @@ class FermiSolver(MSONable):
         self,
         chempots: Optional[dict] = None,
         n_points: Optional[int] = 10,
-        temperature: Optional[float] = 300,
+        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        processes: int = 1,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -1169,8 +1181,6 @@ class FermiSolver(MSONable):
                 is annealed. Must be specified if `quenching_temperature` is provided.
             quenching_temperature (Optional[float]): The temperature to which the system
                 is quenched. Must be specified if `annealing_temperature` is provided.
-            processes (int): The number of parallel processes to use for the calculations.
-                Defaults to 1.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1198,6 +1208,9 @@ class FermiSolver(MSONable):
             pd.DataFrame: A DataFrame containing the Fermi energy solutions at the grid
             points, based on the provided chemical potentials and conditions.
         """
+        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
+        all_data_df = pd.DataFrame()
+
         if chempots is None:
             if self.chempots is None or "limits_wrt_el_refs" not in self.chempots:
                 raise ValueError(
@@ -1207,34 +1220,31 @@ class FermiSolver(MSONable):
 
         grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(n_points)
 
-        if annealing_temperature is not None and quenching_temperature is not None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots_pseudo)(
-                    chempots=chempots[1].to_dict(),
-                    quenched_temperature=quenching_temperature,
-                    annealing_temperature=annealing_temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fix_charge_states=fix_charge_states,
-                    free_defects=free_defects,
-                )
-                for chempots in grid.iterrows()
+        if temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chempots[1].to_dict(),
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                    )
+                    for chempots in tqdm(grid.iterrows())
+                ]
             )
-            all_data_df = pd.concat(all_data)
 
-        elif annealing_temperature is None and quenching_temperature is None:
-            all_data = Parallel(n_jobs=processes)(
-                delayed(self._solve_and_append_chempots)(
-                    chempots=chempots[1].to_dict(),
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                )
-                for chempots in grid.iterrows()
-            )
-            all_data_df = pd.concat(all_data)
-
-        else:
-            raise ValueError(
-                "You must specify both annealing and quenching temperature, or just temperature."
+        elif annealing_temperature is not None and quenching_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots[1].to_dict(),
+                        quenched_temperature=quenching_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for chempots in tqdm(grid.iterrows())
+                ]
             )
 
         return all_data_df
@@ -1247,10 +1257,9 @@ class FermiSolver(MSONable):
         el_refs: Optional[dict] = None,
         tolerance: float = 0.01,
         n_points: int = 10,
-        temperature: float = 300,
+        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
         quenching_temperature: Optional[float] = None,
-        processes: int = 1,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -1280,7 +1289,6 @@ class FermiSolver(MSONable):
                 Must be specified if `quenching_temperature` is provided.
             quenching_temperature (Optional[float]): The temperature to which the system is quenched.
                 Must be specified if `annealing_temperature` is provided.
-            processes (int): The number of parallel processes to use for the calculations. Defaults to 1.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1309,6 +1317,9 @@ class FermiSolver(MSONable):
             `annealing_temperature` and `quenching_temperature` are not specified together,
             or if `min_or_max` is not "minimize" or "maximize".
         """
+        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
+        results_df = pd.DataFrame()
+
         chempots, _el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
         assert chempots is not None
         starting_grid = ChemicalPotentialGrid.from_chempots(chempots)
@@ -1317,34 +1328,31 @@ class FermiSolver(MSONable):
         previous_value = None
 
         while True:
-            if annealing_temperature is not None and quenching_temperature is not None:
-                all_data = Parallel(n_jobs=processes)(
-                    delayed(self._solve_and_append_chempots_pseudo)(
-                        chempots=chempots[1].to_dict(),
-                        quenched_temperature=quenching_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        fix_charge_states=fix_charge_states,
-                        free_defects=free_defects,
-                    )
-                    for chempots in starting_grid.get_grid(n_points).iterrows()
+            if temperature is not None:
+                results_df = pd.concat(
+                    [
+                        self._solve_and_append_chempots(
+                            chempots=chempots[1].to_dict(),
+                            temperature=temperature,
+                            effective_dopant_concentration=effective_dopant_concentration,
+                        )
+                        for chempots in tqdm(starting_grid.get_grid(n_points).iterrows())
+                    ]
                 )
-                results_df = pd.concat(all_data)
 
-            elif annealing_temperature is None and quenching_temperature is None:
-                all_data = Parallel(n_jobs=processes)(
-                    delayed(self._solve_and_append_chempots)(
-                        chempots=chempots[1].to_dict(),
-                        temperature=temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                    )
-                    for chempots in starting_grid.get_grid(n_points).iterrows()
-                )
-                results_df = pd.concat(all_data)
-
-            else:
-                raise ValueError(
-                    "You must specify both annealing and quenching temperature, or just temperature."
+            elif annealing_temperature is not None and quenching_temperature is not None:
+                results_df = pd.concat(
+                    [
+                        self._solve_and_append_chempots_pseudo(
+                            chempots=chempots[1].to_dict(),
+                            quenched_temperature=quenching_temperature,
+                            annealing_temperature=annealing_temperature,
+                            effective_dopant_concentration=effective_dopant_concentration,
+                            fix_charge_states=fix_charge_states,
+                            free_defects=free_defects,
+                        )
+                        for chempots in tqdm(starting_grid.get_grid(n_points).iterrows())
+                    ]
                 )
 
             # Find chemical potentials value where target is lowest or highest
@@ -1508,8 +1516,9 @@ class FermiSolver(MSONable):
         assert self._DefectSystem
         entries = sorted(self.defect_thermodynamics.defect_entries, key=lambda x: x.name)
         labels = {_get_label_and_charge(entry.name)[0] for entry in entries}
-        defect_species: dict[str, Any] = {}
-        defect_species = {label: {"charge_states": {}, "nsites": None, "name": label} for label in labels}
+        defect_species: dict[str, Any] = {
+            label: {"charge_states": {}, "nsites": None, "name": label} for label in labels
+        }
         chempots = self._handle_chempots_for_py_sc_fermi(chempots)
 
         for entry in entries:
@@ -1533,7 +1542,7 @@ class FermiSolver(MSONable):
 
         return self._DefectSystem(
             defect_species=all_defect_species,
-            dos=self.bulk_dos,
+            dos=self.py_sc_fermi_dos,
             volume=self.volume,
             temperature=temperature,
             convergence_tolerance=1e-20,
@@ -1626,6 +1635,20 @@ class FermiSolver(MSONable):
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
         return target_system
+
+
+def _check_temperature_choices(
+    temperature: Optional[Union[float, list[float]]] = None,
+    annealing_temperature: Optional[Union[float, list[float]]] = None,
+    quenching_temperature: Optional[Union[float, list[float]]] = None,
+    range: bool = False,
+):
+    suffix = "_range" if range else ""
+    if temperature is None and (annealing_temperature is None or quenching_temperature is None):
+        raise ValueError(
+            f"Either `temperature{suffix}` or both `annealing_temperature{suffix}` and "
+            f"`quenching_temperature{suffix}` must be specified!"
+        )
 
 
 class ChemicalPotentialGrid:
