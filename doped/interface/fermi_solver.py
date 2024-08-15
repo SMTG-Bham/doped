@@ -326,7 +326,7 @@ class FermiSolver(MSONable):
     def _get_fermi_level_and_carriers(
         self,
         chempots: dict[str, float],
-        temperature: float,
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
     ) -> tuple[float, float, float]:
         """
@@ -341,6 +341,7 @@ class FermiSolver(MSONable):
             temperature (float):
                 The temperature at which to solve for the Fermi level
                 and carrier concentrations, in Kelvin.
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -375,7 +376,7 @@ class FermiSolver(MSONable):
     def equilibrium_solve(
         self,
         chempots: dict[str, float],
-        temperature: float,
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
     ) -> pd.DataFrame:
         """
@@ -394,6 +395,7 @@ class FermiSolver(MSONable):
                 chemical potentials.
             temperature (float):
                 The temperature at which to solve for defect concentrations, in Kelvin.
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -479,8 +481,8 @@ class FermiSolver(MSONable):
     def pseudo_equilibrium_solve(
         self,
         chempots: dict[str, float],
-        quenched_temperature: float,
         annealing_temperature: float,
+        quenched_temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -488,7 +490,7 @@ class FermiSolver(MSONable):
         """
         Calculate the self-consistent Fermi level and corresponding
         carrier/defect calculations under pseudo-equilibrium conditions given a
-        set of elemental chemical potentials, a quenching temperature, and an
+        set of elemental chemical potentials, a quenched temperature, and an
         annealing temperature.
 
         Typically not intended for direct usage, as the same functionality
@@ -555,6 +557,7 @@ class FermiSolver(MSONable):
                 (constrained equilibrium) Fermi level and carrier concentrations,
                 given the fixed total concentrations, which should correspond to
                 operating temperature of the material (typically room temperature).
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -646,8 +649,8 @@ class FermiSolver(MSONable):
         # else py-sc-fermi:
         defect_system = self._generate_annealed_defect_system(
             chempots=chempots,
-            quenched_temperature=quenched_temperature,
             annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
@@ -677,11 +680,11 @@ class FermiSolver(MSONable):
 
     def scan_temperature(
         self,
-        temperature_range: Optional[Union[float, list[float]]] = None,
+        annealing_temperature_range: Optional[Union[float, list[float]]] = None,
+        quenched_temperature_range: Union[float, list[float]] = 300,
+        temperature_range: Union[float, list[float]] = 300,
         chempots: Optional[dict[str, float]] = None,
         limit: Optional[str] = None,
-        annealing_temperature_range: Optional[Union[float, list[float]]] = None,
-        quenching_temperature_range: Optional[Union[float, list[float]]] = None,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -689,10 +692,36 @@ class FermiSolver(MSONable):
         """
         Scan over a range of temperatures and solve for the defect
         concentrations, carrier concentrations, and Fermi energy at each
-        temperature.
+        temperature / annealing & quenched temperature pair.
+
+        If ``annealing_temperature_range`` (and ``quenched_temperature_range``;
+        just 300 K by default) are specified, then the frozen defect approximation
+        is employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature_range`` is
+        specified, then the Fermi level and defect/carrier concentrations are
+        calculated assuming thermodynamic equilibrium at each temperature.
 
         Args:
-            temperature_range (Union[float, list[float]]): Temperature range to solve over.
+            annealing_temperature_range (Optional[Union[float, list[float]]]):
+                Temperature range in Kelvin at which to calculate the high
+                temperature (fixed) total defect concentrations, which should
+                correspond to the highest temperature during annealing/synthesis
+                of the material (at which we assume equilibrium defect
+                concentrations) within the frozen defect approach. Default is ``None``
+                (uses ``temperature_range`` under thermodynamic equilibrium).
+            quenched_temperature_range (Union[float, list[float]]):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is just 300 K.
+            temperature_range (Union[float, list[float]]):
+                Temperature range to solve over, under thermodynamic equilibrium
+                (if ``annealing_temperature_range`` is not specified).
+                Defaults to just 300 K.
             chempots (Optional[dict[str, float]]): Dictionary of chemical potentials to use for
                 calculating the defect formation energies (and thus concentrations and Fermi level).
                 This can be a dictionary of chemical potentials for a single limit (limit),
@@ -708,10 +737,6 @@ class FermiSolver(MSONable):
                 - `"X-rich"/"X-poor"` where X is an element in the system, in which case the most
                 X-rich/poor limit will be used (e.g., "Li-rich").
                 - A key in the `chempots["limits"]` dictionary.
-            annealing_temperature_range (Optional[Union[float, list[float]]]): Annealing temperature
-                range to solve over. Defaults to None.
-            quenching_temperature_range (Optional[Union[float, list[float]]]): Quenching temperature
-                range to solve over. Defaults to None.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -731,43 +756,23 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
-        Raises:
-            ValueError: If both annealing and quenching temperature ranges are not specified, or only
-            one of them is specified.
-
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations.
         """
-        _check_temperature_choices(
-            temperature_range, annealing_temperature_range, quenching_temperature_range, range=True
-        )
-
-        # Ensure temperature ranges are lists
-        if temperature_range is not None and isinstance(temperature_range, float):
+        # Ensure temperature ranges are lists:
+        if isinstance(temperature_range, float):
             temperature_range = [temperature_range]
         if annealing_temperature_range is not None and isinstance(annealing_temperature_range, float):
             annealing_temperature_range = [annealing_temperature_range]
-        if quenching_temperature_range is not None and isinstance(quenching_temperature_range, float):
-            quenching_temperature_range = [quenching_temperature_range]
+        if isinstance(quenched_temperature_range, float):
+            quenched_temperature_range = [quenched_temperature_range]
 
         if chempots is None and limit is not None:
             chempots = self._get_limits(limit)
         elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
-        if temperature_range is not None:
-            all_data_df = pd.concat(
-                [
-                    self._solve_and_append_chempots(
-                        chempots=chempots,
-                        temperature=temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                    )
-                    for temperature in tqdm(temperature_range)
-                ]
-            )
-
-        elif annealing_temperature_range is not None and quenching_temperature_range is not None:
+        if annealing_temperature_range is not None:
             all_data_df = pd.concat(
                 [
                     self._solve_and_append_chempots_pseudo(
@@ -779,8 +784,20 @@ class FermiSolver(MSONable):
                         free_defects=free_defects,
                     )
                     for quench_temp, anneal_temp in tqdm(
-                        product(quenching_temperature_range, annealing_temperature_range)
+                        product(quenched_temperature_range, annealing_temperature_range)
                     )
+                ]
+            )
+
+        else:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots(
+                        chempots=chempots,
+                        temperature=temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                    )
+                    for temperature in tqdm(temperature_range)
                 ]
             )
 
@@ -789,9 +806,9 @@ class FermiSolver(MSONable):
     def scan_chempots(
         self,
         chempots: list[dict[str, float]],
-        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
-        quenching_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -800,17 +817,39 @@ class FermiSolver(MSONable):
         Scan over a range of chemical potentials and solve for the defect
         concentrations and Fermi energy at each set of chemical potentials.
 
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
         Args:
-            chempots (list[dict[str, float]]): A list of dictionaries where each dictionary
-                represents a set of chemical potentials to scan over. The keys are element symbols,
+            chempots (list[dict[str, float]]):
+                A list of dictionaries where each dictionary represents a set
+                of chemical potentials to scan over. The keys are element symbols,
                 and the values are their corresponding chemical potentials.
-            temperature (Optional[float]): The temperature at which to solve for defect concentrations
-                and Fermi energy. If `None`, the method will require both `annealing_temperature`
-                and `quenching_temperature` to be specified.
-            annealing_temperature (Optional[float]): The temperature to anneal at. If provided,
-                `quenching_temperature` must also be specified.
-            quenching_temperature (Optional[float]): The temperature to quench to. If provided,
-                `annealing_temperature` must also be specified.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi energy, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -830,39 +869,32 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
-        Raises:
-            ValueError: If only one of `annealing_temperature` or `quenching_temperature` is specified,
-            or if both are `None` without a specified `temperature`.
-
         Returns:
             pd.DataFrame: A DataFrame containing defect and carrier concentrations for each set
             of chemical potentials. Each row corresponds to a different set of chemical potentials.
         """
         # TODO: This code needs to be either fixed or cut
-        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
-        all_data_df = pd.DataFrame()
+        if annealing_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quenched_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                ]
+            )
 
-        if temperature is not None:
+        else:
             all_data_df = pd.concat(
                 [
                     self._solve_and_append_chempots(
                         chempots=chempots,
                         temperature=temperature,
                         effective_dopant_concentration=effective_dopant_concentration,
-                    )
-                ]
-            )
-
-        elif annealing_temperature is not None and quenching_temperature is not None:
-            all_data_df = pd.concat(
-                [
-                    self._solve_and_append_chempots_pseudo(
-                        chempots=chempots,
-                        quenched_temperature=quenching_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        fix_charge_states=fix_charge_states,
-                        free_defects=free_defects,
                     )
                 ]
             )
@@ -874,9 +906,9 @@ class FermiSolver(MSONable):
         effective_dopant_concentration_range: Union[float, list[float]],
         chempots: Optional[dict[str, float]] = None,
         limit: Optional[str] = None,
-        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
-        quenching_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
@@ -884,22 +916,47 @@ class FermiSolver(MSONable):
         Calculate the defect concentrations under a range of effective dopant
         concentrations.
 
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
         Args:
             effective_dopant_concentration_range (Union[float, list[float]]):
-                The range of effective dopant concentrations to explore. This can be a single value
-                or a list of values representing different concentrations.
-            chempots (Optional[dict[str, float]]): A dictionary of chemical potentials for the elements,
-                where the keys are element symbols and the values are the corresponding chemical
-                potentials.
-            limit (Optional[str]): The chemical potential limit to use for calculations. This can
-                specify a particular limit such as "X-rich" or "X-poor", or can be a key from the
-                chemical potentials dictionary.
-            temperature (Optional[float]): The temperature at which to perform the calculations.
-                If not provided, `annealing_temperature` and `quenching_temperature` must be specified.
-            annealing_temperature (Optional[float]): The temperature at which the system is annealed.
-                Must be specified if `quenching_temperature` is provided.
-            quenching_temperature (Optional[float]): The temperature to which the system is quenched.
-                Must be specified if `annealing_temperature` is provided.
+                The range of effective dopant concentrations to solver over.
+                This can be a single value or a list of values representing
+                different concentrations.
+            chempots (Optional[dict[str, float]]):
+                A dictionary of chemical potentials for the elements, where
+                the keys are element symbols and the values are the
+                corresponding chemical potentials.
+            limit (Optional[str]):
+                The chemical potential limit to use for calculations. This can
+                specify a particular limit such as "X-rich" or "X-poor", or can
+                be a key from the chemical potentials dictionary.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi energy, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -910,18 +967,11 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
-        Raises:
-            ValueError: Raised if only one of `annealing_temperature` or `quenching_temperature` is
-            provided, or if both are `None` without a specified `temperature`.
-
         Returns:
             pd.DataFrame: A DataFrame containing the defect and carrier concentrations for each
             effective dopant concentration. Each row represents the concentrations for a different
             dopant concentration.
         """
-        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
-        all_data_df = pd.DataFrame()
-
         if isinstance(effective_dopant_concentration_range, float):
             effective_dopant_concentration_range = [effective_dopant_concentration_range]
 
@@ -930,12 +980,13 @@ class FermiSolver(MSONable):
         elif chempots is None:
             raise ValueError("You must specify a limit or chempots dictionary.")
 
-        if temperature is not None:
+        if annealing_temperature is not None:
             all_data_df = pd.concat(
                 [
-                    self._solve_and_append_chempots(
+                    self._solve_and_append_chempots_pseudo(
                         chempots=chempots,
-                        temperature=temperature,
+                        quenched_temperature=quenched_temperature,
+                        annealing_temperature=annealing_temperature,
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
@@ -944,13 +995,12 @@ class FermiSolver(MSONable):
                 ]
             )
 
-        elif annealing_temperature is not None and quenching_temperature is not None:
+        else:
             all_data_df = pd.concat(
                 [
-                    self._solve_and_append_chempots_pseudo(
+                    self._solve_and_append_chempots(
                         chempots=chempots,
-                        quenched_temperature=quenching_temperature,
-                        annealing_temperature=annealing_temperature,
+                        temperature=temperature,
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
@@ -964,11 +1014,11 @@ class FermiSolver(MSONable):
     def interpolate_chempots(
         self,
         n_points: int,
-        temperature: Optional[float] = 300.0,
         chempots: Optional[list[dict]] = None,
         limits: Optional[list[str]] = None,
         annealing_temperature: Optional[float] = None,
-        quenching_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -979,20 +1029,46 @@ class FermiSolver(MSONable):
         Chemical potentials can be interpolated between two sets of chemical
         potentials or between two limits.
 
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
         Args:
-            n_points (int): The number of points to generate between chemical potential
+            n_points (int):
+                The number of points to generate between chemical potential
                 end points.
-            temperature (Optional[float]): The temperature to solve at. Defaults to 300.0 K.
-            chempots (Optional[list[dict]]): A list containing two dictionaries, each representing
-                a set of chemical potentials to interpolate between. If not provided, `limits` must
-                be specified.
-            limits (Optional[list[str]]): A list containing two strings, each representing a chemical
-                potential limit (e.g., "X-rich" or "X-poor") to interpolate between. If not provided,
-                `chempots` must be specified.
-            annealing_temperature (Optional[float]): The temperature at which the system is annealed.
-                Must be specified if `quenching_temperature` is provided.
-            quenching_temperature (Optional[float]): The temperature to which the system is quenched.
-                Must be specified if `annealing_temperature` is provided.
+            chempots (Optional[list[dict]]):
+                A list containing two dictionaries, each representing a set
+                of chemical potentials to interpolate between. If not provided,
+                ``limits`` must be specified.
+            limits (Optional[list[str]]):
+                A list containing two strings, each representing a chemical
+                potential limit (e.g., "X-rich" or "X-poor") to interpolate
+                between. If not provided, ``chempots`` must be specified.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi energy, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1012,18 +1088,11 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
-        Raises:
-            ValueError: Raised if only one of `annealing_temperature` or `quenching_temperature` is
-            provided, or if both are `None` without a specified `temperature`.
-
         Returns:
             pd.DataFrame: A DataFrame containing the defect and carrier concentrations for each
             interpolated set of chemical potentials. Each row represents the concentrations for
             a different interpolated point.
         """
-        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
-        all_data_df = pd.DataFrame()
-
         if chempots is None and limits is not None:
             chempots_1 = self._get_limits(limits[0])
             chempots_2 = self._get_limits(limits[1])
@@ -1033,7 +1102,22 @@ class FermiSolver(MSONable):
 
         interpolated_chem_pots = self._get_interpolated_chempots(chempots_1, chempots_2, n_points)
 
-        if temperature is not None:
+        if annealing_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots,
+                        quenched_temperature=quenched_temperature,
+                        annealing_temperature=annealing_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for chempots in tqdm(interpolated_chem_pots)
+                ]
+            )
+
+        else:
             all_data_df = pd.concat(
                 [
                     self._solve_and_append_chempots(
@@ -1042,21 +1126,6 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                     )
                     for chem_pots in tqdm(interpolated_chem_pots)
-                ]
-            )
-
-        elif annealing_temperature is not None and quenching_temperature is not None:
-            all_data_df = pd.concat(
-                [
-                    self._solve_and_append_chempots_pseudo(
-                        chempots=chempots,
-                        quenched_temperature=quenching_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        fix_charge_states=fix_charge_states,
-                        free_defects=free_defects,
-                    )
-                    for chempots in tqdm(interpolated_chem_pots)
                 ]
             )
 
@@ -1093,18 +1162,23 @@ class FermiSolver(MSONable):
         ]
 
     def _solve_and_append_chempots(
-        self, chempots: dict[str, float], temperature: float, **kwargs
+        self, chempots: dict[str, float], temperature: float = 300, **kwargs
     ) -> pd.DataFrame:
         """
         Solve for the defect concentrations at a given temperature and set of
         chemical potentials.
 
         Args:
-            chempots (dict[str, float]): A dictionary containing the chemical potentials for the elements.
-                The keys are element symbols, and the values are their corresponding chemical potentials.
-            temperature (float): The temperature at which to solve for defect concentrations, in Kelvin.
-            kwargs: Additional keyword arguments that may be passed to the solver, such as options for
-                specific defect calculations or solver configurations.
+            chempots (dict[str, float]):
+                A dictionary containing the chemical potentials for the elements.
+                The keys are element symbols, and the values are their
+                corresponding chemical potentials.
+            temperature (float):
+                The temperature at which to solve for defect concentrations,
+                in Kelvin. Defaults to 300 K.
+            kwargs:
+                Additional keyword arguments that may be passed to the solver,
+                such as options for specific defect calculations or solver configurations.
 
         Returns:
             pd.DataFrame: A DataFrame containing the calculated defect and carrier concentrations,
@@ -1121,8 +1195,8 @@ class FermiSolver(MSONable):
     def _solve_and_append_chempots_pseudo(
         self,
         chempots: dict[str, float],
-        quenched_temperature: float,
         annealing_temperature: float,
+        quenched_temperature: float = 300,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -1130,13 +1204,19 @@ class FermiSolver(MSONable):
         approach, given a range of chemical potentials and temperatures.
 
         Args:
-            chempots (dict[str, float]): A dictionary containing the chemical potentials
-                for the elements. The keys are element symbols, and the values are their
-                corresponding chemical potentials.
-            quenched_temperature (float): The temperature at which the system is quenched, in Kelvin.
-            annealing_temperature (float): The temperature at which the system is annealed, in Kelvin.
-            kwargs: Additional keyword arguments that may be passed to the solver, such as options
-                for specific defect calculations or solver configurations.
+            chempots (dict[str, float]):
+                A dictionary containing the chemical potentials for the
+                elements. The keys are element symbols, and the values are
+                their corresponding chemical potentials.
+            annealing_temperature (float):
+                The temperature at which the system is annealed, in Kelvin.
+            quenched_temperature (float):
+                The temperature at which the system is quenched, in Kelvin.
+                Defaults to 300 K.
+            kwargs:
+                Additional keyword arguments that may be passed to the solver,
+                such as options for specific defect calculations or solver
+                configurations.
 
         Returns:
             pd.DataFrame: A DataFrame containing the calculated defect and carrier concentrations
@@ -1156,31 +1236,55 @@ class FermiSolver(MSONable):
         self,
         chempots: Optional[dict] = None,
         n_points: Optional[int] = 10,
-        temperature: Optional[float] = None,
         annealing_temperature: Optional[float] = None,
-        quenching_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         """
-        Given a doped-formatted chemical potential dictionary, generate a
-        ChemicalPotentialGrid object and return the Fermi energy solutions at
-        the grid points.
+        Given a ``doped``-formatted chemical potential dictionary, generate a
+        ``ChemicalPotentialGrid`` object and calculate the Fermi level
+        positions and defect/carrier concentrations at the grid points.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
 
         Args:
-            chempots (Optional[dict]): A dictionary of chemical potentials to scan.
-                If not provided, the default chemical potentials from `self.chempots`
-                will be used, if available.
-            n_points (Optional[int]): The number of points to generate along each axis
-                of the grid. The actual number of grid points may be less, as points
-                outside the convex hull are excluded. Defaults to 10.
-            temperature (Optional[float]): The temperature at which to solve for the
-                Fermi energy. Defaults to 300 K.
-            annealing_temperature (Optional[float]): The temperature at which the system
-                is annealed. Must be specified if `quenching_temperature` is provided.
-            quenching_temperature (Optional[float]): The temperature to which the system
-                is quenched. Must be specified if `annealing_temperature` is provided.
+            chempots (Optional[dict]):
+                A dictionary of chemical potentials to scan. If not provided,
+                the default chemical potentials from `self.chempots` will be
+                used, if available.
+            n_points (Optional[int]):
+                The number of points to generate along each axis of the grid.
+                The actual number of grid points may be less, as points outside
+                the convex hull are excluded. Defaults to 10.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi energy, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1200,17 +1304,10 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
-        Raises:
-            ValueError: If neither `chempots` nor `self.chempots` is provided, or if both
-            `annealing_temperature` and `quenching_temperature` are not specified together.
-
         Returns:
             pd.DataFrame: A DataFrame containing the Fermi energy solutions at the grid
             points, based on the provided chemical potentials and conditions.
         """
-        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
-        all_data_df = pd.DataFrame()
-
         if chempots is None:
             if self.chempots is None or "limits_wrt_el_refs" not in self.chempots:
                 raise ValueError(
@@ -1220,7 +1317,22 @@ class FermiSolver(MSONable):
 
         grid = ChemicalPotentialGrid.from_chempots(chempots).get_grid(n_points)
 
-        if temperature is not None:
+        if annealing_temperature is not None:
+            all_data_df = pd.concat(
+                [
+                    self._solve_and_append_chempots_pseudo(
+                        chempots=chempots[1].to_dict(),
+                        annealing_temperature=annealing_temperature,
+                        quenched_temperature=quenched_temperature,
+                        effective_dopant_concentration=effective_dopant_concentration,
+                        fix_charge_states=fix_charge_states,
+                        free_defects=free_defects,
+                    )
+                    for chempots in tqdm(grid.iterrows())
+                ]
+            )
+
+        else:
             all_data_df = pd.concat(
                 [
                     self._solve_and_append_chempots(
@@ -1232,34 +1344,19 @@ class FermiSolver(MSONable):
                 ]
             )
 
-        elif annealing_temperature is not None and quenching_temperature is not None:
-            all_data_df = pd.concat(
-                [
-                    self._solve_and_append_chempots_pseudo(
-                        chempots=chempots[1].to_dict(),
-                        quenched_temperature=quenching_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        fix_charge_states=fix_charge_states,
-                        free_defects=free_defects,
-                    )
-                    for chempots in tqdm(grid.iterrows())
-                ]
-            )
-
         return all_data_df
 
     def min_max_X(
         self,
         target: str,
-        min_or_max: str,
+        min_or_max: str = "max",
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
         tolerance: float = 0.01,
         n_points: int = 10,
-        temperature: Optional[float] = None,
-        annealing_temperature: Optional[float] = None,
-        quenching_temperature: Optional[float] = None,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         free_defects: Optional[list[str]] = None,
@@ -1273,22 +1370,51 @@ class FermiSolver(MSONable):
         The process continues until the change in the target variable is less than
         the specified tolerance.
 
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
         Args:
-            target (str): The target variable to minimize or maximize, e.g., "Electrons (cm^-3)".
-            min_or_max (str): Specify whether to "minimize" or "maximize" the target variable.
+            target (str):
+                The target variable to minimize or maximize, e.g., "Electrons (cm^-3)".
+            min_or_max (str):
+                Specify whether to "minimize" ("min") or "maximize" ("max"; default)
+                the target variable.
             chempots (Optional[dict]): A dictionary of initial chemical potentials to use.
                 If not provided, default potentials from `self.chempots` are used.
             el_refs (Optional[dict]): A dictionary of elemental reference energies used
                 for calculating chemical potentials relative to these references.
-            tolerance (float): The convergence criterion for the target variable. The search
-                stops when the target value change is less than this value. Defaults to 0.01.
-            n_points (int): The number of points to generate along each axis of the grid for
-                the initial search. Defaults to 10.
-            temperature (float): The temperature at which to perform the calculations. Defaults to 300 K.
-            annealing_temperature (Optional[float]): The temperature at which the system is annealed.
-                Must be specified if `quenching_temperature` is provided.
-            quenching_temperature (Optional[float]): The temperature to which the system is quenched.
-                Must be specified if `annealing_temperature` is provided.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi energy, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            tolerance (float):
+                The convergence criterion for the target variable. The search
+                stops when the target value change is less than this value.
+                Defaults to ``0.01``.
+            n_points (int):
+                The number of points to generate along each axis of the grid for
+                the initial search. Defaults to ``10``.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -1309,17 +1435,16 @@ class FermiSolver(MSONable):
                 to be "frozen-in" upon quenching. Defaults to ``None``.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the results of the minimization or maximization process,
-            including the optimal chemical potentials and the corresponding values of the target variable.
+            pd.DataFrame:
+                A ``DataFrame`` containing the results of the minimization or
+                maximization process, including the optimal chemical potentials and
+                the corresponding values of the target variable.
 
         Raises:
-            ValueError: If neither `chempots` nor `self.chempots` is provided, if both
-            `annealing_temperature` and `quenching_temperature` are not specified together,
-            or if `min_or_max` is not "minimize" or "maximize".
+            ValueError:
+                If neither ``chempots`` nor ``self.chempots`` is provided, or if
+                ``min_or_max`` is not ``"minimize"/"min"`` or ``"maximize"/"max"``.
         """
-        _check_temperature_choices(temperature, annealing_temperature, quenching_temperature)
-        results_df = pd.DataFrame()
-
         chempots, _el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
         assert chempots is not None
         starting_grid = ChemicalPotentialGrid.from_chempots(chempots)
@@ -1328,7 +1453,21 @@ class FermiSolver(MSONable):
         previous_value = None
 
         while True:
-            if temperature is not None:
+            if annealing_temperature is not None:
+                results_df = pd.concat(
+                    [
+                        self._solve_and_append_chempots_pseudo(
+                            chempots=chempots[1].to_dict(),
+                            annealing_temperature=annealing_temperature,
+                            quenched_temperature=quenched_temperature,
+                            effective_dopant_concentration=effective_dopant_concentration,
+                            fix_charge_states=fix_charge_states,
+                            free_defects=free_defects,
+                        )
+                        for chempots in tqdm(starting_grid.get_grid(n_points).iterrows())
+                    ]
+                )
+            else:
                 results_df = pd.concat(
                     [
                         self._solve_and_append_chempots(
@@ -1340,42 +1479,27 @@ class FermiSolver(MSONable):
                     ]
                 )
 
-            elif annealing_temperature is not None and quenching_temperature is not None:
-                results_df = pd.concat(
-                    [
-                        self._solve_and_append_chempots_pseudo(
-                            chempots=chempots[1].to_dict(),
-                            quenched_temperature=quenching_temperature,
-                            annealing_temperature=annealing_temperature,
-                            effective_dopant_concentration=effective_dopant_concentration,
-                            fix_charge_states=fix_charge_states,
-                            free_defects=free_defects,
-                        )
-                        for chempots in tqdm(starting_grid.get_grid(n_points).iterrows())
-                    ]
-                )
-
             # Find chemical potentials value where target is lowest or highest
             if target in results_df.columns:
-                if min_or_max == "min":
+                if "min" in min_or_max:
                     target_chem_pot = results_df[results_df[target] == results_df[target].min()][
                         chempots_labels
                     ]
                     target_dataframe = results_df[results_df[target] == results_df[target].min()]
-                elif min_or_max == "max":
+                elif "max" in min_or_max:
                     target_chem_pot = results_df[results_df[target] == results_df[target].max()][
                         chempots_labels
                     ]
                     target_dataframe = results_df[results_df[target] == results_df[target].max()]
                 current_value = (
-                    results_df[target].min() if min_or_max == "min" else results_df[target].max()
+                    results_df[target].min() if "min" in min_or_max else results_df[target].max()
                 )
 
             else:
                 # Filter the DataFrame for the specific defect
                 filtered_df = results_df[results_df.index == target]
                 # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
-                if min_or_max == "min":
+                if "min" in min_or_max:
                     min_value = filtered_df["Concentration (cm^-3)"].min()
                     target_chem_pot = results_df.loc[results_df["Concentration (cm^-3)"] == min_value][
                         chempots_labels
@@ -1384,7 +1508,7 @@ class FermiSolver(MSONable):
                         results_df[chempots_labels].eq(target_chem_pot.iloc[0]).all(axis=1)
                     ]
 
-                elif min_or_max == "max":
+                elif "max" in min_or_max:
                     max_value = filtered_df["Concentration (cm^-3)"].max()
                     target_chem_pot = results_df.loc[results_df["Concentration (cm^-3)"] == max_value][
                         chempots_labels
@@ -1394,10 +1518,9 @@ class FermiSolver(MSONable):
                     ]
                 current_value = (
                     filtered_df["Concentration (cm^-3)"].min()
-                    if min_or_max == "min"
+                    if "min" in min_or_max
                     else filtered_df["Concentration (cm^-3)"].max()
                 )
-                # get the
 
             # Check if the change in the target value is less than the tolerance
             if (
@@ -1484,32 +1607,40 @@ class FermiSolver(MSONable):
 
     def _generate_defect_system(
         self,
-        temperature: float,
         chempots: dict[str, float],
+        temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
     ) -> "DefectSystem":
         """
-        Generates a DefectSystem object from the DefectThermodynamics and a set
-        of chemical potentials.
+        Generates a ``DefectSystem`` object from ``self.defect_thermodynamics``
+        and a set of chemical potentials.
 
-        This method constructs a `DefectSystem` object, which encompasses all relevant
-        defect species and their properties under the given conditions, including
-        temperature, chemical potentials, and an optional dopant concentration.
+        This method constructs a ``DefectSystem`` object, which encompasses all
+        relevant defect species and their properties under the given conditions,
+        including temperature, chemical potentials, and an optional dopant
+        concentration.
 
         Args:
-            temperature (float): The temperature at which to perform the calculations, in Kelvin.
-            chempots (dict[str, float]): A dictionary containing the chemical potentials for the elements.
-                The keys are element symbols, and the values are their corresponding chemical potentials.
-            effective_dopant_concentration (Optional[float]): The fixed concentration (in cm^-3) of
-                an arbitrary dopant or impurity in the material. This value is included in the charge
-                neutrality condition to analyze the Fermi level and doping response under hypothetical
-                doping conditions. A positive value corresponds to donor doping, while a negative value
-                corresponds to acceptor doping. Defaults to None, indicating no extrinsic dopant.
+            chempots (dict[str, float]):
+                A dictionary containing the chemical potentials for the elements.
+                The keys are element symbols, and the values are their corresponding
+                chemical potentials.
+            temperature (float):
+                The temperature at which to perform the calculations, in Kelvin.
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or impurity
+                in the material. This value is included in the charge neutrality
+                condition to analyze the Fermi level and doping response under
+                hypothetical doping conditions. A positive value corresponds to donor
+                doping, while a negative value corresponds to acceptor doping.
+                Defaults to ``None``, corresponding to no extrinsic dopant.
 
         Returns:
-            DefectSystem: An initialized `DefectSystem` object, containing the defect species with their
-            charge states, formation energies, and degeneracies, as well as the density of states (DOS),
-            volume, and temperature of the system.
+            DefectSystem:
+                An initialized ``DefectSystem`` object, containing the defect species
+                with their charge states, formation energies, and degeneracies, as well
+                as the density of states (DOS), volume, and temperature of the system.
         """
         self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectSpecies
@@ -1551,49 +1682,54 @@ class FermiSolver(MSONable):
     def _generate_annealed_defect_system(
         self,
         chempots: dict[str, float],
-        quenched_temperature: float,
         annealing_temperature: float,
+        quenched_temperature: float = 300,
         fix_charge_states: bool = False,
         effective_dopant_concentration: Optional[float] = None,
         free_defects: Optional[list[str]] = None,
     ) -> "DefectSystem":
         """
-        Generate a py-sc-fermi `DefectSystem` object that has defect
+        Generate a ``py-sc-fermi`` ``DefectSystem`` object that has defect
         concentrations fixed to the values determined at a high temperature
-        (annealing_temperature), and then set to a lower temperature
-        (quenched_temperature).
+        (``annealing_temperature``), and then set to a lower temperature
+        (``quenched_temperature``).
 
-        This method creates a defect system where defect concentrations are initially
-        calculated at an annealing temperature and then "frozen" as the system is cooled
-        to a lower quenching temperature. It can optionally fix the concentrations of
-        individual defect charge states or allow charge states to vary while keeping
-        total defect concentrations fixed.
+        This method creates a defect system where defect concentrations are
+        initially calculated at an annealing temperature and then "frozen" as
+        the system is cooled to a lower quenched temperature. It can optionally
+        fix the concentrations of individual defect charge states or allow
+        charge states to vary while keeping total defect concentrations fixed.
 
         Args:
-            chempots (dict[str, float]): A dictionary containing the chemical potentials
-                for the elements. The keys are element symbols, and the values
-                are their corresponding chemical potentials.
-            quenched_temperature (float): The lower temperature (in Kelvin) to which
-                the system is quenched.
-            annealing_temperature (float): The higher temperature (in Kelvin)
-                at which the system is annealed to set initial defect concentrations.
-            fix_charge_states (bool): Whether to fix the concentrations of individual
-                defect charge states (True) or allow charge states to vary while
-                keeping total defect concentrations fixed (False). Defaults to False.
-            effective_dopant_concentration (Optional[float]): The fixed concentration (in cm^-3)
-                of an arbitrary dopant/impurity in the material. A positive value
-                indicates donor doping, while a negative value indicates acceptor doping.
-                Defaults to None, indicating no extrinsic dopant.
-            free_defects (Optional[list[str]]): A list of defects to be excluded from high-temperature
-                concentration fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in." Defaults to None.
+            chempots (dict[str, float]):
+                A dictionary containing the chemical potentials for the elements.
+                The keys are element symbols, and the values are their corresponding
+                chemical potentials.
+            annealing_temperature (float):
+                The higher temperature (in Kelvin) at which the system is annealed
+                to set initial defect concentrations.
+            quenched_temperature (float):
+                The lower temperature (in Kelvin) to which the system is quenched.
+                Defaults to 300 K.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``). Defaults to ``False``.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant/impurity in
+                the material. A positive value indicates donor doping, while a negative
+                value indicates acceptor doping. Defaults to ``None``, corresponding to
+                no extrinsic dopant.
+            free_defects (Optional[list[str]]):
+                A list of defects to be excluded from high-temperature concentration
+                fixing, useful for highly mobile defects that are not expected to be
+                "frozen-in." Defaults to ``None``.
 
         Returns:
             DefectSystem: A low-temperature defect system (`quenched_temperature`)
             with defect concentrations fixed to high-temperature (`annealing_temperature`) values.
         """
         self._check_required_backend_and_error("py-sc-fermi")
-        # Calculate concentrations at initial temperature
         if free_defects is None:
             free_defects = []
 
@@ -1602,7 +1738,7 @@ class FermiSolver(MSONable):
             temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
         )
-        initial_conc_dict = defect_system.concentration_dict()
+        initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
 
         # Exclude the free_defects, carrier concentrations and Fermi energy from fixing
         all_free_defects = ["Fermi Energy", "n0", "p0"]
@@ -1635,20 +1771,6 @@ class FermiSolver(MSONable):
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
         return target_system
-
-
-def _check_temperature_choices(
-    temperature: Optional[Union[float, list[float]]] = None,
-    annealing_temperature: Optional[Union[float, list[float]]] = None,
-    quenching_temperature: Optional[Union[float, list[float]]] = None,
-    range: bool = False,
-):
-    suffix = "_range" if range else ""
-    if temperature is None and (annealing_temperature is None or quenching_temperature is None):
-        raise ValueError(
-            f"Either `temperature{suffix}` or both `annealing_temperature{suffix}` and "
-            f"`quenching_temperature{suffix}` must be specified!"
-        )
 
 
 class ChemicalPotentialGrid:
