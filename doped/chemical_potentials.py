@@ -9,7 +9,7 @@ import copy
 import itertools
 import os
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -1681,6 +1681,77 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
 
+def get_doped_chempots_from_entries(
+    entries: Sequence[Union[ComputedEntry, ComputedStructureEntry, PDEntry]],
+    composition: Union[str, Composition, ComputedEntry],
+    sort_by: Optional[str] = None,
+    single_chempot_limit: bool = False,
+) -> dict:
+    r"""
+    Given a list of ``ComputedEntry``\s / ``ComputedStructureEntry``\s /
+    ``PDEntry``\s and the bulk ``composition``, returns the chemical potential
+    limits dictionary in the ``doped`` format (i.e. ``{"limits": [{'limit':
+    [chempot_dict]}], ...}``) for the host material.
+
+    Args:
+        entries (list[ComputedEntry]):
+            List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s /
+            ``PDEntry``\s for the chemical system, from which to determine
+            the chemical potential limits for the host material (``composition``).
+        composition (str, Composition, ComputedEntry):
+            Composition of the host material either as a string
+            (e.g. 'LiFePO4') a ``pymatgen`` ``Composition`` object (e.g.
+            ``Composition('LiFePO4')``), or a ``ComputedEntry`` object.
+        sort_by (str):
+            If set, will sort the chemical potential limits in the output
+            ``DataFrame`` according to the chemical potential of the specified
+            element (from element-rich to element-poor conditions).
+        single_chempot_limit (bool):
+            If set to ``True``, only returns the first chemical potential limit
+            in the calculated chemical potentials dictionary. Mainly intended for
+            internal ``doped`` usage when the host material is calculated to be
+            unstable with respect to the competing phases.
+
+    Returns:
+        dict:
+            Dictionary of chemical potential limits in the ``doped`` format.
+    """
+    if isinstance(composition, (str, Composition)):
+        composition = Composition(composition)
+    else:
+        composition = composition.composition
+
+    phase_diagram = PhaseDiagram(
+        entries,
+        list(map(Element, composition.elements)),  # preserve bulk comp element ordering
+    )
+    chem_lims = phase_diagram.get_all_chempots(composition.reduced_composition)
+    chem_lims_iterator = list(chem_lims.items())[:1] if single_chempot_limit else chem_lims.items()
+
+    # remove Element to make it JSONable:
+    no_element_chem_lims = {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims_iterator}
+
+    if sort_by is not None:
+        no_element_chem_lims = dict(
+            sorted(no_element_chem_lims.items(), key=lambda x: x[1][sort_by], reverse=True)
+        )
+
+    chempots = {
+        "limits": no_element_chem_lims,
+        "elemental_refs": {str(el): ent.energy_per_atom for el, ent in phase_diagram.el_refs.items()},
+        "limits_wrt_el_refs": {},
+    }
+
+    # relate the limits to the elemental energies
+    for limit, chempot_dict in chempots["limits"].items():
+        relative_chempot_dict = copy.deepcopy(chempot_dict)
+        for e in relative_chempot_dict:
+            relative_chempot_dict[e] -= chempots["elemental_refs"][e]
+        chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
+
+    return chempots
+
+
 class CompetingPhasesAnalyzer:
     # TODO: Allow parsing using pymatgen ComputedEntries as well, to aid interoperability with
     #  high-througput architectures like AiiDA or atomate2. See:
@@ -2151,7 +2222,7 @@ class CompetingPhasesAnalyzer:
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
-            map(Element, self.bulk_composition.elements),
+            list(map(Element, self.bulk_composition.elements)),  # preserve bulk comp element ordering
         )
 
         # check if it's stable and if not, warn user and downshift to get _least_ unstable point on convex
@@ -2179,38 +2250,15 @@ class CompetingPhasesAnalyzer:
             )
             self._intrinsic_phase_diagram = PhaseDiagram(
                 [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
-                map(Element, self.bulk_composition.elements),
+                list(map(Element, self.bulk_composition.elements)),  # preserve bulk comp element ordering
             )
 
-        chem_lims = self._intrinsic_phase_diagram.get_all_chempots(self.bulk_composition)
-
-        # remove Element to make it JSONable:
-        no_element_chem_lims = {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims.items()}
-
-        if unstable_host:
-            no_element_chem_lims = {
-                k: {str(kk): vv for kk, vv in v.items()} for k, v in list(chem_lims.items())[:1]
-            }
-
-        if sort_by is not None:
-            no_element_chem_lims = dict(
-                sorted(no_element_chem_lims.items(), key=lambda x: x[1][sort_by], reverse=True)
-            )
-
-        self._intrinsic_chempots = {
-            "limits": no_element_chem_lims,
-            "elemental_refs": {
-                str(el): ent.energy_per_atom for el, ent in self._intrinsic_phase_diagram.el_refs.items()
-            },
-            "limits_wrt_el_refs": {},
-        }
-
-        # relate the limits to the elemental energies
-        for limit, chempot_dict in self._intrinsic_chempots["limits"].items():
-            relative_chempot_dict = copy.deepcopy(chempot_dict)
-            for e in relative_chempot_dict:
-                relative_chempot_dict[e] -= self._intrinsic_chempots["elemental_refs"][e]
-            self._intrinsic_chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
+        self._intrinsic_chempots = get_doped_chempots_from_entries(
+            self._intrinsic_phase_diagram.entries,
+            self.bulk_composition,
+            sort_by=sort_by,
+            single_chempot_limit=unstable_host,
+        )
 
         # get chemical potentials as pandas dataframe
         chemical_potentials = []
@@ -2340,7 +2388,7 @@ class CompetingPhasesAnalyzer:
         return self._intrinsic_chempots
 
     @property
-    def intrinsic_phase_diagram(self) -> dict:
+    def intrinsic_phase_diagram(self) -> PhaseDiagram:
         """
         Returns the calculated intrinsic phase diagram.
         """
