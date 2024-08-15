@@ -1852,7 +1852,7 @@ class DefectThermodynamics(MSONable):
                 Change in band gap (in eV) of the host material at the annealing
                 temperature (e.g. due to thermal renormalisation), relative to the
                 original band gap of the ``FermiDos`` object (assumed to correspond to the
-                quenching temperature). If set, applies a scissor correction to ``fermi_dos``
+                quenched temperature). If set, applies a scissor correction to ``fermi_dos``
                 which renormalises the band gap symmetrically about the VBM and CBM (i.e.
                 assuming equal up/downshifts of the band-edges around their original
                 eigenvalues) while the defect levels remain fixed.
