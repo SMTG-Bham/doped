@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import numpy as np
 import pandas as pd
 from monty.json import MSONable
+from pymatgen.core.periodic_table import Element
 from pymatgen.electronic_structure.dos import FermiDos, Spin
 from pymatgen.io.vasp import Vasprun
 from scipy.interpolate import griddata
@@ -1605,7 +1606,9 @@ class FermiSolver(MSONable):
             return pd.concat(
                 [
                     self.pseudo_equilibrium_solve(
-                        single_chempot_dict=chempot_series.to_dict(),
+                        single_chempot_dict={
+                            k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
+                        },
                         el_refs=el_refs,
                         annealing_temperature=annealing_temperature,
                         quenched_temperature=quenched_temperature,
@@ -1620,7 +1623,9 @@ class FermiSolver(MSONable):
         return pd.concat(
             [
                 self.equilibrium_solve(
-                    single_chempot_dict=chempot_series.to_dict(),
+                    single_chempot_dict={
+                        k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
+                    },
                     el_refs=el_refs,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
@@ -1786,6 +1791,7 @@ class FermiSolver(MSONable):
         starting_grid = ChemicalPotentialGrid(chempots)
         current_vertices = starting_grid.vertices
         chempots_labels = list(current_vertices.columns)
+        print(current_vertices, chempots_labels)
         previous_value = None
 
         while True:
@@ -1793,7 +1799,9 @@ class FermiSolver(MSONable):
                 results_df = pd.concat(
                     [
                         self.pseudo_equilibrium_solve(
-                            single_chempot_dict=chempot_series.to_dict(),
+                            single_chempot_dict={
+                                k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
+                            },
                             el_refs=el_refs,
                             annealing_temperature=annealing_temperature,
                             quenched_temperature=quenched_temperature,
@@ -1808,7 +1816,9 @@ class FermiSolver(MSONable):
                 results_df = pd.concat(
                     [
                         self.equilibrium_solve(
-                            single_chempot_dict=chempot_series.to_dict(),
+                            single_chempot_dict={
+                                k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
+                            },
                             el_refs=el_refs,
                             temperature=temperature,
                             effective_dopant_concentration=effective_dopant_concentration,
@@ -2151,10 +2161,17 @@ class ChemicalPotentialGrid:
                 chemical potentials `with respect to the elemental reference
                 energies` will be used (i.e. ``chempots["limits_wrt_el_refs"]``)!
         """
-        if "limits_wrt_el_refs" in chempots:
-            self.vertices = pd.DataFrame.from_dict(chempots["limits_wrt_el_refs"], orient="index")
-        else:
-            self.vertices = pd.DataFrame.from_dict(chempots, orient="index")
+        unformatted_chempots_dict = chempots.get("limits_wrt_el_refs", chempots)
+        test_elt = Element("H")
+        formatted_chempots_dict = {
+            limit: {
+                f"μ_{k}" if test_elt.is_valid_symbol(k) else k: v
+                for (k, v) in unformatted_chempots_subdict.items()
+            }
+            for limit, unformatted_chempots_subdict in unformatted_chempots_dict.items()
+        }
+
+        self.vertices = pd.DataFrame.from_dict(formatted_chempots_dict, orient="index")
 
     def get_grid(self, n_points: int = 100) -> pd.DataFrame:
         """
@@ -2222,6 +2239,8 @@ class ChemicalPotentialGrid:
         complex_num = complex(0, n_points)
 
         # Get the convex hull of the vertices
+        print(independent_vars)
+        print(independent_vars.values)
         hull = ConvexHull(independent_vars.values)
 
         # Create a dense grid that covers the entire range of the vertices

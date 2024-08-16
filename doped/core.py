@@ -1394,7 +1394,9 @@ def _no_chempots_warning(property="Formation energies (and concentrations)"):
     )
 
 
-def _get_dft_chempots(chempots, el_refs, limit):
+def _get_dft_chempots(
+    chempots: Optional[dict], el_refs: Optional[dict] = None, limit: Optional[str] = None
+):
     """
     Parse the DFT chempots from the input chempots and limit.
     """

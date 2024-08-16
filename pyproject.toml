@@ -46,7 +46,8 @@ Repository = "https://github.com/SMTG-Bham/doped"
 [project.optional-dependencies]
 tests = [
     "pytest<8.2",  # with pytest==8.2.0, seemed to cause memory issue on GH Actions mpl tests, python=3.10
-    "pytest-mpl>=0.16.1"
+    "pytest-mpl>=0.16.1",
+    "py-sc-fermi"
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
 analysis = [
