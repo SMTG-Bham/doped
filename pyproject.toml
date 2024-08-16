@@ -21,12 +21,8 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
-    "spglib>=2.4.0",  # previously explicitly set to <=2.0.2 to avoid unnecessary warnings
-    # (https://github.com/spglib/spglib/issues/338) but causing dependency issues
-    # (https://github.com/SMTG-Bham/doped/issues/73), being worked on in
-    # https://github.com/spglib/spglib/issues/462 -- update Troubleshooting.rst and spglib warning in
-    # doped.utils.symmetry when finally resolved
+    "pymatgen>=2024.5.31",  # limiting factor: breaking changes in `VaspInputSet`;
+    # https://github.com/materialsproject/pymatgen/issues/3860
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "pandas",
@@ -45,9 +41,10 @@ Repository = "https://github.com/SMTG-Bham/doped"
 
 [project.optional-dependencies]
 tests = [
-    "pytest<8.2",  # with pytest==8.2.0, seemed to cause memory issue on GH Actions mpl tests, python=3.10
+    "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "py-sc-fermi"
+    "mp-api",  # not required by default as user can use legacy API, but needed for tests
+    "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
 analysis = [

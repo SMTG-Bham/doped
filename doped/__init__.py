@@ -71,9 +71,6 @@ def _ignore_pmg_warnings():
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
 
-    # SpglibDataset warning introduced in v2.4.1
-    warnings.filterwarnings("ignore", message="dict interface")
-
 
 _ignore_pmg_warnings()
 
