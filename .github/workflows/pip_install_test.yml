@@ -19,7 +19,7 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest, macos-14 ]
-        python-version: [ '3.9', '3.10', '3.11' ]
+        python-version: [ '3.9', '3.10', '3.11', '3.12' ]  # 3.13 released in October 2024
         exclude:
           - os: macos-14
             python-version: '3.9'  # Exclude Python 3.9 on macOS, not supported for macOS-14 tests
