@@ -1,6 +1,6 @@
 # `doped` Development To-Do List
 ## Chemical potential
-- Check through chemical potential TO-DOs. Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
+- Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
 - Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?) Also can see https://github.com/materialsproject/pymatgen-analysis-defects/blob/main/pymatgen/analysis/defects/plotting/phases.py for 2D chempot plotting.
   - Also see `Cs2SnTiI6` notebooks for template code for this.
@@ -15,6 +15,8 @@
   - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!  
   - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
   - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
+- Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
+- 2D corrections; like `pydefect_2d`, or recommended to use SCPC in VASP?
 - Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
 ## Housekeeping

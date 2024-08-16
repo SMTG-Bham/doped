@@ -5,7 +5,7 @@ Utility code and functions for symmetry analysis of structures and defects.
 import contextlib
 import os
 import warnings
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from pymatgen.analysis.defects.core import DefectType
@@ -25,8 +25,6 @@ from doped.utils.parsing import (
     _get_defect_supercell_bulk_site_coords,
     _get_unrelaxed_defect_structure,
 )
-
-warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
 
 
 def _set_spglib_warnings_env_var():
@@ -50,13 +48,15 @@ def _check_spglib_version():
         warnings.warn(
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by:\n"
-            f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
-            f"(to ensure no duplicate installations).\n"
-            f"- Then, install spglib with `conda install -c conda-forge spglib` or "
-            f"`pip install git+https://github.com/spglib/spglib "
-            f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
-            f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
+            f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
+            f"spglib`."
+            # No longer required as of spglib v2.5:
+            # f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
+            # f"(to ensure no duplicate installations).\n"
+            # f"- Then, install spglib with `conda install -c conda-forge spglib` or "
+            # f"`pip install git+https://github.com/spglib/spglib "
+            # f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
+            # f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
         )
 
 
@@ -551,10 +551,15 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
     return new_structure
 
 
-def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: bool = True):
+def get_primitive_structure(
+    sga_or_struct: Union[SpacegroupAnalyzer, Structure],
+    ignored_species: Optional[list] = None,
+    clean: bool = True,
+    **kwargs,
+):
     """
     Get a consistent/deterministic primitive structure from a
-    SpacegroupAnalyzer object.
+    ``SpacegroupAnalyzer`` object, or ``pymatgen`` ``Structure``.
 
     For some materials (e.g. zinc blende), there are multiple equivalent
     primitive cells, so for reproducibility and in line with most structure
@@ -562,10 +567,28 @@ def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: 
     fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
     (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
 
-    If ignored_species is set, then the sorting function used to determine the
+    If ``ignored_species`` is set, then the sorting function used to determine the
     ideal primitive structure will ignore sites with species in
-    ignored_species.
+    ``ignored_species``.
+
+    Args:
+        sga_or_struct:
+            ``SpacegroupAnalyzer`` object or ``Structure`` object to get the
+            corresponding primitive structure of. If a ``Structure`` object,
+            then additional kwargs are passed to the ``_get_sga`` function
+            which obtains the ``SpacegroupAnalyzer`` object for this structure.
+        ignored_species:
+            List of species to ignore when determining the ideal primitive
+            structure. (Default: None)
+        clean:
+            Whether to return a 'clean' version of the primitive structure,
+            with the lattice matrix in a standardised form. (Default: True)
+        **kwargs:
+            Additional keyword arguments to pass to the ``_get_sga`` function
+            (e.g. ``symprec`` etc).
     """
+    sga = _get_sga(sga_or_struct, **kwargs) if isinstance(sga_or_struct, Structure) else sga_or_struct
+
     possible_prim_structs = []
     for _i in range(4):
         struct = sga.get_primitive_standard_structure()
@@ -1100,7 +1123,6 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Returns:
         str: Defect point symmetry.
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
@@ -1200,7 +1222,6 @@ def point_symmetry_from_defect_entry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
@@ -1506,7 +1527,6 @@ def point_symmetry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
 
