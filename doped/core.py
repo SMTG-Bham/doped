@@ -30,10 +30,6 @@ if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
 
 
-# SpglibDataset warning introduced in v2.4.1, can be ignored for now
-warnings.filterwarnings("ignore", message="dict interface")
-
-
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
@@ -1438,10 +1434,8 @@ def _guess_and_set_struct_oxi_states(structure):
         if oxidation states could not be guessed.
     """
     bv_analyzer = BVAnalyzer()
-    with contextlib.suppress(ValueError), warnings.catch_warnings():
-        # ValueError raised if oxi states can't be assigned, and SpglibDataset warning introduced in
-        # v2.4.1, can be ignored for now:
-        warnings.filterwarnings("ignore", message="dict interface")
+    with contextlib.suppress(ValueError):
+        # ValueError raised if oxi states can't be assigned
         oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
         if all(
             np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species

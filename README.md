@@ -31,13 +31,7 @@ displacements from DFT supercell calculations. See the [JOSS paper](https://doi.
 ## Installation
 ```bash
 pip install doped  # install doped and dependencies
-conda install -c conda-forge spglib  # bundle C libraries with spglib
 ```
-
-Note that either `conda install -c conda-forge spglib` or
-`pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF`
-should be used after `pip install doped`, which ensures that the correct C libraries are bundled with
-`spglib`, to prevent unnecessary warnings.
 
 Alternatively if desired, `doped` can also be installed from `conda` with:
 
@@ -64,9 +58,10 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 Not currently cited but should be for chempot plot:
 - Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_arXiv_](https://arxiv.org/abs/2406.15637) 2024
 -->
+- M. Elgaml et al. **_Controlling the Superconductivity of Nb<sub>2</sub>Pd<sub>x</sub>S<sub>5</sub> via Reversible Li Intercalation_** [_Inorganic Chemistry_](https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524) 2024
 - Z. Yuan & G. Hautier **_First-principles study of defects and doping limits in CaO_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0211707) 2024
 - B. E. Murdock et al. **_Li-Site Defects Induce Formation of Li-Rich Impurity Phases: Implications for Charge Distribution and Performance of LiNi<sub>0.5-x</sub>M<sub>x</sub>Mn<sub>1.5</sub>O<sub>4</sub> Cathodes (M = Fe and Mg; x = 0.05–0.2)_** [_Advanced Materials_](https://doi.org/10.1002/adma.202400343) 2024
-- A. G. Squires et al. **_Oxygen dimerization as a defect-driven process in bulk LiNiO2<sub>2</sub>_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-lcmkj) 2024
+- A. G. Squires et al. **_Oxygen dimerization as a defect-driven process in bulk LiNiO2<sub>2</sub>_** [_ACS Energy Letters_](https://pubs.acs.org/doi/10.1021/acsenergylett.4c01307) 2024
 - Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based
 Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_arXiv_](https://doi.org/10.48550/arXiv.2401.02257) 2024
 - S. Hachmioune et al. **_Exploring the Thermoelectric Potential of MgB4: Electronic Band Structure, Transport Properties, and Defect Chemistry_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.4c00584) 2024

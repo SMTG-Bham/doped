@@ -266,7 +266,6 @@ def group_defects_by_distance(
     #  would be independent of this... but challenging to setup without complex clustering approaches (
     #  for now this works very well as is, and this is a rare case and usually not a problem anyway as
     #  dist_tol can just be adjusted as needed)
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
 
     # initial group by Defect.name (same nominal defect), then distance to equiv sites
     # first make dictionary of nominal defect name: list of entries with that name
@@ -433,7 +432,7 @@ class DefectThermodynamics(MSONable):
         plots.
 
         Args:
-            defect_entries ([DefectEntry] or {str: DefectEntry}):
+            defect_entries (list[DefectEntry] or dict[str, DefectEntry]):
                 A list or dict of DefectEntry objects. Note that ``DefectEntry.name``
                 attributes are used for grouping and plotting purposes! These should
                 be in the format "{defect_name}_{optional_site_info}_{charge_state}".
