@@ -911,9 +911,23 @@ class CompetingPhases:
         Diatomic gaseous molecules are generated as molecules-in-a-box as
         appropriate (e.g. for O2, F2, H2 etc).
 
-        Often ``e_above_hull`` can be lowered to reduce the number of
-        calculations while retaining good accuracy relative to the typical
-        error of defect calculations.
+        Often ``e_above_hull`` can be lowered (e.g. to ``0``) to reduce the
+        number of calculations while retaining good accuracy relative to the
+        typical error of defect calculations.
+
+        The default ``e_above_hull`` of 50 meV/atom works well in accounting for
+        MP formation energy inaccuracies in most known cases. However, some
+        critical thinking is key (as always!) and so if there are any obvious
+        missing phases or known failures of the Materials Project energetics in
+        your chemical space of interest, you should adjust this parameter to
+        account for this (or alternatively manually include these known missing
+        phases in your competing phase calculations, to be included in parsing
+        and chemical potential analysis later on).
+
+        Particular attention should be paid for materials containing transition
+        metals, (inter)metallic systems, mixed oxidation states, van der Waals
+        (vdW) binding and/or large spin-orbit coupling (SOC) effects, for which
+        the Materials Project energetics are typically less reliable.
 
         Args:
             composition (str, ``Composition``, ``Structure``):
@@ -933,9 +947,9 @@ class CompetingPhases:
                 All phases that would border the host material on the phase
                 diagram, if their relative energy was downshifted by
                 ``e_above_hull``, are included.
-                Often ``e_above_hull`` can be lowered to reduce the number of
-                calculations while retaining good accuracy relative to the
-                typical error of defect calculations.
+                Often ``e_above_hull`` can be lowered (e.g. to ``0``) to reduce
+                the number of calculations while retaining good accuracy relative
+                to the typical error of defect calculations.
                 (Default is 0.05 eV/atom).
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
@@ -1434,6 +1448,8 @@ class CompetingPhases:
         return formatted_entries
 
 
+# TODO: Merge this to `CompetingPhases`, and just have options to only write extrinsic files to
+#   output? And smart file/folder overwriting handling (like in SnB?)
 class ExtrinsicCompetingPhases(CompetingPhases):
     def __init__(
         self,
@@ -1463,9 +1479,23 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         Diatomic gaseous molecules are generated as molecules-in-a-box as
         appropriate (e.g. for O2, F2, H2 etc).
 
-        Often ``e_above_hull`` can be lowered to reduce the number of
-        calculations while retaining good accuracy relative to the typical
-        error of defect calculations.
+        Often ``e_above_hull`` can be lowered (e.g. to ``0``) to reduce the
+        number of calculations while retaining good accuracy relative to the
+        typical error of defect calculations.
+
+        The default ``e_above_hull`` of 50 meV/atom works well in accounting for
+        MP formation energy inaccuracies in most known cases. However, some
+        critical thinking is key (as always!) and so if there are any obvious
+        missing phases or known failures of the Materials Project energetics in
+        your chemical space of interest, you should adjust this parameter to
+        account for this (or alternatively manually include these known missing
+        phases in your competing phase calculations, to be included in parsing
+        and chemical potential analysis later on).
+
+        Particular attention should be paid for materials containing transition
+        metals, (inter)metallic systems, mixed oxidation states, van der Waals
+        (vdW) binding and/or large spin-orbit coupling (SOC) effects, for which
+        the Materials Project energetics are typically less reliable.
 
         Args:
             composition (str, ``Composition``, ``Structure``):
@@ -1492,9 +1522,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 diagram, if their relative energy was downshifted by
                 ``e_above_hull``, are included.
 
-                Often ``e_above_hull`` can be lowered to reduce the number of
-                calculations while retaining good accuracy relative to the
-                typical error of defect calculations.
+                Often ``e_above_hull`` can be lowered (e.g. to ``0``) to reduce
+                the number of calculations while retaining good accuracy relative
+                to the typical error of defect calculations.
 
                 Default is 0.05 eV/atom.
             full_sub_approach (bool):
