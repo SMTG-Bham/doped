@@ -58,6 +58,7 @@ pdf = ["pycairo"]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
+"doped" = ["py.typed"]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
