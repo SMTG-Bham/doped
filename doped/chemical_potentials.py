@@ -15,9 +15,14 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from cmcrameri import cm
+from labellines import labelLines
+from matplotlib.ticker import AutoMinorLocator
 from monty.serialization import loadfn
+from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import SETTINGS, Composition, Element, Structure
@@ -30,7 +35,10 @@ from pymatgen.entries.computed_entries import (
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
+from scipy.interpolate import griddata, interp1d
+from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
@@ -2416,7 +2424,7 @@ class CompetingPhasesAnalyzer:
         potential limits will be returned.
         """
         if not hasattr(self, "_chempots"):
-            self.calculate_chempots()
+            self.calculate_chempots(verbose=False)
         return self._chempots
 
     @property
@@ -2425,7 +2433,7 @@ class CompetingPhasesAnalyzer:
         Returns the calculated intrinsic chemical potential limits.
         """
         if not hasattr(self, "_intrinsic_chempots"):
-            self.calculate_chempots()
+            self.calculate_chempots(verbose=False)
         return self._intrinsic_chempots
 
     @property
@@ -2434,7 +2442,7 @@ class CompetingPhasesAnalyzer:
         Returns the calculated intrinsic phase diagram.
         """
         if not hasattr(self, "_intrinsic_phase_diagram"):
-            self.calculate_chempots()
+            self.calculate_chempots(verbose=False)
         return self._intrinsic_phase_diagram
 
     def _cplap_input(self, dependent_variable: Optional[str] = None, filename: PathLike = "input.dat"):
@@ -2607,6 +2615,297 @@ class CompetingPhasesAnalyzer:
         string += "\\end{table}"
 
         return string
+
+    def plot_chempot_heatmap(
+        self,
+        dependent_element: Optional[Union[str, Element]] = None,
+        xlim: Optional[tuple[float, float]] = None,
+        ylim: Optional[tuple[float, float]] = None,
+        padding: Optional[float] = None,
+        title: Optional[Union[str, bool]] = None,
+        label_positions: Optional[Union[list[float], dict[str, float], bool]] = None,
+        filename: Optional[PathLike] = None,
+        style_file: Optional[PathLike] = None,
+    ):
+        """
+        Todo.
+
+        style_file (PathLike):     Path to a mplstyle file to use for the plot.
+        If None (default), uses     the default doped style (from
+        doped/utils/doped.mplstyle).
+        """
+        # Only works for ternary systems! For 2D, warn and return line plot?
+        # For 4D+, could set constraint for fixed μ of other element, or fixed bordering phase?
+        # -> Add to Future ToDo
+        # TODO: Draft! Need to test for multiple systems, add options, return mpl object etc etc
+        # Options: x/ylims or padding, colourmap, labelling, label midpoints (list or dict?)
+        # TODO: Plot extrinsic too?
+        # TODO: Code in this function (particularly label position handling and intersections) should be
+        #  able to be made more succinct, and also modularise a bit?
+        # TODO: Expand axes slightly if labels touching bbox
+        # TODO: Extend cbar so ticks at both ends?
+        # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
+        #  control; implement this (removes need for np.unique() call)), units = plot y units
+        cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
+
+        # check dimensionality:
+        if len(cpd.elements) == 2:  # switch to line plot
+            warnings.warn(
+                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary "
+                "system, switching to a chemical potential line plot."
+            )
+            # TODO
+        elif len(cpd.elements) != 3:
+            raise ValueError(
+                f"Chemical potential heatmap (i.e. 2D) plotting is only possible for ternary "
+                f"systems, but this is a {len(cpd.elements)}-D system!"
+            )
+            # TODO: Allow fixed chempot value for other elements to reduce to 2/3D
+
+        host_domains = cpd.domains[self.bulk_composition.reduced_formula]
+
+        if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
+            dependent_element = self.bulk_composition.elements[-1]
+        elif isinstance(dependent_element, str):
+            dependent_element = Element(dependent_element)
+        assert isinstance(dependent_element, Element)  # typing
+
+        dependent_el_idx = cpd.elements.index(dependent_element)
+        independent_el_indices = [i for i in range(len(cpd.elements)) if i != dependent_el_idx]
+        dependent_el_pts = np.array(host_domains[:, dependent_el_idx])
+        independent_el_pts = np.array(host_domains[:, independent_el_indices])
+        hull = ConvexHull(independent_el_pts)  # convex hull of points to get bounding polygon
+
+        # create a dense grid that covers the entire range of the vertices:
+        x_min, y_min = independent_el_pts.min(axis=0)
+        x_max, y_max = independent_el_pts.max(axis=0)
+        grid_x, grid_y = np.mgrid[x_min:x_max:300j, y_min:y_max:300j]
+        grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
+
+        # Delaunay triangulation to get points inside the hull:
+        delaunay = Delaunay(hull.points[hull.vertices])
+        inside_hull = delaunay.find_simplex(grid_points) >= 0
+        points_inside = grid_points[inside_hull]
+
+        # interpolate the values to get the dependent chempot here:
+        values_inside = griddata(independent_el_pts, dependent_el_pts, points_inside, method="linear")
+
+        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        fig, ax = plt.subplots()
+        mesh_x, x_indices = np.unique(points_inside[:, 0], return_inverse=True)
+        mesh_y, y_indices = np.unique(points_inside[:, 1], return_inverse=True)
+
+        # Step 2: Create the mesh grid and initialize with NaNs
+        mesh_z = np.full((len(mesh_y), len(mesh_x)), np.nan)
+
+        # Step 3: Populate the mesh grid
+        mesh_z[y_indices, x_indices] = values_inside
+
+        dep_mu = ax.pcolormesh(
+            mesh_x,
+            mesh_y,
+            mesh_z,
+            rasterized=True,
+            cmap=cm.batlow,
+            shading="auto",
+        )
+        cbar = fig.colorbar(dep_mu)
+
+        x_range = abs(x_max - x_min)
+        y_range = abs(y_max - y_min)
+
+        if xlim is None:
+            x_padding = padding or x_range * 0.1
+            xlim = (float(x_min - x_padding), float(x_max + x_padding))
+
+        if ylim is None:
+            y_padding = padding or y_range * 0.1
+            ylim = (float(y_min - y_padding), float(y_max + y_padding))
+
+        ax.set_xlim(*xlim), ax.set_ylim(*ylim)
+        cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
+        ax.set_xlabel(rf"$\Delta\mu$ ({cpd.elements[independent_el_indices[0]].symbol}) (eV)")
+        ax.set_ylabel(rf"$\Delta\mu$ ({cpd.elements[independent_el_indices[1]].symbol}) (eV)")
+        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+        if title is not False:
+            title = title or latexify(f"{self.bulk_composition.reduced_formula}")
+            ax.set_title(title)
+
+        # plot formation energy lines:
+        lines = []
+        labels = []
+        intersections = []
+
+        for formula, pts in cpd.domains.items():
+            if formula == self.bulk_composition.reduced_formula:
+                continue
+            x = np.linspace(-50, 50, 1000)
+            # get domain points which match those in host_domains:
+            domain_pts = [
+                chempot_coords
+                for chempot_coords in pts
+                if any(np.allclose(chempot_coords, coords) for coords in host_domains)
+            ]
+            if len(domain_pts) < 2:
+                continue  # not a stable bordering phase
+
+            f = interp1d(
+                np.array(domain_pts)[:, independent_el_indices[0]],
+                np.array(domain_pts)[:, independent_el_indices[1]],
+                kind="linear",
+                assume_sorted=False,
+                fill_value="extrapolate",
+            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "divide by zero")
+                vertical_line = (np.abs(f(x)) == np.inf).any()
+            if vertical_line:  # handle any vertical lines
+                line = ax.axvline(
+                    domain_pts[0][independent_el_indices[0]], label=latexify(formula), color="k"
+                )
+                x_val = domain_pts[0][independent_el_indices[0]]
+                y_min, y_max = ax.get_ylim()
+                intersections.append(((x_val, y_min), (x_val, y_max)))
+            else:
+                (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
+
+                # Find intersections with the bounding box
+                x_min, x_max = ax.get_xlim()
+                y_min, y_max = ax.get_ylim()
+
+                x_intersections = []
+                y_intersections = []
+
+                # Check intersections with vertical bounds (x_min and x_max)
+                y_x_min = f(x_min)
+                y_x_max = f(x_max)
+                if y_min <= y_x_min <= y_max:
+                    x_intersections.append((x_min, float(y_x_min)))
+                if y_min <= y_x_max <= y_max:
+                    x_intersections.append((x_max, float(y_x_max)))
+
+                # Check intersections with horizontal bounds (y_min and y_max)
+                if not np.isclose(float(y_x_min), float(y_x_max)):  # not a horizontal line
+                    x_y_min = interp1d(f(x), x, assume_sorted=False)(y_min)
+                    x_y_max = interp1d(f(x), x, assume_sorted=False)(y_max)
+                    if x_min <= x_y_min <= x_max:
+                        y_intersections.append((float(x_y_min), y_min))
+                    if x_min <= x_y_max <= x_max:
+                        y_intersections.append((float(x_y_max), y_max))
+
+                intersections.append(
+                    np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+                )  # in case intersects at x/y corner (which would give a duplicate)
+
+            lines.append(line)
+            labels.append(latexify(formula))
+
+        # pre-set x_points:
+        if label_positions is not False:
+            if label_positions is None:
+                poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+                label_positions, best_norm_min_dist = _find_best_label_positions(
+                    poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+                )
+                if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
+                    poss_label_positions = _possible_label_positions_from_bbox_intersections(
+                        intersections, positions_per_line=5
+                    )
+                    label_positions, best_norm_min_dist = _find_best_label_positions(
+                        poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+                    )
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "The value at position")
+                labelLines(lines, xvals=label_positions, align=False, color="black")
+
+        if filename:
+            fig.savefig(filename, bbox_inches="tight", dpi=600)
+
+        return fig
+
+
+def _possible_label_positions_from_bbox_intersections(
+    intersections: Union[list[float], np.ndarray[float]], positions_per_line=3
+):
+    """
+    From a list or array of ``intersections``, which contains the intersections
+    of lines with a plot bounding box (limits) and thus has shape (N_lines, 2,
+    2) (because 2 intersections with 2 (x,y) coordinates per line), returns
+    ``positions_per_line`` uniformly-spaced possible x,y coordinates for labels
+    of those lines.
+
+    e.g. if ``positions_per_line = 3`` (default), then returns the x,y coordinates
+    for the positions which are 1/4, 2/4 and 3/4 along the line between the two
+    bbox intersections.
+
+    Args:
+        TODO
+
+    Returns:
+        TODO
+    """
+    poss_label_positions = np.zeros((len(intersections), positions_per_line, 2))
+    for label_idx, points in enumerate(intersections):  # get possible label positions
+        for line_pos_idx in range(positions_per_line):
+            if (
+                points[1][0] == points[0][0]
+            ):  # vertical line, will only allow midpoint with current labellines
+                # see https://github.com/cphyc/matplotlib-label-lines/pull/136
+                poss_label_positions[label_idx, line_pos_idx, :] = (
+                    points[0][0],
+                    np.array(points)[:, 1].mean(),
+                )
+                continue
+
+            first_pt_factor = ((positions_per_line + 1) - (line_pos_idx + 1)) / (positions_per_line + 1)
+            second_pt_factor = 1 - first_pt_factor
+            poss_label_positions[label_idx, line_pos_idx, 0] = (points[0][0] * first_pt_factor) + (
+                points[1][0] * second_pt_factor
+            )
+            poss_label_positions[label_idx, line_pos_idx, 1] = (points[0][1] * first_pt_factor) + (
+                points[1][1] * second_pt_factor
+            )
+
+    return poss_label_positions
+
+
+def _find_best_label_positions(poss_label_positions, x_range=1, y_range=1, return_best_norm_dist=False):
+    """
+    Todo.
+    """
+    # Get all possible combinations of indices, for the first two dimensions (N_labels,
+    # N_possibilities_per_label):
+    N_labels, N_possibilities_per_label, N_xy = poss_label_positions.shape
+    combinations = list(itertools.product(range(N_possibilities_per_label), repeat=N_labels))
+
+    # Prepare an empty array to store the results
+    result = np.zeros((len(combinations), N_labels, N_xy))  # N_xy should be 2
+
+    # Fill the result array with the corresponding coordinates
+    for i, combo in enumerate(combinations):
+        result[i] = poss_label_positions[np.arange(N_labels), combo]
+
+    #  result.shape should be (N_possibilities_per_label**N_labels, N_labels, N_xy = 2)
+    all_combos = np.unique(result, axis=0)  # get unique combos (accounts for vertical lines which
+    # currently only allow midpoint to be used)
+    all_combos[:, :, 0] /= x_range
+    all_combos[:, :, 1] /= y_range
+    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
+    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
+    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
+    unique_dists = dists[:, mask]
+    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
+    max_idx = dists_list.index(sorted(dists_list, reverse=True)[0])
+    best_combo = all_combos[max_idx]
+    best_combo[:, 0] *= x_range  # reverse normalisation
+
+    if return_best_norm_dist:
+        return best_combo[:, 0], dists_list[max_idx][0]
+
+    return best_combo[:, 0]
 
 
 def get_X_rich_limit(X: str, chempots: dict):
