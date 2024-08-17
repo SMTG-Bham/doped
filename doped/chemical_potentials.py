@@ -6,6 +6,7 @@ energies.
 
 import contextlib
 import copy
+import importlib.util
 import itertools
 import os
 import warnings
@@ -571,6 +572,16 @@ def _parse_MP_API_key(api_key: Optional[str] = None, legacy_MP_info: bool = Fals
             "your API key in ~/.pmgrc.yaml or ~/.config/.pmgrc.yaml: "
             "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
             "-project-api"
+        )
+
+    if not legacy_MP and not (
+        importlib.util.find_spec("emmet.core") and importlib.util.find_spec("mp_api")
+    ):  # new MP, check that required dependencies are installed
+        warnings.warn(
+            "Your Materials Project (MP) API key (either ``api_key`` parameter or 'PMG_MAPI_KEY' in "
+            "``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``) corresponds to the new MP API, "
+            "which requires emmet-core and mp-api as dependencies, but these are not both installed. "
+            "Please install with ``pip install -U mp-api emmet-core``!"
         )
 
     return api_key, legacy_MP
