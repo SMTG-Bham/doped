@@ -453,6 +453,13 @@ etc.).
     defect supercell, directly from just the relaxed structures, regardless of whether these defects were
     generated/parsed with ``doped``.
 
+.. note::
+
+    Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
+    structure, for which doped uses the ``spglib`` convention (e.g. in the ``DefectsGenerator`` info
+    output).
+
+
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------
 To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
