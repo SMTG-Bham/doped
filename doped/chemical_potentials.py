@@ -2679,7 +2679,7 @@ class CompetingPhasesAnalyzer:
         # create a dense grid that covers the entire range of the vertices:
         x_min, y_min = independent_el_pts.min(axis=0)
         x_max, y_max = independent_el_pts.max(axis=0)
-        grid_x, grid_y = np.mgrid[x_min:x_max:300j, y_min:y_max:300j]
+        grid_x, grid_y = np.mgrid[x_min:x_max:300j, y_min:y_max:300j]  # type: ignore
         grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
 
         # Delaunay triangulation to get points inside the hull:
