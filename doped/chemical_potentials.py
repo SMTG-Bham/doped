@@ -2621,6 +2621,7 @@ class CompetingPhasesAnalyzer:
         dependent_element: Optional[Union[str, Element]] = None,
         xlim: Optional[tuple[float, float]] = None,
         ylim: Optional[tuple[float, float]] = None,
+        cbar_range: Optional[tuple[float, float]] = None,
         padding: Optional[float] = None,
         title: Optional[Union[str, bool]] = None,
         label_positions: Optional[Union[list[float], dict[str, float], bool]] = None,
@@ -2649,7 +2650,6 @@ class CompetingPhasesAnalyzer:
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
         # TODO: Expand axes slightly if labels touching bbox
-        # TODO: Extend cbar so ticks at both ends?
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
@@ -2688,7 +2688,7 @@ class CompetingPhasesAnalyzer:
         grid_x, grid_y = np.mgrid[x_min:x_max:300j, y_min:y_max:300j]  # type: ignore
         grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
 
-        # Delaunay triangulation to get points inside the hull:
+        # Delaunay triangulation to get points inside the stability hull:
         delaunay = Delaunay(hull.points[hull.vertices])
         inside_hull = delaunay.find_simplex(grid_points) >= 0
         points_inside = grid_points[inside_hull]
@@ -2701,21 +2701,17 @@ class CompetingPhasesAnalyzer:
         fig, ax = plt.subplots()
         mesh_x, x_indices = np.unique(points_inside[:, 0], return_inverse=True)
         mesh_y, y_indices = np.unique(points_inside[:, 1], return_inverse=True)
+        mesh_z = np.full((len(mesh_y), len(mesh_x)), np.nan)  # Create the mesh grid, init with NaNs
+        mesh_z[y_indices, x_indices] = values_inside  # populate the grid
 
-        # Step 2: Create the mesh grid and initialize with NaNs
-        mesh_z = np.full((len(mesh_y), len(mesh_x)), np.nan)
-
-        # Step 3: Populate the mesh grid
-        mesh_z[y_indices, x_indices] = values_inside
-
+        vmin = cbar_range[0] if cbar_range else None
+        vmax = cbar_range[1] if cbar_range else None
+        if vmax is None and np.isclose(np.nanmax(mesh_z), 0, atol=3e-2):
+            vmax = 0  # extend to 0, as sometimes cutoff at -0.01 eV etc
         dep_mu = ax.pcolormesh(
-            mesh_x,
-            mesh_y,
-            mesh_z,
-            rasterized=True,
-            cmap=cm.batlow,
-            shading="auto",
+            mesh_x, mesh_y, mesh_z, rasterized=True, cmap=cm.batlow, shading="auto", vmax=vmax, vmin=vmin
         )
+
         cbar = fig.colorbar(dep_mu)
 
         x_range = abs(x_max - x_min)
