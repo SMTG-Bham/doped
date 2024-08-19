@@ -838,23 +838,30 @@ class DefectRelaxSet(MSONable):
             **self.dict_set_kwargs,
         )
 
-    def _check_vstd_kpoints(self, vasp_std_defect_set: DefectDictSet) -> Optional[DefectDictSet]:
+    def _check_vstd_kpoints(
+        self, vasp_std_defect_set: DefectDictSet, warn: bool = True, info: bool = True
+    ) -> Optional[DefectDictSet]:
         try:
             vasp_std = None if np.prod(vasp_std_defect_set.kpoints.kpts[0]) == 1 else vasp_std_defect_set
         except Exception:  # different kpoint generation scheme, not Gamma-only
             vasp_std = vasp_std_defect_set
 
-        if vasp_std is None:
+        if vasp_std is None and (warn or info):
             current_kpoint_settings = (
-                ("default `reciprocal_density = 100` [Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)")
-                if self.user_kpoints_settings is None
-                else self.user_kpoints_settings
+                self.user_kpoints_settings
+                or "default `reciprocal_density = 100` [Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)"
             )
-            warnings.warn(
-                f"With the current kpoint settings ({current_kpoint_settings}), the k-point mesh is "
-                f"Γ-only (see docstrings). Thus vasp_std should not be used, and vasp_gam should be used "
-                f"instead."
+            info_message = (
+                f"With the current kpoint settings ({current_kpoint_settings}), the k-point "
+                f"mesh is Γ-only (see docstrings)."
             )
+            if warn:
+                warnings.warn(
+                    f"{info_message} Thus vasp_std should not be used, and vasp_gam should be used "
+                    f"instead."
+                )
+            else:
+                print(info_message)
 
         return vasp_std
 
@@ -879,7 +886,11 @@ class DefectRelaxSet(MSONable):
         chemical potential) calculations.
         """
         # determine if vasp_std required or only vasp_gam:
-        std_defect_set = DefectDictSet(
+        return self._check_vstd_kpoints(self._vasp_std)
+
+    @property
+    def _vasp_std(self) -> DefectDictSet:
+        return DefectDictSet(
             self.defect_supercell,
             charge_state=self.defect_entry.charge_state,
             user_incar_settings=self.user_incar_settings,
@@ -889,8 +900,6 @@ class DefectRelaxSet(MSONable):
             poscar_comment=self.poscar_comment,
             **self.dict_set_kwargs,
         )
-
-        return self._check_vstd_kpoints(std_defect_set)
 
     @property
     def vasp_nkred_std(self) -> Optional[DefectDictSet]:
@@ -921,57 +930,60 @@ class DefectRelaxSet(MSONable):
         if self.user_incar_settings.get("LHFCALC", True) is False:  # GGA
             return None
 
-        std_defect_set = self.vasp_std
+        std_defect_set = self.vasp_std  # warns the user if Γ-only
 
-        if std_defect_set is not None:  # non Γ-only kpoint mesh
-            # determine appropriate NKRED:
-            try:
-                kpt_mesh = np.array(std_defect_set.kpoints.kpts[0])
-                # if all divisible by 2 or 3, then set NKRED to 2 or 3, respectively:
-                nkred_dict = {
-                    "NKRED": None,
-                    "NKREDX": None,
-                    "NKREDY": None,
-                    "NKREDZ": None,
-                }  # type: dict[str, Optional[int]]
-                for k in [2, 3]:
-                    if np.all(kpt_mesh % k == 0):
-                        nkred_dict["NKRED"] = k
+        return self._vasp_nkred_std if std_defect_set is not None else None  # non Γ-only kpoint mesh?
+
+    @property
+    def _vasp_nkred_std(self):
+        std_defect_set = self._vasp_std
+        # determine appropriate NKRED:
+        try:
+            kpt_mesh = np.array(std_defect_set.kpoints.kpts[0])
+            # if all divisible by 2 or 3, then set NKRED to 2 or 3, respectively:
+            nkred_dict = {
+                "NKRED": None,
+                "NKREDX": None,
+                "NKREDY": None,
+                "NKREDZ": None,
+            }  # type: dict[str, Optional[int]]
+            for k in [2, 3]:
+                if np.all(kpt_mesh % k == 0):
+                    nkred_dict["NKRED"] = k
+                    break
+
+                for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
+                    if kpt_mesh[idx] % k == 0:
+                        nkred_dict[nkred_key] = k
                         break
 
-                    for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
-                        if kpt_mesh[idx] % k == 0:
-                            nkred_dict[nkred_key] = k
-                            break
+            incar_settings = copy.deepcopy(self.user_incar_settings)
+            if nkred_dict["NKRED"] is not None:
+                incar_settings["NKRED"] = nkred_dict["NKRED"]
+            else:
+                for nkred_key in ["NKREDX", "NKREDY", "NKREDZ"]:
+                    if nkred_dict[nkred_key] is not None:
+                        incar_settings[nkred_key] = nkred_dict[nkred_key]
 
-                incar_settings = copy.deepcopy(self.user_incar_settings)
-                if nkred_dict["NKRED"] is not None:
-                    incar_settings["NKRED"] = nkred_dict["NKRED"]
-                else:
-                    for nkred_key in ["NKREDX", "NKREDY", "NKREDZ"]:
-                        if nkred_dict[nkred_key] is not None:
-                            incar_settings[nkred_key] = nkred_dict[nkred_key]
-
-            except Exception:
-                warnings.warn(
-                    f"The specified kpoint settings ({self.user_kpoints_settings,}) do not give a "
-                    f"grid-like k-point mesh and so the appropriate NKRED settings cannot be "
-                    f"automatically determined. Either set NKRED manually using `user_incar_settings` "
-                    f"with `vasp_std`/`write_std`, or adjust your k-point settings."
-                )
-                return None
-
-            return DefectDictSet(
-                self.defect_supercell,
-                charge_state=self.defect_entry.charge_state,
-                user_incar_settings=incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                poscar_comment=self.poscar_comment,
-                **self.dict_set_kwargs,
+        except Exception:
+            warnings.warn(
+                f"The specified kpoint settings ({self.user_kpoints_settings,}) do not give a "
+                f"grid-like k-point mesh and so the appropriate NKRED settings cannot be "
+                f"automatically determined. Either set NKRED manually using `user_incar_settings` "
+                f"with `vasp_std`/`write_std`, or adjust your k-point settings."
             )
-        return None
+            return None
+
+        return DefectDictSet(
+            self.defect_supercell,
+            charge_state=self.defect_entry.charge_state,
+            user_incar_settings=incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            poscar_comment=self.poscar_comment,
+            **self.dict_set_kwargs,
+        )
 
     @property
     def vasp_ncl(self) -> Optional[DefectDictSet]:
@@ -1683,7 +1695,7 @@ class DefectRelaxSet(MSONable):
         self,
         defect_dir: Optional[PathLike] = None,
         unperturbed_poscar: bool = False,
-        vasp_gam: bool = False,
+        vasp_gam: Optional[bool] = None,
         bulk: Union[bool, str] = False,
         **kwargs,
     ):
@@ -1705,16 +1717,16 @@ class DefectRelaxSet(MSONable):
             only generated for systems with a max atomic number (Z) >= 31
             (i.e. further down the periodic table than Zn).
 
-        If vasp_gam=True (not recommended) or self.vasp_std = None (i.e. Γ-only
-        `k`-point sampling converged for the kpoints settings used), then also
-        outputs:
+        If ``vasp_gam=True`` (not recommended) or ``self.vasp_std = None`` (i.e.
+        Γ-only `k`-point sampling converged for the kpoints settings used), then
+        also outputs:
 
         - ``vasp_gam``:
             Γ-point only defect relaxation. Usually not needed if ShakeNBreak
             structure searching has been performed (recommended).
 
         By default, does not generate a ``vasp_gam`` folder unless ``self.vasp_std``
-        is None (i.e. only Γ-point sampling required for this system), as
+        is ``None`` (i.e. only Γ-point sampling required for this system), as
         ``vasp_gam`` calculations should be performed using ``ShakeNBreak`` for
         defect structure-searching and initial relaxations. If ``vasp_gam`` files
         are desired, set ``vasp_gam=True``.
@@ -1777,13 +1789,13 @@ class DefectRelaxSet(MSONable):
                 as the input structures for the final ``vasp_ncl`` singlepoint
                 calculations.
                 (default: False)
-            vasp_gam (bool):
+            vasp_gam (Optional[bool]):
                 If True, write the ``vasp_gam`` input files, with unperturbed defect
                 POSCAR. Not recommended, as the recommended workflow is to initially
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
                 relaxations from the SnB ground-state structures.
-                (default: False)
+                (default: None -- writes ``vasp_gam`` folders if ``self.vasp_std`` is ``None``)
             bulk (bool, str):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}",
@@ -1822,12 +1834,12 @@ class DefectRelaxSet(MSONable):
 
                 bulk_vasp = [top_vasp]
 
-            if vasp_gam or self.vasp_std is None:  # if vasp_std is None, write vasp_gam
-                self.write_gam(
+            if vasp_gam or (self.vasp_std is None and vasp_gam is None):
+                self.write_gam(  # if vasp_std is None and vasp_gam not set to ``False``, write vasp_gam
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    unperturbed_poscar=unperturbed_poscar or vasp_gam,  # unperturbed poscar only if
-                    # `vasp_gam` explicitly set to True
+                    unperturbed_poscar=unperturbed_poscar or vasp_gam is True,  # unperturbed poscar
+                    # only if `vasp_gam` explicitly set to True
                     **kwargs,
                 )
 
@@ -2055,8 +2067,13 @@ class DefectsSet(MSONable):
             )
         defect_relax_set = list(self.defect_sets.values())[-1]
         self.bulk_vasp_gam = defect_relax_set.bulk_vasp_gam
-        self.bulk_vasp_nkred_std = defect_relax_set.bulk_vasp_nkred_std
-        self.bulk_vasp_std = defect_relax_set.bulk_vasp_std
+        with warnings.catch_warnings():  # ignore vasp_std kpoints warnings if vasp_gam only here
+            warnings.filterwarnings("ignore", "With the current")
+            self.bulk_vasp_nkred_std = defect_relax_set.bulk_vasp_nkred_std
+            self.bulk_vasp_std = defect_relax_set.bulk_vasp_std
+            if self.bulk_vasp_std is None:  # print one info message about this
+                defect_relax_set._check_vstd_kpoints(defect_relax_set._vasp_std, warn=False, info=True)
+
         self.bulk_vasp_ncl = defect_relax_set.bulk_vasp_ncl
 
     def _format_defect_entries_input(
@@ -2166,7 +2183,7 @@ class DefectsSet(MSONable):
         self,
         output_path: PathLike = ".",
         unperturbed_poscar: bool = False,
-        vasp_gam: bool = False,
+        vasp_gam: Optional[bool] = None,
         bulk: Union[bool, str] = True,
         processes: Optional[int] = None,
         **kwargs,
@@ -2272,7 +2289,7 @@ class DefectsSet(MSONable):
                 perform ``vasp_gam`` ground-state structure searching using ShakeNBreak
                 (https://shakenbreak.readthedocs.io), then continue the ``vasp_std``
                 relaxations from the SnB ground-state structures.
-                (default: False)
+                (default: None -- writes ``vasp_gam`` folders if ``self.vasp_std`` is ``None``)
             bulk (bool, str):
                 If True, the input files for a singlepoint calculation of the
                 bulk supercell are also written to "{formula}_bulk/{subfolder}",

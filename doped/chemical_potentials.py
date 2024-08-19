@@ -2630,6 +2630,12 @@ class CompetingPhasesAnalyzer:
         """
         Todo.
 
+        Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
+        sometimes there can be odd holes in the whitespace around the chemical
+        formula labels (see: https://github.com/matplotlib/matplotlib/issues/25669).
+        This is only the case for ``png`` output, so saving to e.g. ``svg`` or
+        ``pdf`` instead will avoid this issue.
+
         style_file (PathLike):     Path to a mplstyle file to use for the plot.
         If None (default), uses     the default doped style (from
         doped/utils/doped.mplstyle).
