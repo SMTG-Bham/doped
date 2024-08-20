@@ -2649,7 +2649,6 @@ class CompetingPhasesAnalyzer:
         # TODO: Plot extrinsic too?
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
-        # TODO: Expand axes slightly if labels touching bbox
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
@@ -2737,7 +2736,7 @@ class CompetingPhasesAnalyzer:
 
         # plot formation energy lines:
         lines = []
-        labels = []
+        labels = {}
         intersections = []
 
         for formula, pts in cpd.domains.items():
@@ -2802,7 +2801,8 @@ class CompetingPhasesAnalyzer:
                 )  # in case intersects at x/y corner (which would give a duplicate)
 
             lines.append(line)
-            labels.append(latexify(formula))
+            # labels is dict of formula: line function
+            labels[latexify(formula)] = f
 
         # pre-set x_points:
         if label_positions is not False:
@@ -2822,6 +2822,41 @@ class CompetingPhasesAnalyzer:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", "The value at position")
                 labelLines(lines, xvals=label_positions, align=False, color="black")
+
+        # make sure all labels are well enclosed within the plot:
+        # Get all the text artists (labels) in the current axes:
+        label_text_artists = [
+            artist
+            for artist in ax.get_children()
+            if isinstance(artist, plt.Text) and artist.get_text() in labels
+        ]
+        for text in label_text_artists:
+            bbox = text.get_window_extent().transformed(plt.gca().transData.inverted())
+            # if bbox bounds outside of plot, move text to inside plot:
+            new_position = text.get_position()
+            delta_x = delta_y = 0
+            f = labels[text.get_text()]
+
+            if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
+                if bbox.xmin < xlim[0]:
+                    delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
+                elif bbox.xmax > xlim[1]:
+                    delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
+                if delta_x != 0:
+                    new_position = (new_position[0] + delta_x, new_position[1] + f(delta_x) - f(0))
+
+                if bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
+                    x = np.linspace(-50, 50, 1000)
+                    f_inv = interp1d(f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate")
+
+                if bbox.ymin < ylim[0]:
+                    delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
+                if bbox.ymax > ylim[1]:
+                    delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
+                if delta_y != 0:
+                    new_position = (new_position[0] + f_inv(delta_y) - f_inv(0), new_position[1] + delta_y)
+
+            text.set_position(new_position)
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
