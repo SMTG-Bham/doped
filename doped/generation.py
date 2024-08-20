@@ -1124,6 +1124,9 @@ class DefectsGenerator(MSONable):
         ``DefectEntry.charge_state_guessing_log`` attributes. See docs for examples of
         modifying the generated charge states.
 
+        Note that Wyckoff letters can depend on the ordering of elements in the conventional
+        standard structure, for which doped uses the ``spglib`` convention.
+
         Args:
             structure (Structure):
                 Structure of the host material (as a pymatgen Structure object).
@@ -1836,8 +1839,6 @@ class DefectsGenerator(MSONable):
         info_string += (
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             f"conventional ('conv.') unit cell, which comprises {fu} formula unit(s) of {formula}.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         return info_string
@@ -2172,6 +2173,10 @@ class DefectsGenerator(MSONable):
         """
         Returns a string representation of the DefectsGenerator object, and
         prints the DefectsGenerator info.
+
+        Note that Wyckoff letters can depend on the ordering of elements in
+        the conventional standard structure, for which doped uses the ``spglib``
+        convention.
         """
         return (
             self.__str__()
