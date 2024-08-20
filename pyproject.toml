@@ -21,8 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2024.5.31",  # limiting factor: breaking changes in `VaspInputSet`;
-    # https://github.com/materialsproject/pymatgen/issues/3860
+    "pymatgen>=2024.7.18",  # requirement for spglib>=2.5.0 for SpglibDataset attribute interface
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "pandas",
@@ -31,6 +30,7 @@ dependencies = [
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
     "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
     # if any dependency issues arise can make easyunfold an optional dependency
+    "cmcrameri",  # for colour-maps
 ]
 
 [project.urls]
@@ -59,6 +59,7 @@ pdf = ["pycairo"]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
+"doped" = ["py.typed"]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
