@@ -85,6 +85,7 @@
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
+- Add short example notebook showing how to generate a defect PES for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB).
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above

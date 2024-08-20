@@ -50,14 +50,17 @@ def parameterized_subtest(api_key_dict=None):
     return decorator
 
 
+cwd = os.path.dirname(os.path.abspath(__file__))
+
+
 class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.legacy_api_key = "c2LiJRMiBeaN5iXsH"  # SK MP Imperial email (GitHub) A/C
         self.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
-
-        self.cdte = Structure.from_file("../examples/CdTe/relaxed_primitive_POSCAR")
-        self.na2fepo4f = Structure.from_file("data/Na2FePO4F_MP_POSCAR")
-        self.cu2sise3 = Structure.from_file("data/Cu2SiSe3_MP_POSCAR")
+        self.EXAMPLE_DIR = os.path.join(cwd, "../examples")
+        self.cdte = Structure.from_file(os.path.join(self.EXAMPLE_DIR, "CdTe/relaxed_primitive_POSCAR"))
+        self.na2fepo4f = Structure.from_file(os.path.join(cwd, "data/Na2FePO4F_MP_POSCAR"))
+        self.cu2sise3 = Structure.from_file(os.path.join(cwd, "data/Cu2SiSe3_MP_POSCAR"))
         self.cu2sise4 = self.cu2sise3.get_primitive_structure().copy()
         self.cu2sise4.append("Se", [0.5, 0.5, 0.5])
         self.cu2sise4.append("Se", [0.5, 0.75, 0.5])
@@ -538,26 +541,27 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
     def setUp(self):
-        self.examples_path = "../examples/CompetingPhases"
+        self.EXAMPLE_DIR = os.path.join(cwd, "../examples")
+        self.cp_examples_path = os.path.join(self.EXAMPLE_DIR, "CompetingPhases")
         self.stable_system = "ZrO2"
         self.unstable_system = "Zr2O"
         self.extrinsic_species = "La"
-        self.csv_path = f"{self.examples_path}/zro2_competing_phase_energies.csv"
-        self.csv_path_ext = f"{self.examples_path}/zro2_la_competing_phase_energies.csv"
-        self.parsed_chempots = loadfn(f"{self.examples_path}/zro2_chempots.json")
-        self.parsed_ext_chempots = loadfn(f"{self.examples_path}/zro2_la_chempots.json")
-        self.parsed_ext_y_chempots = loadfn(f"{self.examples_path}/zro2_la_chempots.json")
+        self.csv_path = f"{self.cp_examples_path}/zro2_competing_phase_energies.csv"
+        self.csv_path_ext = f"{self.cp_examples_path}/zro2_la_competing_phase_energies.csv"
+        self.parsed_chempots = loadfn(f"{self.cp_examples_path}/zro2_chempots.json")
+        self.parsed_ext_chempots = loadfn(f"{self.cp_examples_path}/zro2_la_chempots.json")
+        self.parsed_ext_y_chempots = loadfn(f"{self.cp_examples_path}/zro2_la_chempots.json")
 
-        self.zro2_path = os.path.join(self.examples_path, "ZrO2")
-        self.la_zro2_path = os.path.join(self.examples_path, "La_ZrO2")
+        self.zro2_path = os.path.join(self.cp_examples_path, "ZrO2")
+        self.la_zro2_path = os.path.join(self.cp_examples_path, "La_ZrO2")
 
     def tearDown(self):
         for i in ["chempot_limits.csv", "CompetingPhases.csv", "input.dat"]:
             if_present_rm(i)
 
-        for i in os.listdir(os.path.join(self.examples_path, "ZrO2")):
+        for i in os.listdir(os.path.join(self.cp_examples_path, "ZrO2")):
             if i.startswith("."):
-                if_present_rm(os.path.join(self.examples_path, "ZrO2", i))
+                if_present_rm(os.path.join(self.cp_examples_path, "ZrO2", i))
 
     def test_cpa_csv(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -766,7 +770,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
     def test_vaspruns_none_parsed(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
-            cpa.from_vaspruns(path=self.examples_path, folder="relax", csv_path=self.csv_path)
+            cpa.from_vaspruns(path=self.cp_examples_path, folder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
         assert "vasprun.xml files could not be found in the following directories (in" in str(w[0].message)
         assert "ZrO2 or ZrO2/relax" in str(w[0].message)

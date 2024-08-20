@@ -118,7 +118,7 @@ def check_and_set_defect_entry_name(
 ) -> None:
     """
     Check that ``possible_defect_name`` is a recognised format by doped (i.e.
-    in the format "{defect_name}_{optional_site_info}_{charge_state}").
+    in the format ``"{defect_name}_{optional_site_info}_{charge_state}"``).
 
     If the DefectEntry.name attribute is not defined or does not end with the
     charge state, then the entry will be renamed with the doped default name
