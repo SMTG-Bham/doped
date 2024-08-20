@@ -217,7 +217,7 @@ def raw_energy_from_chempots(composition: Union[str, dict, Composition], chempot
     raw_energies_dict = dict(next(iter(chempots["limits"].values())))
 
     if any(el.symbol not in raw_energies_dict for el in composition.elements):
-        raise ValueError(
+        warnings.warn(
             f"The chemical potentials dictionary (with elements {list(raw_energies_dict.keys())} does not "
             f"contain all the elements in the host composition "
             f"({[el.symbol for el in composition.elements]})!"

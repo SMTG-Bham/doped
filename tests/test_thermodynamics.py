@@ -474,7 +474,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_DefectsParser_thermo_objs(self):
         """
         Test the `DefectThermodynamics` objects created from the
-        `DefectsParser.get_defect_thermodynamics()` method.
+        ``DefectsParser.get_defect_thermodynamics()`` method.
         """
         for defect_thermo, name in [
             (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
