@@ -398,9 +398,9 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         frac_coords, struct, symm_ops, symprec=symprec
     )
-    conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
+    conv_cell_factor = len(symm_dataset.std_positions) / len(symm_dataset.wyckoffs)
     multiplicity = int(conv_cell_factor * len(unique_sites))
-    wyckoff_label = f"{multiplicity}{symm_dataset['wyckoffs'][-1]}"
+    wyckoff_label = f"{multiplicity}{symm_dataset.wyckoffs[-1]}"
 
     return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
@@ -1126,7 +1126,7 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
     )
-    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
     if spglib_point_group_symbol is not None:
         return spglib_point_group_symbol
 
@@ -1240,7 +1240,7 @@ def point_symmetry_from_defect_entry(
         # then easy, can just be taken from symmetry dataset of defect structure
         symm_dataset = _get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
         return schoenflies_from_hermann(
-            symm_dataset["site_symmetry_symbols"][defect_entry.defect.defect_site_index]
+            symm_dataset.site_symmetry_symbols[defect_entry.defect.defect_site_index]
         )
 
     supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
@@ -1344,7 +1344,7 @@ def point_symmetry_from_defect_entry(
             # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
             # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
             # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
-            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
             # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
             # determined using the point group of the unrelaxed defect structure:
@@ -1352,7 +1352,7 @@ def point_symmetry_from_defect_entry(
             #     "unrelaxed_defect_structure", defect_supercell
             # )
             # return schoenflies_from_hermann(
-            #     _get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset()["pointgroup"],
+            #     _get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset().pointgroup,
             # )
             # But current approach works for all cases with unrelaxed defect structures
 
@@ -1361,7 +1361,7 @@ def point_symmetry_from_defect_entry(
             # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
             # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
             # possibility with the equivalent sites, as when relaxed=False)
-            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.pointgroup)
 
             # This also works (at least for non-periodicity-breaking supercells) for relaxed defects in
             # most cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the
@@ -1369,7 +1369,7 @@ def point_symmetry_from_defect_entry(
             # schoenflies_from_hermann(
             #     _get_sga(
             #         defect_supercell, symprec=symprec
-            #     ).get_symmetry_dataset()["pointgroup"]
+            #     ).get_symmetry_dataset().pointgroup
             # )
 
     if spglib_point_group_symbol is not None:
@@ -1416,7 +1416,7 @@ def _check_relaxed_defect_symmetry_determination(
 
     if unrelaxed_defect_structure is not None:
         unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
-            _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset()["pointgroup"],
+            _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset().pointgroup,
         )
 
         bulk_supercell = _get_bulk_supercell(defect_entry)
@@ -1428,9 +1428,7 @@ def _check_relaxed_defect_symmetry_determination(
             symprec=symprec,
             dist_tol=symprec,
         )
-        bulk_spglib_point_group_symbol = schoenflies_from_hermann(
-            symm_dataset["site_symmetry_symbols"][-1]
-        )
+        bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
         if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
             if verbose:
