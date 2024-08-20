@@ -146,8 +146,6 @@ Te_i_Td_Te2.83   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.500]  4b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of CdTe.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
@@ -211,8 +209,6 @@ O_i_D2d          [0,-1,-2]              [0.000,0.500,0.250]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 2 formula unit(s) of Y2Ti2S2O5.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
@@ -276,8 +272,6 @@ O_i_C3               [0,-1,-2]          [0.497,0.497,0.497]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
@@ -307,8 +301,6 @@ S_i_Td_Zn2.35    [+2,+1,0,-1,-2]    [0.750,0.750,0.750]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of ZnS.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.prim_cu = Structure.from_file(f"{self.data_dir}/Cu_prim_POSCAR")
@@ -327,8 +319,6 @@ Cu_i_Td          [+2,+1,0]          [0.250,0.250,0.250]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Cu.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         # AgCu:
@@ -361,8 +351,6 @@ Ag_i_C3v_Cu1.80               [+1,0]             [0.000,0.000,0.250]  6c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of AgCu.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.cd_i_CdTe_supercell_defect_gen_info = (
@@ -509,8 +497,6 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.278]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of Cd28Te27.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.N_doped_diamond_supercell = Structure.from_file(f"{self.data_dir}/N_C_diamond_POSCAR")
@@ -636,8 +622,6 @@ N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of C215N.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-            "standard structure, for which doped uses the spglib convention."
         )
 
         self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
@@ -682,8 +666,6 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
             "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
             "SiSbTe3.\n"
-            "Note that Wyckoff letters can depend on the ordering of elements in the "
-            "conventional standard structure, for which doped uses the spglib convention."
         )
 
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
@@ -713,6 +695,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             f_out.write(f.read())
         assert filecmp.cmp("test.json", default_json_filename.rstrip(".gz"))
         if_present_rm("test.json")
+        if_present_rm(default_json_filename.rstrip(".gz"))
         if_present_rm("test_defect_gen.json")
 
     def _load_and_test_defect_gen_jsons(self, defect_gen):
@@ -2286,7 +2269,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             defect_gen.defects["interstitials"] = [defect_gen.defects["interstitials"][0]]
             defect_gen.defects["vacancies"] = [defect_gen.defects["vacancies"][0]]
         else:  # take 2 vacancies instead
-            defect_gen.defects["vacancies"] = defect_gen.defects["vacancies"][0:1]
+            defect_gen.defects["vacancies"] = defect_gen.defects["vacancies"][:1]
 
         defect_gen.defects["substitutions"] = [defect_gen.defects["substitutions"][0]]
 
@@ -3120,8 +3103,6 @@ Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
 \n"""
                 "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
                 "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
-                "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-                "standard structure, for which doped uses the spglib convention."
             )
             in output
         )
@@ -3181,8 +3162,6 @@ Se_i_C2_Ag2.48   [0,-1,-2]          [0.091,0.500,0.500]  2b
 \n"""
                 "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
                 "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
-                "Note that Wyckoff letters can depend on the ordering of elements in the conventional "
-                "standard structure, for which doped uses the spglib convention."
             )
             in output
         )
