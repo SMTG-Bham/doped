@@ -555,5 +555,467 @@ def plot_site_displacements(
     return fig
 
 
-def print_a():
-    print("a")
+def calc_displacements_ellipsoid(
+    defect_entry: DefectEntry,
+    plot_anisotropy: Optional[bool] = False,  # Option to plot anisotropy of ellipsoid radii
+    plot_ellipsoid: Optional[bool] = False,    # Option to plot the ellipsoid
+    quantile = 0.9 # Quantile threshold for displacement norms (0 to 1). Default is 0.9.
+):
+    """
+    Calculate displacements around a defect site and fit an ellipsoid to these displacements.
+
+    Parameters:
+    - defect_entry (DefectEntry): An object representing the defect in the crystal structure.
+    - plot_anisotropy (bool, optional): If True, plot the anisotropy of the ellipsoid radii.
+    - plot_ellipsoid (bool, optional): If True, plot the fitted ellipsoid in the crystal lattice.
+    - quantile (float): The quantile threshold for selecting significant displacements (between 0 and 1).
+
+    Returns:
+    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation): A tuple containing the ellipsoid's center,
+      radii, and rotation matrix, or (None, None, None) if fitting was unsuccessful.
+    """
+    
+    from doped.utils.parsing import get_site_mapping_indices
+    import pandas as pd
+    from numpy import linalg
+    import plotly.graph_objects as go
+    
+    def _get_minimum_volume_ellipsoid(P):
+        """ Find the minimum volume ellipsoid which holds all the points
+        
+        Based on work by Nima Moshtagh
+        http://www.mathworks.com/matlabcentral/fileexchange/9542
+        and also by looking at:
+        http://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
+        Which is based on the first reference anyway!
+        
+        Here, P is a numpy array of N dimensional points like this:
+        P = [[x,y,z,...], <-- one point per line
+            [x,y,z,...],
+            [x,y,z,...]]
+        
+        Returns:
+        (center, radii, rotation)
+        
+        """
+        tolerance = 0.01
+        
+        (N, d) = np.shape(P)
+        d = float(d)
+    
+        # Q will be our working array
+        Q = np.vstack([np.copy(P.T), np.ones(N)]) 
+        QT = Q.T
+        
+        # initializations
+        err = 1.0 + tolerance
+        u = (1.0 / N) * np.ones(N)
+
+        # Khachiyan Algorithm
+        while err > tolerance:
+            V = np.dot(Q, np.dot(np.diag(u), QT))
+            M = np.diag(np.dot(QT , np.dot(linalg.inv(V), Q)))    # M the diagonal vector of an NxN matrix
+            j = np.argmax(M)
+            maximum = M[j]
+            step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
+            new_u = (1.0 - step_size) * u
+            new_u[j] += step_size
+            err = np.linalg.norm(new_u - u)
+            u = new_u
+
+        # center of the ellipse 
+        center = np.dot(P.T, u)
+    
+        # the A matrix for the ellipse
+        A = linalg.inv(
+                       np.dot(P.T, np.dot(np.diag(u), P)) - 
+                       np.array([[a * b for b in center] for a in center])
+                       ) / d
+                       
+        # Get the values we'd like to return
+        U, s, rotation = linalg.svd(A)
+        radii = 1.0/np.sqrt(s)
+        
+        return (center, radii, rotation)
+    
+    def _plot_ellipsoid(ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix):
+        u = np.linspace(0.0, 2.0 * np.pi, 100)
+        v = np.linspace(0.0, np.pi, 100)
+        
+        # cartesian coordinates that correspond to the spherical angles:
+        x = ellipsoid_radii[0] * np.outer(np.cos(u), np.sin(v))
+        y = ellipsoid_radii[1] * np.outer(np.sin(u), np.sin(v))
+        z = ellipsoid_radii[2] * np.outer(np.ones_like(u), np.cos(v))
+        
+        # rotate accordingly
+        for i in range(len(x)):
+            for j in range(len(x)):
+                [x[i,j],y[i,j],z[i,j]] = np.dot([x[i,j],y[i,j],z[i,j]], ellipsoid_rotation) + ellipsoid_center
+
+        fig = go.Figure(data=[go.Surface(x=x, y=y, z=z, opacity=0.2, showscale=False, surfacecolor=np.zeros_like(x))])
+
+        # Add the points contained in P
+        fig.add_trace(go.Scatter3d(
+            x=points[:,0],
+            y=points[:,1],
+            z=points[:,2],
+            mode='markers',
+            marker=dict(color='black', size=3)
+        ))
+        
+        fig.update_layout(scene=dict(
+            aspectmode='data',
+            ),
+            template='plotly_white', 
+            paper_bgcolor="white",
+            showlegend=False,
+            width=700,
+            height=600
+        )
+
+
+        axes = np.array([[ellipsoid_radii[0], 0.0, 0.0],
+                            [0.0, ellipsoid_radii[1], 0.0],
+                            [0.0, 0.0, ellipsoid_radii[2]]])
+        # rotate accordingly
+        for i in range(len(axes)):
+            axes[i] = np.dot(axes[i], ellipsoid_rotation)
+
+        # plot axes
+        for p in axes:
+            fig.add_trace(go.Scatter3d(
+                x=[ellipsoid_center[0], ellipsoid_center[0] + p[0]],
+                y=[ellipsoid_center[1], ellipsoid_center[1] + p[1]],
+                z=[ellipsoid_center[2], ellipsoid_center[2] + p[2]],
+                mode='lines',
+                line=dict(color='black', width=2)
+            ))
+        
+        # show supercell
+        def _plot_lattice(lattice_matrix, fig):
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[0][0] * 0.1 * n for n in range(11)], y=[lattice_matrix[0][1] * 0.1 * n for n in range(11)],z=[lattice_matrix[0][2] * 0.1 * n for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[1][0] * 0.1 * n for n in range(11)], y=[lattice_matrix[1][1] * 0.1 * n for n in range(11)],z=[lattice_matrix[1][2] * 0.1 * n for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[2][0] * 0.1 * n for n in range(11)], y=[lattice_matrix[2][1] * 0.1 * n for n in range(11)],z=[lattice_matrix[2][2] * 0.1 * n for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[0][0] * 0.1 * n + lattice_matrix[1][0] for n in range(11)], y=[lattice_matrix[0][1] * 0.1 * n + lattice_matrix[1][1] for n in range(11)],z=[lattice_matrix[0][2] * 0.1 * n  + lattice_matrix[1][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[0][0] * 0.1 * n + lattice_matrix[2][0] for n in range(11)], y=[lattice_matrix[0][1] * 0.1 * n + lattice_matrix[2][1] for n in range(11)],z=[lattice_matrix[0][2] * 0.1 * n  + lattice_matrix[2][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[0][0] * 0.1 * n + lattice_matrix[1][0] + lattice_matrix[2][0] for n in range(11)], y=[lattice_matrix[0][1] * 0.1 * n + lattice_matrix[1][1] + lattice_matrix[2][1] for n in range(11)],z=[lattice_matrix[0][2] * 0.1 * n  + lattice_matrix[1][2] + lattice_matrix[2][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[1][0] * 0.1 * n + lattice_matrix[0][0] for n in range(11)], y=[lattice_matrix[1][1] * 0.1 * n + lattice_matrix[0][1] for n in range(11)],z=[lattice_matrix[1][2] * 0.1 * n + lattice_matrix[0][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[1][0] * 0.1 * n + lattice_matrix[2][0] for n in range(11)], y=[lattice_matrix[1][1] * 0.1 * n + lattice_matrix[2][1] for n in range(11)],z=[lattice_matrix[1][2] * 0.1 * n + lattice_matrix[2][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[1][0] * 0.1 * n + lattice_matrix[0][0] + lattice_matrix[2][0] for n in range(11)], y=[lattice_matrix[1][1] * 0.1 * n + lattice_matrix[0][1] + lattice_matrix[2][1] for n in range(11)],z=[lattice_matrix[1][2] * 0.1 * n + lattice_matrix[0][2] + lattice_matrix[2][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[2][0] * 0.1 * n + lattice_matrix[0][0] for n in range(11)], y=[lattice_matrix[2][1] * 0.1 * n + lattice_matrix[0][1] for n in range(11)],z=[lattice_matrix[2][2] * 0.1 * n + lattice_matrix[0][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[2][0] * 0.1 * n + lattice_matrix[1][0] for n in range(11)], y=[lattice_matrix[2][1] * 0.1 * n + lattice_matrix[1][1] for n in range(11)],z=[lattice_matrix[2][2] * 0.1 * n + lattice_matrix[1][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+            fig.add_trace(go.Scatter3d(x=[lattice_matrix[2][0] * 0.1 * n + lattice_matrix[0][0] + lattice_matrix[1][0] for n in range(11)], y=[lattice_matrix[2][1] * 0.1 * n + lattice_matrix[0][1] + lattice_matrix[1][1] for n in range(11)],z=[lattice_matrix[2][2] * 0.1 * n + lattice_matrix[0][2] + lattice_matrix[1][2] for n in range(11)], marker=dict(size=0.5, color="black"), mode="lines"))
+        
+        _plot_lattice(lattice_matrix, fig)
+        fig.show()
+    
+    def _plot_anisotropy(ellipsoid_radii):
+        fig = make_subplots(rows=1, cols=2, 
+                            subplot_titles=[f"Displacement norm's distribution", 
+                                            f'Anisotropy plot'],
+                            column_widths=[0.5, 0.5])
+
+        # Part 1: Displacement Distribution Box Plot
+        fig.add_trace(go.Box(
+            y=disp_df['Displacement norm'],
+            boxpoints='all'
+        ), row=1, col=1)
+        fig.update_yaxes(row=1, col=1)
+        fig.update_xaxes(showticklabels=False, row=1, col=1)  # Hide x-axis labels for box plot
+
+        # Add frame to Displacement Distribution plot
+        fig.update_xaxes(linecolor='black', linewidth=1, row=1, col=1, mirror=True)
+        fig.update_yaxes(title_text='Displacement norm (Å)', linecolor='black', linewidth=1, row=1, col=1, mirror=True)
+
+        # Part 2: Anisotropy Scatter Plot
+        if ellipsoid_radii is not None:
+            the_longest_radius = ellipsoid_radii[2] 
+            the_second_longest_radius = ellipsoid_radii[1]
+            the_third_longest_radius = ellipsoid_radii[0]
+            ratio_of_second_to_the_longest = the_second_longest_radius / the_longest_radius
+            ratio_of_third_to_the_longest = the_third_longest_radius / the_longest_radius
+            anisotropy_info_list = [[threshold, the_longest_radius, ratio_of_second_to_the_longest, ratio_of_third_to_the_longest]]
+            anisotropy_info_df = pd.DataFrame(anisotropy_info_list, columns=["threshold", "the_longest_radius", "ratio_of_second_to_the_longest", "ratio_of_third_to_the_longest"])
+            
+            scatter = go.Scatter(
+                x=anisotropy_info_df["ratio_of_second_to_the_longest"], 
+                y=anisotropy_info_df["ratio_of_third_to_the_longest"], 
+                mode="markers", 
+                marker=dict(
+                    size=10,
+                    opacity=0.5,
+                    color=anisotropy_info_df["the_longest_radius"],  # Set color according to column "a"
+                    colorscale='rainbow',
+                    colorbar=dict(
+                        title=f'The longest radius of ellipsoid',
+                        titleside='right'
+                    )
+                ),
+                text=anisotropy_info_df["threshold"],
+                hoverinfo='text'
+            )
+            fig.add_trace(scatter, row=1, col=2)
+            
+            # Add y=x line to the anisotropy plot
+            line = go.Scatter(
+                x=[0, 1], 
+                y=[0, 1], 
+                mode='lines', 
+                line=dict(color='black', dash='dash'),
+                name='y=x Line'
+            )
+            fig.add_trace(line, row=1, col=2)
+
+            # Add frame to Anisotropy plot
+            fig.update_xaxes(title_text='The 2nd longest radius / the longest radius of ellipsoid', range=[0, 1], row=1, col=2, title_font=dict(size=10), tickfont=dict(size=12), linecolor='black', linewidth=1, mirror=True)
+            fig.update_yaxes(title_text='The shortest radius / the longest radius of ellipsoid', range=[0, 1], row=1, col=2, title_font=dict(size=10), tickfont=dict(size=12), linecolor='black', linewidth=1, mirror=True, title_standoff=5)
+
+            # Layout adjustments
+            fig.update_layout(
+                width=1100,  # Double the width to accommodate both plots
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False  # Disable legend
+            )
+
+            # Show the combined plot
+            fig.show()
+    
+    def _get_bulk_struct_with_defect(defect_entry) -> tuple:
+        """
+        Returns structures for bulk and defect supercells with the same number
+        of sites and species, to be used for site matching. If Vacancy, adds
+        (unrelaxed) site to defect structure. If Interstitial, adds relaxed
+        site to bulk structure. If Substitution, replaces (unrelaxed) defect
+        site in bulk structure.
+
+        Returns tuple of (bulk_sc_with_defect, defect_sc_with_defect).
+        """
+        # TODO: Code from `check_atom_mapping_far_from_defect` might be more efficient and robust for this,
+        #  should check.
+        defect_type = defect_entry.defect.defect_type.name
+        bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
+        # Check position of relaxed defect has been parsed (it's an optional arg)
+        sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
+        if sc_defect_frac_coords is None:
+            raise ValueError(
+                "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
+                "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
+                "calculating site displacements."
+            )
+
+        defect_sc_with_defect = _get_defect_supercell(defect_entry).copy()
+        if defect_type == "Vacancy":
+            # Add Vacancy atom to defect structure
+            defect_sc_with_defect.append(
+                defect_entry.defect.site.specie,
+                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
+                coords_are_cartesian=False,
+            )
+            defect_site_index = len(defect_sc_with_defect) - 1
+        elif defect_type == "Interstitial":
+            # If Interstitial, add interstitial site to bulk structure
+            bulk_sc_with_defect.append(
+                defect_entry.defect.site.specie,
+                defect_entry.defect.site.frac_coords,  # _relaxed_ defect site for interstitials
+                coords_are_cartesian=False,
+            )
+            # Ensure last site of defect structure is defect site. Needed to then calculate site
+            # distances to defect
+            # Get index of defect site in defect supercell
+            if not np.allclose(
+                defect_sc_with_defect[-1].frac_coords,
+                sc_defect_frac_coords,  # _relaxed_ defect site
+            ):
+                # Get index of defect site in defect structure
+                defect_site_index = defect_sc_with_defect.index(_get_defect_supercell_site(defect_entry))
+            else:
+                defect_site_index = len(defect_sc_with_defect) - 1
+        elif defect_type == "Substitution":
+            # If Substitution, replace site in bulk supercell
+            bulk_sc_with_defect.replace(
+                defect_entry.defect.defect_site_index,
+                defect_entry.defect.site.specie,
+                defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
+                coords_are_cartesian=False,
+            )
+            # Move defect site to last position of defect supercell
+            # Get index of defect site in defect supercell
+            defect_site_index = defect_sc_with_defect.index(
+                _get_defect_supercell_site(defect_entry)  # _relaxed_ defect site
+            )
+        else:
+            raise ValueError(f"Defect type {defect_type} not supported")
+        return bulk_sc_with_defect, defect_sc_with_defect, defect_site_index
+
+    def _shift_defect_site_to_center_of_the_supercell(sites_frac_coords, defect_frac_coords, bulk_sc):
+        """
+        Shifts the fractional coordinates of a site so that the defect site is at the center of the supercell.
+
+        Parameters:
+        - sites_frac_coords (array-like): Fractional coordinates of the site to be shifted.
+        - defect_frac_coords (array-like): Fractional coordinates of the defect site.
+        - bulk_sc: Structure object of bulk supercell.
+
+        Returns:
+        - shifted_sites_cart_coords (np.array): Cartesian coordinates of the shifted site.
+        """
+        
+        # Initialize the shifted fractional coordinates as a zero vector
+        shifted_sites_frac_coords = np.zeros(3)
+        
+        # Define the fractional coordinates for the center of the supercell
+        center_frac_coors = np.array([0.5, 0.5, 0.5])
+        
+        # Calculate the difference between the center of the supercell and the defect site
+        diff_frac_coords = center_frac_coors - defect_frac_coords
+        
+        # Shift the site coordinates by the difference, bringing the defect site to the center
+        tmp_sites = sites_frac_coords + diff_frac_coords
+        
+        # Adjust the fractional coordinates to ensure they stay within the unit cell [0, 1)
+        for i, tmp_site in enumerate(tmp_sites):
+            if tmp_site > 1:
+                shifted_sites_frac_coords[i] = tmp_site - 1
+            elif tmp_site < 0:
+                shifted_sites_frac_coords[i] = tmp_site + 1
+            else:
+                shifted_sites_frac_coords[i] = tmp_site
+        
+        # Convert the shifted fractional coordinates to Cartesian coordinates using the lattice
+        shifted_sites_cart_coords = bulk_sc.lattice.get_cartesian_coords(shifted_sites_frac_coords)
+        
+        return shifted_sites_cart_coords
+    
+    bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
+    
+    # Map sites in defect supercell to bulk supercell
+    mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc)
+    mappings_dict = {i[1]: i[2] for i in mappings}  # {defect_sc_index: bulk_sc_index}
+    # Loop over sites in defect sc
+    disp_dict = {  # mapping defect site index (in defect sc) to displacement
+        "Index (defect)": [],
+        "Species": [],
+        "Species_with_index": [],
+        "Displacement": [],
+        "Displacement norm": [],
+        "Distance to defect": [],
+        "X sites in cartesian coordinate (defect)": [],
+        "Y sites in cartesian coordinate (defect)": [],
+        "Z sites in cartesian coordinate (defect)": []
+    }  # type: dict
+    
+    sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
+    if sc_defect_frac_coords is None:
+        raise ValueError(
+            "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
+            "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
+            "calculating site displacements."
+            )
+    
+    for i, site in enumerate(defect_sc_with_site):
+        bulk_sc_index = mappings_dict[i]  # Map to bulk sc
+        bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
+        # Calculate displacement (need to account for pbc!)
+        # First final point, then initial point
+        frac_disp = pbc_diff(site.frac_coords, bulk_site.frac_coords)  # in fractional coords
+        disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
+        # Distance to defect site (last site in defect sc)
+        distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
+
+        disp_dict["Index (defect)"].append(i)
+        disp_dict["Displacement"].append(disp)
+        disp_dict["Displacement norm"].append(np.linalg.norm(disp, ord=2))
+        disp_dict["Distance to defect"].append(distance)
+        disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
+        disp_dict["Species"].append(site.specie.name)
+        disp_dict["X sites in cartesian coordinate (defect)"].append(_shift_defect_site_to_center_of_the_supercell(site.frac_coords, sc_defect_frac_coords, bulk_sc)[0])
+        disp_dict["Y sites in cartesian coordinate (defect)"].append(_shift_defect_site_to_center_of_the_supercell(site.frac_coords, sc_defect_frac_coords, bulk_sc)[1])
+        disp_dict["Z sites in cartesian coordinate (defect)"].append(_shift_defect_site_to_center_of_the_supercell(site.frac_coords, sc_defect_frac_coords, bulk_sc)[2])
+        
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "invalid value encountered in scalar divide")
+    
+    # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
+    element_list = [
+        el.symbol for el in defect_entry.defect.structure.composition.elements
+    ]  # host elements
+    element_list += sorted(
+        [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
+            el.symbol
+            for el in defect_entry.defect.defect_structure.composition.elements
+            if el.symbol not in element_list
+        ]
+    )
+    # Combine the lists into a list of tuples, then sort, then unpack:
+    combined = list(zip(*disp_dict.values()))
+    combined.sort(
+        key=lambda x: (element_list.index(x[1]), x[4], x[0])
+    )  # Sort by species, then distance, then index
+    
+    (
+        disp_dict["Index (defect)"],
+        disp_dict["Species"],
+        disp_dict["Species_with_index"],
+        disp_dict["Displacement"],
+        disp_dict["Displacement norm"],
+        disp_dict["Distance to defect"],
+        disp_dict["X sites in cartesian coordinate (defect)"],
+        disp_dict["Y sites in cartesian coordinate (defect)"],
+        disp_dict["Z sites in cartesian coordinate (defect)"]
+    ) = zip(*combined)
+    
+    # Convert the displacement dictionary into a pandas DataFrame
+    disp_df = pd.DataFrame(disp_dict)
+
+    # Calculate the threshold for displacement norm, ensuring it's at least 0.05
+    threshold = max(disp_df["Displacement norm"].quantile(quantile), 0.05)
+
+    # Filter the DataFrame to get points where the displacement norm exceeds the threshold
+    displacement_norm_over_threshold = disp_df[disp_df["Displacement norm"] > threshold]
+
+    # Print the threshold for debugging purposes
+    print(f"threshold: {threshold}")
+
+    # Extract the Cartesian coordinates of the points that are over the threshold
+    points = displacement_norm_over_threshold[[
+        "X sites in cartesian coordinate (defect)", 
+        "Y sites in cartesian coordinate (defect)", 
+        "Z sites in cartesian coordinate (defect)"
+    ]].to_numpy()
+
+    # Only proceed if there are at least 10 points over the threshold
+    if points.shape[0] >= 10:
+        try:
+            # Try to fit a minimum volume ellipsoid to the points
+            (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation) = _get_minimum_volume_ellipsoid(points)
+            
+            # If anisotropy plotting is enabled, plot the ellipsoid's radii anisotropy
+            if plot_anisotropy:
+                _plot_anisotropy(ellipsoid_radii)
+            
+            # If ellipsoid plotting is enabled, plot the ellipsoid with the given lattice matrix
+            if plot_ellipsoid:
+                lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
+                _plot_ellipsoid(ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix)
+            
+            # Return the ellipsoid's center, radii, and rotation matrix
+            return (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation)
+        
+        except np.linalg.LinAlgError:
+            # Handle the case where the matrix is singular and fitting fails
+            print("The matrix is singular and the system has no unique solution.")
+            ellipsoid_center = None
+            ellipsoid_radii = None
+            ellipsoid_rotation = None     
+            return (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation)
+    else:
+        # If there aren't enough points, suggest using a smaller quantile and return None values
+        print("Use smaller quantile.")
+        ellipsoid_center = None
+        ellipsoid_radii = None
+        ellipsoid_rotation = None
+        return (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation)
+ 
+      
+      
