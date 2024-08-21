@@ -12,9 +12,11 @@ import re
 import warnings
 from typing import Optional, Union
 
+import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, colors, ticker
+from matplotlib import colormaps, ticker
+from matplotlib.colors import Colormap, ListedColormap
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 
@@ -49,12 +51,51 @@ def _chempot_warning(dft_chempots):
         )
 
 
-def _get_plot_setup(colormap, xy):
-    if colormap is None:  # future updated colour handling (based on defect type etc) should remove
-        # the need for this!
-        colormap = "Dark2" if len(xy) <= 8 else "tab20"
-    cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
-    colors = cmap(np.linspace(0, 1, len(xy)))
+def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str = "batlow") -> Colormap:
+    """
+    Get a colormap from a string or a ``Colormap`` object.
+
+    Args:
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use, either as a string (which can be a colormap name
+            from https://www.fabiocrameri.ch/colourmaps or
+            https://matplotlib.org/stable/users/explain/colors/colormaps), or
+            a ``Colormap`` / ``ListedColormap`` object. If ``None`` (default),
+            uses ``default`` colormap (which is ``"batlow"`` by default).
+
+            Append "S" to the colormap name if using a sequential colormap
+            from https://www.fabiocrameri.ch/colourmaps.
+        default (str):
+            Default colormap to use if ``colormap`` is ``None``. Defaults to
+            ``"batlow"`` from https://www.fabiocrameri.ch/colourmaps.
+    """
+    if colormap is None:
+        colormap = default
+
+    if isinstance(colormap, str):  # get colormap from string
+        # first check if it's a cmcrameri colormap:
+        cmap = cmc.cmaps.get(colormap, None)
+        if cmap is None:  # if not, check matplotlib colormaps
+            cmap = colormaps.get(colormap, None)
+            if cmap is None:
+                warnings.warn(
+                    f"Colormap '{colormap}' not found in `cmcrameri` "
+                    f"(https://www.fabiocrameri.ch/colourmaps) or `matplotlib` "
+                    f"(https://matplotlib.org/stable/users/explain/colors/colormaps) colormaps. "
+                    f"Defaulting to '{default}' colormap."
+                )
+            cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
+
+    return cmap
+
+
+def _get_TLD_plot_setup(colormap, xy):
+    # future updated colour handling (based on defect type etc) should remove the need for this:
+    cmap = get_colormap(colormap, default="Dark2" if len(xy) <= 8 else "tab20")
+    if isinstance(cmap, ListedColormap) and len(cmap.colors) < 50:
+        colors = cmap.colors
+    else:
+        colors = cmap(np.linspace(0, 1, len(xy)))
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -64,7 +105,7 @@ def _get_plot_setup(colormap, xy):
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
 
-    return cmap, colors, fig, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
+    return colors, fig, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
 
 
 def _plot_formation_energy_lines(
@@ -806,7 +847,7 @@ def _TLD_plot(
     ylim=None,
     fermi_level=None,
     title=None,
-    colormap: Optional[Union[str, colors.Colormap]] = None,
+    colormap: Optional[Union[str, Colormap]] = None,
     auto_labels=False,
     filename=None,
 ):
@@ -835,7 +876,6 @@ def _TLD_plot(
     )
 
     (
-        cmap,
         colors,
         fig,
         ax,
@@ -843,7 +883,7 @@ def _TLD_plot(
         styled_font_size,
         styled_linewidth,
         styled_markersize,
-    ) = _get_plot_setup(colormap, all_lines_xy if all_entries is True else xy)
+    ) = _get_TLD_plot_setup(colormap, all_lines_xy if all_entries is True else xy)
 
     defect_names_for_legend = _plot_formation_energy_lines(  # plot formation energies and get legend names
         all_lines_xy if all_entries is True else xy,

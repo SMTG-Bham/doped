@@ -1816,6 +1816,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             elif defect_entry.name == "vac_2_Te_orig_non_JT_distorted_0":
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C3v"
             elif defect_entry.name in [
+                "as_1_Te_on_Cd_-1",
                 "as_1_Cd_on_Te_1",
                 "as_2_Cd_on_Te_metastable_0",
                 "vac_2_Te_orig_metastable_-1",
@@ -1825,6 +1826,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
             else:
+                print(defect_entry.name)
                 assert (
                     point_symmetry(defect_entry.defect_supercell, symprec=0.01)
                     == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]

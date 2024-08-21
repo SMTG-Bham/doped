@@ -223,6 +223,10 @@ def raw_energy_from_chempots(composition: Union[str, dict, Composition], chempot
             f"({[el.symbol for el in composition.elements]})!"
         )
 
+    # note this can also be achieved with: (implements exact same code)
+    # from pymatgen.core.composition import ChemicalPotential
+    # raw_energy = ChemicalPotential(raw_energies_dict).get_energy(composition)
+
     return sum(raw_energies_dict.get(el.symbol, 0) * stoich for el, stoich in composition.items())
 
 
@@ -2704,10 +2708,13 @@ class DefectThermodynamics(MSONable):
                 used to indicate the equilibrium Fermi level position (e.g. calculated
                 with py-sc-fermi). (Default: None)
             colormap (str, matplotlib.colors.Colormap):
-                Colormap to use for the formation energy lines, either as a string (i.e.
-                name from https://matplotlib.org/stable/users/explain/colors/colormaps.html)
-                or a Colormap / ListedColormap object. If None (default), uses `Dark2` (if
-                8 or less lines) or `tab20` (if more than 8 lines being plotted).
+                Colormap to use for the formation energy lines, either as a string
+                (which can be a colormap name from
+                https://matplotlib.org/stable/users/explain/colors/colormaps or from
+                https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
+                colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
+                If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines) or ``tab20``
+                (if more than 8 lines being plotted).
             auto_labels (bool):
                 Whether to automatically label the transition levels with their charge
                 states. If there are many transition levels, this can be quite ugly.
@@ -2715,8 +2722,8 @@ class DefectThermodynamics(MSONable):
             filename (PathLike): Filename to save the plot to. (Default: None (not saved))
 
         Returns:
-            Matplotlib Figure object, or list of Figure objects if multiple limits
-            chosen.
+            ``matplotlib`` ``Figure`` object, or list of ``Figure`` objects if multiple
+            limits chosen.
         """
         from shakenbreak.plotting import _install_custom_font
 
