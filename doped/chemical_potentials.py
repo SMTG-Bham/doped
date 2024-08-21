@@ -1892,8 +1892,13 @@ class CompetingPhasesAnalyzer:
     # TODO: `from_vaspruns` should just be the default initialisation of CompetingPhasesAnalyzer,
     #  which auto-parses vaspruns from the subdirectories (or optionally a list of vaspruns,
     #  or a csv path); see shelved changes for this
-    # TODO: Could add multiprocessing like DefectsParser to expedite parsing?
-    def from_vaspruns(self, path="CompetingPhases", folder="vasp_std", csv_path=None, verbose=True):
+    def from_vaspruns(
+        self,
+        path="CompetingPhases",
+        subfolder: Optional[PathLike] = "vasp_std",
+        csv_path=None,
+        verbose=True,
+    ):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
@@ -1906,11 +1911,11 @@ class CompetingPhasesAnalyzer:
                 formula_EaH_X/vasp_std/vasprun.xml(.gz), or
                 formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
                 to vasprun.xml(.gz) files.
-            folder (PathLike):
+            subfolder (PathLike):
                 The subfolder in which your vasprun.xml(.gz) output files
                 are located (e.g. a file-structure like:
-                formula_EaH_X/{folder}/vasprun.xml(.gz)). Default is to
-                search for ``vasp_std`` subfolders, or directly in the
+                ``formula_EaH_X/{subfolder}/vasprun.xml(.gz)``). Default
+                is to search for ``vasp_std`` subfolders, or directly in the
                 ``formula_EaH_X`` folder.
             csv_path (PathLike):
                 If set will save the parsed data to a csv at this filepath.
@@ -1950,14 +1955,17 @@ class CompetingPhasesAnalyzer:
         elif isinstance(path, PathLike):
             for p in os.listdir(path):
                 if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
-                    # add bulk simple properties
                     vr_path = "null_directory"
                     with contextlib.suppress(FileNotFoundError):
                         vr_path, multiple = _get_output_files_and_check_if_multiple(
-                            "vasprun.xml", f"{p}/{folder}"
+                            "vasprun.xml", f"{os.path.join(path, p)}/{subfolder}"
                         )
                         if multiple:
-                            folder_name = f"{p}/{folder}" if folder else p
+                            folder_name = (
+                                f"{os.path.join(path, p)}/{subfolder}"
+                                if subfolder
+                                else os.path.join(path, p)
+                            )
                             warnings.warn(
                                 f"Multiple `vasprun.xml` files found in directory: {folder_name}. Using "
                                 f"{vr_path} to parse the calculation energy and metadata."
@@ -1968,18 +1976,21 @@ class CompetingPhasesAnalyzer:
 
                     else:
                         with contextlib.suppress(FileNotFoundError):
-                            vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", p)
+                            vr_path, multiple = _get_output_files_and_check_if_multiple(
+                                "vasprun.xml", os.path.join(path, p)
+                            )
                             if multiple:
                                 warnings.warn(
-                                    f"Multiple `vasprun.xml` files found in directory: {p}. Using "
-                                    f"{vr_path} to parse the calculation energy and metadata."
+                                    f"Multiple `vasprun.xml` files found in directory: "
+                                    f"{os.path.join(path, p)}. Using {vr_path} to parse the calculation "
+                                    f"energy and metadata."
                                 )
 
                         if os.path.exists(vr_path):
                             self.vasprun_paths.append(vr_path)
 
                         else:
-                            skipped_folders += [f"{p} or {p}/{folder}"]
+                            skipped_folders += [f"{p} or {p}/{subfolder}"]
         else:
             raise ValueError(
                 "`path` should either be a path to a folder (with competing phase "
@@ -2010,7 +2021,7 @@ class CompetingPhasesAnalyzer:
         _ignore_pmg_warnings()
 
         self.vaspruns = []
-        failed_parsing_dict = {}
+        failed_parsing_dict: dict[str, list] = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
             for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
@@ -2052,7 +2063,7 @@ class CompetingPhasesAnalyzer:
             )
 
         data = []
-        self.elemental_energies = {}
+        self.elemental_energies: dict[str, float] = {}
 
         for vr in self.vaspruns:
             comp = vr.final_structure.composition
@@ -2765,6 +2776,7 @@ class CompetingPhasesAnalyzer:
         #  able to be made more succinct, and also modularise a bit?
         # TODO: Use ``ChemicalPotentialGrid`` from ``dopey_fermi`` PR when fixed and merged to develop (
         #  will also make handling >ternary systems easier?)
+        # TODO: Option to only show all calculated competing phases?
 
         # Note that we could also add option to instead plot competing phases lines coloured,
         # with a legend added giving the composition of each competing phase line (as in the SI of
@@ -2864,10 +2876,14 @@ class CompetingPhasesAnalyzer:
         lines = []
         labels = {}  # {formula: line function}
         intersections = []
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
 
         for formula, pts in cpd.domains.items():
             if formula == self.composition.reduced_formula:
                 continue
+
+            intersection = None  # catch cases where lines are not within plot boundaries
             x = np.linspace(-50, 50, 1000)
             # get domain points which match those in host_domains:
             domain_pts = [
@@ -2894,14 +2910,11 @@ class CompetingPhasesAnalyzer:
                 )
                 x_val = domain_pts[0][independent_el_indices[0]]
                 y_min, y_max = ax.get_ylim()
-                intersections.append(((x_val, y_min), (x_val, y_max)))
+                intersection = ((x_val, y_min), (x_val, y_max))
             else:
                 (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
 
-                # Find intersections with the bounding box
-                x_min, x_max = ax.get_xlim()
-                y_min, y_max = ax.get_ylim()
-
+                # Find intersections with the bounding box:
                 x_intersections = []
                 y_intersections = []
 
@@ -2915,20 +2928,24 @@ class CompetingPhasesAnalyzer:
 
                 # Check intersections with horizontal bounds (y_min and y_max)
                 if not np.isclose(float(y_x_min), float(y_x_max)):  # not a horizontal line
-                    x_y_min = interp1d(f(x), x, assume_sorted=False)(y_min)
-                    x_y_max = interp1d(f(x), x, assume_sorted=False)(y_max)
+                    x_y_min = interp1d(
+                        f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate"
+                    )(y_min)
+                    x_y_max = interp1d(
+                        f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate"
+                    )(y_max)
                     if x_min <= x_y_min <= x_max:
                         y_intersections.append((float(x_y_min), y_min))
                     if x_min <= x_y_max <= x_max:
                         y_intersections.append((float(x_y_max), y_max))
 
-                intersections.append(
-                    np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-                )  # in case intersects at x/y corner (which would give a duplicate)
+                intersection = np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+                # in case intersects at x/y corner (which would give a duplicate)
 
-            lines.append(line)
-            # labels is dict of formula: line function
-            labels[formula] = f
+            if intersection is not None and np.size(intersection) > 0:
+                intersections.append(intersection)
+                lines.append(line)
+                labels[formula] = f  # labels is dict of formula: line function
 
         # pre-set x_points:
         if label_positions:
