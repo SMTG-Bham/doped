@@ -41,7 +41,7 @@ from scipy.interpolate import griddata, interp1d
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
-from doped import _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import get_primitive_structure
@@ -1456,6 +1456,19 @@ class CompetingPhases:
 
         return formatted_entries
 
+    def __repr__(self):
+        """
+        Returns a string representation of the ``CompetingPhases`` object.
+        """
+        formula = self.bulk_composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        properties, methods = _doped_obj_properties_methods(self)
+        joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
+        return (
+            f"doped CompetingPhases for bulk composition {formula} with {len(self.entries)} entries "
+            f"(in self.entries):\n{joined_entry_list}\n\n"
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
+        )
+
 
 # TODO: Merge this to `CompetingPhases`, and just have options to only write extrinsic files to
 #   output? And smart file/folder overwriting handling (like in SnB?)
@@ -1804,8 +1817,11 @@ def get_doped_chempots_from_entries(
 
 class CompetingPhasesAnalyzer:
     # TODO: Allow parsing using pymatgen ComputedEntries as well, to aid interoperability with
-    #  high-througput architectures like AiiDA or atomate2. See:
+    #  high-throughput architectures like AiiDA or atomate2. See:
     #  https://github.com/SMTG-Bham/doped/commit/b4eb9a5083a0a2c9596be5ccc57d060e1fcec530
+    # TODO: Parse into ``ComputedStructureEntries`` (similar to ``CompetingPhases`` handling) for easier
+    #  maintenance, manipulation and interoperability, and update ``__repr__()`` to print entries list
+    #  with folder and ``doped`` names (like in ``CompetingPhases``)
     def __init__(self, composition: Union[str, Composition]):
         """
         Class for post-processing competing phases calculations, to determine
@@ -1876,6 +1892,7 @@ class CompetingPhasesAnalyzer:
         #  analysis.py for this
         self.vasprun_paths = []
         skipped_folders = []
+        self.parsed_folders = []
 
         if isinstance(path, list):  # if path is just a list of all competing phases
             for p in path:
@@ -1960,6 +1977,7 @@ class CompetingPhasesAnalyzer:
             for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
                 try:
                     self.vaspruns.append(get_vasprun(vasprun_path))
+                    self.parsed_folders.append(vasprun_path.rstrip(".gz").rstrip("vasprun.xml"))
                 except Exception as e:
                     if str(e) in failed_parsing_dict:
                         failed_parsing_dict[str(e)] += [vasprun_path]
@@ -2926,6 +2944,22 @@ class CompetingPhasesAnalyzer:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
 
         return fig
+
+    def __repr__(self):
+        """
+        Returns a string representation of the ``CompetingPhasesAnalyzer``
+        object.
+        """
+        formula = self.bulk_composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        properties, methods = _doped_obj_properties_methods(self)
+        # TODO: When entries parsing/handling implemented:
+        # joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
+        parsed_folder_list = "\n".join([str(folder) for folder in self.parsed_folders])
+        return (
+            f"doped CompetingPhasesAnalyzer for bulk composition {formula} with "
+            f"{len(self.parsed_folders)} folders parsed:\n{parsed_folder_list}\n\n"
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
+        )
 
 
 def _possible_label_positions_from_bbox_intersections(
