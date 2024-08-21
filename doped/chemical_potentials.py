@@ -690,7 +690,7 @@ def get_MP_summary_docs(
                 if (
                     data_field not in entry.data
                 ):  # don't overwrite existing data (e.g. our molecular entries)
-                    entry.data[data_field] = getattr(doc, data_field)
+                    entry.data[data_field] = getattr(doc, data_field, "N/A")
 
         elif entry.data["material_id"] != "mp-0":  # these are skipped, band_gap and total_mag already set
             warnings.warn(
@@ -859,8 +859,7 @@ def get_and_set_competing_phase_name(
 
     Returns:
         doped_name (str):
-            The ``doped`` name for the competing phase, to use as folder
-            name when generating calculation inputs.
+            The ``doped`` name for the competing phase.
     """
     if not entry.data.get("doped_name") or regenerate:  # not set, so generate
         rounded_eah = round(_get_e_above_hull(entry.data), ndigits)
@@ -870,6 +869,41 @@ def get_and_set_competing_phase_name(
         entry.data["doped_name"] = f"{entry.name}_{space_group}_EaH_{rounded_eah}"
 
     return entry.data.get("doped_name")
+
+
+def _get_competing_phase_folder_name(
+    entry: Union[ComputedStructureEntry, ComputedEntry], regenerate=False, ndigits=3
+) -> str:
+    """
+    Get the ``doped`` `folder` name for a competing phase entry from the
+    Materials Project (MP) database, handling the possibility of slashes ("/")
+    in the formula name (due to space group symbols such as C2/m, P2_1/c etc.)
+    by removing them (-> C2m, P2_1c etc.).
+
+    The default naming convention in ``doped`` for competing phases is:
+    ``"{Chemical Formula}_{Space Group}_EaH_{MP Energy above Hull}"``,
+    which is stored in the ``entry.data["doped_name"]`` key-value pair.
+    If this value is already set, then this function just returns the
+    previously-generated ``doped`` name, unless ``regenerate=True``.
+
+    Args:
+        entry (ComputedStructureEntry, ComputedEntry):
+            ``pymatgen`` ``ComputedStructureEntry`` object for the
+            competing phase.
+        regenerate (bool):
+            Whether to regenerate the ``doped`` name for the competing
+            phase, if ``entry.data["doped_name"]`` already set.
+            Default is False.
+        ndigits (int):
+            Number of digits to round the energy above hull value (in
+            eV/atom) to. Default is 3.
+
+    Returns:
+        folder_name (str):
+            The ``doped`` `folder` name for the competing phase, to use
+            when generating calculation inputs.
+    """
+    return get_and_set_competing_phase_name(entry, regenerate=regenerate, ndigits=ndigits).replace("/", "")
 
 
 def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
@@ -1237,7 +1271,7 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
+                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1261,7 +1295,7 @@ class CompetingPhases:
                     + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                     + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                 )
-                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/kpoint_converge/{kname}"
+                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/kpoint_converge/{kname}"
                 dict_set.write_input(fname, **kwargs)
 
     # TODO: Add vasp_ncl_setup()
@@ -1337,7 +1371,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
+            fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.metals:
@@ -1354,7 +1388,7 @@ class CompetingPhases:
                 force_gamma=True,
             )
 
-            fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
+            fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
             dict_set.write_input(fname, **kwargs)
 
         for e in self.molecules:  # gamma-only for molecules
@@ -1378,7 +1412,7 @@ class CompetingPhases:
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
-                fname = f"CompetingPhases/{get_and_set_competing_phase_name(e)}/vasp_std"
+                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
                 dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
@@ -1742,6 +1776,13 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
         self.entries.sort(key=lambda x: _entries_sorting_func(x))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
+
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
+            self.intrinsic_MP_docs = deepcopy(self.MP_docs)
+            self.MP_docs = get_MP_summary_docs(
+                entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
+                api_key=self.api_key,
+            )
 
 
 def get_doped_chempots_from_entries(
