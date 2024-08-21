@@ -87,9 +87,6 @@ MP_API_property_keys = {
 
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
-# TODO: Add chemical potential diagram plotting functionality that we had before
-#  with `plot_cplap_ternary` -- using ``ChemicalPotentialGrid`` from Alex PR; code from
-#  pymatgen/analysis/defects/plotting/phases.py may be useful
 
 
 def _get_pretty_formula(entry_data: dict):
@@ -933,6 +930,7 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
         entry_names = [get_and_set_competing_phase_name(entry, regenerate=False) for entry in entries]
 
 
+# TODO: Make these classes MSONable
 class CompetingPhases:
     def __init__(
         self,
@@ -1053,13 +1051,13 @@ class CompetingPhases:
                 self.bulk_structure = primitive_structure
             else:
                 self.bulk_structure = composition
-            self.bulk_composition = self.bulk_structure.composition
+            self.composition = self.bulk_structure.composition
 
         else:
             self.bulk_structure = None
-            self.bulk_composition = Composition(composition)
+            self.composition = Composition(composition)
 
-        self.chemsys = list(self.bulk_composition.as_dict().keys())
+        self.chemsys = list(self.composition.as_dict().keys())
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (
@@ -1079,7 +1077,7 @@ class CompetingPhases:
         bulk_entries = [
             entry
             for entry in formatted_entries  # sorted by e_above_hull above in get_entries_in_chemsys
-            if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
+            if entry.composition.reduced_composition == self.composition.reduced_composition
         ]
         if zero_eah_bulk_entries := [
             entry for entry in bulk_entries if _get_e_above_hull(entry.data) == 0.0
@@ -1089,7 +1087,7 @@ class CompetingPhases:
             ]  # lowest energy entry for bulk (after sorting)
         else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
             if bulk_entries := get_entries(  # composition present in MP, but not stable
-                self.bulk_composition.reduced_formula, api_key=self.api_key
+                self.composition.reduced_formula, api_key=self.api_key
             ):
                 self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
                     0
@@ -1097,7 +1095,7 @@ class CompetingPhases:
                 eah = PhaseDiagram(formatted_entries).get_e_above_hull(bulk_computed_entry)
                 warnings.warn(
                     f"Note that the Materials Project (MP) database entry for "
-                    f"{self.bulk_composition.reduced_formula} is not stable with respect to competing "
+                    f"{self.composition.reduced_formula} is not stable with respect to competing "
                     f"phases, having an energy above hull of {eah:.4f} eV/atom.\n"
                     f"Formally, this means that the host material is unstable and so has no chemical "
                     f"potential limits; though in reality there may be errors in the MP energies (GGA, "
@@ -1118,14 +1116,14 @@ class CompetingPhases:
             else:  # composition not on MP, warn and add shifted bulk entry to entries
                 warnings.warn(
                     f"Note that no Materials Project (MP) database entry exists for "
-                    f"{self.bulk_composition.reduced_formula}. Here we assume the host material has an "
+                    f"{self.composition.reduced_formula}. Here we assume the host material has an "
                     f"energy equal to the MP convex hull energy at the corresponding point in chemical "
                     f"space, and then determine the possible competing phases with the same approach as "
                     f"usual."
                 )
                 self.MP_bulk_computed_entry = bulk_computed_entry = ComputedEntry(
-                    self.bulk_composition,
-                    self.MP_full_pd.get_hull_energy(self.bulk_composition) - 1e-4,
+                    self.composition,
+                    self.MP_full_pd.get_hull_energy(self.composition) - 1e-4,
                     data={
                         self.property_key_dict["energy_above_hull"]: 0.0,
                         "band_gap": 50,
@@ -1146,7 +1144,7 @@ class CompetingPhases:
             if bulk_entries := [
                 entry
                 for entry in formatted_entries  # sorted by e_above_hull above in get_entries_in_chemsys
-                if entry.composition.reduced_composition == self.bulk_composition.reduced_composition
+                if entry.composition.reduced_composition == self.composition.reduced_composition
             ]:
                 sm = StructureMatcher()
                 matching_bulk_entries = [
@@ -1168,7 +1166,7 @@ class CompetingPhases:
             formatted_entries = [  # remove bulk entries from formatted_entries and add the new bulk entry
                 entry
                 for entry in formatted_entries
-                if entry.composition.reduced_composition != self.bulk_composition.reduced_composition
+                if entry.composition.reduced_composition != self.composition.reduced_composition
             ]
             formatted_entries.append(manual_bulk_entry)
 
@@ -1494,7 +1492,7 @@ class CompetingPhases:
         """
         Returns a string representation of the ``CompetingPhases`` object.
         """
-        formula = self.bulk_composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
         joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
         return (
@@ -1627,7 +1625,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         )
         self.intrinsic_entries = copy.deepcopy(self.entries)
         self.entries = []
-        self.intrinsic_species = [s.symbol for s in self.bulk_composition.reduced_composition.elements]
+        self.intrinsic_species = [s.symbol for s in self.composition.reduced_composition.elements]
         self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
         self.codoping = codoping
         self.full_sub_approach = full_sub_approach
@@ -1648,7 +1646,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         ]:
             raise ValueError(
                 f"Extrinsic species {extrinsic_in_intrinsic} are already present in the host composition "
-                f"({self.bulk_composition}), and so cannot be considered as extrinsic species!"
+                f"({self.composition}), and so cannot be considered as extrinsic species!"
             )
 
         if self.codoping:  # if codoping is True, should have multiple extrinsic species:
@@ -1875,20 +1873,20 @@ class CompetingPhasesAnalyzer:
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
 
         Attributes:
-            bulk_composition (str): The bulk (host) composition.
+            composition (str): The bulk (host) composition.
             elements (list):
                 List of all elements in the chemical system (host + extrinsic),
                 from all parsed calculations.
             extrinsic_elements (str):
                 List of extrinsic elements in the chemical system (not present
-                in ``bulk_composition``).
+                in ``composition``).
             data (list):
                 List of dictionaries containing the parsed competing phases data.
             formation_energy_df (pandas.DataFrame):
                 DataFrame containing the parsed competing phases data.
         """
-        self.bulk_composition = Composition(composition)
-        self.elements = [str(c) for c in self.bulk_composition.elements]
+        self.composition = Composition(composition)
+        self.elements = [str(c) for c in self.composition.elements]
         self.extrinsic_elements: list[str] = []
 
     # TODO: `from_vaspruns` should just be the default initialisation of CompetingPhasesAnalyzer,
@@ -2117,10 +2115,10 @@ class CompetingPhasesAnalyzer:
             data = sorted(data, key=lambda x: x["Formation Energy (eV/fu)"], reverse=True)
 
         # moves the bulk composition to the top of the list
-        _move_dict_to_start(data, "Formula", self.bulk_composition.reduced_formula)
+        _move_dict_to_start(data, "Formula", self.composition.reduced_formula)
 
         # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
-        # energy_per_fu, energy, kpoints, then by order of appearance in bulk_composition dict,
+        # energy_per_fu, energy, kpoints, then by order of appearance in composition dict,
         # then alphabetically for any remaining:
         copied_data = copy.deepcopy(data)
         formation_energy_data = [
@@ -2140,8 +2138,8 @@ class CompetingPhasesAnalyzer:
                 **{  # num elts columns, sorted by order of occurrence in bulk composition:
                     str(elt): d.pop(str(elt), None)
                     for elt in sorted(
-                        self.bulk_composition.elements,
-                        key=lambda x: self.bulk_composition.reduced_formula.index(str(x)),
+                        self.composition.elements,
+                        key=lambda x: self.composition.reduced_formula.index(str(x)),
                     )
                 },
                 **{
@@ -2253,7 +2251,7 @@ class CompetingPhasesAnalyzer:
     ):
         """
         Calculates the chemical potential limits for the host composition
-        (``self.bulk_composition``).
+        (``self.composition``).
 
         If ``extrinsic_species`` (i.e. dopant/impurity elements) is specified,
         then the limiting chemical potential for ``extrinsic_species`` at the
@@ -2283,7 +2281,7 @@ class CompetingPhasesAnalyzer:
         for d in self.data:
             pd_entry = PDEntry(d["Formula"], d["DFT Energy (eV/fu)"])
             if (np.isinf(d["Formation Energy (eV/fu)"]) or np.isnan(d["Formation Energy (eV/fu)"])) and (
-                set(Composition(d["Formula"]).elements).issubset(self.bulk_composition.elements)
+                set(Composition(d["Formula"]).elements).issubset(self.composition.elements)
                 or (extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements)
             ):
                 warnings.warn(
@@ -2293,9 +2291,9 @@ class CompetingPhasesAnalyzer:
                 )
                 continue
 
-            if set(Composition(d["Formula"]).elements).issubset(self.bulk_composition.elements):
+            if set(Composition(d["Formula"]).elements).issubset(self.composition.elements):
                 intrinsic_phase_diagram_entries.append(pd_entry)  # intrinsic phase
-                if pd_entry.composition == self.bulk_composition:  # bulk phase
+                if pd_entry.composition == self.composition:  # bulk phase
                     bulk_pde_list.append(pd_entry)
             elif extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements:
                 # only take entries with the extrinsic species present, otherwise is additionally parsed
@@ -2322,7 +2320,7 @@ class CompetingPhasesAnalyzer:
                 else None
             )
             raise ValueError(
-                f"Could not find bulk phase for {self.bulk_composition.reduced_formula} in the supplied "
+                f"Could not find bulk phase for {self.composition.reduced_formula} in the supplied "
                 f"data. Found intrinsic phase diagram entries for: {intrinsic_phase_diagram_compositions}"
             )
         # lowest energy bulk phase
@@ -2331,7 +2329,7 @@ class CompetingPhasesAnalyzer:
 
         self._intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_phase_diagram_entries,
-            list(map(Element, self.bulk_composition.elements)),  # preserve bulk comp element ordering
+            list(map(Element, self.composition.elements)),  # preserve bulk comp element ordering
         )
 
         # check if it's stable and if not, warn user and downshift to get _least_ unstable point on convex
@@ -2340,7 +2338,7 @@ class CompetingPhasesAnalyzer:
             unstable_host = True
             eah = self._intrinsic_phase_diagram.get_e_above_hull(self.bulk_pde)
             warnings.warn(
-                f"{self.bulk_composition.reduced_formula} is not stable with respect to competing phases, "
+                f"{self.composition.reduced_formula} is not stable with respect to competing phases, "
                 f"having an energy above hull of {eah:.4f} eV/atom.\n"
                 f"Formally, this means that (based on the supplied athermal calculation data) the host "
                 f"material is unstable and so has no chemical potential limits; though in reality the "
@@ -2359,12 +2357,12 @@ class CompetingPhasesAnalyzer:
             )
             self._intrinsic_phase_diagram = PhaseDiagram(
                 [*intrinsic_phase_diagram_entries, renormalised_bulk_pde],
-                list(map(Element, self.bulk_composition.elements)),  # preserve bulk comp element ordering
+                list(map(Element, self.composition.elements)),  # preserve bulk comp element ordering
             )
 
         self._intrinsic_chempots = get_doped_chempots_from_entries(
             self._intrinsic_phase_diagram.entries,
-            self.bulk_composition,
+            self.composition,
             sort_by=sort_by,
             single_chempot_limit=unstable_host,
         )
@@ -2529,12 +2527,12 @@ class CompetingPhasesAnalyzer:
             bulk_entries = [
                 sub_dict
                 for sub_dict in self.data
-                if self.bulk_composition.reduced_composition
+                if self.composition.reduced_composition
                 == Composition(sub_dict["Formula"]).reduced_composition
             ]
             bulk_entry = min(bulk_entries, key=lambda x: x["Formation Energy (eV/fu)"])
-            print(f"{len(self.bulk_composition.as_dict())}  # number of elements in bulk")
-            for k, v in self.bulk_composition.as_dict().items():
+            print(f"{len(self.composition.as_dict())}  # number of elements in bulk")
+            for k, v in self.composition.as_dict().items():
                 print(int(v), k, end=" ")
             print(
                 f"{bulk_entry['Formation Energy (eV/fu)']}  # number of atoms, element, formation "
@@ -2554,7 +2552,7 @@ class CompetingPhasesAnalyzer:
                 for entry_dict in self.data
                 if entry_dict["Formula"] in bordering_phases
                 and Composition(entry_dict["Formula"]).reduced_composition
-                != self.bulk_composition.reduced_composition
+                != self.composition.reduced_composition
             ]
             # cull to only the lowest energy entries of each composition
             culled_cplap_entries: dict[str, dict] = {}
@@ -2609,7 +2607,7 @@ class CompetingPhasesAnalyzer:
         string = "\\begin{table}[h]\n\\centering\n"
         string += (
             "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{"
-            + self.bulk_composition.reduced_formula
+            + self.composition.reduced_formula
             + "} and all competing phases"
             + (", with k-meshes used in calculations." if kpoints_col else ".")
             + (" Only the lowest energy polymorphs are included}\n" if prune_polymorphs else "}\n")
@@ -2755,15 +2753,24 @@ class CompetingPhasesAnalyzer:
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # Only works for ternary systems! For 2D, warn and return line plot?
+        # TODO: Only works for ternary systems! For 2D, warn and return line plot?
         # For 4D+, could set constraint for fixed μ of other element, or fixed bordering phase?
         # -> Add to Future ToDo
+        # Could look at Sungyhun's `cplapy` for doing 4D chempot plots?
         # TODO: Draft! Need to test for multiple systems
         # TODO: Plot extrinsic too?
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
+        # TODO: Use ``ChemicalPotentialGrid`` from ``dopey_fermi`` PR when fixed and merged to develop (
+        #  will also make handling >ternary systems easier?)
+
+        # Note that we could also add option to instead plot competing phases lines coloured,
+        # with a legend added giving the composition of each competing phase line (as in the SI of
+        # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
+        # can be achieved by the user by saving to PDF without labels, and manually colouring and adding
+        # a legend in a vector graphics editor (e.g. Inkscape, Affinity Designer, Adobe Illustrator, etc.).
         from shakenbreak.plotting import _install_custom_font
 
         _install_custom_font()
@@ -2783,10 +2790,10 @@ class CompetingPhasesAnalyzer:
             )
             # TODO: Allow fixed chempot value for other elements to reduce to 2/3D
 
-        host_domains = cpd.domains[self.bulk_composition.reduced_formula]
+        host_domains = cpd.domains[self.composition.reduced_formula]
 
         if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
-            dependent_element = self.bulk_composition.elements[-1]
+            dependent_element = self.composition.elements[-1]
         elif isinstance(dependent_element, str):
             dependent_element = Element(dependent_element)
         assert isinstance(dependent_element, Element)  # typing
@@ -2850,7 +2857,7 @@ class CompetingPhasesAnalyzer:
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
         if title:
             if not isinstance(title, str):
-                title = latexify(f"{self.bulk_composition.reduced_formula}")
+                title = latexify(f"{self.composition.reduced_formula}")
             ax.set_title(title)
 
         # plot formation energy lines:
@@ -2859,7 +2866,7 @@ class CompetingPhasesAnalyzer:
         intersections = []
 
         for formula, pts in cpd.domains.items():
-            if formula == self.bulk_composition.reduced_formula:
+            if formula == self.composition.reduced_formula:
                 continue
             x = np.linspace(-50, 50, 1000)
             # get domain points which match those in host_domains:
@@ -2991,7 +2998,7 @@ class CompetingPhasesAnalyzer:
         Returns a string representation of the ``CompetingPhasesAnalyzer``
         object.
         """
-        formula = self.bulk_composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
         # TODO: When entries parsing/handling implemented:
         # joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
