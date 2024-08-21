@@ -18,8 +18,8 @@ from typing import Any, Optional, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from cmcrameri import cm
 from labellines import labelLines
+from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
@@ -43,6 +43,7 @@ from tqdm import tqdm
 
 from doped import _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
+from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
@@ -2622,14 +2623,20 @@ class CompetingPhasesAnalyzer:
         xlim: Optional[tuple[float, float]] = None,
         ylim: Optional[tuple[float, float]] = None,
         cbar_range: Optional[tuple[float, float]] = None,
+        colormap: Optional[Union[str, colors.Colormap]] = None,
         padding: Optional[float] = None,
-        title: Optional[Union[str, bool]] = None,
-        label_positions: Optional[Union[list[float], dict[str, float], bool]] = None,
+        title: Union[str, bool] = False,
+        label_positions: Union[list[float], dict[str, float], bool] = True,
         filename: Optional[PathLike] = None,
         style_file: Optional[PathLike] = None,
-    ):
+    ) -> plt.Figure:
         """
-        Todo.
+        Plot a heatmap of the chemical potentials for a ternary system.
+
+        In this plot, the ``dependent_element`` chemical potential is plotted
+        as a heatmap over the stability region of the host composition, as a
+        function of the other two elemental chemical potentials on the x and
+        y axes.
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -2637,20 +2644,70 @@ class CompetingPhasesAnalyzer:
         This is only the case for ``png`` output, so saving to e.g. ``svg`` or
         ``pdf`` instead will avoid this issue.
 
-        style_file (PathLike):     Path to a mplstyle file to use for the plot.
-        If None (default), uses     the default doped style (from
-        doped/utils/doped.mplstyle).
+        Args:
+            dependent_element (str or Element):
+                The element for which the chemical potential is plotted as a
+                heatmap. If None (default), the last element in the bulk
+                composition formula is used (which corresponds to the most
+                electronegative element present).
+            xlim (tuple):
+                The x-axis limits for the plot. If None (default), the limits
+                are set to the minimum and maximum values of the x-axis data,
+                with padding equal to ``padding`` (default is 10% of the range).
+            ylim (tuple):
+                The y-axis limits for the plot. If None (default), the limits
+                are set to the minimum and maximum values of the y-axis data,
+                with padding equal to ``padding`` (default is 10% of the range).
+            cbar_range (tuple):
+                The range for the colourbar. If None (default), the range is
+                set to the minimum and maximum values of the data.
+            colormap (str, matplotlib.colors.Colormap):
+                Colormap to use for the heatmap, either as a string (which can be
+                a colormap name from https://www.fabiocrameri.ch/colourmaps or
+                https://matplotlib.org/stable/users/explain/colors/colormaps), or
+                a ``Colormap`` / ``ListedColormap`` object. If ``None`` (default),
+                uses ``batlow`` from https://www.fabiocrameri.ch/colourmaps.
+
+                Append "S" to the colormap name if using a sequential colormap
+                from https://www.fabiocrameri.ch/colourmaps.
+            padding (float):
+                The padding to add to the x and y axis limits. If None (default),
+                the padding is set to 10% of the range.
+            title (str or bool):
+                The title for the plot. If ``False`` (default), no title is added.
+                If ``True``, the title is set to the bulk composition formula, or
+                if ``str``, the title is set to the provided string.
+            label_positions (list, dict or bool):
+                The positions for the chemical formula line labels. If ``True``
+                (default), the labels are placed using a custom ``doped`` algorithm
+                which attempts to find the best possible positions (minimising
+                overlap). If ``False``, no labels are added.
+                Alternatively a dictionary can be provided, where the keys are
+                the chemical formulae and the values are the x positions at which
+                to place the line labels. If a list of floats, the labels are placed
+                at the provided x positions.
+            filename (PathLike):
+                The filename to save the plot to. If None (default), the plot is not
+                saved.
+            style_file (PathLike):
+                Path to a mplstyle file to use for the plot. If ``None`` (default),
+                uses the default doped style (from ``doped/utils/doped.mplstyle``).
+
+        Returns:
+            plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
         # Only works for ternary systems! For 2D, warn and return line plot?
         # For 4D+, could set constraint for fixed μ of other element, or fixed bordering phase?
         # -> Add to Future ToDo
-        # TODO: Draft! Need to test for multiple systems, add options, return mpl object etc etc
-        # Options: x/ylims or padding, colourmap, labelling, label midpoints (list or dict?)
+        # TODO: Draft! Need to test for multiple systems
         # TODO: Plot extrinsic too?
-        # TODO: Code in this function (particularly label position handling and intersections) should be
-        #  able to be made more succinct, and also modularise a bit?
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
+        # TODO: Code in this function (particularly label position handling and intersections) should be
+        #  able to be made more succinct, and also modularise a bit?
+        from shakenbreak.plotting import _install_custom_font
+
+        _install_custom_font()
         cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
 
         # check dimensionality:
@@ -2707,8 +2764,10 @@ class CompetingPhasesAnalyzer:
         vmax = cbar_range[1] if cbar_range else None
         if vmax is None and np.isclose(np.nanmax(mesh_z), 0, atol=3e-2):
             vmax = 0  # extend to 0, as sometimes cutoff at -0.01 eV etc
+
+        cmap = get_colormap(colormap, default="batlow")  # get colormap choice
         dep_mu = ax.pcolormesh(
-            mesh_x, mesh_y, mesh_z, rasterized=True, cmap=cm.batlow, shading="auto", vmax=vmax, vmin=vmin
+            mesh_x, mesh_y, mesh_z, rasterized=True, cmap=cmap, shading="auto", vmax=vmax, vmin=vmin
         )
 
         cbar = fig.colorbar(dep_mu)
@@ -2730,13 +2789,14 @@ class CompetingPhasesAnalyzer:
         ax.set_ylabel(rf"$\Delta\mu$ ({cpd.elements[independent_el_indices[1]].symbol}) (eV)")
         ax.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-        if title is not False:
-            title = title or latexify(f"{self.bulk_composition.reduced_formula}")
+        if title:
+            if not isinstance(title, str):
+                title = latexify(f"{self.bulk_composition.reduced_formula}")
             ax.set_title(title)
 
         # plot formation energy lines:
         lines = []
-        labels = {}
+        labels = {}  # {formula: line function}
         intersections = []
 
         for formula, pts in cpd.domains.items():
@@ -2802,11 +2862,11 @@ class CompetingPhasesAnalyzer:
 
             lines.append(line)
             # labels is dict of formula: line function
-            labels[latexify(formula)] = f
+            labels[formula] = f
 
         # pre-set x_points:
-        if label_positions is not False:
-            if label_positions is None:
+        if label_positions:
+            if label_positions is True:  # use custom doped algorithm
                 poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
                 label_positions, best_norm_min_dist = _find_best_label_positions(
                     poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
@@ -2819,23 +2879,27 @@ class CompetingPhasesAnalyzer:
                         poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
                     )
 
+            elif isinstance(label_positions, dict):  # match formula (key) to line:
+                label_positions = {k: labels[k] for k in label_positions if k in labels}
+
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", "The value at position")
                 labelLines(lines, xvals=label_positions, align=False, color="black")
 
         # make sure all labels are well enclosed within the plot:
+        latexified_labels = {latexify(k): v for k, v in labels.items()}
         # Get all the text artists (labels) in the current axes:
         label_text_artists = [
             artist
             for artist in ax.get_children()
-            if isinstance(artist, plt.Text) and artist.get_text() in labels
+            if isinstance(artist, plt.Text) and artist.get_text() in latexified_labels
         ]
         for text in label_text_artists:
             bbox = text.get_window_extent().transformed(plt.gca().transData.inverted())
             # if bbox bounds outside of plot, move text to inside plot:
             new_position = text.get_position()
             delta_x = delta_y = 0
-            f = labels[text.get_text()]
+            f = latexified_labels[text.get_text()]
 
             if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
                 if bbox.xmin < xlim[0]:
@@ -2866,23 +2930,30 @@ class CompetingPhasesAnalyzer:
 
 def _possible_label_positions_from_bbox_intersections(
     intersections: Union[list[float], np.ndarray[float]], positions_per_line=3
-):
+) -> np.ndarray[float]:
     """
     From a list or array of ``intersections``, which contains the intersections
-    of lines with a plot bounding box (limits) and thus has shape (N_lines, 2,
-    2) (because 2 intersections with 2 (x,y) coordinates per line), returns
-    ``positions_per_line`` uniformly-spaced possible x,y coordinates for labels
-    of those lines.
+    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
+    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
+    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
+    for labels of those lines.
 
     e.g. if ``positions_per_line = 3`` (default), then returns the x,y coordinates
     for the positions which are 1/4, 2/4 and 3/4 along the line between the two
     bbox intersections.
 
     Args:
-        TODO
+        intersections (list or np.ndarray):
+            A list or array of intersections of lines with the plot bounding box.
+            Should have shape ``(N_lines, 2, 2)``.
+        positions_per_line (int):
+            The number of possible label positions per line to return. Default is
+            3, which returns positions at 1/4, 2/4 and 3/4 along the line between
+            the two bbox intersections.
 
     Returns:
-        TODO
+        np.ndarray:
+            The possible label positions, with shape ``(N_lines, positions_per_line, 2)``.
     """
     poss_label_positions = np.zeros((len(intersections), positions_per_line, 2))
     for label_idx, points in enumerate(intersections):  # get possible label positions
@@ -2909,9 +2980,31 @@ def _possible_label_positions_from_bbox_intersections(
     return poss_label_positions
 
 
-def _find_best_label_positions(poss_label_positions, x_range=1, y_range=1, return_best_norm_dist=False):
+def _find_best_label_positions(
+    poss_label_positions, x_range=1, y_range=1, return_best_norm_dist=False
+) -> Union[np.ndarray, tuple[np.ndarray, float]]:
     """
-    Todo.
+    From an array of possible label positions, find the best possible
+    combination of label positions which maximises the distance between labels
+    (i.e. minimises overlap).
+
+    Args:
+        poss_label_positions (np.ndarray):
+            The possible label positions, with shape ``(N_lines, positions_per_line, 2)``.
+        x_range (float):
+            The range of the x-axis to use for normalisation. Default is 1.
+        y_range (float):
+            The range of the y-axis to use for normalisation. Default is 1.
+        return_best_norm_dist (bool):
+            Whether to return the best normalised minimum distance between labels.
+            Default is False.
+
+    Returns:
+        np.ndarray:
+            The best possible label positions, with shape ``(N_lines, 2)``.
+        float:
+            The best normalised minimum distance between labels,
+            if ``return_best_norm_dist`` is True.
     """
     # Get all possible combinations of indices, for the first two dimensions (N_labels,
     # N_possibilities_per_label):
