@@ -31,6 +31,7 @@ dependencies = [
     "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
     # if any dependency issues arise can make easyunfold an optional dependency
     "cmcrameri",  # for colour-maps
+    "matplotlib-label-lines", # for labelling lines in matplotlib plots
 ]
 
 [project.urls]
