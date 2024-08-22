@@ -108,6 +108,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             if i.startswith("."):
                 if_present_rm(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/{i}")
 
+        for i in os.listdir(f"{self.Sb2Se3_DATA_DIR}/defect"):
+            if i.startswith(("O_a_", "O_b_")):
+                if_present_rm(f"{self.Sb2Se3_DATA_DIR}/defect/{i}")
+
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
         thermo = dp.get_defect_thermodynamics()
@@ -801,6 +805,30 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
+
+    def test_duplicate_folders_Sb2Se3(self):
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_a_2")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_b_2")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_a_1")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_1", f"{self.Sb2Se3_DATA_DIR}/defect/O_b_1")
+        with warnings.catch_warnings(record=True) as w:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )  # for testing in test_thermodynamics.py
+        print([warn.message for warn in w])  # for debugging
+        assert any(
+            "The following parsed defect entries were found to be duplicates (exact same defect "
+            "supercell energies)" in str(warn.message)
+            for warn in w
+        )
+        assert any(
+            "O_Se_Cs_Sb2.00_+1, O_Se_Cs_Sb2.00_+1\nO_Se_Cs_Sb2.00_+2, O_Se_Cs_Sb2.00_+2, "
+            "O_Se_Cs_Sb2.00_+2, O_Se_Cs_Sb2.00_+2" in str(warn.message)
+            for warn in w
+        )
+        self._check_DefectsParser(Sb2Se3_O_dp)
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):

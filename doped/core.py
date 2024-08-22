@@ -1233,13 +1233,13 @@ class DefectEntry(thermo.DefectEntry):
     def __eq__(self, other):
         """
         Determine whether two ``DefectEntry`` objects are equal, by comparing
-        ``self.name``, ``self.sc_entry``, ``self.bulk_entry`` and
+        ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
         ``self.corrections`` (i.e. name and energy match).
         """
         return (
             self.name == other.name
-            and self.sc_entry == other.sc_entry
-            and self.bulk_entry == other.bulk_entry
+            and self.sc_entry_energy == other.sc_entry_energy
+            and self.bulk_entry_energy == other.bulk_entry_energy
             and self.corrections == other.corrections
         )
 

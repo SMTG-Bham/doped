@@ -969,6 +969,32 @@ class DefectsParser:
                 f"expected (see `DefectsParser` docstring)."
             )
 
+        # check if there are duplicate entries in the parsed defect entries, warn and remove:
+        energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
+        for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
+            if defect_entry.sc_entry_energy in energy_entries_dict:
+                energy_entries_dict[defect_entry.sc_entry_energy].append(defect_entry)
+            else:
+                energy_entries_dict[defect_entry.sc_entry_energy] = [defect_entry]
+
+        for energy, entries_list in energy_entries_dict.items():
+            if len(entries_list) > 1:  # More than one entry with the same energy
+                # sort any duplicates by name length (shorter name preferred)
+                energy_entries_dict[energy] = sorted(entries_list, key=lambda x: len(x.name))
+
+        if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
+            duplicate_entry_names_string = "\n".join(
+                ", ".join(f"{entry.name}" for entry in entries_list)
+                for entries_list in energy_entries_dict.values()
+                if len(entries_list) > 1
+            )
+            warnings.warn(
+                f"The following parsed defect entries were found to be duplicates (exact same defect "
+                f"supercell energies). The first of each duplicate group shown will be kept and the "
+                f"other duplicate entries omitted:\n{duplicate_entry_names_string}"
+            )
+        parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
+
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
         entries_to_rename = [
