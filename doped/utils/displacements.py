@@ -10,13 +10,17 @@ from typing import Optional
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from pymatgen.util.coord import pbc_diff
+from pymatgen.util.typing import PathLike
 
+from doped.core import DefectEntry
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_bulk_site_coords,
     _get_defect_supercell_site,
+    get_site_mapping_indices,
 )
 
 try:
@@ -27,11 +31,6 @@ try:
     plotly_installed = True
 except ImportError:
     plotly_installed = False
-
-from pymatgen.util.typing import PathLike
-
-from doped.core import DefectEntry
-from doped.utils.parsing import get_site_mapping_indices
 
 
 def calc_site_displacements(
@@ -508,11 +507,6 @@ def calc_displacements_ellipsoid(
     - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation): A tuple containing the ellipsoid's center,
       radii, and rotation matrix, or (None, None, None) if fitting was unsuccessful.
     """
-    import pandas as pd
-    from numpy import linalg
-
-    from doped.utils.parsing import get_site_mapping_indices
-
     if use_plotly and not plotly_installed:
         warnings.warn("Plotly not installed, using matplotlib instead")
         use_plotly = False
@@ -551,7 +545,7 @@ def calc_displacements_ellipsoid(
         # Khachiyan Algorithm
         while err > tolerance:
             V = np.dot(Q, np.dot(np.diag(u), QT))
-            M = np.diag(np.dot(QT, np.dot(linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
+            M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
             j = np.argmax(M)
             maximum = M[j]
             step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
@@ -565,14 +559,14 @@ def calc_displacements_ellipsoid(
 
         # the A matrix for the ellipse
         A = (
-            linalg.inv(
+            np.linalg.inv(
                 np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
             )
             / d
         )
 
         # Get the values we'd like to return
-        U, s, rotation = linalg.svd(A)
+        U, s, rotation = np.linalg.svd(A)
         radii = 1.0 / np.sqrt(s)
 
         return (center, radii, rotation)
