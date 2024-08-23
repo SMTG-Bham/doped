@@ -12,6 +12,7 @@ import os
 import warnings
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -34,7 +35,7 @@ from pymatgen.entries.computed_entries import (
 )
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
-from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
 from scipy.interpolate import griddata, interp1d
@@ -1894,23 +1895,29 @@ class CompetingPhasesAnalyzer:
     #  or a csv path); see shelved changes for this
     def from_vaspruns(
         self,
-        path="CompetingPhases",
+        path: Union[PathLike, list[PathLike]] = "CompetingPhases",
         subfolder: Optional[PathLike] = "vasp_std",
-        csv_path=None,
-        verbose=True,
+        csv_path: Optional[PathLike] = None,
+        verbose: bool = True,
+        processes: Optional[int] = None,
     ):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
         ``CompetingPhasesAnalyzer`` object.
 
+        By default, tries multiprocessing to speed up parsing, which can be
+        controlled with ``processes``. If parsing hangs, this may be due to
+        memory issues, in which case you should reduce ``processes`` (e.g.
+        4 or less).
+
         Args:
             path (PathLike or list):
                 Either a path to the base folder in which you have your
                 competing phase calculation outputs (e.g.
-                formula_EaH_X/vasp_std/vasprun.xml(.gz), or
-                formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
-                to vasprun.xml(.gz) files.
+                ``formula_EaH_X/vasp_std/vasprun.xml(.gz)``, or
+                ``formula_EaH_X/vasprun.xml(.gz)``), or a list of strings/Paths
+                to ``vasprun.xml(.gz)`` files.
             subfolder (PathLike):
                 The subfolder in which your vasprun.xml(.gz) output files
                 are located (e.g. a file-structure like:
@@ -1925,6 +1932,11 @@ class CompetingPhasesAnalyzer:
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml`` files being found).
                 Default is ``True``.
+            processes (int):
+                Number of processes to use for multiprocessing for expedited
+                parsing. If not set, defaults to one less than the number of
+                CPUs available, or 1 if less than 10 phases to parse. Set to
+                1 for no multiprocessing.
 
         Returns:
             None, sets ``self.data``, ``self.formation_energy_df`` and ``self.elemental_energies``
@@ -2022,17 +2034,36 @@ class CompetingPhasesAnalyzer:
 
         self.vaspruns = []
         failed_parsing_dict: dict[str, list] = {}
+        if processes is None:  # multiprocessing?
+            if len(self.vasprun_paths) < 10:
+                processes = 1
+            else:  # only multiprocess as much as makes sense:
+                processes = min(max(1, cpu_count() - 1), len(self.vasprun_paths) - 1)
+
+        parsing_results = []
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
-            for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
-                try:
-                    self.vaspruns.append(get_vasprun(vasprun_path))
-                    self.parsed_folders.append(vasprun_path.rstrip(".gz").rstrip("vasprun.xml"))
-                except Exception as e:
-                    if str(e) in failed_parsing_dict:
-                        failed_parsing_dict[str(e)] += [vasprun_path]
-                    else:
-                        failed_parsing_dict[str(e)] = [vasprun_path]
+            if processes > 1:  # multiprocessing
+                with Pool(processes=processes) as pool:  # result is parsed vasprun
+                    for result in tqdm(
+                        pool.imap_unordered(_parse_vasprun_and_catch_exception, self.vasprun_paths),
+                        total=len(self.vasprun_paths),
+                        desc="Parsing vaspruns...",
+                    ):
+                        parsing_results.append(result)
+            else:
+                for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
+                    parsing_results.append(_parse_vasprun_and_catch_exception(vasprun_path))
+
+        for result in parsing_results:
+            if isinstance(result[0], Vasprun):  # successful parse; result is vr and parsed folder
+                self.vaspruns.append(result[0])
+                self.parsed_folders.append(result[1])
+            else:  # failed parse; result is error message and path
+                if str(result[0]) in failed_parsing_dict:
+                    failed_parsing_dict[str(result[0])] += [result[1]]
+                else:
+                    failed_parsing_dict[str(result[0])] = [result[1]]
 
         if failed_parsing_dict:
             warning_string = (
@@ -3025,6 +3056,20 @@ class CompetingPhasesAnalyzer:
             f"{len(self.parsed_folders)} folders parsed:\n{parsed_folder_list}\n\n"
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def _parse_vasprun_and_catch_exception(vasprun_path: PathLike) -> tuple[Union[str, Vasprun], PathLike]:
+    """
+    Parse a VASP vasprun.xml file, catching any exceptions and returning the
+    error message and the path to the vasprun.xml file if an exception is
+    raised.
+    """
+    try:
+        vasprun = get_vasprun(vasprun_path)
+        folder = vasprun_path.rstrip(".gz").rstrip("vasprun.xml")
+        return vasprun, folder
+    except Exception as e:
+        return str(e), vasprun_path
 
 
 def _possible_label_positions_from_bbox_intersections(
