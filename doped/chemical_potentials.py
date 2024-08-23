@@ -45,7 +45,7 @@ from tqdm import tqdm
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.utils.plotting import get_colormap
-from doped.utils.symmetry import get_primitive_structure
+from doped.utils.symmetry import _round_floats, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 # globally ignore:
@@ -1852,7 +1852,8 @@ def get_doped_chempots_from_entries(
             relative_chempot_dict[e] -= chempots["elemental_refs"][e]
         chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
 
-    return chempots
+    # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
+    return _round_floats(chempots, 4)
 
 
 class CompetingPhasesAnalyzer:
@@ -2410,21 +2411,13 @@ class CompetingPhasesAnalyzer:
         )
 
         # get chemical potentials as pandas dataframe
-        chemical_potentials = []
-        for _, chempot_dict in self._intrinsic_chempots["limits_wrt_el_refs"].items():
-            phase_energy_list = []
-            phase_name_columns = []
-            for k, v in chempot_dict.items():
-                phase_name_columns.append(str(k))
-                phase_energy_list.append(round(v, 4))
-            chemical_potentials.append(phase_energy_list)
-
-        # make df, will need it in next step
-        chempots_df = pd.DataFrame(
-            chemical_potentials,
-            index=list(self._intrinsic_chempots["limits_wrt_el_refs"].keys()),
-            columns=phase_name_columns,
+        chempots_df = pd.DataFrame.from_dict(
+            {k: list(v.values()) for k, v in self._intrinsic_chempots["limits_wrt_el_refs"].items()},
+            orient="index",
         )
+        chempots_df.columns = [
+            str(k) for k in next(iter(self._intrinsic_chempots["limits_wrt_el_refs"].values()))
+        ]
         chempots_df.index.name = "Limit"
 
         if extrinsic_species is None:  # intrinsic only
