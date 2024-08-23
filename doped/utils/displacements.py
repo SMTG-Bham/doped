@@ -36,7 +36,7 @@ except ImportError:
 def calc_site_displacements(
     defect_entry: DefectEntry,
     vector_to_project_on: Optional[list] = None,
-    relative_to_defect: Optional[bool] = False,
+    relative_to_defect: bool = False,
 ) -> dict:
     """
     Calculates the site displacements in the defect supercell, relative to the
@@ -79,7 +79,7 @@ def calc_site_displacements(
         disp_dict["Displacement projected along vector"] = []
         disp_dict["Displacement perpendicular to vector"] = []
     for i, site in enumerate(defect_sc_with_site):
-        # print(i, site.specie, site.frac_coords)
+        # print(i, site.specie, site.frac_coords)  # debugging
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
         bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
         # Calculate displacement (need to account for pbc!)
@@ -88,7 +88,7 @@ def calc_site_displacements(
         disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
         # Distance to defect site (last site in defect sc)
         distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
-        # print(i, displacement, np.linalg.norm(abs_disp), "Distance:", distance)
+        # print(i, displacement, np.linalg.norm(abs_disp), "Distance:", distance)  # debugging
         disp_dict["Index (defect)"].append(i)
         disp_dict["Displacement"].append(disp)
         disp_dict["Distance to defect"].append(distance)
@@ -198,14 +198,17 @@ def calc_site_displacements(
 
 def plot_site_displacements(
     defect_entry: DefectEntry,
-    separated_by_direction: Optional[bool] = False,
-    relative_to_defect: Optional[bool] = False,
+    separated_by_direction: bool = False,
+    relative_to_defect: bool = False,
     vector_to_project_on: Optional[list] = None,
-    use_plotly: Optional[bool] = True,
+    use_plotly: bool = False,
     style_file: Optional[PathLike] = None,
 ):
     """
     Plots site displacements around a defect.
+
+    Set ``use_plotly = True`` to get an interactive ``plotly``
+    plot, useful for analysis!
 
     Args:
         defect_entry (DefectEntry): DefectEntry object
@@ -220,15 +223,17 @@ def plot_site_displacements(
             (tensile strain). Uses the *relaxed* defect position as reference.
         vector_to_project_on (bool):
             Direction to project the site displacements along
-            (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
-            in the cartesian basis x, y, z).
+            (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements
+            are calculated in the cartesian basis x, y, z).
         use_plotly (bool):
-            Whether to use Plotly for plotting. Default is True.
+            Whether to use ``plotly`` for plotting. Default is ``False``.
+            Set to ``True`` to get an interactive plot.
         style_file (PathLike):
-            Path to matplotlib style file. if not set, will use the ``doped`` default style.
+            Path to matplotlib style file. if not set, will use the
+            ``doped`` default style.
 
     Returns:
-        Plotly or matplotlib figure.
+        ``plotly`` or ``matplotlib`` ``Figure``.
     """
 
     def _mpl_plot_total_disp(
@@ -488,24 +493,35 @@ def plot_site_displacements(
 
 def calc_displacements_ellipsoid(
     defect_entry: DefectEntry,
-    plot_ellipsoid: Optional[bool] = False,  # Option to plot the ellipsoid
-    plot_anisotropy: Optional[bool] = False,  # Option to plot anisotropy of ellipsoid radii
-    use_plotly: Optional[bool] = True,
-    quantile=0.8,  # Quantile threshold for displacement norms (0 to 1). Default is 0.8.
+    plot_ellipsoid: bool = False,
+    plot_anisotropy: bool = False,
+    use_plotly: bool = False,
+    quantile=0.8,
 ):
     """
     Calculate displacements around a defect site and fit an ellipsoid to these
     displacements.
 
-    Parameters:
-    - defect_entry (DefectEntry): An object representing the defect in the crystal structure.
-    - plot_anisotropy (bool, optional): If True, plot the anisotropy of the ellipsoid radii.
-    - plot_ellipsoid (bool, optional): If True, plot the fitted ellipsoid in the crystal lattice.
-    - quantile (float): The quantile threshold for selecting significant displacements (between 0 and 1).
+    Set ``use_plotly = True`` to get an interactive ``plotly``
+    plot, useful for analysis!
+
+    Args:
+        defect_entry (DefectEntry): ``DefectEntry`` object.
+        plot_ellipsoid (bool):
+            If True, plot the fitted ellipsoid in the crystal lattice.
+        plot_anisotropy (bool):
+            If True, plot the anisotropy of the ellipsoid radii.
+        use_plotly (bool):
+            Whether to use ``plotly`` for plotting. Default is ``False``.
+            Set to ``True`` to get an interactive plot.
+        quantile (float):
+            The quantile threshold for selecting significant displacements
+            (between 0 and 1). Default is 0.8.
 
     Returns:
-    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation): A tuple containing the ellipsoid's center,
-      radii, and rotation matrix, or (None, None, None) if fitting was unsuccessful.
+    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation):
+        A tuple containing the ellipsoid's center, radii, and rotation matrix,
+        or ``(None, None, None)`` if fitting was unsuccessful.
     """
     if use_plotly and not plotly_installed:
         warnings.warn("Plotly not installed, using matplotlib instead")
@@ -795,9 +811,9 @@ def calc_displacements_ellipsoid(
         fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
         # Part 1: Displacement Distribution Box Plot
-        axs[0].boxplot(disp_df["Displacement norm"], vert=True, patch_artist=True)
-        axs[0].set_title("Displacement norm's distribution")
-        axs[0].set_ylabel("Displacement norm (Å)")
+        axs[0].boxplot(disp_df["Displacement Norm"], vert=True, patch_artist=True)
+        axs[0].set_title("Displacement Norm Distribution")
+        axs[0].set_ylabel("Displacement Norm (Å)")
         axs[0].grid(False)
         axs[0].xaxis.set_visible(False)  # Hide x-axis labels for box plot
 
@@ -822,12 +838,12 @@ def calc_displacements_ellipsoid(
 
             # Add colorbar
             cbar = plt.colorbar(scatter, ax=axs[1])
-            cbar.set_label("The longest radius of ellipsoid")
+            cbar.set_label("Ellipsoid Maximum Radius (Å)")
 
             # Set titles and labels
-            axs[1].set_title(f"Anisotropy plot (threshold={np.round(threshold, 3)}Å)")
-            axs[1].set_xlabel("The 2nd longest radius / the longest radius of ellipsoid")
-            axs[1].set_ylabel("The shortest radius / the longest radius of ellipsoid")
+            axs[1].set_title(f"Anisotropy (Threshold = {threshold:.3f} Å)")
+            axs[1].set_xlabel("2nd-Largest Radius / Largest Radius")
+            axs[1].set_ylabel("Shortest Radius / Largest Radius")
             axs[1].set_xlim([0, 1])
             axs[1].set_ylim([0, 1])
             axs[1].grid(False)
@@ -841,8 +857,8 @@ def calc_displacements_ellipsoid(
             rows=1,
             cols=2,
             subplot_titles=[
-                "Displacement Norm distribution",
-                f"Anisotropy plot (threshold={np.round(threshold, 3)}Å)",
+                "Displacement Norm Distribution",
+                f"Anisotropy (Threshold = {threshold:.3f} Å)",
             ],
             column_widths=[0.5, 0.5],
         )
@@ -892,7 +908,7 @@ def calc_displacements_ellipsoid(
                     "opacity": 0.5,
                     "color": anisotropy_info_df["the_longest_radius"],  # Set color according to column "a"
                     "colorscale": "rainbow",
-                    "colorbar": {"title": "The longest radius of ellipsoid", "titleside": "right"},
+                    "colorbar": {"title": "Ellipsoid Maximum Radius (Å)", "titleside": "right"},
                 },
                 text=anisotropy_info_df["the_longest_radius"],
                 hoverinfo="text",
@@ -907,7 +923,7 @@ def calc_displacements_ellipsoid(
 
             # Add frame to Anisotropy plot
             fig.update_xaxes(
-                title_text="The 2nd longest radius / the longest radius of ellipsoid",
+                title_text="2nd-Largest Radius / Largest Radius",
                 range=[0, 1],
                 row=1,
                 col=2,
@@ -918,7 +934,7 @@ def calc_displacements_ellipsoid(
                 mirror=True,
             )
             fig.update_yaxes(
-                title_text="The shortest radius / the longest radius of ellipsoid",
+                title_text="Shortest Radius / Largest Radius",
                 range=[0, 1],
                 row=1,
                 col=2,
@@ -989,7 +1005,7 @@ def calc_displacements_ellipsoid(
         "Species": [],
         "Species_with_index": [],
         "Displacement": [],
-        "Displacement norm": [],
+        "Displacement Norm": [],
         "Distance to defect": [],
         "X sites in cartesian coordinate (defect)": [],
         "Y sites in cartesian coordinate (defect)": [],
@@ -1016,7 +1032,7 @@ def calc_displacements_ellipsoid(
 
         disp_dict["Index (defect)"].append(i)
         disp_dict["Displacement"].append(disp)
-        disp_dict["Displacement norm"].append(np.linalg.norm(disp, ord=2))
+        disp_dict["Displacement Norm"].append(np.linalg.norm(disp, ord=2))
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
         disp_dict["Species"].append(site.specie.name)
@@ -1061,7 +1077,7 @@ def calc_displacements_ellipsoid(
         disp_dict["Species"],
         disp_dict["Species_with_index"],
         disp_dict["Displacement"],
-        disp_dict["Displacement norm"],
+        disp_dict["Displacement Norm"],
         disp_dict["Distance to defect"],
         disp_dict["X sites in cartesian coordinate (defect)"],
         disp_dict["Y sites in cartesian coordinate (defect)"],
@@ -1072,13 +1088,10 @@ def calc_displacements_ellipsoid(
     disp_df = pd.DataFrame(disp_dict)
 
     # Calculate the threshold for displacement norm, ensuring it's at least 0.05
-    threshold = max(disp_df["Displacement norm"].quantile(quantile), 0.05)
+    threshold = max(disp_df["Displacement Norm"].quantile(quantile), 0.05)
 
     # Filter the DataFrame to get points where the displacement norm exceeds the threshold
-    displacement_norm_over_threshold = disp_df[disp_df["Displacement norm"] > threshold]
-
-    # Print the threshold for debugging purposes
-    print(f"threshold: {threshold}")
+    displacement_norm_over_threshold = disp_df[disp_df["Displacement Norm"] > threshold]
 
     # Extract the Cartesian coordinates of the points that are over the threshold
     points = displacement_norm_over_threshold[
