@@ -12,7 +12,7 @@ import pytest
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
 from doped import core
-from doped.utils.displacements import calc_site_displacements
+from doped.utils.displacements import calc_site_displacements, calc_displacements_ellipsoid
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -125,6 +125,22 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         # Same but if user sets vector_to_project_on and relative_to_defect
         with pytest.raises(ValueError):
             defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], relative_to_defect=True)
+
+    def test_calc_displacements_ellipsoid(self):
+        # These benchmark are calculated for the displacements ellipsoid of neutral Cd vacancies in CdTe at quantile=0.8.
+        ellipsoid_center_benchmark = [7.0425819 , 6.02166313, 6.95936032]
+        ellipsoid_radii_benchmark = [4.87240561, 5.05708172, 7.17470889]
+        ellipsoid_rotation_benchmark = [[-0.60311542,  0.65630014,  0.45334526],
+                                        [-0.72881472, -0.68438333,  0.02117917],
+                                        [ 0.32416183, -0.31763121,  0.89108334]]
+        
+        # Neutral Cd vacancy:
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = calc_displacements_ellipsoid(defect_entry, quantile=0.8)
+        
+        np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark))
+        np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark))
+        np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark))
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")
     def test_plot_site_displacements_proj(self):

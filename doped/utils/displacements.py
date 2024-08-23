@@ -21,14 +21,13 @@ from doped.utils.parsing import (
 
 try:
     import plotly.express as px
-    from plotly.graph_objects import Scatter
+    import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
     plotly_installed = True
 except ImportError:
     plotly_installed = False
 
-from pymatgen.core.structure import Structure
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
@@ -352,7 +351,7 @@ def plot_site_displacements(
             color_dict = dict(zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)]))
             for dir_index, _direction in enumerate(["x", "y", "z"]):
                 fig.add_trace(
-                    Scatter(
+                    go.Scatter(
                         x=disp_dict["Distance to defect"],
                         y=[abs(i[dir_index]) for i in disp_dict["Displacement"]],
                         hovertemplate=hovertemplate.replace("{z", "{text"),
@@ -368,7 +367,7 @@ def plot_site_displacements(
             # Add legend for color used for each species
             for specie, color in color_dict.items():
                 fig.add_trace(
-                    Scatter(
+                    go.Scatter(
                         x=[None],
                         y=[None],
                         mode="markers",
@@ -490,9 +489,10 @@ def plot_site_displacements(
 
 def calc_displacements_ellipsoid(
     defect_entry: DefectEntry,
-    plot_anisotropy: Optional[bool] = False,  # Option to plot anisotropy of ellipsoid radii
     plot_ellipsoid: Optional[bool] = False,  # Option to plot the ellipsoid
-    quantile=0.9,  # Quantile threshold for displacement norms (0 to 1). Default is 0.9.
+    plot_anisotropy: Optional[bool] = False,  # Option to plot anisotropy of ellipsoid radii
+    use_plotly: Optional[bool] = True,
+    quantile=0.8,  # Quantile threshold for displacement norms (0 to 1). Default is 0.8.
 ):
     """
     Calculate displacements around a defect site and fit an ellipsoid to these
@@ -509,10 +509,13 @@ def calc_displacements_ellipsoid(
       radii, and rotation matrix, or (None, None, None) if fitting was unsuccessful.
     """
     import pandas as pd
-    import plotly.graph_objects as go
     from numpy import linalg
 
     from doped.utils.parsing import get_site_mapping_indices
+
+    if use_plotly and not plotly_installed:
+        warnings.warn("Plotly not installed, using matplotlib instead")
+        use_plotly = False
 
     def _get_minimum_volume_ellipsoid(P):
         """
@@ -574,7 +577,113 @@ def calc_displacements_ellipsoid(
 
         return (center, radii, rotation)
 
-    def _plot_ellipsoid(ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix):
+    def _mpl_plot_ellipsoid(ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix):
+        u = np.linspace(0.0, 2.0 * np.pi, 100)
+        v = np.linspace(0.0, np.pi, 100)
+
+        # Cartesian coordinates corresponding to the spherical angles:
+        x = ellipsoid_radii[0] * np.outer(np.cos(u), np.sin(v))
+        y = ellipsoid_radii[1] * np.outer(np.sin(u), np.sin(v))
+        z = ellipsoid_radii[2] * np.outer(np.ones_like(u), np.cos(v))
+
+        # Rotate accordingly
+        for i in range(len(x)):
+            for j in range(len(x)):
+                [x[i, j], y[i, j], z[i, j]] = (
+                    np.dot([x[i, j], y[i, j], z[i, j]], ellipsoid_rotation) + ellipsoid_center
+                )
+
+        # Create a 3D plot
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection="3d")
+
+        # Plot the ellipsoid surface
+        ax.plot_surface(x, y, z, color="blue", alpha=0.2, rstride=4, cstride=4)
+
+        # Plot the points
+        ax.scatter(points[:, 0], points[:, 1], points[:, 2], color="black", s=10)
+
+        # Plot the ellipsoid axes
+        axes = np.array(
+            [
+                [ellipsoid_radii[0], 0.0, 0.0],
+                [0.0, ellipsoid_radii[1], 0.0],
+                [0.0, 0.0, ellipsoid_radii[2]],
+            ]
+        )
+        for i in range(len(axes)):
+            axes[i] = np.dot(axes[i], ellipsoid_rotation)
+
+        for p in axes:
+            ax.plot(
+                [ellipsoid_center[0], ellipsoid_center[0] + p[0]],
+                [ellipsoid_center[1], ellipsoid_center[1] + p[1]],
+                [ellipsoid_center[2], ellipsoid_center[2] + p[2]],
+                color="black",
+                linewidth=2,
+            )
+
+        def _plot_lattice(lattice_matrix, ax):
+
+            # Scale factor for the lattice lines
+            scale = 0.1
+
+            # Create lines along each lattice vector
+            for i in range(3):
+                x = [lattice_matrix[i][0] * scale * n for n in range(11)]
+                y = [lattice_matrix[i][1] * scale * n for n in range(11)]
+                z = [lattice_matrix[i][2] * scale * n for n in range(11)]
+                ax.plot(x, y, z, color="black", linewidth=0.5)
+
+                # Create lines for combinations of lattice vectors
+                for j in range(3):
+                    if i != j:
+                        x_comb = [
+                            lattice_matrix[i][0] * scale * n + lattice_matrix[j][0] for n in range(11)
+                        ]
+                        y_comb = [
+                            lattice_matrix[i][1] * scale * n + lattice_matrix[j][1] for n in range(11)
+                        ]
+                        z_comb = [
+                            lattice_matrix[i][2] * scale * n + lattice_matrix[j][2] for n in range(11)
+                        ]
+                        ax.plot(x_comb, y_comb, z_comb, color="black", linewidth=0.5)
+
+                        for k in range(3):
+                            if i != k and j != k:
+                                x_comb3 = [
+                                    lattice_matrix[i][0] * scale * n
+                                    + lattice_matrix[j][0]
+                                    + lattice_matrix[k][0]
+                                    for n in range(11)
+                                ]
+                                y_comb3 = [
+                                    lattice_matrix[i][1] * scale * n
+                                    + lattice_matrix[j][1]
+                                    + lattice_matrix[k][1]
+                                    for n in range(11)
+                                ]
+                                z_comb3 = [
+                                    lattice_matrix[i][2] * scale * n
+                                    + lattice_matrix[j][2]
+                                    + lattice_matrix[k][2]
+                                    for n in range(11)
+                                ]
+                                ax.plot(x_comb3, y_comb3, z_comb3, color="black", linewidth=0.5)
+
+        _plot_lattice(lattice_matrix, ax)
+
+        # Set the aspect ratio and limits
+        ax.set_box_aspect([1, 1, 1])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        plt.show()
+
+    def _plotly_plot_ellipsoid(
+        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix
+    ):
         u = np.linspace(0.0, 2.0 * np.pi, 100)
         v = np.linspace(0.0, np.pi, 100)
 
@@ -601,14 +710,12 @@ def calc_displacements_ellipsoid(
                 y=points[:, 1],
                 z=points[:, 2],
                 mode="markers",
-                marker=dict(color="black", size=3),
+                marker={"color": "black", "size": 3},
             )
         )
 
         fig.update_layout(
-            scene=dict(
-                aspectmode="data",
-            ),
+            scene={"aspectmode": "data"},
             template="plotly_white",
             paper_bgcolor="white",
             showlegend=False,
@@ -635,7 +742,7 @@ def calc_displacements_ellipsoid(
                     y=[ellipsoid_center[1], ellipsoid_center[1] + p[1]],
                     z=[ellipsoid_center[2], ellipsoid_center[2] + p[2]],
                     mode="lines",
-                    line=dict(color="black", width=2),
+                    line={"color": "black", "width": 2},
                 )
             )
 
@@ -690,13 +797,58 @@ def calc_displacements_ellipsoid(
         _plot_lattice(lattice_matrix, fig)
         fig.show()
 
-    def _plot_anisotropy(ellipsoid_radii):
+    def _mpl_plot_anisotropy(ellipsoid_radii, disp_df, threshold):
+        fig, axs = plt.subplots(1, 2, figsize=(14, 6))
+
+        # Part 1: Displacement Distribution Box Plot
+        axs[0].boxplot(disp_df["Displacement norm"], vert=True, patch_artist=True)
+        axs[0].set_title("Displacement norm's distribution")
+        axs[0].set_ylabel("Displacement norm (Å)")
+        axs[0].grid(False)
+        axs[0].xaxis.set_visible(False)  # Hide x-axis labels for box plot
+
+        # Part 2: Anisotropy Scatter Plot
+        if ellipsoid_radii is not None:
+            the_longest_radius = ellipsoid_radii[2]
+            the_second_longest_radius = ellipsoid_radii[1]
+            the_third_longest_radius = ellipsoid_radii[0]
+            ratio_of_second_to_the_longest = the_second_longest_radius / the_longest_radius
+            ratio_of_third_to_the_longest = the_third_longest_radius / the_longest_radius
+
+            # Create scatter plot
+            scatter = axs[1].scatter(
+                ratio_of_second_to_the_longest,
+                ratio_of_third_to_the_longest,
+                c=the_longest_radius,
+                cmap="rainbow",
+                s=100,
+                alpha=1,
+            )
+            axs[1].plot([0, 1], [0, 1], "k--")  # Add y=x line
+
+            # Add colorbar
+            cbar = plt.colorbar(scatter, ax=axs[1])
+            cbar.set_label("The longest radius of ellipsoid")
+
+            # Set titles and labels
+            axs[1].set_title(f"Anisotropy plot (threshold={np.round(threshold, 3)}Å)")
+            axs[1].set_xlabel("The 2nd longest radius / the longest radius of ellipsoid")
+            axs[1].set_ylabel("The shortest radius / the longest radius of ellipsoid")
+            axs[1].set_xlim([0, 1])
+            axs[1].set_ylim([0, 1])
+            axs[1].grid(False)
+
+        # Adjust layout and show plot
+        plt.tight_layout()
+        plt.show()
+
+    def _plotly_plot_anisotropy(ellipsoid_radii, disp_df, threshold):
         fig = make_subplots(
             rows=1,
             cols=2,
             subplot_titles=[
-                "Displacement Norm Distribution",
-                "Anisotropy",
+                "Displacement Norm distribution",
+                f"Anisotropy plot (threshold={np.round(threshold, 3)}Å)",
             ],
             column_widths=[0.5, 0.5],
         )
@@ -741,24 +893,21 @@ def calc_displacements_ellipsoid(
                 x=anisotropy_info_df["ratio_of_second_to_the_longest"],
                 y=anisotropy_info_df["ratio_of_third_to_the_longest"],
                 mode="markers",
-                marker=dict(
-                    size=10,
-                    opacity=0.5,
-                    color=anisotropy_info_df["the_longest_radius"],  # Set color according to column "a"
-                    colorscale="rainbow",
-                    colorbar=dict(
-                        title="The longest radius of ellipsoid",
-                        titleside="right",
-                    ),
-                ),
-                text=anisotropy_info_df["threshold"],
+                marker={
+                    "size": 10,
+                    "opacity": 0.5,
+                    "color": anisotropy_info_df["the_longest_radius"],  # Set color according to column "a"
+                    "colorscale": "rainbow",
+                    "colorbar": {"title": "The longest radius of ellipsoid", "titleside": "right"},
+                },
+                text=anisotropy_info_df["the_longest_radius"],
                 hoverinfo="text",
             )
             fig.add_trace(scatter, row=1, col=2)
 
             # Add y=x line to the anisotropy plot
             line = go.Scatter(
-                x=[0, 1], y=[0, 1], mode="lines", line=dict(color="black", dash="dash"), name="y=x Line"
+                x=[0, 1], y=[0, 1], mode="lines", line={"color": "black", "dash": "dash"}, name="y=x Line"
             )
             fig.add_trace(line, row=1, col=2)
 
@@ -768,8 +917,8 @@ def calc_displacements_ellipsoid(
                 range=[0, 1],
                 row=1,
                 col=2,
-                title_font=dict(size=10),
-                tickfont=dict(size=12),
+                title_font={"size": 10},
+                tickfont={"size": 12},
                 linecolor="black",
                 linewidth=1,
                 mirror=True,
@@ -779,8 +928,8 @@ def calc_displacements_ellipsoid(
                 range=[0, 1],
                 row=1,
                 col=2,
-                title_font=dict(size=10),
-                tickfont=dict(size=12),
+                title_font={"size": 10},
+                tickfont={"size": 12},
                 linecolor="black",
                 linewidth=1,
                 mirror=True,
@@ -952,16 +1101,24 @@ def calc_displacements_ellipsoid(
             # Try to fit a minimum volume ellipsoid to the points
             (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation) = _get_minimum_volume_ellipsoid(points)
 
-            # If anisotropy plotting is enabled, plot the ellipsoid's radii anisotropy
-            if plot_anisotropy:
-                _plot_anisotropy(ellipsoid_radii)
-
             # If ellipsoid plotting is enabled, plot the ellipsoid with the given lattice matrix
             if plot_ellipsoid:
                 lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
-                _plot_ellipsoid(
-                    ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix
-                )
+                if use_plotly:
+                    _plotly_plot_ellipsoid(
+                        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix
+                    )
+                else:
+                    _mpl_plot_ellipsoid(
+                        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix
+                    )
+
+            # If anisotropy plotting is enabled, plot the ellipsoid's radii anisotropy
+            if plot_anisotropy:
+                if use_plotly:
+                    _plotly_plot_anisotropy(ellipsoid_radii, disp_df, threshold)
+                else:
+                    _mpl_plot_anisotropy(ellipsoid_radii, disp_df, threshold)
 
             # Return the ellipsoid's center, radii, and rotation matrix
             return (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation)
@@ -982,20 +1139,15 @@ def calc_displacements_ellipsoid(
         return (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation)
 
 
-def _get_bulk_struct_with_defect(defect_entry) -> tuple[Structure, Structure, int]:
+def _get_bulk_struct_with_defect(defect_entry) -> tuple:
     """
     Returns structures for bulk and defect supercells with the same number of
-    sites and species, to be used for site matching.
+    sites and species, to be used for site matching. If Vacancy, adds
+    (unrelaxed) site to defect structure. If Interstitial, adds relaxed site to
+    bulk structure. If Substitution, replaces (unrelaxed) defect site in bulk
+    structure.
 
-    If ``Vacancy``, adds (unrelaxed) site to defect structure. If ``Interstitial``,
-    adds relaxed site to bulk structure. If ``Substitution``, replaces (unrelaxed)
-    defect site in bulk structure.
-
-    Args:
-        defect_entry (DefectEntry): Defect entry object.
-
-    Returns:
-        tuple: (bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)
+    Returns tuple of (bulk_sc_with_defect, defect_sc_with_defect).
     """
     # TODO: Code from `check_atom_mapping_far_from_defect` might be more efficient and robust for this,
     #  should check.
