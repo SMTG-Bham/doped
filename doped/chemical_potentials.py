@@ -2287,7 +2287,7 @@ class CompetingPhasesAnalyzer:
 
     def calculate_chempots(
         self,
-        extrinsic_species: Optional[str] = None,
+        extrinsic_species: Optional[Union[str, Element, list[str], list[Element]]] = None,
         csv_path: Optional[PathLike] = None,
         sort_by: Optional[str] = None,
         verbose: bool = True,
@@ -2300,12 +2300,15 @@ class CompetingPhasesAnalyzer:
         then the limiting chemical potential for ``extrinsic_species`` at the
         `intrinsic` chemical potential limits is calculated and also returned
         (corresponds to ``full_sub_approach=False`` in pycdt).
+        ``extrinsic_species`` is set to ``self.extrinsic_elements`` if not
+        specified.
 
         Args:
-            extrinsic_species (str):
+            extrinsic_species (str, Element, list):
                 If set, will calculate the limiting chemical potential for the
                 specified extrinsic species at the intrinsic chemical potential
-                limits. Default is None.
+                limits. Can be a single element (str or ``Element``), or a list
+                of elements. If ``None`` (default), uses ``self.extrinsic_elements``.
             csv_path (PathLike):
                 If set, will save the calculated chemical potential limits to ``csv_path``.
             sort_by (str):
@@ -2318,14 +2321,24 @@ class CompetingPhasesAnalyzer:
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
+        if extrinsic_species is None:
+            extrinsic_species = self.extrinsic_elements
+        if not isinstance(extrinsic_species, list):
+            extrinsic_species = [extrinsic_species]
+        extrinsic_elements: list[Element] = [Element(e) for e in extrinsic_species]
+
         intrinsic_phase_diagram_entries = []
         extrinsic_formation_energies = []
         bulk_pde_list = []
+
         for d in self.data:
             pd_entry = PDEntry(d["Formula"], d["DFT Energy (eV/fu)"])
             if (np.isinf(d["Formation Energy (eV/fu)"]) or np.isnan(d["Formation Energy (eV/fu)"])) and (
                 set(Composition(d["Formula"]).elements).issubset(self.composition.elements)
-                or (extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements)
+                or (
+                    extrinsic_elements
+                    and any(elt in Composition(d["Formula"]).elements for elt in extrinsic_elements)
+                )
             ):
                 warnings.warn(
                     f"Entry for {d['Formula']} has an infinite/NaN calculated formation energy, "
@@ -2338,7 +2351,10 @@ class CompetingPhasesAnalyzer:
                 intrinsic_phase_diagram_entries.append(pd_entry)  # intrinsic phase
                 if pd_entry.composition == self.composition:  # bulk phase
                     bulk_pde_list.append(pd_entry)
-            elif extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements:
+
+            elif extrinsic_elements and any(
+                elt in Composition(d["Formula"]).elements for elt in extrinsic_elements
+            ):
                 # only take entries with the extrinsic species present, otherwise is additionally parsed
                 # (but irrelevant) phases --- would need to be updated if adding codoping chemical
                 # potentials _parsing_ functionality # TODO: ?
@@ -2420,18 +2436,21 @@ class CompetingPhasesAnalyzer:
         ]
         chempots_df.index.name = "Limit"
 
-        if extrinsic_species is None:  # intrinsic only
+        missing_extrinsic = [
+            elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
+        ]
+        if not extrinsic_elements:  # intrinsic only
             self._chempots = self._intrinsic_chempots
-
-        elif extrinsic_species not in self.elemental_energies:
-            raise ValueError(
-                f"Elemental reference phase for the specified extrinsic species {extrinsic_species} was "
-                f"not parsed, but is necessary for chemical potential calculations. Please ensure that "
-                f"this phase is present in the calculation directory and is being correctly parsed."
+        elif missing_extrinsic:
+            raise ValueError(  # TODO: Test this
+                f"Elemental reference phase for the specified extrinsic species "
+                f"{[elt.symbol for elt in missing_extrinsic]} was not parsed, but is necessary for "
+                f"chemical potential calculations. Please ensure that this phase is present in the "
+                f"calculation directory and is being correctly parsed."
             )
         else:
             self._calculate_extrinsic_chempot_lims(  # updates self._chempots
-                extrinsic_species=extrinsic_species,
+                extrinsic_elements=extrinsic_elements,
                 extrinsic_formation_energy_df=extrinsic_formation_energy_df,
                 chempots_df=chempots_df,
             )
@@ -2447,30 +2466,42 @@ class CompetingPhasesAnalyzer:
 
         return chempots_df
 
+    # TODO: Add chempots df as a property? Then don't need to print here
+
     # TODO: This code (in all this module) should be rewritten to be more readable (re-used and
-    #  uninformative variable names, missing informative comments...)
+    #  uninformative variable names, missing informative comments, typing...)
     def _calculate_extrinsic_chempot_lims(
-        self, extrinsic_species, extrinsic_formation_energy_df, chempots_df
+        self, extrinsic_elements, extrinsic_formation_energy_df, chempots_df
     ):
         # gets the df into a slightly more convenient dict
         cpd = chempots_df.to_dict(orient="records")
-        mins = []
-        mins_formulas = []
-        for i, c in enumerate(cpd):
-            name = f"mu_{extrinsic_species}_{i}"
-            extrinsic_formation_energy_df[name] = extrinsic_formation_energy_df["Formation Energy (eV/fu)"]
-            for k, v in c.items():
-                extrinsic_formation_energy_df[name] -= extrinsic_formation_energy_df[k] * v
-            extrinsic_formation_energy_df[name] /= extrinsic_formation_energy_df[extrinsic_species]
-            # find min at that chempot
-            mins.append(extrinsic_formation_energy_df[name].min())
-            mins_formulas.append(
-                extrinsic_formation_energy_df.iloc[extrinsic_formation_energy_df[name].idxmin()]["Formula"]
-            )
+        extrinsic_chempots_dict: dict[str, list[float]] = {elt: [] for elt in extrinsic_elements}
+        extrinsic_limiting_phases_dict: dict[str, list[str]] = {elt: [] for elt in extrinsic_elements}
+        for extrinsic_elt in extrinsic_elements:
+            for i, c in enumerate(cpd):
+                name = f"mu_{extrinsic_elt.symbol}_{i}"
+                extrinsic_formation_energy_df[name] = extrinsic_formation_energy_df[
+                    "Formation Energy (eV/fu)"
+                ]
+                for k, v in c.items():
+                    extrinsic_formation_energy_df[name] -= extrinsic_formation_energy_df[k] * v
+                extrinsic_formation_energy_df[name] /= extrinsic_formation_energy_df[extrinsic_elt.symbol]
+                # omit infinity values:
+                non_infinite_formation_energy_df = extrinsic_formation_energy_df[
+                    ~extrinsic_formation_energy_df[name].isin([-np.inf, np.inf, np.nan])
+                ]
+                extrinsic_chempots_dict[extrinsic_elt].append(non_infinite_formation_energy_df[name].min())
+                extrinsic_limiting_phases_dict[extrinsic_elt].append(
+                    non_infinite_formation_energy_df.loc[non_infinite_formation_energy_df[name].idxmin()][
+                        "Formula"
+                    ]
+                )
+            chempots_df[f"{extrinsic_elt.symbol}"] = extrinsic_chempots_dict[extrinsic_elt]
 
-        chempots_df[extrinsic_species] = mins
-        col_name = f"{extrinsic_species}-Limiting Phase"
-        chempots_df[col_name] = mins_formulas
+        for extrinsic_elt in extrinsic_elements:  # add limiting phases after, so at end of df
+            chempots_df[f"{extrinsic_elt.symbol}-Limiting Phase"] = extrinsic_limiting_phases_dict[
+                extrinsic_elt
+            ]
 
         # 1. work out the formation energies of all dopant competing
         #    phases using the elemental energies
@@ -2491,9 +2522,14 @@ class CompetingPhasesAnalyzer:
         }
 
         for i, d in enumerate(chempot_lim_dict_list):
-            key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+            key = (
+                list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i]
+                + "-"
+                + "-".join(d[col_name] for col_name in d if "Limiting Phase" in col_name)
+            )
             new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
-            new_vals[f"{extrinsic_species}"] = d[f"{extrinsic_species}"]
+            for extrinsic_elt in extrinsic_elements:
+                new_vals[f"{extrinsic_elt.symbol}"] = d[f"{extrinsic_elt.symbol}"]
             chempot_lims_w_extrinsic["limits_wrt_el_refs"][key] = new_vals
 
         # relate the limits to the elemental
