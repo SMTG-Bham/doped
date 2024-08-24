@@ -264,24 +264,7 @@ def defect_from_structures(
         if def_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            try:
-                if bulk_voronoi_node_dict is not None and not StructureMatcher(
-                    stol=0.05,
-                    primitive_cell=False,
-                    scale=False,
-                    attempt_supercell=False,
-                    allow_subset=False,
-                    comparator=ElementComparator(),
-                ).fit(bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
-                    warnings.warn(
-                        "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
-                        "supercell. Recalculating Voronoi nodes."
-                    )
-                    raise FileNotFoundError
-
-                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
-
-            except Exception:  # first time parsing
+            if bulk_voronoi_node_dict is None:  # first time parsing
                 from shakenbreak.input import _get_voronoi_nodes
 
                 voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
@@ -289,6 +272,8 @@ def defect_from_structures(
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,
                 }
+            else:
+                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
 
             closest_node_frac_coords = min(
                 voronoi_frac_coords,
@@ -1727,9 +1712,23 @@ class DefectParser:
 
         if os.path.exists("voronoi_nodes.json.lock"):
             with FileLock("voronoi_nodes.json.lock"):
-                bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+                prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
         else:
-            bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+            prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+
+        if prev_bulk_voronoi_node_dict and not StructureMatcher(
+            stol=0.05,
+            primitive_cell=False,
+            scale=False,
+            attempt_supercell=False,
+            allow_subset=False,
+            comparator=ElementComparator(),
+        ).fit(prev_bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
+            warnings.warn(
+                "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
+                "supercell. Recalculating Voronoi nodes."
+            )
+            prev_bulk_voronoi_node_dict = {}
 
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
@@ -1748,7 +1747,7 @@ class DefectParser:
                 bulk_supercell,
                 defect_structure.copy(),
                 return_all_info=True,
-                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1770,7 +1769,7 @@ class DefectParser:
                 bulk_supercell,
                 defect_structure_for_ID,
                 return_all_info=True,
-                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1862,7 +1861,8 @@ class DefectParser:
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
-        if bulk_voronoi_node_dict and bulk_path:  # save to bulk folder for future expedited parsing:
+        if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
+            # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
                 with FileLock("voronoi_nodes.json.lock"):
                     dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
