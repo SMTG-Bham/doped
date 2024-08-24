@@ -1366,13 +1366,23 @@ def _guess_and_set_struct_oxi_states(structure):
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen`` ``BVAnalyzer`` class.
 
+    If a single-element structure is passed, the oxidation state is assumed to
+    be zero (no mixed-valence single-element systems that I know of, would be
+    pretty wild).
+
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
 
     Returns:
-        Structure: The structure with oxidation states guessed and set, or ``False``
-        if oxidation states could not be guessed.
+        Structure:
+            The structure with oxidation states guessed and set, or ``False``
+            if oxidation states could not be guessed.
     """
+    if len(structure.composition.elements) == 1:
+        oxi_dec_structure = structure.copy()  # don't modify original structure
+        oxi_dec_structure.add_oxidation_state_by_element({str(structure.composition.elements[0]): 0})
+        return oxi_dec_structure
+
     bv_analyzer = BVAnalyzer()
     with contextlib.suppress(ValueError):
         # ValueError raised if oxi states can't be assigned
