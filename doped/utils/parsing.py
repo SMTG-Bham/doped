@@ -597,10 +597,12 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
         )
 
 
-def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=2.0):
+def get_site_mapping_indices(
+    structure_a: Structure, structure_b: Structure, threshold: float = 2.0, dists_only: bool = False
+):
     """
-    Reset the position of a partially relaxed structure to its unrelaxed
-    positions.
+    Get the site mapping indices between two structures, based on the
+    fractional coordinates of the sites.
 
     The template structure may have a different species ordering to the
     ``input_structure``.
@@ -613,18 +615,37 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     is only used for analysing site displacements in the ``displacements`` module
     so this is fine (user will already have been warned at this point if there is a
     possible mismatch).
+
+    Args:
+        structure_a (Structure):
+            The input structure.
+        structure_b (Structure):
+            The template structure.
+        threshold (float):
+            If the distance between a pair of matched sites is larger than this,
+            then a warning will be thrown. Default is 2.0 Å.
+        dists_only (bool):
+            Whether to return only the distances between matched sites, rather
+            than a list of lists containing the distance, index in structure_a
+            and index in structure_b. Default is False.
+
+    Returns:
+        list:
+            A list of lists containing the distance, index in structure_a and
+            index in structure_b for each matched site. If ``dists_only`` is
+            ``True``, then only the distances between matched sites are returned.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords.round(3)) for site in structure_a]
-    all_template_fcoords = [list(site.frac_coords.round(3)) for site in structure_b]
+    all_input_fcoords = [list(site.frac_coords) for site in structure_a]
+    all_template_fcoords = [list(site.frac_coords) for site in structure_b]
 
     for species in structure_a.composition.elements:
         input_fcoords = [
-            list(site.frac_coords.round(3)) for site in structure_a if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in structure_a if site.specie.symbol == species.symbol
         ]
         template_fcoords = [
-            list(site.frac_coords.round(3)) for site in structure_b if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in structure_b if site.specie.symbol == species.symbol
         ]
 
         dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
@@ -632,15 +653,18 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
             if coords in input_fcoords:
                 dists = dmat[input_fcoords.index(coords)]
                 current_dist = dists.min()
-                template_fcoord = template_fcoords[dists.argmin()]
-                template_index = all_template_fcoords.index(template_fcoord)
-                min_dist_with_index.append(
-                    [
-                        current_dist,
-                        index,
-                        template_index,
-                    ]
-                )
+                if dists_only:
+                    min_dist_with_index.append(current_dist)
+                else:
+                    template_fcoord = template_fcoords[dists.argmin()]
+                    template_index = all_template_fcoords.index(template_fcoord)
+                    min_dist_with_index.append(
+                        [
+                            current_dist,
+                            index,
+                            template_index,
+                        ]
+                    )
 
                 if current_dist > threshold:
                     site_a = structure_a[index]

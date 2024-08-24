@@ -1310,8 +1310,8 @@ class DefectsGenerator(MSONable):
                 (
                     self.primitive_structure,
                     self.supercell_matrix,
-                ) = symmetry._get_supercell_matrix_and_possibly_rotate_prim(
-                    primitive_structure, self.structure
+                ) = symmetry._get_supercell_matrix_and_possibly_redefine_prim(
+                    primitive_structure, self.structure, sga=sga
                 )
 
                 self.primitive_structure, self._T = symmetry.get_clean_structure(
