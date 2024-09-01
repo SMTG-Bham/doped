@@ -785,42 +785,45 @@ def calc_displacements_ellipsoid(
                         marker={"size": 0.5, "color": "black"},
                         mode="lines",
                     )
-                )
-                for j in range(i + 1, 3):  # add other two lattice vectors
-                    fig.add_trace(  # add one of the other lattice vectors
-                        go.Scatter3d(
-                            x=[lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0] for n in range(11)],
-                            y=[lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1] for n in range(11)],
-                            z=[lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2] for n in range(11)],
-                            marker={"size": 0.5, "color": "black"},
-                            mode="lines",
+                )            
+            
+                for j in range(3):  # add other two lattice vectors
+                    if i != j:
+                        fig.add_trace(  # add one of the other lattice vectors
+                            go.Scatter3d(
+                                x=[lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0] for n in range(11)],
+                                y=[lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1] for n in range(11)],
+                                z=[lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2] for n in range(11)],
+                                marker={"size": 0.5, "color": "black"},
+                                mode="lines",
+                            )
                         )
-                    )
 
-                    fig.add_trace(  # add both other lattice vectors
-                        go.Scatter3d(
-                            x=[
-                                lattice_matrix[i][0] * 0.1 * n
-                                + lattice_matrix[j][0]
-                                + lattice_matrix[(j + 1) % 3][0]
-                                for n in range(11)
-                            ],
-                            y=[
-                                lattice_matrix[i][1] * 0.1 * n
-                                + lattice_matrix[j][1]
-                                + lattice_matrix[(j + 1) % 3][1]
-                                for n in range(11)
-                            ],
-                            z=[
-                                lattice_matrix[i][2] * 0.1 * n
-                                + lattice_matrix[j][2]
-                                + lattice_matrix[(j + 1) % 3][2]
-                                for n in range(11)
-                            ],
-                            marker={"size": 0.5, "color": "black"},
-                            mode="lines",
-                        )
+            for order in [[0, 1, 2], [1, 0, 2], [2, 0, 1]]:
+                fig.add_trace(  # add both other lattice vectors
+                    go.Scatter3d(
+                        x=[
+                            lattice_matrix[order[0]][0] * 0.1 * n
+                            + lattice_matrix[order[1]][0]
+                            + lattice_matrix[order[2]][0]
+                            for n in range(11)
+                        ],
+                        y=[
+                            lattice_matrix[order[0]][1] * 0.1 * n
+                            + lattice_matrix[order[1]][1]
+                            + lattice_matrix[order[2]][1]
+                            for n in range(11)
+                        ],
+                        z=[
+                            lattice_matrix[order[0]][2] * 0.1 * n
+                            + lattice_matrix[order[1]][2]
+                            + lattice_matrix[order[2]][2]
+                            for n in range(11)
+                        ],
+                        marker={"size": 0.5, "color": "black"},
+                        mode="lines",
                     )
+                )
 
         if show_supercell:
             _plot_lattice(lattice_matrix, fig)
