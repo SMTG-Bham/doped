@@ -2434,6 +2434,8 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
+    # TODO: Don't show chempot table by default? At least is limit explicitly chosen?
+    # TODO: Add include_site_info as plotting option! And update docstrings with this behaviour
     # TODO: Add option to only plot defect states that are stable at some point in the bandgap
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (

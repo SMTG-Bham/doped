@@ -1903,7 +1903,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     assert np.isclose(orig_conc, new_conc * random_defect_entry.bulk_site_concentration)
 
     @custom_mpl_image_compare(filename="CdTe_duplicate_entry_names.png")
-    def test_handling_duplicate_entry_names(self):
+    def test_handling_duplicate_entry_names_CdTe(self):
         """
         Test renaming behaviour when defect entries with the same names are
         provided.
@@ -1921,6 +1921,49 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print([entry.name for entry in defect_thermo.defect_entries])
 
         return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
+
+    @custom_mpl_image_compare(filename="Se_duplicate_entry_names_old.png")
+    def test_handling_duplicate_entry_names_ext_Se_old_names(self):
+        """
+        Test renaming behaviour when defect entries with the same names are
+        provided.
+
+        In this case, the defect folder/entry names match the old ``doped``
+        format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
+
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
+        are removed by including site info, but some (``inter_11_H_X``) which
+        aren't, so ``_a`` & ``_b`` are appended to those names.
+        """
+        defect_thermo = loadfn(os.path.join(self.module_path, "data/Se_Ext_no_Pnict_Thermo.json.gz"))
+        print([entry.name for entry in defect_thermo.defect_entries])
+        fig = defect_thermo.plot()
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$"]:
+            assert i in legend_txt
+
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_pnictogen_plot.png")
+    def test_plotting_ext_Se_new_names(self):
+        """
+        Test plotting behaviour with pnictogen impurities in Se.
+
+        Previously this would append site info to the defect names by default,
+        but this is not necessary here as there are no inequivalent
+        substitution/interstitial sites, so check that the legend is as
+        expected with no site info.
+        """
+        defect_thermo = loadfn(os.path.join(self.module_path, "data/Se_Pnict_Thermo.json.gz"))
+        print([entry.name for entry in defect_thermo.defect_entries])
+        fig = defect_thermo.plot()
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in ["i_{", "{Se_{", "}}$", "-a", "-b"]:
+            assert all(i not in text for text in legend_txt)
+
+        return fig
 
     def test_Sb2O5_formation_energies(self):
         formation_energy_table_df = self.Sb2O5_defect_thermo.get_formation_energies(

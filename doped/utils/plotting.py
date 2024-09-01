@@ -636,43 +636,74 @@ def format_defect_name(
     return f"{defect_name.rsplit('^', 1)[0]}$" if wout_charge else defect_name
 
 
-def _get_legends_txt(for_legend, all_entries=False):
+def _get_legend_txt(for_legend, all_entries=False, include_site_info=False):
+    # don't include site info by default, unless duplicates
     # get latex-like legend titles
-    legends_txt = []
-    for defect_entry_name in for_legend:
-        include_site_info = not all(  # all PyCDT/old-doped format, don't include site num
-            any(name.startswith(i) for i in ["Int_", "vac_", "as_", "sub_"]) for name in for_legend
-        )
+    legend_txt: list[str] = []
+
+    def _get_defect_name(defect_entry_name, site_info):
         try:
-            defect_name = format_defect_name(
+            return format_defect_name(
                 defect_species=defect_entry_name,
-                include_site_info_in_name=include_site_info,
+                include_site_info_in_name=site_info,
                 wout_charge=not all_entries,  # defect names without charge
             )
 
         except Exception:  # if formatting fails, just use the defect_species name
-            defect_name = defect_entry_name
+            return defect_entry_name
 
-        # append "a,b,c.." for different defect species with the same name
-        if any(defect_name in i for i in legends_txt):
+    legend_txt = [
+        _get_defect_name(defect_entry_name, include_site_info) for defect_entry_name in for_legend
+    ]
+
+    if len(legend_txt) == len(set(legend_txt)):  # no duplicates, good to go
+        return legend_txt
+
+    # duplicates in defect names; rename to avoid overwriting:
+    if not include_site_info:  # first see if using site info with duplicates removes duplicate names
+        site_info_entry_names = [
+            _get_defect_name(defect_entry_name, True) for defect_entry_name in for_legend
+        ]
+        legend_txt = [
+            (
+                site_info_name
+                if legend_txt.count(non_site_info_name) > 1
+                and site_info_entry_names.count(site_info_name) == 1
+                else non_site_info_name
+            )
+            for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt)
+        ]
+
+    if len(legend_txt) == len(set(legend_txt)):
+        return legend_txt
+
+    # duplicates in entry names and site info doesn't (fully) solve it, append "a,b,c.." for different
+    # defect species with the same name:
+    def _add_name_to_list_and_rename_if_needed(defect_name, name_list):
+        if any(defect_name in i for i in name_list):
             i = 3
 
-            if defect_name in legends_txt:  # first repeat, direct match, rename previous entry
+            if defect_name in name_list:  # first repeat, direct match, rename previous entry
                 # find index of previous defect_name, and rename
-                prev_idx = legends_txt.index(defect_name)
-                legends_txt[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
+                prev_idx = name_list.index(defect_name)
+                name_list[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
                 defect_name = f"{defect_name}$_{{-{chr(96 + 2)}}}$"  # b
 
             else:
                 defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # c
 
-            while defect_name in legends_txt:
+            while defect_name in name_list:
                 i += 1
                 defect_name = f"{defect_name.rsplit('$_', 1)[0]}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
 
-        legends_txt.append(defect_name)
+        name_list.append(defect_name)
+        return name_list
 
-    return legends_txt
+    final_legend_txt: list[str] = []
+    for name in legend_txt:
+        final_legend_txt = _add_name_to_list_and_rename_if_needed(name, final_legend_txt)
+
+    return final_legend_txt
 
 
 def _rename_key_and_dicts(
@@ -951,7 +982,7 @@ def _TLD_plot(
                     )  # only show label if coords in current axes
 
     ax.legend(
-        _get_legends_txt(
+        _get_legend_txt(
             (
                 [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
                 if all_entries is True
