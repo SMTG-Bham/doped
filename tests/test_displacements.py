@@ -127,20 +127,49 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], relative_to_defect=True)
 
     def test_calc_displacements_ellipsoid(self):
+        # Vacancy:
         # These benchmark are calculated for the displacements ellipsoid of neutral Cd vacancies in CdTe at quantile=0.8.
-        ellipsoid_center_benchmark = [7.0425819 , 6.02166313, 6.95936032]
-        ellipsoid_radii_benchmark = [4.87240561, 5.05708172, 7.17470889]
-        ellipsoid_rotation_benchmark = [[-0.60311542,  0.65630014,  0.45334526],
-                                        [-0.72881472, -0.68438333,  0.02117917],
-                                        [ 0.32416183, -0.31763121,  0.89108334]]
+        ellipsoid_center_benchmark_vacancy = [7.0425819 , 6.02166313, 6.95936032]
+        ellipsoid_radii_benchmark_vacancy = [4.87240561, 5.05708172, 7.17470889]
+        ellipsoid_rotation_benchmark_vacancy = [[-0.60311542,  0.65630014,  0.45334526],
+                                                [-0.72881472, -0.68438333,  0.02117917],
+                                                [ 0.32416183, -0.31763121,  0.89108334]]
         
-        # Neutral Cd vacancy:
         defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
         ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = calc_displacements_ellipsoid(defect_entry, quantile=0.8)
+        np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark_vacancy))
+        np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark_vacancy))
+        np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark_vacancy))
         
-        np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark))
-        np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark))
-        np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark))
+        
+        # Substitution:
+        # These benchmark are calculated for the displacements ellipsoid of Te_Cd_+1 in CdTe at quantile=0.8.
+        ellipsoid_center_benchmark_substitution = [6.18957603, 6.17932465, 6.84044422]
+        ellipsoid_radii_benchmark_substitution = [3.10352118, 5.06896107, 5.11217386]
+        ellipsoid_rotation_benchmark_substitution = [[-0.57487044, -0.57786455,  0.57930695],
+                                                    [ 0.23007278, -0.79357926, -0.56329254],
+                                                    [ 0.78523276, -0.19053747,  0.58915616]]
+        
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/Te_Cd_+1_defect_entry.json.gz")
+        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = calc_displacements_ellipsoid(defect_entry, quantile=0.8)
+        np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark_substitution))
+        np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark_substitution))
+        np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark_substitution))
+        
+        
+        # Interstitial:
+        # These benchmark are calculated for the displacements ellipsoid of Int_Te_3_1 in CdTe at quantile=0.8.
+        ellipsoid_center_benchmark_interstitial = [6.09696696, 7.48234777, 6.19752711]
+        ellipsoid_radii_benchmark_interstitial = [3.48790624, 5.56101187, 6.8367233 ]
+        ellipsoid_rotation_benchmark_interstitial = [[-0.43707588, -0.59878091, -0.67113791],
+                                                    [-0.38107693,  0.79918498, -0.46484808],
+                                                    [ 0.81470549,  0.05258129, -0.57748607]]
+        
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/Int_Te_3_1_defect_entry.json.gz")
+        ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = calc_displacements_ellipsoid(defect_entry, quantile=0.8)
+        np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark_interstitial))
+        np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark_interstitial))
+        np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark_interstitial))
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")
     def test_plot_site_displacements_proj(self):
