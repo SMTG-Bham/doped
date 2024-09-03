@@ -84,9 +84,11 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
                     f"(https://matplotlib.org/stable/users/explain/colors/colormaps) colormaps. "
                     f"Defaulting to '{default}' colormap."
                 )
-            cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
+                cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
 
-    return cmap
+        colormap = cmap
+
+    return colormap
 
 
 def _get_TLD_plot_setup(colormap, xy):
@@ -667,8 +669,7 @@ def _get_legend_txt(for_legend, all_entries=False, include_site_info=False):
         legend_txt = [
             (
                 site_info_name
-                if legend_txt.count(non_site_info_name) > 1
-                and site_info_entry_names.count(site_info_name) == 1
+                if site_info_entry_names.count(site_info_name) < legend_txt.count(non_site_info_name)
                 else non_site_info_name
             )
             for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt)
