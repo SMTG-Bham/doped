@@ -10,6 +10,7 @@ import os
 import shutil
 import unittest
 import warnings
+from copy import deepcopy
 
 import matplotlib as mpl
 import pytest
@@ -81,7 +82,7 @@ class DefectPlottingTestCase(unittest.TestCase):
 
     def test_format_defect_name(self):
         """
-        Test format_defect_name() function.
+        Test ``format_defect_name()`` function.
         """
         # test standard behaviour
         formatted_name = plotting.format_defect_name(
@@ -287,6 +288,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_O_+2": "O$_i^{+2}$",
             "inter_14_Th_+2": "Th$_i^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
+            "As_i_C2_-3": "As$_i^{-3}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -364,6 +366,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_O_+2": "O$_{i_{14}}^{+2}$",
             "inter_14_Th_+2": "Th$_{i_{14}}^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
+            "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
         }
         for (
             defect_species,
@@ -393,6 +396,20 @@ class DefectPlottingTestCase(unittest.TestCase):
 
 
 class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
+    def setUp(self):
+        super().setUp()
+        self.CdTe_LZ_thermo_wout_meta = deepcopy(self.orig_CdTe_LZ_thermo_wout_meta)
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.CdTe_LZ_defect_dict = loadfn(
+            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
+        )
+        cls.orig_CdTe_LZ_thermo_wout_meta = DefectThermodynamics(
+            cls.CdTe_LZ_defect_dict, chempots=cls.CdTe_chempots
+        )
+
     def test_plot_limit_no_chempots_error(self):
         with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.plot(limit="Te-rich")
@@ -507,19 +524,12 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
     def test_CdTe_LZ_all_defects_plot(self):
-        lz_cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
-        )
-        CdTe_LZ_thermo_wout_meta = DefectThermodynamics(lz_cdte_defect_dict, chempots=self.CdTe_chempots)
-        return CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
+        return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
         # Matches SK Thesis Fig 6.1b
-        lz_cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
-        )
-        lz_cdte_defect_thermo = DefectThermodynamics(lz_cdte_defect_dict)
+        lz_cdte_defect_thermo = self.CdTe_LZ_thermo_wout_meta
         lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
 
         return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
@@ -561,3 +571,110 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         print([str(warn.message) for warn in w])  # for debugging
         assert not w
         return plot
+
+    @custom_mpl_image_compare(filename="CdTe_duplicate_entry_names.png")
+    def test_handling_duplicate_entry_names_CdTe(self):
+        """
+        Test renaming behaviour when defect entries with the same names are
+        provided.
+        """
+        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json.gz"))
+        num_entries = len(defect_dict)
+        for defect_entry in defect_dict.values():
+            if "Cd_i" in defect_entry.name:
+                defect_entry.name = f"Cd_i_{defect_entry.charge_state}"
+            if "Te_i" in defect_entry.name:
+                defect_entry.name = f"Te_i_{defect_entry.charge_state}"
+
+        defect_thermo = DefectThermodynamics(defect_dict)
+        assert len(defect_thermo.defect_entries) == num_entries
+        print([entry.name for entry in defect_thermo.defect_entries])
+
+        return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
+
+    @custom_mpl_image_compare(filename="Se_duplicate_entry_names_old_plot.png")
+    def test_handling_duplicate_entry_names_ext_Se_old_names(self):
+        """
+        Test renaming behaviour when defect entries with the same names are
+        provided.
+
+        In this case, the defect folder/entry names match the old ``doped``
+        format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
+
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
+        are removed by including site info, but some (``inter_11_H_X``) which
+        aren't, so ``_a`` & ``_b`` are appended to those names.
+        """
+        fig = self.Se_ext_no_pnict_thermo.plot()
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$"]:
+            assert i in legend_txt
+
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_pnictogen_plot.png")
+    def test_plotting_ext_Se_new_names(self):
+        """
+        Test plotting behaviour with pnictogen impurities in Se.
+
+        Previously this would append site info to the defect names by default,
+        but this is not necessary here as there are no inequivalent
+        substitution/interstitial sites, so check that the legend is as
+        expected with no site info.
+        """
+        fig = self.Se_pnict_thermo.plot()
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in ["i_{", "{Se_{", "}}$", "-a", "-b"]:
+            assert all(i not in text for text in legend_txt)
+
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_site_info_old_names_plot.png")
+    def test_ext_Se_old_names_include_site_info(self):
+        """
+        Test plotting extrinsic defects in Se with ``include_site_info=True``.
+
+        In this case, the defect folder/entry names match the old ``doped``
+        format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
+
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
+        are removed by including site info, but some (``inter_11_H_X``) which
+        aren't, so ``_a`` & ``_b`` are appended to those names.
+        """
+        fig = self.Se_ext_no_pnict_thermo.plot(include_site_info=True)
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in [
+            "O$_{i_{1}}$",
+            "O$_{i_{2}}$",
+            "Te$_{Se_{1}}$",
+            "H$_{i_{11}}$$_{-a}$",
+            "H$_{i_{11}}$$_{-b}$",
+            "F$_{i_{1}}$",
+        ]:
+            assert i in legend_txt
+
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_pnictogen_site_info_plot.png")
+    def test_plotting_ext_Se_site_info(self):
+        """
+        Test plotting behaviour with pnictogen impurities in Se, with
+        ``include_site_info=True``.
+        """
+        fig = self.Se_pnict_thermo.plot(include_site_info=True)
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        # site info being added; C2 for interstitials, none for _Se (only one site)
+        assert all(any(i in text for i in ["{C_{2}}}", "_{Se"]) for text in legend_txt)
+
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_site_info.png")
+    def test_CdTe_LZ_site_info_plot(self):
+        """
+        Test CdTe plotting behaviour with ``include_site_info=True``.
+        """
+        return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", include_site_info=True)

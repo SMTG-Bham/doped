@@ -103,6 +103,8 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.Sb2O5_defect_thermo = deepcopy(self.orig_Sb2O5_defect_thermo)
         self.ZnS_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
 
+        self.Se_ext_no_pnict_thermo = deepcopy(self.orig_Se_ext_no_pnict_thermo)
+        self.Se_pnict_thermo = deepcopy(self.orig_Se_pnict_thermo)
         self.cdte_chempot_warning_message = (
             "Note that the raw (DFT) energy of the bulk supercell calculation (-3.37 eV/atom) differs "
             "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. This "
@@ -177,6 +179,9 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
 
         cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json.gz"))
+
+        cls.orig_Se_ext_no_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
+        cls.orig_Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
 
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
@@ -1901,69 +1906,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         per_site=True,
                     )
                     assert np.isclose(orig_conc, new_conc * random_defect_entry.bulk_site_concentration)
-
-    @custom_mpl_image_compare(filename="CdTe_duplicate_entry_names.png")
-    def test_handling_duplicate_entry_names_CdTe(self):
-        """
-        Test renaming behaviour when defect entries with the same names are
-        provided.
-        """
-        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json.gz"))
-        num_entries = len(defect_dict)
-        for defect_entry in defect_dict.values():
-            if "Cd_i" in defect_entry.name:
-                defect_entry.name = f"Cd_i_{defect_entry.charge_state}"
-            if "Te_i" in defect_entry.name:
-                defect_entry.name = f"Te_i_{defect_entry.charge_state}"
-
-        defect_thermo = DefectThermodynamics(defect_dict)
-        assert len(defect_thermo.defect_entries) == num_entries
-        print([entry.name for entry in defect_thermo.defect_entries])
-
-        return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
-
-    @custom_mpl_image_compare(filename="Se_duplicate_entry_names_old.png")
-    def test_handling_duplicate_entry_names_ext_Se_old_names(self):
-        """
-        Test renaming behaviour when defect entries with the same names are
-        provided.
-
-        In this case, the defect folder/entry names match the old ``doped``
-        format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
-
-        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
-        are removed by including site info, but some (``inter_11_H_X``) which
-        aren't, so ``_a`` & ``_b`` are appended to those names.
-        """
-        defect_thermo = loadfn(os.path.join(self.module_path, "data/Se_Ext_no_Pnict_Thermo.json.gz"))
-        print([entry.name for entry in defect_thermo.defect_entries])
-        fig = defect_thermo.plot()
-        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
-        print(legend_txt)
-        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$"]:
-            assert i in legend_txt
-
-        return fig
-
-    @custom_mpl_image_compare(filename="Se_pnictogen_plot.png")
-    def test_plotting_ext_Se_new_names(self):
-        """
-        Test plotting behaviour with pnictogen impurities in Se.
-
-        Previously this would append site info to the defect names by default,
-        but this is not necessary here as there are no inequivalent
-        substitution/interstitial sites, so check that the legend is as
-        expected with no site info.
-        """
-        defect_thermo = loadfn(os.path.join(self.module_path, "data/Se_Pnict_Thermo.json.gz"))
-        print([entry.name for entry in defect_thermo.defect_entries])
-        fig = defect_thermo.plot()
-        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
-        print(legend_txt)
-        for i in ["i_{", "{Se_{", "}}$", "-a", "-b"]:
-            assert all(i not in text for text in legend_txt)
-
-        return fig
 
     def test_Sb2O5_formation_energies(self):
         formation_energy_table_df = self.Sb2O5_defect_thermo.get_formation_energies(

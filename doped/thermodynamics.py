@@ -2435,7 +2435,6 @@ class DefectThermodynamics(MSONable):
         )
 
     # TODO: Don't show chempot table by default? At least is limit explicitly chosen?
-    # TODO: Add include_site_info as plotting option! And update docstrings with this behaviour
     # TODO: Add option to only plot defect states that are stable at some point in the bandgap
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
@@ -2465,6 +2464,7 @@ class DefectThermodynamics(MSONable):
         xlim: Optional[tuple] = None,
         ylim: Optional[tuple] = None,
         fermi_level: Optional[float] = None,
+        include_site_info: bool = False,
         colormap: Optional[Union[str, colors.Colormap]] = None,
         auto_labels: bool = False,
         filename: Optional[PathLike] = None,
@@ -2543,6 +2543,12 @@ class DefectThermodynamics(MSONable):
                 If set, plots a dashed vertical line at this Fermi level value, typically
                 used to indicate the equilibrium Fermi level position (e.g. calculated
                 with py-sc-fermi). (Default: None)
+            include_site_info (bool):
+                Whether to include site info in defect names in the plot legend (e.g.
+                $Cd_{i_{C3v}}^{0}$ rather than $Cd_{i}^{0}$). Default is ``False``, where
+                site info is not included unless we have inequivalent sites for the same
+                defect type. If, even with site info added, there are duplicate defect
+                names, then "-a", "-b", "-c" etc are appended to the names to differentiate.
             colormap (str, matplotlib.colors.Colormap):
                 Colormap to use for the formation energy lines, either as a string
                 (which can be a colormap name from
@@ -2622,6 +2628,7 @@ class DefectThermodynamics(MSONable):
                         xlim=xlim,
                         ylim=ylim,
                         fermi_level=fermi_level,
+                        include_site_info=include_site_info,
                         title=plot_title,
                         colormap=colormap,
                         auto_labels=auto_labels,

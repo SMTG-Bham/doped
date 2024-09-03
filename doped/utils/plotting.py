@@ -306,7 +306,7 @@ def format_defect_name(
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
-            i not in defect_species.lower() for i in ["int", "vac", "sub", "as"]
+            i not in defect_species for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as"]  # no As_...
         ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
@@ -877,6 +877,7 @@ def _TLD_plot(
     xlim=None,
     ylim=None,
     fermi_level=None,
+    include_site_info=False,
     title=None,
     colormap: Optional[Union[str, Colormap]] = None,
     auto_labels=False,
@@ -989,6 +990,7 @@ def _TLD_plot(
                 else defect_names_for_legend
             ),
             all_entries=all_entries is True,
+            include_site_info=include_site_info,
         ),
         loc=2,
         bbox_to_anchor=(1, 1),
