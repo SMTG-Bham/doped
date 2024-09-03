@@ -44,6 +44,7 @@ from doped.core import (
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
+from doped.utils.plotting import format_defect_name
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -2191,15 +2192,24 @@ def _first_and_second_element(defect_name: str):
 
     For sorting purposes.
     """
-    if defect_name.startswith("v"):
-        return (defect_name.split("_")[1], defect_name.split("_")[1])
-    if defect_name.split("_")[1] == "i":
-        return (defect_name.split("_")[0], defect_name.split("_")[0])
-
-    return (
-        defect_name.split("_")[0],
-        defect_name.split("_")[1],
+    # by using ``format_defect_name``, we can simultaneously handle (amalgamated) old and new ``doped``
+    # defect names:
+    formatted_defect_name = format_defect_name(
+        defect_name, include_site_info_in_name=False, wout_charge=not defect_name.split("_")[-1].isdigit()
     )
+    if formatted_defect_name:
+        if not formatted_defect_name.startswith("$"):  # substitution or interstitial
+            first_element = formatted_defect_name.split("$")[0]
+
+            if "$_i" in formatted_defect_name:  # interstitial
+                return (first_element, first_element)
+
+            return (first_element, formatted_defect_name.split("$_{")[1].split("}")[0])  # substitution
+
+        vacancy_elt = formatted_defect_name.split("$_{")[1].split("}")[0]  # else vacancy
+        return (vacancy_elt, vacancy_elt)
+
+    return (defect_name.split("_")[0], defect_name.split("_")[1])  # return name split if formatting fails
 
 
 def _sort_defect_entries(
@@ -2207,13 +2217,14 @@ def _sort_defect_entries(
 ):
     """
     Sort defect entries for deterministic behaviour (for output and when
-    reloading DefectsGenerator objects, and with DefectThermodynamics entries
-    (particularly for deterministic plotting behaviour)).
+    reloading ``DefectsGenerator`` objects, and with ``DefectThermodynamics``
+    entries (particularly for deterministic plotting behaviour)).
 
     Sorts defect entries by defect type (vacancies, substitutions,
     interstitials), then by order of appearance of elements in the composition,
-    then alphabetically, then (for defect entries of the same type) sort by
-    charge state (from positive to negative).
+    then by periodic group (main groups 1, 2, 13-18 first, then TMs), then by
+    atomic number, then (for defect entries of the same type) sort by charge
+    state (from positive to negative).
     """
     if element_list is None:
         host_element_list = [
@@ -2228,9 +2239,15 @@ def _sort_defect_entries(
                 if el.symbol not in host_element_list
             )
 
-        # sort extrinsic elements alphabetically for deterministic ordering in output:
+        # sort extrinsic elements by periodic group and atomic number for deterministic ordering in output:
+        def _element_sorting_func(element_str):
+            elt = Element(element_str)
+            group = elt.group + 16 if 3 <= elt.group <= 18 else elt.group
+            return (group, elt.Z)
+
         extrinsic_element_list = sorted(
-            [el for el in extrinsic_element_list if el not in host_element_list]
+            [el for el in extrinsic_element_list if el not in host_element_list],
+            key=_element_sorting_func,
         )
         element_list = host_element_list + extrinsic_element_list
 
