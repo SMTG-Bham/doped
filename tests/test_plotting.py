@@ -399,6 +399,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def setUp(self):
         super().setUp()
         self.CdTe_LZ_thermo_wout_meta = deepcopy(self.orig_CdTe_LZ_thermo_wout_meta)
+        self.Se_amalgamated_extrinsic_thermo = deepcopy(self.orig_Se_amalgamated_extrinsic_thermo)
 
     @classmethod
     def setUpClass(cls):
@@ -408,6 +409,10 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         )
         cls.orig_CdTe_LZ_thermo_wout_meta = DefectThermodynamics(
             cls.CdTe_LZ_defect_dict, chempots=cls.CdTe_chempots
+        )
+
+        cls.orig_Se_amalgamated_extrinsic_thermo = DefectThermodynamics.from_json(
+            f"{cls.EXAMPLE_DIR}/Se/Se_Amalgamated_Extrinsic_Thermo.json.gz"
         )
 
     def test_plot_limit_no_chempots_error(self):
@@ -671,6 +676,60 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert all(any(i in text for i in ["{C_{2}}}", "_{Se"]) for text in legend_txt)
 
         return fig
+
+    @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_linestyles_plot.png")
+    def test_plotting_linestyles_and_colors_ext_Se(self):
+        """
+        Test plotting extrinsic interstitials in Se, using the ``linestyles``
+        and ``colormap`` (with ``ListedColormap``) options.
+        """
+        from matplotlib import colormaps
+        from matplotlib.colors import ListedColormap
+
+        from doped.core import Interstitial
+
+        amalgamated_Se_extrinsic_interstitials_thermo = DefectThermodynamics(
+            defect_entries=[
+                entry
+                for entry in self.Se_amalgamated_extrinsic_thermo.defect_entries
+                if isinstance(entry.defect, Interstitial)
+            ],
+            chempots=self.Se_amalgamated_extrinsic_thermo.chempots,
+        )
+        amalgamated_Se_extrinsic_interstitials_thermo.dist_tol = 2  # amalgamate Hi and Oi
+
+        # H, N, P, As, Sb, O, S, Te, F, Cl, Br:
+        colors = colormaps.get("Dark2").colors
+        H_color = colors[4]
+        pnict_color = colors[2]
+        chalc_color = colors[1]
+        halogen_color = colors[0]
+
+        H_pnict_chalc_halogen_colormap = ListedColormap(
+            [
+                H_color,
+                *[(*pnict_color, 1 - 0.2 * i) for i in range(4)],
+                *[(*chalc_color, 1 - 0.3 * i) for i in range(3)],
+                *[(*halogen_color, 1 - 0.3 * i) for i in range(3)],
+            ]
+        )
+        linestyles = [  # solid for first of each group, then dashed, dotted, double dash
+            "-",
+            "-",
+            "--",
+            ":",
+            "-.",
+            "-",
+            "--",
+            ":",
+            "-",
+            "--",
+            ":",
+        ]
+
+        return amalgamated_Se_extrinsic_interstitials_thermo.plot(
+            chempot_table=False, colormap=H_pnict_chalc_halogen_colormap, linestyles=linestyles
+        )
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_site_info.png")
     def test_CdTe_LZ_site_info_plot(self):

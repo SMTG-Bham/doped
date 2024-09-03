@@ -2466,6 +2466,7 @@ class DefectThermodynamics(MSONable):
         fermi_level: Optional[float] = None,
         include_site_info: bool = False,
         colormap: Optional[Union[str, colors.Colormap]] = None,
+        linestyles: Union[str, list[str]] = "-",
         auto_labels: bool = False,
         filename: Optional[PathLike] = None,
     ) -> Union[Figure, list[Figure]]:
@@ -2555,8 +2556,13 @@ class DefectThermodynamics(MSONable):
                 https://matplotlib.org/stable/users/explain/colors/colormaps or from
                 https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
                 colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
-                If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines) or ``tab20``
-                (if more than 8 lines being plotted).
+                If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines to plot),
+                ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more than 20 lines).
+            linestyles (list):
+                Linestyles to use for the formation energy lines, either as a single
+                linestyle (``str``) or list of linestyles (``list[str]``) in the order of
+                appearance of lines in the plot legend. Default is ``"-"``; i.e. solid
+                linestyle for all entries.
             auto_labels (bool):
                 Whether to automatically label the transition levels with their charge
                 states. If there are many transition levels, this can be quite ugly.
@@ -2610,7 +2616,7 @@ class DefectThermodynamics(MSONable):
             figs = []
             for limit in limits:
                 dft_chempots = chempots["limits"][limit]
-                plot_title = limit if "User" not in limit else None
+                plot_title = limit if len(limits) > 1 else None
                 plot_filename = (
                     f"{filename.rsplit('.', 1)[0]}_{limit}.{filename.rsplit('.', 1)[1]}"
                     if filename
@@ -2631,6 +2637,7 @@ class DefectThermodynamics(MSONable):
                         include_site_info=include_site_info,
                         title=plot_title,
                         colormap=colormap,
+                        linestyles=linestyles,
                         auto_labels=auto_labels,
                         filename=plot_filename,
                     )

@@ -10,7 +10,7 @@ analysing defect calculations, with publication-quality outputs.
 import contextlib
 import re
 import warnings
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
@@ -19,8 +19,12 @@ from matplotlib import colormaps, ticker
 from matplotlib.colors import Colormap, ListedColormap
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
+from pymatgen.util.typing import PathLike
 
 from doped.utils.symmetry import sch_symbols  # point group symbols
+
+if TYPE_CHECKING:
+    from doped.thermodynamics import DefectThermodynamics
 
 
 def _get_backend(save_format: str) -> Optional[str]:
@@ -91,20 +95,50 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
     return colormap
 
 
-def _get_TLD_plot_setup(colormap, xy):
+def get_linestyles(linestyles: Union[str, list[str]] = "-", num_lines: int = 1) -> list[str]:
+    """
+    Get a list of linestyles to use for plotting, from a string or list of
+    strings (linestyles).
+
+    If a list is provided which doesn't match the number of lines,
+    the list is repeated until it does.
+
+    Args:
+        linestyles (str, list[str]):
+            Linestyles to use for plotting. If a string, uses that linestyle
+            for all lines. If a list, uses each linestyle in the list for each
+            line. Defaults to ``"-"``.
+        num_lines (int):
+            Number of lines to plot (and thus number of linestyles
+            to output in list). Defaults to 1.
+    """
+    if isinstance(linestyles, str):
+        return [linestyles] * num_lines
+
+    # else ensure match number of lines to number of linestyles:
+    return linestyles * (num_lines // len(linestyles)) + linestyles[: num_lines % len(linestyles)]
+
+
+def _get_TLD_plot_setup(colormap, linestyles, xy):
     # future updated colour handling (based on defect type etc) should remove the need for this:
-    if len(xy) <= 8:
+    num_lines = len(xy)
+    if num_lines <= 8:
         default = "Dark2"
-    elif len(xy) <= 20:
+    elif num_lines <= 20:
         default = "tab20"
     else:
         default = "batlow"  # set to colormap if not enough colours in listed colormaps
 
     cmap = get_colormap(colormap, default=default)
     if isinstance(cmap, ListedColormap) and len(cmap.colors) < 50:
-        colors = cmap.colors
+        # ensure number of colors matches number of lines:
+        colors = (
+            cmap.colors * (num_lines // len(cmap.colors)) + cmap.colors[: num_lines % len(cmap.colors)]
+        )
     else:
-        colors = cmap(np.linspace(0, 1, len(xy)))
+        colors = cmap(np.linspace(0, 1, num_lines))
+
+    linestyles = get_linestyles(linestyles, num_lines)
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -114,12 +148,22 @@ def _get_TLD_plot_setup(colormap, xy):
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
 
-    return colors, fig, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
+    return (
+        colors,
+        linestyles,
+        fig,
+        ax,
+        styled_fig_size,
+        styled_font_size,
+        styled_linewidth,
+        styled_markersize,
+    )
 
 
 def _plot_formation_energy_lines(
     xy,
     colors,
+    linestyles,
     ax,
     styled_linewidth,
     styled_markersize,
@@ -131,6 +175,7 @@ def _plot_formation_energy_lines(
             xy[def_name][0],
             xy[def_name][1],
             color=colors[cnt],
+            linestyle=linestyles[cnt],
             markeredgecolor=colors[cnt],
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
@@ -877,38 +922,88 @@ def _get_in_gap_yvals(x_coords, y_coords, x_range):
 
 
 def _TLD_plot(
-    defect_thermodynamics,
-    dft_chempots=None,
-    el_refs=None,
-    chempot_table=True,
+    defect_thermodynamics: "DefectThermodynamics",
+    dft_chempots: Optional[dict] = None,
+    el_refs: Optional[dict] = None,
+    chempot_table: bool = True,
     all_entries: Union[bool, str] = False,
-    xlim=None,
-    ylim=None,
-    fermi_level=None,
-    include_site_info=False,
-    title=None,
+    xlim: Optional[tuple[float, float]] = None,
+    ylim: Optional[tuple[float, float]] = None,
+    fermi_level: Optional[float] = None,
+    include_site_info: bool = False,
+    title: Optional[str] = None,
     colormap: Optional[Union[str, Colormap]] = None,
-    auto_labels=False,
-    filename=None,
+    linestyles: Union[str, list[str]] = "-",
+    auto_labels: bool = False,
+    filename: Optional[PathLike] = None,
 ):
     """
-    Produce defect Formation energy vs Fermi energy plot
+    Produce defect formation energy vs Fermi energy plot.
+
     Args:
-        dft_chempots:
-            a dictionary of {Element:value} giving the chemical
-            potential of each element
+        defect_thermodynamics (DefectThermodynamics):
+            ``DefectThermodynamics`` object containing defect entries to plot.
+        dft_chempots (dict):
+            Dictionary of ``{Element: value}`` giving the chemical
+            potential of each element.
+        el_refs (dict):
+            Dictionary of ``{Element: value}`` giving the reference
+            energy of each element.
+        chempot_table (bool):
+            Whether to print the chemical potential table above the plot.
+            (Default: True)
+        all_entries (bool, str):
+            Whether to plot the formation energy lines of `all` defect entries,
+            rather than the default of showing only the equilibrium states at each
+            Fermi level position (traditional). If instead set to "faded", will plot
+            the equilibrium states in bold, and all unstable states in faded grey
+            (Default: False)
         xlim:
-            Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
+            Tuple (min,max) giving the range of the x-axis (Fermi level). May want
+            to set manually when including transition level labels, to avoid crossing
+            the axes. Default is to plot from -0.3 to +0.3 eV above the band gap.
         ylim:
-            Tuple (min,max) giving the range for the formation energy axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
+            Tuple (min,max) giving the range for the y-axis (formation energy). May
+            want to set manually when including transition level labels, to avoid
+            crossing the axes. Default is from 0 to just above the maximum formation
+            energy value in the band gap.
+        fermi_level (float):
+            If set, plots a dashed vertical line at this Fermi level value, typically
+            used to indicate the equilibrium Fermi level position (e.g. calculated
+            with py-sc-fermi). (Default: None)
+        include_site_info (bool):
+            Whether to include site info in defect names in the plot legend (e.g.
+            $Cd_{i_{C3v}}^{0}$ rather than $Cd_{i}^{0}$). Default is ``False``, where
+            site info is not included unless we have inequivalent sites for the same
+            defect type. If, even with site info added, there are duplicate defect
+            names, then "-a", "-b", "-c" etc are appended to the names to differentiate.
+        title (str):
+            Title for the plot. (Default: None)
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use for the formation energy lines, either as a string
+            (which can be a colormap name from
+            https://matplotlib.org/stable/users/explain/colors/colormaps or from
+            https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
+            colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
+            If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines to plot),
+            ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more than 20 lines).
+        linestyles (list):
+            Linestyles to use for the formation energy lines, either as a single
+            linestyle (``str``) or list of linestyles (``list[str]``) in the order of
+            appearance of lines in the plot legend. Default is ``"-"``; i.e. solid
+            linestyle for all entries.
+        auto_labels (bool):
+            Whether to automatically label the transition levels with their charge
+            states. If there are many transition levels, this can be quite ugly.
+            (Default: False)
+        filename (PathLike): Filename to save the plot to. (Default: None (not saved))
 
     Returns:
-        a matplotlib object.
+        ``matplotlib`` ``Figure`` object.
     """
     _chempot_warning(dft_chempots)
     if xlim is None:
+        assert isinstance(defect_thermodynamics.band_gap, float)  # typing
         xlim = (-0.3, defect_thermodynamics.band_gap + 0.3)
 
     (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin = _get_formation_energy_lines(
@@ -917,17 +1012,19 @@ def _TLD_plot(
 
     (
         colors,
+        linestyles,
         fig,
         ax,
         styled_fig_size,
         styled_font_size,
         styled_linewidth,
         styled_markersize,
-    ) = _get_TLD_plot_setup(colormap, all_lines_xy if all_entries is True else xy)
+    ) = _get_TLD_plot_setup(colormap, linestyles, all_lines_xy if all_entries is True else xy)
 
     defect_names_for_legend = _plot_formation_energy_lines(  # plot formation energies and get legend names
         all_lines_xy if all_entries is True else xy,
         colors=colors,
+        linestyles=linestyles,
         ax=ax,
         styled_linewidth=styled_linewidth,
         styled_markersize=styled_markersize,
@@ -937,6 +1034,10 @@ def _TLD_plot(
         _legend = _plot_formation_energy_lines(  # grey 'all_lines_xy' not included in legend
             all_lines_xy,
             colors=[(0.8, 0.8, 0.8)] * len(all_lines_xy),
+            linestyles=[
+                "-",
+            ]
+            * len(all_lines_xy),
             ax=ax,
             styled_linewidth=styled_linewidth,
             styled_markersize=styled_markersize,
@@ -976,6 +1077,7 @@ def _TLD_plot(
                 lw=styled_linewidth * 1.2,
                 markersize=styled_markersize * (4 / 6),
                 fillstyle="full",
+                linestyle="",
             )
             if auto_labels:
                 for index, coords in enumerate(zip(x_trans, y_trans)):
