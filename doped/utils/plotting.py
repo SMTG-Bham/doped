@@ -93,7 +93,14 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
 
 def _get_TLD_plot_setup(colormap, xy):
     # future updated colour handling (based on defect type etc) should remove the need for this:
-    cmap = get_colormap(colormap, default="Dark2" if len(xy) <= 8 else "tab20")
+    if len(xy) <= 8:
+        default = "Dark2"
+    elif len(xy) <= 20:
+        default = "tab20"
+    else:
+        default = "batlow"  # set to colormap if not enough colours in listed colormaps
+
+    cmap = get_colormap(colormap, default=default)
     if isinstance(cmap, ListedColormap) and len(cmap.colors) < 50:
         colors = cmap.colors
     else:
