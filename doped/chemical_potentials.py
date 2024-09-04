@@ -43,6 +43,7 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
+from doped.generation import _element_sorting_func
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import _round_floats, get_primitive_structure
@@ -214,6 +215,9 @@ def _calculate_formation_energies(data: list, elemental: dict):
     formation_energy_df["num_species"] = formation_energy_df["Formula"].apply(
         lambda x: len(Composition(x).as_dict())
     )
+    formation_energy_df["periodic_group_ordering"] = formation_energy_df["Formula"].apply(
+        lambda x: tuple(sorted([_element_sorting_func(i.symbol) for i in Composition(x).elements]))
+    )
 
     # get energy per fu then subtract elemental energies later, to get formation energies
     if "DFT Energy (eV/fu)" in formation_energy_df.columns:
@@ -246,12 +250,13 @@ def _calculate_formation_energies(data: list, elemental: dict):
     )
     formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
 
-    # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
+    # sort by num_species, then by periodic group/row of elements, then by num_atoms_in_fu,
+    # then by formation_energy
     formation_energy_df = formation_energy_df.sort_values(
-        by=["num_species", "Formula", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
+        by=["num_species", "periodic_group_ordering", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
     )
     # drop num_atoms_in_fu and num_species
-    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
+    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species", "periodic_group_ordering"])
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom, name=None, description=None):
@@ -376,6 +381,7 @@ def get_entries_in_chemsys(
     api_key: Optional[str] = None,
     e_above_hull: Optional[float] = None,
     return_all_info: bool = False,
+    bulk_composition: Optional[Union[str, Composition]] = None,
     **kwargs,
 ):
     """
@@ -395,7 +401,8 @@ def get_entries_in_chemsys(
     (in eV/atom) will be returned.
 
     The output entries list is sorted by energy above hull, then by the number
-    of elements in the formula, then alphabetically by formula.
+    of elements in the formula, then by the position of elements in the
+    periodic table (main group elements, then transition metals, sorted by row).
 
     Args:
         chemsys (str, list[str]):
@@ -420,6 +427,10 @@ def get_entries_in_chemsys(
             field names for the new or legacy Materials Project API (corresponding to
             the current API key). Mainly intended for internal ``doped`` usage for
             provenance tracking. Default is ``False``.
+        bulk_composition (str/Composition):
+            Optional input; formula of the bulk host material, to use for sorting
+            the output entries (with all those matching the bulk composition first).
+            Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             ``get_entries_in_chemsys()`` query.
@@ -453,8 +464,8 @@ def get_entries_in_chemsys(
             entry for entry in MP_full_pd_entries if _get_e_above_hull(entry.data) <= e_above_hull
         ]
 
-    # sort by energy above hull, num_species, then alphabetically:
-    MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
+    # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+    MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=bulk_composition))
 
     if return_all_info:
         return MP_full_pd_entries, property_key_dict, property_data_fields
@@ -463,7 +474,10 @@ def get_entries_in_chemsys(
 
 
 def get_entries(
-    chemsys_formula_id_criteria: Union[str, dict[str, Any]], api_key: Optional[str] = None, **kwargs
+    chemsys_formula_id_criteria: Union[str, dict[str, Any]],
+    api_key: Optional[str] = None,
+    bulk_composition: Optional[Union[str, Composition]] = None,
+    **kwargs,
 ):
     """
     Convenience function to get a list of ``ComputedStructureEntry``s for an
@@ -476,7 +490,8 @@ def get_entries(
 
     The output entries list is sorted by energy per atom (equivalent sorting as
     energy above hull), then by the number of elements in the formula, then
-    alphabetically by formula.
+    by the position of elements in the periodic table (main group elements,
+    then transition metals, sorted by row).
 
     Args:
         chemsys_formula_id_criteria (str/dict):
@@ -490,6 +505,10 @@ def get_entries(
             - see the ``doped`` Installation docs page:
             https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
             -project-api
+        bulk_composition (str/Composition):
+            Optional input; formula of the bulk host material, to use for sorting
+            the output entries (with all those matching the bulk composition first).
+            Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             ``get_entries()`` query.
@@ -508,8 +527,8 @@ def get_entries(
             **kwargs,
         )
 
-    # sort by energy above hull, num_species, then alphabetically:
-    entries.sort(key=lambda x: _entries_sorting_func(x))
+    # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+    entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=bulk_composition))
 
     return entries
 
@@ -703,10 +722,19 @@ def get_MP_summary_docs(
     return MP_docs
 
 
-def _entries_sorting_func(entry: ComputedEntry, use_e_per_atom: bool = False):
+def _entries_sorting_func(
+    entry: ComputedEntry,
+    use_e_per_atom: bool = False,
+    bulk_composition: Optional[Union[str, Composition, dict, list]] = None,
+):
     """
     Function to sort ``ComputedEntry``s by energy above hull, then by the
-    number of elements in the formula, then alphabetically by formula.
+    number of elements in the formula, then by the position of elements in the
+    periodic table (main group elements, then transition metals, sorted by
+    row), then alphabetically.
+
+    If ``bulk_composition`` is provided, then entries matching the bulk
+    composition are sorted first, followed by all other entries.
 
     Usage: ``entries_list.sort(key=_entries_sorting_func)``
 
@@ -716,15 +744,23 @@ def _entries_sorting_func(entry: ComputedEntry, use_e_per_atom: bool = False):
         use_e_per_atom (bool):
             If ``True``, sort by energy per atom rather than energy above hull.
             Default is ``False``.
+        bulk_composition (str/Composition/dict/list):
+            Bulk composition; to sort entries matching this composition first.
+            Default is ``None`` (don't sort according to this).
 
     Returns:
         tuple:
-            Tuple of the energy above hull (or energy per atom), number of elements
-            in the formula, and formula name of the entry.
+            Tuple of ``True``/``False`` (if composition matches bulk composition),
+            the energy above hull (or energy per atom), number of elements in the
+            formula, and sorted (group, row) list of elements in the formula, and
+            the formula name.
     """
+    bulk_reduced_comp = Composition(bulk_composition).reduced_composition if bulk_composition else None
     return (
+        entry.composition.reduced_composition == bulk_reduced_comp,
         entry.energy_per_atom if use_e_per_atom else _get_e_above_hull(entry.data),
         len(Composition(entry.name).as_dict()),
+        sorted([_element_sorting_func(i.symbol) for i in Composition(entry.name).elements]),
         entry.name,
     )
 
@@ -1018,12 +1054,12 @@ class CompetingPhases:
             "ignore", message="You are using the legacy MPRester"
         )  # previously relied on this so shouldn't show warning, `message` only needs to match start
 
-        # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
-        #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
-        #  any particularly bad cases. E.g. P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037
-        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for all
-        #  alkali and alkaline earth metals (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad
-        #  cases).
+        # TODO: Should hard code S (solid + S8 (mp-994911), + S2 (molecule in a box)), P, Te and Se in
+        #  here too. Common anions with a lot of unnecessary polymorphs on MP. Should at least scan over
+        #  elemental phases and hard code any particularly bad cases. E.g. P_EaH=0 is red phosphorus
+        #  (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo stable at RT), so only need to
+        #  generate these. Same for all alkali and alkaline earth metals (ask the battery boys), TiO2,
+        #  SnO2, WO3 (particularly bad cases).
         # Can have a data file with a list of known, common cases?
         # With Materials Project querying, can check if the structure has a database ID (i.e. is
         # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
@@ -1067,6 +1103,7 @@ class CompetingPhases:
                 api_key=self.api_key,
                 e_above_hull=self.e_above_hull,
                 return_all_info=True,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             )
         )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
@@ -1088,7 +1125,9 @@ class CompetingPhases:
             ]  # lowest energy entry for bulk (after sorting)
         else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
             if bulk_entries := get_entries(  # composition present in MP, but not stable
-                self.composition.reduced_formula, api_key=self.api_key
+                self.composition.reduced_formula,
+                api_key=self.api_key,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             ):
                 self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
                     0
@@ -1182,8 +1221,8 @@ class CompetingPhases:
         else:  # self.full_phase_diagram = True
             self.entries = formatted_entries
 
-        # sort by energy above hull, num_species, then alphabetically:
-        self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+        self.entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
@@ -1452,7 +1491,8 @@ class CompetingPhases:
         in ``entries`` (``True`` for diatomic gases, ``False`` for all others).
 
         The output entries list is sorted by energy above hull, then by the number
-        of elements in the formula, then alphabetically by formula.
+        of elements in the formula, then by the position of elements in the
+        periodic table (main group elements, then transition metals, sorted by row).
 
         Args:
             entries (list[ComputedEntry]):
@@ -1484,7 +1524,7 @@ class CompetingPhases:
                 entry.data["molecule"] = False
                 formatted_entries.append(entry)
 
-        # sort by energy above hull, num_species, then alphabetically:
+        # sort by energy above hull, num_species, then by periodic table positioning:
         formatted_entries.sort(key=lambda x: _entries_sorting_func(x))
 
         return formatted_entries
@@ -1667,6 +1707,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 chemsys=self.intrinsic_species + self.extrinsic_species,
                 api_key=self.api_key,
                 e_above_hull=self.e_above_hull,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             )
             self.entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
@@ -1684,6 +1725,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     [*self.intrinsic_species, sub_el],
                     api_key=self.api_key,
                     e_above_hull=self.e_above_hull,
+                    bulk_composition=self.composition.reduced_formula,  # for sorting
                 )
                 sub_el_pd_entries = self._generate_elemental_diatomic_phases(sub_el_MP_full_pd_entries)
                 self.MP_full_pd_entries.extend(
@@ -1770,10 +1812,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
                     self.entries += single_bordering_sub_el_entries
 
-        # sort all entries by energy above hull, num_species, then alphabetically:
-        self.MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
+        # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+        self.MP_full_pd_entries.sort(
+            key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition.reduced_composition)
+        )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
-        self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        self.entries.sort(
+            key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition.reduced_composition)
+        )
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
@@ -2129,11 +2175,11 @@ class CompetingPhasesAnalyzer:
             }
             data.append(d)
 
-        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
-        # self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
+        # and add to self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sorting_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sorting_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 
@@ -2160,9 +2206,9 @@ class CompetingPhasesAnalyzer:
         # moves the bulk composition to the top of the list
         _move_dict_to_start(data, "Formula", self.composition.reduced_formula)
 
-        # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
-        # energy_per_fu, energy, kpoints, then by order of appearance in composition dict,
-        # then alphabetically for any remaining:
+        # for each dict in data list, sort the _keys_ as formula, formation_energy, energy_per_atom,
+        # energy_per_fu, energy, kpoints, then element stoichiometries in order of appearance in
+        # composition dict + extrinsic elements:
         copied_data = copy.deepcopy(data)
         formation_energy_data = [
             {
@@ -2184,19 +2230,7 @@ class CompetingPhasesAnalyzer:
                         self.composition.elements,
                         key=lambda x: self.composition.reduced_formula.index(str(x)),
                     )
-                },
-                **{
-                    k: v
-                    for k, v in d.items()
-                    if not any(
-                        i in k
-                        for i in [
-                            "Formula",
-                            "Formation Energy",
-                            "DFT Energy",
-                            "k-points",
-                        ]
-                    )
+                    + self.extrinsic_elements
                 },
             }
             for d in copied_data
@@ -2277,11 +2311,11 @@ class CompetingPhasesAnalyzer:
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
         self.formation_energy_df.set_index("Formula")
 
-        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
-        # self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
+        # and add to self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sorting_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sorting_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 
@@ -2321,6 +2355,8 @@ class CompetingPhasesAnalyzer:
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
+        # TODO: Is outputting the chempot limits to `csv` useful? If so, should also be able to load from
+        #  csv? Show this in tutorials, or at least add easy function
         if extrinsic_species is None:
             extrinsic_species = self.extrinsic_elements
         if not isinstance(extrinsic_species, list):
