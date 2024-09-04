@@ -1250,6 +1250,21 @@ class DefectEntry(thermo.DefectEntry):
             and self.corrections == other.corrections
         )
 
+    def __hash__(self):
+        """
+        Hash the ``DefectEntry`` object by its name, supercell energy, bulk
+        energy and corrections (i.e. defined by name and energy, as in the
+        ``__eq__`` method).
+        """
+        return hash(
+            (
+                self.name,
+                self.sc_entry_energy,
+                self.bulk_entry_energy,
+                tuple(sorted(self.corrections.values())),
+            )
+        )
+
     @property
     def bulk_entry_energy(self):
         r"""
@@ -2061,6 +2076,12 @@ class Defect(core.Defect):
             self._volume = self.structure.volume
 
         return self._volume
+
+    def __hash__(self):
+        """
+        Hash the ``Defect`` object, based on the defect name and site.
+        """
+        return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
