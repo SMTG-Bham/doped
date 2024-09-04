@@ -232,8 +232,8 @@ def get_freysoldt_correction(
                 style_file=style_file,
             )
     else:
-        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
-        # actually an axis object
+        plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
+        fig = plt.gcf()
 
     if filename:
         plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
