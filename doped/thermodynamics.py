@@ -741,12 +741,14 @@ class DefectThermodynamics(MSONable):
         the Pourbaix Diagram.
         """
         # determine defect charge transition levels:
-        midgap_formation_energies = [  # without chemical potentials
-            entry.formation_energy(
-                fermi_level=0.5 * self.band_gap, vbm=entry.calculation_metadata.get("vbm", self.vbm)
-            )
-            for entry in self.defect_entries
-        ]
+        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
+            warnings.filterwarnings("ignore", message="Chemical potentials not present for elements")
+            midgap_formation_energies = [  # without chemical potentials
+                entry.formation_energy(
+                    fermi_level=0.5 * self.band_gap, vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                )
+                for entry in self.defect_entries
+            ]
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
@@ -853,18 +855,24 @@ class DefectThermodynamics(MSONable):
             else:  # if ints_and_facets is empty, then there is likely only one defect...
                 # confirm formation energies dominant for one defect over other identical defects
                 name_set = [entry.name for entry in sorted_defect_entries]
-                vb_list = [
-                    entry.formation_energy(
-                        fermi_level=limits[0][0], vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                with (
+                    warnings.catch_warnings()
+                ):  # ignore formation energies chempots warning when just parsing TLs
+                    warnings.filterwarnings(
+                        "ignore", message="Chemical potentials not present for elements"
                     )
-                    for entry in sorted_defect_entries
-                ]
-                cb_list = [
-                    entry.formation_energy(
-                        fermi_level=limits[0][1], vbm=entry.calculation_metadata.get("vbm", self.vbm)
-                    )
-                    for entry in sorted_defect_entries
-                ]
+                    vb_list = [
+                        entry.formation_energy(
+                            fermi_level=limits[0][0], vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                        )
+                        for entry in sorted_defect_entries
+                    ]
+                    cb_list = [
+                        entry.formation_energy(
+                            fermi_level=limits[0][1], vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                        )
+                        for entry in sorted_defect_entries
+                    ]
 
                 vbm_def_index = vb_list.index(min(vb_list))
                 name_stable_below_vbm = name_set[vbm_def_index]

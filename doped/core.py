@@ -814,6 +814,13 @@ class DefectEntry(thermo.DefectEntry):
     def _get_chempot_term(self, chemical_potentials=None):
         chemical_potentials = chemical_potentials or {}
         element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
+        missing_elts = [elt for elt in element_changes if elt not in chemical_potentials]
+        if missing_elts:
+            warnings.warn(
+                f"Chemical potentials not present for elements: {missing_elts}. Assuming zero chemical "
+                "potentials for these elements! (Absolute formation energies will likely be very "
+                "inaccurate)"
+            )
 
         return sum(
             chem_pot * -element_changes[el]
@@ -1343,7 +1350,7 @@ def _get_dft_chempots(chempots, el_refs, limit):
         limit = _parse_limit(chempots, limit)
         if limit is None:
             limit = next(iter(chempots["limits"].keys()))
-            if "User" not in limit:
+            if len(chempots["limits"]) > 1:  # more than 1 limit, so warn
                 warnings.warn(
                     f"No chemical potential limit specified! Using {limit} for computing the "
                     f"formation energy"
