@@ -2186,11 +2186,17 @@ class DefectsGenerator(MSONable):
         )
 
 
-def _first_and_second_element(defect_name: str):
+def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     """
     Return a tuple of the first and second element in the defect name.
 
     For sorting purposes.
+
+    Args:
+        defect_name (str): Defect name.
+
+    Returns:
+        tuple: Tuple of the first and second element in the defect name.
     """
     # by using ``format_defect_name``, we can simultaneously handle (amalgamated) old and new ``doped``
     # defect names:
@@ -2210,6 +2216,24 @@ def _first_and_second_element(defect_name: str):
         return (vacancy_elt, vacancy_elt)
 
     return (defect_name.split("_")[0], defect_name.split("_")[1])  # return name split if formatting fails
+
+
+def _element_sorting_func(element_str: str) -> tuple[int, int]:
+    """
+    Return a tuple of the group (+16 if it's a transition metal, to move them
+    after main group elements) and atomic number of the element, for sorting
+    purposes.
+
+    Args:
+        element_str (str): Element symbol.
+
+    Returns:
+        tuple: Tuple of the group and atomic number of the
+            element.
+    """
+    elt = Element(element_str)
+    group = elt.group + 16 if 3 <= elt.group <= 18 else elt.group
+    return (group, elt.Z)
 
 
 def _sort_defect_entries(
@@ -2240,11 +2264,6 @@ def _sort_defect_entries(
             )
 
         # sort extrinsic elements by periodic group and atomic number for deterministic ordering in output:
-        def _element_sorting_func(element_str):
-            elt = Element(element_str)
-            group = elt.group + 16 if 3 <= elt.group <= 18 else elt.group
-            return (group, elt.Z)
-
         extrinsic_element_list = sorted(
             [el for el in extrinsic_element_list if el not in host_element_list],
             key=_element_sorting_func,
