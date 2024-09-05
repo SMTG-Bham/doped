@@ -840,9 +840,10 @@ class DefectThermodynamics(MSONable):
                     )
                     for intersection, facet in ints_and_facets_list
                 }
-                stable_entries[defect_name_wout_charge] = [
-                    sorted_defect_entries[i] for dual in facets for i in dual
-                ]
+                stable_entries[defect_name_wout_charge] = sorted(
+                    {sorted_defect_entries[i] for dual in facets for i in dual},
+                    key=lambda x: (-x.charge_state, x.get_ediff(), len(x.name)),
+                )
                 defect_charge_map[defect_name_wout_charge] = sorted(
                     [entry.charge_state for entry in sorted_defect_entries], reverse=True
                 )
