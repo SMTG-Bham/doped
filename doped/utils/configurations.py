@@ -14,13 +14,23 @@ from pymatgen.analysis.structure_matcher import Structure, StructureMatcher
 from pymatgen.util.typing import PathLike
 
 
-def orient_s2_like_s1(struct1: Structure, struct2: Structure, verbose: bool = False):
+def orient_s2_like_s1(
+    struct1: Structure,
+    struct2: Structure,
+    verbose: bool = False,
+):
     """
-    Re-orient ``struct2`` (**without changing the structure**) to match
-    ``struct1`` as closely as possible, with matching atomic indices as needed
+    Re-orient ``struct2`` to a fully symmetry-equivalent orientation (i.e.
+    **without changing the actual geometry**) to match the orientation of
+    ``struct1`` as closely as possible , with matching atomic indices as needed
     for VASP NEB calculations and other structural transformation analyses
-    (e.g. CC diagrams via ``nonrad``, ``CarrierCapture.jl`` etc.).
+    (e.g. configuration coordinate (CC) diagrams via ``nonrad``,
+    ``CarrierCapture.jl`` etc.).
 
+    This corresponds to minimising the root-mean-square displacement from
+
+    the shortest _linear_ path to transform from ``struct1`` to a
+    symmetry-equivalent definition of ``struct2``)... (TODO)
     Uses the ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``,
     but extended to ensure the correct atomic indices matching and lattice
     vector definitions.
@@ -41,6 +51,8 @@ def orient_s2_like_s1(struct1: Structure, struct2: Structure, verbose: bool = Fa
     Returns:
         Structure:
         ``struct2`` re-oriented to match ``struct1`` as closely as possible.
+
+        # TODO: Option to return RMSD, just displacement, anything else?
     """
     if abs(struct1.volume - struct2.volume) > 1:
         warnings.warn(
@@ -107,14 +119,14 @@ get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
 def get_path_structures(
     struct1: Structure,
     struct2: Structure,
-    n_images: Union[int, list] = 7,
+    n_images: Union[int, np.ndarray, list[float]] = 7,
     displacements: Optional[Union[np.ndarray, list[float]]] = None,
     displacements2: Optional[Union[np.ndarray, list[float]]] = None,
 ) -> Union[dict[str, Structure], tuple[dict[str, Structure], dict[str, Structure]]]:
     """
     Generate a series of interpolated structures along the linear path between
-    ``struct1`` and ``struct2``, typically for use in NEB calculations or CC
-    diagrams.
+    ``struct1`` and ``struct2``, typically for use in NEB calculations or
+    configuration coordinate (CC) diagrams.
 
     Structures are output as a dictionary with keys corresponding to either
     the index of the interpolated structure (0-indexed; ``00``, ``01`` etc
@@ -130,8 +142,14 @@ def get_path_structures(
     tutorials. This is also desirable for CC diagrams, as the atomic indices
     are assumed to match for many parsing and plotting functions (e.g. in
     ``nonrad`` and ``CarrierCapture.jl``), but is not strictly necessary.
+    If the input structures are detected to be different
+    (symmetry-inequivalent) geometries (e.g. not a simple defect migration
+    between two symmetry-equivalent sites), but have mis-matching orientations/
+    positions (such that they do not correspond to the shortest linear path
+    between them), a warning will be raised. See the ``doped`` configuration
+    coordinate / NEB path generation tutorial for a deeper explanation.
 
-    If only ``n_images`` is set (and ``displacements`` is thus ``None``),
+    If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is generated (in other words,
     assuming a standard NEB/PES calculation is being performed). If
     ``displacements`` (and possibly ``displacements2``) is set, then two sets
@@ -162,8 +180,7 @@ def get_path_structures(
             then the same set of displacements is used for both sets of
             interpolated structures. Default: ``None``
     """
-    neb = displacements is None
-    if neb:
+    if displacements is None:
         disp_1 = struct1.interpolate(
             struct2, n_images, interpolate_lattices=True, pbc=True, autosort_tol=1.2
         )
@@ -172,12 +189,13 @@ def get_path_structures(
             displacements = n_images  # displacement magnitudes provided instead of n_images
 
     else:
+        displacements2 = displacements2 if displacements2 is not None else displacements
         disp_1 = struct1.interpolate(
-            struct2, displacements or n_images, interpolate_lattices=True, pbc=True, autosort_tol=1.2
+            struct2, displacements, interpolate_lattices=True, pbc=True, autosort_tol=1.2
         )
         disp_2 = struct2.interpolate(
             struct1,
-            displacements2 or displacements or n_images,
+            displacements2,
             interpolate_lattices=True,
             pbc=True,
             autosort_tol=1.2,
@@ -187,17 +205,91 @@ def get_path_structures(
     disp_2_dict: dict[str, Structure] = {}
     for structs_disps_dict_tuple in [
         (disp_1, displacements, disp_1_dict),
-        (disp_2, displacements2 or displacements, disp_2_dict),
+        (disp_2, displacements2, disp_2_dict),
     ]:
         structs, disps, disp_dict = structs_disps_dict_tuple
         if structs is None:
             continue  # NEB, only one directory written
+        if disps is not None:
+            disps = _smart_round(disps)
 
         for i, struct in enumerate(structs):
             key = f"0{i}" if displacements is None else f"delQ_{disps[i]}"  # type: ignore
             disp_dict[key] = struct
 
-    return disp_1_dict if neb else disp_1_dict, disp_2_dict
+    return disp_1_dict, disp_2_dict if disp_2_dict else disp_1_dict
+
+
+def _smart_round(
+    numbers: Union[float, list[float], np.ndarray[float]],
+    tol: float = 1e-5,
+    return_decimals: bool = False,
+    consistent_decimals: bool = True,
+) -> Union[float, list[float], np.ndarray[float]]:
+    """
+    Custom rounding function that rounds the input number(s) to the lowest
+    number of decimals which gives the same numerical value as the input, to
+    within a specified tolerance value.
+
+    For example, 0.5000001 with tol = 1e-5 (default) would be
+    rounded to 0.5, but 0.5780001 would be rounded to 0.578.
+
+    Primary use case is for rounding float values returned by
+    ``numpy`` which may be e.g. 0.50000001 instead of 0.5.
+
+    If a list or array of numbers is provided (rather than a single
+    float), then rounding is applied to each element in the
+    list/array. If ``consistent_decimals=True`` (default), then the
+    same number of decimals is used for rounding for all elements,
+    where this number of decimals is the minimum required for
+    rounding to satisfy the tolerance for all elements.
+
+    Args:
+        numbers (float, list[float], np.ndarray[float]):
+            The number(s) to round.
+        tol (float): The tolerance value for rounding.
+            Default: ``1e-5``
+        return_decimals (bool):
+            If ``True``, also returns the identified appropriate
+            number of decimals to round to. Default: ``False``.
+        consistent_decimals (bool):
+            If ``True``, the same number of decimals is used for
+            rounding for all elements in the input list/array,
+            where this number of decimals is the minimum required
+            for rounding to satisfy the tolerance for all elements.
+            Default: ``True``
+
+    Returns:
+        Union[float, list[float], np.ndarray[float]]:
+            The rounded number(s). If ``return_decimals=True``, then
+            a tuple is returned with the rounded number(s) and the
+            number of decimals used for rounding.
+    """
+
+    def _smart_round_number(number: float, tol: float, return_decimals: bool):
+        for decimals in range(20):
+            rounded_number = round(number, decimals)
+            if abs(rounded_number - number) < tol:
+                return (rounded_number, decimals) if return_decimals else rounded_number
+
+        raise ValueError("Failed to round number to within tolerance???")
+
+    if isinstance(numbers, float):
+        return _smart_round_number(numbers, tol, return_decimals)
+
+    # list / array:
+    rounded_list = [
+        _smart_round_number(number, tol, return_decimals or consistent_decimals) for number in numbers
+    ]
+
+    if not consistent_decimals:
+        if isinstance(numbers, list):
+            return rounded_list
+        return np.array(rounded_list)
+
+    decimals = max([decimals for _, decimals in rounded_list])
+    rounded_list = [round(number, decimals) for number in numbers]
+    return (rounded_list, decimals) if return_decimals else rounded_list
 
 
 def write_path_structures(
@@ -210,8 +302,8 @@ def write_path_structures(
 ):
     """
     Generate a series of interpolated structures along the linear path between
-    ``struct1`` and ``struct2``, typically for use in NEB calculations or CC
-    diagrams, and write to folders.
+    ``struct1`` and ``struct2``, typically for use in NEB calculations or
+    configuration coordinate (CC) diagrams, and write to folders.
 
     Folder names are labelled by the index of the interpolated structure
     (0-indexed; ``00``, ``01`` etc as for VASP NEB calculations) or the
@@ -226,8 +318,15 @@ def write_path_structures(
     tutorials. This is also desirable for CC diagrams, as the atomic indices
     are assumed to match for many parsing and plotting functions (e.g. in
     ``nonrad`` and ``CarrierCapture.jl``), but is not strictly necessary.
+    If the input structures are detected to be different
+    (symmetry-inequivalent) geometries (e.g. not a simple defect migration
+    between two symmetry-equivalent sites), but have mis-matching orientations/
+    positions (such that they do not correspond to the shortest linear path
+    between them), a warning will be raised. See the ``doped`` configuration
+    coordinate / NEB path generation tutorial for a deeper explanation.
+    (TODO)
 
-    If only ``n_images`` is set (and ``displacements`` is thus ``None``),
+    If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is written (in other words,
     assuming a standard NEB/PES calculation is being performed). If
     ``displacements`` (and possibly ``displacements2``) is set, then two sets
@@ -280,3 +379,4 @@ def write_path_structures(
 # displacements = np.linspace(-0.4, 0.4, 9)
 #     displacements = np.append(np.array([-1.5, -1.2, -1.0, -0.8, -0.6]), displacements)
 #     displacements = np.append(displacements, np.array([0.6, 0.8, 1.0, 1.2, 1.5]))
+# TODO: Re-orient directly in generation functions, but with option not to?
