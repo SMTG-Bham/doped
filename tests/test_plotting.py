@@ -400,12 +400,13 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         super().setUp()
         self.CdTe_LZ_thermo_wout_meta = deepcopy(self.orig_CdTe_LZ_thermo_wout_meta)
         self.Se_amalgamated_extrinsic_thermo = deepcopy(self.orig_Se_amalgamated_extrinsic_thermo)
+        self.Bi_Se_thermo = deepcopy(self.orig_Bi_Se_thermo)
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.CdTe_LZ_defect_dict = loadfn(
-            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
+            os.path.join(data_dir, "CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
         cls.orig_CdTe_LZ_thermo_wout_meta = DefectThermodynamics(
             cls.CdTe_LZ_defect_dict, chempots=cls.CdTe_chempots
@@ -414,6 +415,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         cls.orig_Se_amalgamated_extrinsic_thermo = DefectThermodynamics.from_json(
             f"{cls.EXAMPLE_DIR}/Se/Se_Amalgamated_Extrinsic_Thermo.json.gz"
         )
+        cls.orig_Bi_Se_thermo = loadfn(f"{data_dir}/Bi_Se_BiSeI_thermo.json.gz")
 
     def test_plot_limit_no_chempots_error(self):
         with pytest.raises(ValueError) as exc:
@@ -542,9 +544,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
     def test_CdTe_FNV_all_defects_plot_default_old_names(self):
         # Tests naming handling when old/unrecognised defect names are used
-        cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json.gz")
-        )
+        cdte_defect_dict = loadfn(os.path.join(data_dir, "CdTe_defect_dict_old_names.json.gz"))
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         with warnings.catch_warnings(record=True) as w:
             plot = cdte_defect_thermo.plot()
@@ -583,7 +583,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test renaming behaviour when defect entries with the same names are
         provided.
         """
-        defect_dict = loadfn(os.path.join(self.module_path, "data/CdTe_defect_dict_v2.3.json.gz"))
+        defect_dict = loadfn(os.path.join(data_dir, "CdTe_defect_dict_v2.3.json.gz"))
         num_entries = len(defect_dict)
         for defect_entry in defect_dict.values():
             if "Cd_i" in defect_entry.name:
@@ -737,3 +737,30 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test CdTe plotting behaviour with ``include_site_info=True``.
         """
         return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", include_site_info=True)
+
+    @custom_mpl_image_compare(filename="Bi_Se_BiSeI_Se_rich.png")
+    def test_Bi_Se_all_entries_plot(self):
+        """
+        Test plotting all entries in Bi_Se thermo.
+
+        Previously had issue where the colours did not match the appropriate
+        lines.
+        """
+        return self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True)
+
+    @custom_mpl_image_compare(filename="Bi_Se_BiSeI_Se_rich.png")
+    def test_Bi_Se_all_entries_manual_colormap_plot(self):
+        from doped.utils.plotting import ListedColormap, get_colormap
+
+        cmap = get_colormap("tab10")
+        cmap = ListedColormap([(*color, 0.75) for color in cmap.colors])
+        return self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap=cmap)
+
+    @custom_mpl_image_compare(filename="Bi_Se_BiSeI_Se_rich.png")
+    def test_Bi_Se_all_entries_unrecognised_colormap_plot(self):
+        with warnings.catch_warnings(record=True) as w:
+            fig = self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap="Well shiii")
+        print([str(warn.message) for warn in w])
+        assert any("Colormap 'Well shiii' not found in" in str(warn.message) for warn in w)
+        assert any("Defaulting to 'tab10_alpha_0.75' colormap" in str(warn.message) for warn in w)
+        return fig
