@@ -2574,8 +2574,9 @@ class DefectThermodynamics(MSONable):
                 https://matplotlib.org/stable/users/explain/colors/colormaps or from
                 https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
                 colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
-                If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines to plot),
-                ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more than 20 lines).
+                If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
+                lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
+                than 20 lines).
             linestyles (list):
                 Linestyles to use for the formation energy lines, either as a single
                 linestyle (``str``) or list of linestyles (``list[str]``) in the order of
