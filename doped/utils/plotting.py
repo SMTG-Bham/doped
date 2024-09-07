@@ -59,6 +59,8 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
     """
     Get a colormap from a string or a ``Colormap`` object.
 
+    If ``_alpha_X`` in the colormap name, sets the alpha value to X (0-1).
+
     Args:
         colormap (str, matplotlib.colors.Colormap):
             Colormap to use, either as a string (which can be a colormap name
@@ -76,21 +78,32 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
     if colormap is None:
         colormap = default
 
+    alpha = None
     if isinstance(colormap, str):  # get colormap from string
+        if "_alpha_" in colormap:
+            alpha = float(colormap.split("_alpha_")[-1])
+            colormap = colormap.split("_alpha_")[0]
+            if "_alpha_" in default:
+                default = default.split("_alpha_")[0]
+
         # first check if it's a cmcrameri colormap:
         cmap = cmc.cmaps.get(colormap, None)
         if cmap is None:  # if not, check matplotlib colormaps
             cmap = colormaps.get(colormap, None)
-            if cmap is None:
-                warnings.warn(
-                    f"Colormap '{colormap}' not found in `cmcrameri` "
-                    f"(https://www.fabiocrameri.ch/colourmaps) or `matplotlib` "
-                    f"(https://matplotlib.org/stable/users/explain/colors/colormaps) colormaps. "
-                    f"Defaulting to '{default}' colormap."
-                )
-                cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
+        if cmap is None:
+            warnings.warn(
+                f"Colormap '{colormap}' not found in `cmcrameri` "
+                f"(https://www.fabiocrameri.ch/colourmaps) or `matplotlib` "
+                f"(https://matplotlib.org/stable/users/explain/colors/colormaps) colormaps. "
+                f"Defaulting to '{default}' colormap."
+            )
+            cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
 
         colormap = cmap
+
+    colormap.colors = (
+        colormap.colors if alpha is None else [color[:3] + (alpha,) for color in colormap.colors]
+    )
 
     return colormap
 
@@ -122,19 +135,19 @@ def get_linestyles(linestyles: Union[str, list[str]] = "-", num_lines: int = 1) 
 def _get_TLD_plot_setup(colormap, linestyles, xy):
     # future updated colour handling (based on defect type etc) should remove the need for this:
     num_lines = len(xy)
-    if num_lines <= 8:
-        default = "Dark2"
+    if num_lines <= 10:
+        default = "tab10_alpha_0.75"
     elif num_lines <= 20:
         default = "tab20"
     else:
         default = "batlow"  # set to colormap if not enough colours in listed colormaps
 
     cmap = get_colormap(colormap, default=default)
-    if isinstance(cmap, ListedColormap) and len(cmap.colors) < 50:
+    if isinstance(cmap, ListedColormap) and len(cmap.colors) < 150:  # cmcrameri returned with 256 colors
         # ensure number of colors matches number of lines:
-        colors = (
-            cmap.colors * (num_lines // len(cmap.colors)) + cmap.colors[: num_lines % len(cmap.colors)]
-        )
+        colors = list(cmap.colors) * (num_lines // len(cmap.colors))
+        if num_lines % len(cmap.colors) != 0:
+            colors += list(cmap.colors[: num_lines % len(cmap.colors)])
     else:
         colors = cmap(np.linspace(0, 1, num_lines))
 
@@ -985,8 +998,9 @@ def _TLD_plot(
             https://matplotlib.org/stable/users/explain/colors/colormaps or from
             https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
             colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
-            If ``None`` (default), uses ``Dark2`` (if 8 or fewer lines to plot),
-            ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more than 20 lines).
+            If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
+            lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
+            than 20 lines).
         linestyles (list):
             Linestyles to use for the formation energy lines, either as a single
             linestyle (``str``) or list of linestyles (``list[str]``) in the order of
@@ -1072,12 +1086,13 @@ def _TLD_plot(
                 x_trans,
                 y_trans,
                 marker="o",
-                color=colors[cnt],
-                markeredgecolor=colors[cnt],
+                color="k" if all_entries is True else colors[cnt],
+                markeredgecolor="k" if all_entries is True else colors[cnt],
                 lw=styled_linewidth * 1.2,
                 markersize=styled_markersize * (4 / 6),
                 fillstyle="full",
                 linestyle="",
+                alpha=0.5 if all_entries is True else 1,
             )
             if auto_labels:
                 for index, coords in enumerate(zip(x_trans, y_trans)):
@@ -1094,11 +1109,7 @@ def _TLD_plot(
 
     ax.legend(
         _get_legend_txt(
-            (
-                [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
-                if all_entries is True
-                else defect_names_for_legend
-            ),
+            defect_names_for_legend,
             all_entries=all_entries is True,
             include_site_info=include_site_info,
         ),
