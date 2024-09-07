@@ -762,5 +762,5 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             fig = self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap="Well shiii")
         print([str(warn.message) for warn in w])
         assert any("Colormap 'Well shiii' not found in" in str(warn.message) for warn in w)
-        assert any("Defaulting to 'tab10_alpha_0.75' colormap" in str(warn.message) for warn in w)
+        assert any("Defaulting to 'tab10' colormap" in str(warn.message) for warn in w)
         return fig
