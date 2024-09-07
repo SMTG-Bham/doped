@@ -1104,8 +1104,8 @@ class DefectThermodynamics(MSONable):
     @property
     def defect_entries(self):
         """
-        Get the list of parsed DefectEntry objects in the DefectThermodynamics
-        analysis object.
+        Get the list of parsed ``DefectEntry`` objects in the
+        ``DefectThermodynamics`` analysis object.
         """
         return self._defect_entries
 
@@ -1118,6 +1118,15 @@ class DefectThermodynamics(MSONable):
         """
         self._defect_entries = input_defect_entries
         self._sort_parse_and_check_entries()
+
+    @property
+    def defect_dict(self):
+        """
+        Get a dictionary of parsed ```DefectEntry`` objects in the
+        ``DefectThermodynamics`` analysis object, with the defect names as
+        keys.
+        """
+        return {entry.name: entry for entry in self.defect_entries}
 
     @property
     def chempots(self):
