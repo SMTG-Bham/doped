@@ -19,7 +19,6 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
-from pymatgen.util.coord import pbc_diff
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
@@ -305,7 +304,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_arg_idx = find_nearest_coords(
                 bulk_new_species_coords[:, None],
                 defect_new_species_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="substitution",
                 searched_structure="defect",
             )
@@ -324,7 +323,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         bulk_site_arg_idx = find_nearest_coords(
             bulk_old_species_coords,
             defect_coords,
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type="substitution",
             searched_structure="bulk",
         )
@@ -352,7 +351,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         bulk_site_arg_idx = find_nearest_coords(
             bulk_old_species_coords[:, None],
             defect_old_species_coords,
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type="vacancy",
             searched_structure="bulk",
         )
@@ -383,7 +382,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_arg_idx = find_nearest_coords(
                 bulk_new_species_coords[:, None],
                 defect_new_species_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="interstitial",
                 searched_structure="defect",
             )
@@ -445,7 +444,7 @@ def get_coords_and_idx_of_species(structure, species_name):
 def find_nearest_coords(
     bulk_coords,
     target_coords,
-    bulk_lattice_matrix,
+    bulk_lattice,
     defect_type="substitution",
     searched_structure="bulk",
     unique_tolerance=1,
@@ -453,9 +452,10 @@ def find_nearest_coords(
     """
     Find the nearest coords in bulk_coords to target_coords.
     """
-    distance_matrix = np.linalg.norm(
-        np.dot(pbc_diff(bulk_coords, target_coords), bulk_lattice_matrix), axis=-1
-    )
+    distance_matrix = bulk_lattice.get_all_distances(
+        bulk_coords,
+        target_coords,
+    )[:, 0]
     site_matches = distance_matrix.argmin(axis=0 if defect_type == "vacancy" else -1)
 
     def _site_matching_failure_error(defect_type, searched_structure):
@@ -506,7 +506,7 @@ def _remove_and_insert_species_from_bulk(
         bulk_site_idx = find_nearest_coords(
             bulk_coords,
             coords[site_arg_idx],
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type=defect_type,
             searched_structure=searched_structure,
             unique_tolerance=unique_tolerance,
@@ -570,7 +570,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
             bulk_site_arg_idx = find_nearest_coords(  # get closest site in bulk to defect site
                 bulk_species_coord_dict[site.specie.symbol],
                 site.frac_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="substitution",
                 searched_structure="bulk",
             )
@@ -1047,13 +1047,9 @@ def get_interstitial_site_and_orientational_degeneracy(
         ]
     )
 
-    distance_matrix = np.linalg.norm(
-        np.dot(
-            pbc_diff(defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array),
-            _get_bulk_supercell(interstitial_defect_entry).lattice.matrix,
-        ),
-        axis=-1,
-    )
+    distance_matrix = _get_bulk_supercell(interstitial_defect_entry).lattice.get_all_distances(
+        defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array
+    )[:, 0]
 
     return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
 

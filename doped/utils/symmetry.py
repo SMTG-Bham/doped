@@ -15,7 +15,6 @@ from pymatgen.core.structure import Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import pbc_diff
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
@@ -248,12 +247,8 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
         # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
         if (
             not x_sites
-            or np.linalg.norm(
-                np.dot(
-                    pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
-                    struct.lattice.matrix,
-                ),
-                axis=-1,
+            or struct.lattice.get_all_distances(
+                np.array([site.frac_coords for site in x_sites]), x_site.frac_coords
             ).min()
             > dist_tol
         ):
@@ -699,7 +694,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         transformation_matrix = np.dot(
             structure.lattice.matrix, np.linalg.inv(new_structure.lattice.matrix)
         )
-        if not np.allclose(transformation_matrix, np.rint(transformation_matrix)):
+        if not np.allclose(transformation_matrix, np.rint(transformation_matrix), atol=1e-5):
             raise ValueError(
                 "Transformation matrix for clean/reduced structure could not be found! If you are seeing "
                 "this bug, please notify the `doped` developers"
