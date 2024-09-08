@@ -44,6 +44,7 @@ from doped.core import (
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
+from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
@@ -83,32 +84,53 @@ def get_defect_entry_from_defect(
     defect_supercell: Structure,
     charge_state: int,
     dummy_species: DummySpecies = _dummy_species,
+    sc_defect_frac_coords: Optional[np.ndarray] = None,
 ):
     """
-    Generate doped DefectEntry object from a doped Defect object.
+    Generate a ``doped`` ``DefectEntry`` object from a ``doped`` ``Defect``
+    object.
 
-    This is used to describe a Defect with a specified simulation cell.
+    This is used to describe a ``Defect`` with a specified simulation cell.
+    To set the ``sc_defect_frac_coords`` attribute for ``DefectEntry``
+    (fractional coordinates of the defect in the ``defect_supercell``),
+    either ``dummy_species`` must be present in the ``defect_supercell``
+    (which is taken as the defect site), or ``sc_defect_frac_coords``
+    must be set.
 
     Args:
-        defect (Defect): doped/pymatgen Defect object.
+        defect (Defect): ``doped``/``pymatgen`` ``Defect`` object.
         defect_supercell (Structure): Defect supercell structure.
         charge_state (int): Charge state of the defect.
-        dummy_species (DummySpecies): Dummy species used to keep track of defect
+        dummy_species (DummySpecies):
+            Dummy species present in the ``defect_supercell`` structure,
+            used to determine ``sc_defect_frac_coords``. If not found
+            and ``sc_defect_frac_coords`` is not set,
+            ``DefectEntry.sc_defect_frac_coords`` is set to ``None``.
+            Default is ``DummySpecies("X")``.
+        sc_defect_frac_coords (np.ndarray):
+            Fractional coordinates of the defect in the defect supercell.
+            If not set and ``dummy_species`` is not found in the
+            ``defect_supercell``, ``DefectEntry.sc_defect_frac_coords``
+            is set to ``None``.
+            Default is None.
 
     Returns:
-        DefectEntry: doped DefectEntry object.
+        DefectEntry: ``doped`` ``DefectEntry`` object.
     """
     defect_entry_structure = (
         defect_supercell.copy()
     )  # duplicate the structure so we don't edit the input Structure
 
-    # Dummy species (used to keep track of the defect coords in the supercell)
-    # Find its fractional coordinates & remove it from the supercell
-    dummy_site = next(
-        site for site in defect_entry_structure if (site.specie.symbol == dummy_species.symbol)
-    )
-    sc_defect_frac_coords = dummy_site.frac_coords
-    defect_entry_structure.remove(dummy_site)
+    if sc_defect_frac_coords is None:
+        # Dummy species (used to keep track of the defect coords in the supercell)
+        # Find its fractional coordinates & remove it from the supercell
+        dummy_sites = [
+            site for site in defect_entry_structure if site.specie.symbol == dummy_species.symbol
+        ]
+        if dummy_sites:
+            dummy_site = next(iter(dummy_sites))
+            sc_defect_frac_coords = dummy_site.frac_coords
+            defect_entry_structure.remove(dummy_site)
 
     computed_structure_entry = ComputedStructureEntry(
         structure=defect_entry_structure,
@@ -339,7 +361,7 @@ def _get_neutral_defect_entry(
     conventional_structure,
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
-    symm_ops,
+    conv_symm_ops,
 ):
     (
         dummy_defect_supercell,
@@ -370,7 +392,7 @@ def _get_neutral_defect_entry(
         wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
             symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
             conventional_structure,
-            symm_ops,
+            conv_symm_ops,
             equiv_sites=True,
         )
         conv_cell_coord_list = [
@@ -1198,6 +1220,8 @@ class DefectsGenerator(MSONable):
             conventional_structure (Structure): Conventional cell structure of the
                 host according to the Bilbao Crystallographic Server (BCS) definition,
                 used to determine defect site Wyckoff labels and multiplicities.
+            prim_interstitial_coords (list):
+                List of interstitial coordinates in the primitive cell structure.
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
@@ -1251,7 +1275,7 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = symmetry._get_sga(self.structure)
+            sga = symmetry.get_sga(self.structure)
             if sga.get_space_group_number() == 1:  # print sanity check message
                 print(
                     "Note that the detected symmetry of the input structure is P1 (i.e. only "
@@ -1307,7 +1331,6 @@ class DefectsGenerator(MSONable):
 
                 # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
                 # doped supercell, so use input structure:
-
                 (
                     self.primitive_structure,
                     self.supercell_matrix,
@@ -1338,6 +1361,9 @@ class DefectsGenerator(MSONable):
             self.bulk_supercell = Structure.from_dict(
                 symmetry._round_floats(self.bulk_supercell.as_dict())
             )
+            if not generate_supercell:  # re-order bulk supercell to match that of input supercell
+                self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
+
             self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
 
             # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
@@ -1466,7 +1492,6 @@ class DefectsGenerator(MSONable):
                 pbar.set_description("Generating interstitials")
                 if self.interstitial_coords:
                     # map interstitial coords to primitive structure, and get multiplicities
-                    sga = symmetry._get_sga(self.structure)
                     symm_ops = sga.get_symmetry_operations(cartesian=False)
                     self.prim_interstitial_coords = []
 
@@ -1640,8 +1665,8 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
             )
 
-            sga = symmetry._get_sga(self.conventional_structure)
-            symm_ops = sga.get_symmetry_operations(cartesian=False)
+            conv_sga = symmetry.get_sga(self.conventional_structure)
+            conv_symm_ops = conv_sga.get_symmetry_operations(cartesian=False)
 
             # process defects into defect entries:
             partial_func = partial(
@@ -1652,7 +1677,7 @@ class DefectsGenerator(MSONable):
                 conventional_structure=self.conventional_structure,
                 _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict=wyckoff_label_dict,
-                symm_ops=symm_ops,
+                conv_symm_ops=conv_symm_ops,
             )
 
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
@@ -1703,7 +1728,7 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            prim_sga = symmetry._get_sga(self.primitive_structure)
+            prim_sga = symmetry.get_sga(self.primitive_structure)
             prim_symm_ops = prim_sga.get_symmetry_operations(cartesian=False)
             named_defect_dict = name_defect_entries(
                 defect_entry_list, element_list=self._element_list, symm_ops=prim_symm_ops

@@ -677,7 +677,7 @@ def get_site_mapping_indices(
     return min_dist_with_index
 
 
-def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0) -> Structure:
     """
     Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
     the atoms in s2_structure.
@@ -696,6 +696,19 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     warning should be thrown anyway during parsing). Currently this function
     is no longer used, but if it is reintroduced at any point, this point should
     be noted!
+
+    Args:
+        s1_structure (Structure):
+            The input structure.
+        s2_structure (Structure):
+            The template structure.
+        threshold (float):
+            If the distance between a pair of matched sites is larger than this,
+            then a warning will be thrown. Default is 5.0 Å.
+
+    Returns:
+        Structure:
+            The reordered structure.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)

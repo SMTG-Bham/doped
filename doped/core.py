@@ -1800,7 +1800,7 @@ class Defect(core.Defect):
     def get_supercell_structure(
         self,
         sc_mat: Optional[np.ndarray] = None,
-        target_frac_coords: Optional[np.ndarray] = None,
+        target_frac_coords: Optional[Union[np.ndarray[float], list[float]]] = None,
         return_sites: bool = False,
         min_image_distance: float = 10.0,  # same as current ``pymatgen`` default
         min_atoms: int = 50,  # different to current ``pymatgen`` default (80)
@@ -1830,7 +1830,7 @@ class Defect(core.Defect):
                 from ``doped.generation``.
             target_frac_coords (3x1 matrix):
                 If set, the defect will be placed at the closest equivalent site to
-                these fractional coordinates (using self.equivalent_sites).
+                these fractional coordinates (using ``self.equivalent_sites``).
             return_sites (bool):
                 If True, returns a tuple of the defect supercell, defect supercell
                 site and list of equivalent supercell sites.

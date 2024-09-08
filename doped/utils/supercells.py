@@ -10,7 +10,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tqdm import tqdm
 
-from doped.utils.symmetry import _get_sga, get_clean_structure
+from doped.utils.symmetry import get_clean_structure, get_sga
 
 
 def get_min_image_distance(structure: Structure) -> float:
@@ -321,7 +321,7 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     # Note: Initial idea was also to use cell symmetry operations to sort, but this is far too slow, and
     #  in theory should be accounted for with the other (min dist, cubic cell metric) criteria anyway.
     # struct = Structure(Lattice(P), ["H"], [[0, 0, 0]])
-    # sga = _get_sga(struct)
+    # sga = get_sga(struct)
     # symm_ops = len(sga.get_symmetry_operations())
 
     return (
@@ -466,7 +466,7 @@ def _min_sum_off_diagonals(prim_struct: Structure, supercell_matrix: np.ndarray)
     """
     num_off_diagonals_prim = np.sum(np.abs(supercell_matrix - np.diag(np.diag(supercell_matrix))))
 
-    sga = _get_sga(prim_struct)
+    sga = get_sga(prim_struct)
     conv_supercell_matrix = np.matmul(
         supercell_matrix, sga.get_conventional_to_primitive_transformation_matrix()
     )
@@ -577,7 +577,10 @@ def find_ideal_supercell(
         )
 
         min_image_dists = np.array(
-            [_get_min_image_distance_from_matrix(cell_matrix) for cell_matrix in unique_cell_matrices]
+            [
+                _get_min_image_distance_from_matrix(cell_matrix, normalised=True)
+                for cell_matrix in unique_cell_matrices
+            ]
         )  # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
         # so if the efficiency of this function was the bottleneck we could rank first with the fixed
         # cubic-cell metric, then subselect and apply this function, but at present this is not the
