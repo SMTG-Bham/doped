@@ -56,7 +56,7 @@ from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
     _get_all_equiv_sites,
-    _get_sga,
+    get_sga,
     point_symmetry_from_defect_entry,
 )
 
@@ -264,7 +264,7 @@ def defect_from_structures(
         if def_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            if bulk_voronoi_node_dict is None:  # first time parsing
+            if not bulk_voronoi_node_dict:  # first time parsing
                 from shakenbreak.input import _get_voronoi_nodes
 
                 voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
@@ -1822,7 +1822,7 @@ class DefectParser:
             degeneracy_factors=degeneracy_factors,
         )
 
-        bulk_supercell_symm_ops = _get_sga(
+        bulk_supercell_symm_ops = get_sga(
             defect_entry.defect.structure, symprec=0.01
         ).get_symmetry_operations()
         if defect.defect_type == core.DefectType.Interstitial:
