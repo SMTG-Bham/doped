@@ -51,11 +51,11 @@ def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
     return np.dot(b, normalised_a) * normalised_a
 
 
-def _get_min_image_distance_from_matrix(matrix: np.ndarray) -> float:
+def _get_min_image_distance_from_matrix(matrix: np.ndarray, normalised: bool = False) -> float:
     """
     Get the minimum image distance (i.e. minimum distance between periodic
     images of sites in a lattice) for the input lattice matrix, using the
-    pymatgen get_points_in_sphere() Lattice method.
+    ``pymatgen`` ``get_points_in_sphere()`` ``Lattice`` method.
 
     This is also known as the Shortest Vector Problem (SVP), and has
     no known analytical solution, requiring enumeration type approaches.
@@ -63,22 +63,25 @@ def _get_min_image_distance_from_matrix(matrix: np.ndarray) -> float:
 
     Args:
         matrix (np.ndarray): Lattice matrix.
+        normalised (bool):
+            If the cell matrix volume is normalised (to 1). This is done in
+            the ``doped`` supercell generation functions, and boosts
+            efficiency by skipping volume calculation.
+            Default = False.
     """
     # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
     # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
     # while of course the minimum possible min image distance is the minimum cell vector length
-
     lattice = Lattice(matrix)
-    eff_cubic_length = lattice.volume ** (1 / 3)
+    volume = 1 if normalised else lattice.volume
+    eff_cubic_length = volume ** (1 / 3)
     max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
 
-    zipped_fcoords_dist_idx_image = list(
-        lattice.get_points_in_sphere([[0, 0, 0]], [0, 0, 0], r=max_min_dist * 1.01)
+    _fcoords, dists, _idxs, _images = lattice.get_points_in_sphere(
+        np.array([[0, 0, 0]]), [0, 0, 0], r=max_min_dist * 1.01, zip_results=False
     )
-
-    # sort zipped list by dist:
-    zipped_fcoords_dist_idx_image.sort(key=lambda x: x[1])
-    min_dist = zipped_fcoords_dist_idx_image[1][1]  # second in list is min image (first is itself, zero)
+    dists.sort()
+    min_dist = dists[1]  # second in list is min image (first is itself, zero)
     if min_dist <= 0:
         raise ValueError(
             "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
