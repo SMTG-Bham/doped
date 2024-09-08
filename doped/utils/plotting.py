@@ -83,14 +83,16 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
         if "_alpha_" in colormap:
             alpha = float(colormap.split("_alpha_")[-1])
             colormap = colormap.split("_alpha_")[0]
-            if "_alpha_" in default:
-                default = default.split("_alpha_")[0]
 
         # first check if it's a cmcrameri colormap:
         cmap = cmc.cmaps.get(colormap, None)
         if cmap is None:  # if not, check matplotlib colormaps
             cmap = colormaps.get(colormap, None)
         if cmap is None:
+            if "_alpha_" in default:
+                alpha = float(default.split("_alpha_")[-1])
+                default = default.split("_alpha_")[0]
+
             warnings.warn(
                 f"Colormap '{colormap}' not found in `cmcrameri` "
                 f"(https://www.fabiocrameri.ch/colourmaps) or `matplotlib` "
