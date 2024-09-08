@@ -114,6 +114,8 @@ def _frac_coords_sort_func(coords):
     between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
     x, y and z.
     """
+    if coords is None:
+        return (1e10, 1e10, 1e10, 1e10, 1e10)
     coords_for_sorting = _vectorized_custom_round(
         np.mod(_vectorized_custom_round(coords), 1)
     )  # to unit cell
@@ -902,8 +904,7 @@ def get_conv_cell_site(defect_entry):
     bulk_prim_structure.remove_oxidation_states()  # adding oxidation states adds the
     # # deprecated 'properties' attribute with -> {"spin": None}, giving a deprecation warning
 
-    prim_struct_with_X = defect_entry.defect.structure.copy()
-    prim_struct_with_X.remove_oxidation_states()
+    prim_struct_with_X = bulk_prim_structure.copy()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
     sga = get_sga(bulk_prim_structure)
@@ -911,6 +912,13 @@ def get_conv_cell_site(defect_entry):
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
     s2_like_s1 = sm.get_s2_like_s1(sga_prim_struct, prim_struct_with_X)
+    if not s2_like_s1:
+        warnings.warn(
+            "The transformation from the DefectEntry primitive cell to the spglib primitive "
+            "cell could not be determined, and so the corresponding conventional cell site "
+            "cannot be identified."
+        )
+        return None
     s2_really_like_s1 = Structure.from_sites(
         [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
             PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure

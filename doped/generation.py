@@ -412,14 +412,19 @@ def _get_neutral_defect_entry(
                 np.mod(symmetry._vectorized_custom_round(conv_cell_coord_list), 1)
             ).tolist()
         except Exception as e2:
-            raise e2 from e
+            warnings.warn(
+                f"Conventional cell site (and thus Wyckoff label) could not be determined! Got "
+                f"errors: {e!r}\nand: {e2!r}"
+            )
+            wyckoff_label = "N/A"
+            conv_cell_coord_list = []
 
     # sort array with symmetry._frac_coords_sort_func:
     conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
 
     neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
     neutral_defect_entry.conv_cell_frac_coords = neutral_defect_entry.defect.conv_cell_frac_coords = (
-        conv_cell_coord_list[0]
+        None if not conv_cell_coord_list else conv_cell_coord_list[0]
     )  # ideal/cleanest coords
     neutral_defect_entry.equiv_conv_cell_frac_coords = (
         neutral_defect_entry.defect.equiv_conv_cell_frac_coords
@@ -1843,7 +1848,11 @@ class DefectsGenerator(MSONable):
                         for name, entry in self.defect_entries.items()
                         if name.startswith(defect_name)
                     )
-                    frac_coords_string = ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
+                    frac_coords_string = (
+                        "N/A"
+                        if defect_entry.conv_cell_frac_coords is None
+                        else ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
+                    )
                     row = [
                         defect_name,
                         charges,
