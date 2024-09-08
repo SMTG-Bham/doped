@@ -23,7 +23,7 @@ from pymatgen.core.composition import Composition
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
 from doped.utils.parsing import get_vasprun
-from doped.utils.symmetry import _get_sga, point_symmetry
+from doped.utils.symmetry import get_sga, point_symmetry
 
 # for pytest-mpl:
 module_path = os.path.dirname(os.path.abspath(__file__))
@@ -1723,7 +1723,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             f"{row[0]}_{int(row[1])}": {"bulk site symmetry": row[2], "relaxed point symmetry": row[3]}
             for row in cdte_sym_degen_lists
         }
-        bulk_symm_ops = _get_sga(
+        bulk_symm_ops = get_sga(
             cdte_defect_thermo.defect_entries[0].bulk_supercell
         ).get_symmetry_operations()
         skipped = 0

@@ -126,9 +126,9 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
-def _get_sga(struct, symprec=0.01):
+def get_sga(struct, symprec=0.01):
     """
-    Get a SpacegroupAnalyzer object of the input structure, dynamically
+    Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting symprec if needs be.
     """
     sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
@@ -227,7 +227,7 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
-    return sum(i for i in get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
+    return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
 
 
 def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
@@ -235,7 +235,7 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
     Get all equivalent sites of the input fractional coordinates in struct.
     """
     if symm_ops is None:
-        sga = _get_sga(struct, symprec=symprec)
+        sga = get_sga(struct, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
@@ -271,22 +271,22 @@ def _get_symm_dataset_of_struc_with_all_equiv_sites(
 def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
     """
     Add all sites in unique_sites to a ``copy`` of struct and return
-    SpacegroupAnalyzer of this new structure.
+    ``SpacegroupAnalyzer`` of this new structure.
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
-    return _get_sga(struct_with_all_X, symprec=symprec)
+    return get_sga(struct_with_all_X, symprec=symprec)
 
 
 def _get_equiv_frac_coords_in_primitive(
     frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True, dist_tol=0.01
 ):
     """
-    Get an equivalent fractional coordinates of frac_coords from a supercell,
-    in the primitive cell.
+    Get an equivalent fractional coordinates of ``frac_coords`` from a
+    supercell, in the primitive cell.
 
     Also returns a list of equivalent fractional coords in the primitive cell
-    if equiv_coords is True.
+    if ``equiv_coords`` is ``True``.
     """
     unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops, dist_tol=dist_tol)
     sga_with_all_X = _get_sga_with_all_X(supercell, unique_sites)
@@ -295,6 +295,10 @@ def _get_equiv_frac_coords_in_primitive(
 
     # ensure matched to primitive structure:
     rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+    if rotated_struct is None:
+        warnings.warn("Could not find a mapping between the primitive and supercell structures!")
+        return None, None if equiv_coords else None
+
     primitive_with_all_X = rotated_struct * matrix
 
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
@@ -331,8 +335,13 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     Rotates the input prim_struct to match the target_struct orientation, and
     returns the supercell matrix to convert from the rotated prim_struct to the
     target_struct.
+
+    Returns ``(None, None)`` if no mapping is found.
     """
     possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
+    if not possible_mappings:
+        return None, None
+
     mapping = next(
         iter(  # get possible mappings, then sort by R*S, S, R, then return first
             sorted(
@@ -401,6 +410,8 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
     The supercell matrix is defined to be T in ``T*P = S`` where P and S
     are the primitive and supercell lattice matrices respectively.
     Equivalently, multiplying ``prim_struct * T`` will give the target_struct.
+    In ``pymatgen``, this requires the output transformation matrix to be
+    integer.
 
     First tries to determine a simple (integer) transformation matrix with no
     basis set rotation required. If that fails, then defaults to using
@@ -436,29 +447,44 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             return prim_struct, np.rint(transformation_matrix)
 
         except ValueError:  # if non-integer transformation matrix
-            prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(
+            attempt_prim_struct, attempt_transformation_matrix = _rotate_and_get_supercell_matrix(
                 prim_struct, target_struct
             )
+            if attempt_prim_struct:  # otherwise failed, stick with original T matrix
+                prim_struct = attempt_prim_struct
+                transformation_matrix = attempt_transformation_matrix
 
         if np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
             return prim_struct, np.rint(transformation_matrix)
 
         return prim_struct, transformation_matrix
 
-    sga = sga or _get_sga(prim_struct, symprec=symprec)
+    sga = sga or get_sga(prim_struct, symprec=symprec)
     rms_dists_w_candidate_prim_structs_and_T_matrices = []
     candidate_prim_structs = [
         prim_struct,  # Could also apply possible origin shifts to other structs (refined, find_primitive)
-        sga.get_refined_structure(),  # as well, if we find any structures for which this code still
-        sga.find_primitive(),  # doesn't give a match
+        sga.find_primitive(),  # as well, if we find any structures for which this code still fails
         *get_primitive_structure(sga, clean=False, return_all=True),
         *get_primitive_structure(target_struct, clean=False, return_all=True),
-        sga.get_conventional_standard_structure(),
     ]
+    for candidate_conv_struct in [sga.get_refined_structure(), sga.get_conventional_standard_structure()]:
+        if len(candidate_conv_struct) == len(prim_struct):
+            # only also try conventional if equivalent to the primitive cell
+            candidate_prim_structs = [candidate_conv_struct, *candidate_prim_structs]
+
     for possible_prim_struct in candidate_prim_structs:
         new_prim_struct, transformation_matrix = _get_supercell_matrix_and_possibly_rotate_prim(
             possible_prim_struct, target_struct
         )
+        if not np.allclose(
+            np.rint(transformation_matrix), transformation_matrix, atol=1e-3
+        ) or not np.allclose(
+            (new_prim_struct * transformation_matrix).lattice.matrix,
+            target_struct.lattice.matrix,
+            atol=1e-3,
+        ):
+            # not integer or doesn't exactly match bulk supercell, so bad transformation matrix, skip
+            continue
         new_prim_struct = Structure.from_sites([site.to_unit_cell() for site in new_prim_struct])
         rms_dist_to_target = summed_rms_dist(
             Structure.from_sites(
@@ -469,27 +495,32 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             ),
             target_struct,
         )
-        if rms_dist_to_target < 0.1:
-            return new_prim_struct, transformation_matrix
-
         rms_dists_w_candidate_prim_structs_and_T_matrices.append(
             (rms_dist_to_target, new_prim_struct, transformation_matrix)
         )
 
-    # if here, then no perfect match has been found. Warn user and return the closest:
-    closest_match = sorted(rms_dists_w_candidate_prim_structs_and_T_matrices, key=lambda x: x[0])[0]
-    warnings.warn(
-        f"Found the transformation matrix from the primitive cell lattice to the supplied supercell, "
-        f"but could not determine the transformation to directly match the atomic coordinates (infinite "
-        f"possible symmetry-equivalent coordinate definitions). Closest match has RMS distance of "
-        f"{closest_match[0]:.3f} Å.\n"
-        f"The bulk and defect supercells generated will be equivalent to the input supercell, but with a "
-        f"different choice of atomic coordinates (e.g. [0.1, 0.1, 0.1] instead of [0.9, 0.9, 0.9]). You "
-        f"should make sure to do the bulk supercell calculation with this doped-generated supercell "
-        f"(DefectsGenerator.bulk_supercell, which is output to the `Bulk` folders with the file "
-        f"generation functions), so that the coordinates match those of the defect supercells (this "
-        f"matters when computing finite-size corrections)."
-    )
+    closest_match = sorted(  # sort to get ideal primitive cell definition
+        rms_dists_w_candidate_prim_structs_and_T_matrices,
+        key=lambda x: (
+            round(x[0], 3),
+            _lattice_matrix_sorting_func(x[1].lattice.matrix),
+            _lattice_matrix_sorting_func(x[2]),
+            _struc_sorting_func(x[1]),
+        ),
+    )[0]
+    if closest_match[0] > 0.1:  # no perfect match has been found. Warn user and return the closest:
+        warnings.warn(
+            f"Found the transformation matrix from the primitive cell lattice to the supplied supercell, "
+            f"but could not determine the transformation to directly match the atomic coordinates ("
+            f"infinite possible symmetry-equivalent coordinate definitions). Closest match has RMS "
+            f"distance of {closest_match[0]:.3f} Å.\n"
+            f"The bulk and defect supercells generated will be equivalent to the input supercell, "
+            f"but with a different choice of atomic coordinates (e.g. [0.1, 0.1, 0.1] instead of [0.9, "
+            f"0.9, 0.9]). You should make sure to do the bulk supercell calculation with this "
+            f"doped-generated supercell (DefectsGenerator.bulk_supercell, which is output to the `Bulk` "
+            f"folders with the file generation functions), so that the coordinates match those of the "
+            f"defect supercells (this matters when computing finite-size corrections)."
+        )
     # Note: Could always just get the transformation of the generated supercell to the input supercell, and
     # then apply this transformation to each generated bulk/defect supercell at the end of defect
     # generation, but means that self.primitive_structure * self.supercell_matrix is no longer
@@ -663,18 +694,13 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
     )
 
     if return_T:
-        (
-            poss_rotated_structure,
-            transformation_matrix,
-        ) = _get_supercell_matrix_and_possibly_redefine_prim(structure, new_structure)
-
-        # structure shouldn't be rotated, and should be integer
-        if not np.allclose(
-            poss_rotated_structure.lattice.matrix, structure.lattice.matrix
-        ) or not np.allclose(transformation_matrix, np.rint(transformation_matrix)):
+        transformation_matrix = np.dot(
+            structure.lattice.matrix, np.linalg.inv(new_structure.lattice.matrix)
+        )
+        if not np.allclose(transformation_matrix, np.rint(transformation_matrix)):
             raise ValueError(
-                "Clean/reduced structure could not be found! If you are seeing this bug, "
-                "please notify the `doped` developers"
+                "Transformation matrix for clean/reduced structure could not be found! If you are seeing "
+                "this bug, please notify the `doped` developers"
             )
 
         return (new_structure, np.rint(transformation_matrix))
@@ -707,7 +733,7 @@ def get_primitive_structure(
         sga_or_struct:
             ``SpacegroupAnalyzer`` object or ``Structure`` object to get the
             corresponding primitive structure of. If a ``Structure`` object,
-            then additional kwargs are passed to the ``_get_sga`` function
+            then additional kwargs are passed to the ``get_sga`` function
             which obtains the ``SpacegroupAnalyzer`` object for this structure.
         ignored_species:
             List of species to ignore when determining the ideal primitive
@@ -719,10 +745,10 @@ def get_primitive_structure(
             Whether to return all possible primitive structures tested, sorted
             by the sorting function. (Default: False)
         **kwargs:
-            Additional keyword arguments to pass to the ``_get_sga`` function
+            Additional keyword arguments to pass to the ``get_sga`` function
             (e.g. ``symprec`` etc).
     """
-    sga = _get_sga(sga_or_struct, **kwargs) if isinstance(sga_or_struct, Structure) else sga_or_struct
+    sga = get_sga(sga_or_struct, **kwargs) if isinstance(sga_or_struct, Structure) else sga_or_struct
 
     possible_prim_structs = []
     for _i in range(4):
@@ -733,7 +759,7 @@ def get_primitive_structure(
         if not np.allclose(spglib_dataset.origin_shift, 0):
             possible_prim_structs.append(translate_structure(struct, spglib_dataset.origin_shift))
 
-        sga = _get_sga(struct, sga._symprec)  # use same symprec
+        sga = get_sga(struct, sga._symprec)  # use same symprec
 
     if ignored_species is not None:
         pruned_possible_prim_structs = [
@@ -777,7 +803,7 @@ def get_spglib_conv_structure(sga):
     for _i in range(4):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
-        sga = _get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
+        sga = get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
 
     possible_conv_structs_and_sgas = sorted(
         possible_conv_structs_and_sgas, key=lambda x: _struc_sorting_func(x[0])
@@ -808,7 +834,7 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     """
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
-    sga = _get_sga(struc_wout_oxi)
+    sga = get_sga(struc_wout_oxi)
     conventional_structure, conv_sga = get_spglib_conv_structure(sga)
 
     wyckoff_label_dict = get_wyckoff_dict_from_sgn(conv_sga.get_space_group_number())
@@ -864,10 +890,10 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
 def get_conv_cell_site(defect_entry):
     """
     Gets an equivalent site of the defect entry in the conventional structure
-    of the host material. If the conventional_structure attribute is not
-    defined for defect_entry, then it is generated using SpaceGroupAnalyzer and
-    then reoriented to match the Bilbao Crystallographic Server's conventional
-    structure definition.
+    of the host material. If the ``conventional_structure`` attribute is not
+    defined for defect_entry, then it is generated using ``SpacegroupAnalyzer``
+    and then reoriented to match the Bilbao Crystallographic Server's
+    conventional structure definition.
 
     Args:
         defect_entry: ``DefectEntry`` object.
@@ -880,7 +906,7 @@ def get_conv_cell_site(defect_entry):
     prim_struct_with_X.remove_oxidation_states()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
-    sga = _get_sga(bulk_prim_structure)
+    sga = get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
@@ -1011,7 +1037,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                     "must be provided."
                 )
             # get sgn from primitive unit cell of bulk structure:
-            sgn = _get_sga(defect_entry.defect.structure).get_space_group_number()
+            sgn = get_sga(defect_entry.defect.structure).get_space_group_number()
 
         wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
 
@@ -1281,7 +1307,7 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
         dummy_species="X",
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
+    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
     return schoenflies_from_hermann(sga.get_point_group_symbol())
 
 
@@ -1383,7 +1409,7 @@ def point_symmetry_from_defect_entry(
 
     if not relaxed and defect_entry.defect.defect_type != DefectType.Interstitial:
         # then easy, can just be taken from symmetry dataset of defect structure
-        symm_dataset = _get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
+        symm_dataset = get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
         return schoenflies_from_hermann(
             symm_dataset.site_symmetry_symbols[defect_entry.defect.defect_site_index]
         )
@@ -1391,7 +1417,7 @@ def point_symmetry_from_defect_entry(
     supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
 
     if symm_ops is None:
-        symm_ops = _get_sga(supercell).get_symmetry_operations()
+        symm_ops = get_sga(supercell).get_symmetry_operations()
 
     # For relaxed = True, often only works for relaxed defect structures if it is a scalar matrix
     # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
@@ -1428,7 +1454,7 @@ def point_symmetry_from_defect_entry(
     if relaxed:
         with contextlib.suppress(Exception):
             spglib_point_group_symbol = schoenflies_from_hermann(
-                _get_sga(supercell, symprec=symprec).get_point_group_symbol()
+                get_sga(supercell, symprec=symprec).get_point_group_symbol()
             )
 
     if not relaxed or spglib_point_group_symbol is None:
@@ -1497,7 +1523,7 @@ def point_symmetry_from_defect_entry(
             #     "unrelaxed_defect_structure", defect_supercell
             # )
             # return schoenflies_from_hermann(
-            #     _get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset().pointgroup,
+            #     get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset().pointgroup,
             # )
             # But current approach works for all cases with unrelaxed defect structures
 
@@ -1512,7 +1538,7 @@ def point_symmetry_from_defect_entry(
             # most cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the
             # approach above:
             # schoenflies_from_hermann(
-            #     _get_sga(
+            #     get_sga(
             #         defect_supercell, symprec=symprec
             #     ).get_symmetry_dataset().pointgroup
             # )
@@ -1537,7 +1563,7 @@ def point_symmetry_from_defect_entry(
         dummy_species="X",
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
+    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
     point_group = schoenflies_from_hermann(sga.get_point_group_symbol())
     return (point_group, not matching) if return_periodicity_breaking else point_group
 
@@ -1561,11 +1587,11 @@ def _check_relaxed_defect_symmetry_determination(
 
     if unrelaxed_defect_structure is not None:
         unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
-            _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset().pointgroup,
+            get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset().pointgroup,
         )
 
         bulk_supercell = _get_bulk_supercell(defect_entry)
-        bulk_symm_ops = _get_sga(bulk_supercell).get_symmetry_operations()
+        bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_supercell_bulk_site_coords,
             bulk_supercell,
@@ -1677,7 +1703,7 @@ def point_symmetry(
     if relaxed and bulk_structure is None:
         with contextlib.suppress(Exception):
             spglib_point_group_symbol = schoenflies_from_hermann(
-                _get_sga(structure, symprec=symprec).get_point_group_symbol()
+                get_sga(structure, symprec=symprec).get_point_group_symbol()
             )
         if spglib_point_group_symbol is not None:
             return (
