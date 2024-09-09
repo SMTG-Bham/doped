@@ -5,7 +5,7 @@ Utility code and functions for symmetry analysis of structures and defects.
 import contextlib
 import os
 import warnings
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from pymatgen.analysis.defects.core import DefectType
@@ -146,19 +146,62 @@ def get_sga(struct, symprec=0.01):
 
 
 def apply_symm_op_to_site(
-    symm_op: SymmOp, site: PeriodicSite, new_lattice: Optional[Lattice] = None
+    symm_op: SymmOp,
+    site: PeriodicSite,
+    fractional: bool = False,
+    rotate_lattice: Union[Lattice, bool] = True,
 ) -> PeriodicSite:
     """
     Apply the given symmetry operation to the input site (**not in place**) and
     return the new site.
+
+    By default, also rotates the lattice accordingly. If you want to apply
+    the symmetry operation but keep the same lattice definition, set
+    ``rotate_lattice=False``.
+
+    Args:
+        symm_op: ``pymatgen`` ``SymmOp`` object.
+        site: ``pymatgen`` ``PeriodicSite`` object.
+        fractional:
+            If the ``SymmOp`` is in fractional or Cartesian (default)
+            coordinates (i.e. to apply to ``site.frac_coords`` or
+            ``site.coords``). Default: False
+        rotate_lattice:
+            Either a ``pymatgen`` ``Lattice`` object (to use as the new
+            lattice basis of the transformed site, which can be provided
+            to reduce computation time when looping) or ``True/False``.
+            If ``True`` (default), the ``SymmOp`` rotation matrix will be
+            applied to the input site lattice, or if ``False``, the
+            original lattice will be retained.
+
+    Returns:
+        ``pymatgen`` ``PeriodicSite`` object with the symmetry operation
+        applied
     """
-    if new_lattice is None:
-        new_lattice = Lattice(np.dot(symm_op.rotation_matrix, site.lattice.matrix))
+    if isinstance(rotate_lattice, Lattice):
+        rotated_lattice = rotate_lattice
+    else:
+        if rotate_lattice:
+            if fractional:
+                rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, site.lattice.matrix))
+            else:
+                rotated_lattice = Lattice(
+                    [symm_op.apply_rotation_only(row) for row in site.lattice.matrix]
+                )
+        else:
+            rotated_lattice = site.lattice
+
+    if fractional:  # operate in **original** lattice, then convert to new lattice
+        frac_coords = symm_op.operate(site.frac_coords)
+        new_coords = site.lattice.get_cartesian_coords(frac_coords)
+    else:
+        new_coords = symm_op.operate(site.coords)
 
     return PeriodicSite(
         site.species,
-        symm_op.operate(site.frac_coords),
-        new_lattice,
+        new_coords,
+        rotated_lattice,
+        coords_are_cartesian=True,
         properties=site.properties,
         skip_checks=True,
         label=site.label,
@@ -176,36 +219,44 @@ def apply_symm_op_to_struct(
     the input structure)**, which avoids the use of unnecessary and slow
     ``Structure.copy()`` calls, making the structure manipulation / symmetry
     analysis functions more efficient.
+    Also fixes an issue when applying fractional symmetry operations.
+
+    By default, also rotates the lattice accordingly. If you want to apply
+    the symmetry operation to the sites but keep the same lattice definition,
+    set ``rotate_lattice=False``.
+
+    Args:
+        struct: ``pymatgen`` ``Structure`` object.
+        symm_op: ``pymatgen`` ``SymmOp`` object.
+        fractional:
+            If the ``SymmOp`` is in fractional or Cartesian (default)
+            coordinates (i.e. to apply to ``site.frac_coords`` or
+            ``site.coords``). Default: False
+        rotate_lattice:
+            If the lattice of the input structure should be rotated
+            according to the symmetry operation. Default: True.
+
+    Returns:
+        ``pymatgen`` ``Structure`` object with the symmetry operation
+        applied.
     """
     # using modified version of ``pymatgen``\'s ``apply_operation`` method:
-    orig_lattice = struct._lattice
-    if not fractional:
-        new_lattice = Lattice([symm_op.apply_rotation_only(row) for row in orig_lattice.matrix])
+    if rotate_lattice:
+        if not fractional:
+            rotated_lattice = Lattice([symm_op.apply_rotation_only(row) for row in struct._lattice.matrix])
 
-        def operate_site(site):
-            new_cart = symm_op.operate(site.coords)
-            new_frac = new_lattice.get_fractional_coords(new_cart)
-            return PeriodicSite(
-                site.species,
-                new_frac,
-                new_lattice,
-                properties=site.properties,
-                skip_checks=True,
-                label=site.label,
-            )
-
+        else:
+            rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, struct._lattice.matrix))
     else:
-        new_lattice = Lattice(np.dot(symm_op.rotation_matrix, orig_lattice.matrix))
+        rotated_lattice = struct._lattice
 
-        def operate_site(site):
-            return apply_symm_op_to_site(symm_op, site, new_lattice)
-
-    sites = [operate_site(site) for site in struct]
-
-    return Structure(
-        new_lattice if rotate_lattice else orig_lattice,
-        [site.species for site in sites],
-        [site.frac_coords for site in sites],
+    # note could also use ``SymmOp.operate_multi`` for speedup if ever necessary, but requires some more
+    # accounting of species ordering etc, and this isn't an efficiency bottleneck currently
+    return Structure.from_sites(
+        [
+            apply_symm_op_to_site(symm_op, site, fractional=fractional, rotate_lattice=rotated_lattice)
+            for site in struct
+        ]
     )
 
 
@@ -237,13 +288,14 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
     """
     if symm_ops is None:
         sga = get_sga(struct, symprec=symprec)
-        symm_ops = sga.get_symmetry_operations()
+        symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
 
     dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
     x_sites = []
     for symm_op in symm_ops:
-        x_site = apply_symm_op_to_site(symm_op, dummy_site, struct.lattice).to_unit_cell()
-        # frac_coords = np.mod(symm_op.operate(frac_coords), 1)  # to unit cell
+        x_site = apply_symm_op_to_site(
+            symm_op, dummy_site, fractional=True, rotate_lattice=struct.lattice
+        ).to_unit_cell()  # enforce same lattice, as we just want transformed frac coords here
         # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
         if (
             not x_sites
@@ -364,7 +416,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op)
+    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op, rotate_lattice=True)
     clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 
