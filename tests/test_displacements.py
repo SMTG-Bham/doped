@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
-from doped import core
+from doped.core import DefectEntry
 from doped.utils.displacements import calc_site_displacements
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -33,13 +33,17 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
+        self.v_Cd_0_defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        self.v_Cd_m1_defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json.gz")
+        self.F_i_m1_defect_entry = DefectEntry.from_json(f"{data_dir}/YTOS_Int_F_-1_defect_entry.json.gz")
+        self.Te_Cd_1_defect_entry = DefectEntry.from_json(f"{data_dir}/Te_Cd_+1_defect_entry.json.gz")
+        self.Te_i_1_defect_entry = DefectEntry.from_json(f"{data_dir}/Int_Te_3_1_defect_entry.json.gz")
 
     def test_calc_site_displacements(self):
         """
         Test calc_site_displacements() function.
         """
-        # Neutral Cd vacancy:
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        defect_entry = self.v_Cd_0_defect_entry  # Neutral Cd vacancy
         disp_dict = calc_site_displacements(defect_entry)
         for i, disp in [
             (0, [0.0572041, 0.00036486, -0.01794981]),
@@ -77,7 +81,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             assert np.isclose(disp_dict["Displacement projected along vector"][i], disp)
             assert np.isclose(disp_dict["Distance to defect"][i], dist)
         # Test projection along (-1,-1,-1) for V_Cd^-1
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json.gz")
+        defect_entry = self.v_Cd_m1_defect_entry
         disp_dict = calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
         indexes = (32, 33, 34, 35)  # Defect NNs
         distances = (2.5850237041739614, 2.5867590623267396, 2.5867621810347914, 3.0464198655727284)
@@ -96,16 +100,14 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             assert np.isclose(disp_dict["Displacement perpendicular to vector"][index], disp_perp)
 
         # Substitution:
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/Te_Cd_+1_defect_entry.json.gz")
-        disp_dict = calc_site_displacements(defect_entry)
+        disp_dict = calc_site_displacements(self.Te_Cd_1_defect_entry)
         for i, disp in [
             (0, [0.00820645, 0.00821417, -0.00815738]),
             (15, [-0.00639524, 0.00639969, -0.01407927]),
         ]:
             np.allclose(disp_dict["Displacement"][i], np.array(disp))
         # Interstitial:
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/Int_Te_3_1_defect_entry.json.gz")
-        disp_dict = calc_site_displacements(defect_entry)
+        disp_dict = calc_site_displacements(self.Te_i_1_defect_entry)
         for i, disp in [
             (0, [-0.03931121, 0.01800569, 0.04547194]),
             (15, [-0.04850126, -0.01378455, 0.05439607]),
@@ -114,7 +116,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
 
     def test_plot_site_displacements_error(self):
         # Check ValueError raised if user sets both separated_by_direction and vector_to_project_on
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        defect_entry = self.v_Cd_0_defect_entry
         with pytest.raises(ValueError):
             defect_entry.plot_site_displacements(
                 separated_by_direction=True, vector_to_project_on=[0, 0, 1]
@@ -129,17 +131,20 @@ class DefectDisplacementsTestCase(unittest.TestCase):
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")
     def test_plot_site_displacements_proj(self):
         # Vacancy, displacement separated by direction:
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
-        return defect_entry.plot_site_displacements(separated_by_direction=True, use_plotly=False)
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=True, use_plotly=False
+        )
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_plot.png")
     def test_plot_site_displacements(self):
         # Vacancy, total displacement
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
-        return defect_entry.plot_site_displacements(separated_by_direction=False, use_plotly=False)
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False
+        )
 
     @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png")
     def test_plot_site_displacements_ytos(self):
-        # Vacancy, total displacement
-        defect_entry = core.DefectEntry.from_json(f"{data_dir}/YTOS_Int_F_-1_defect_entry.json.gz")
-        return defect_entry.plot_site_displacements(separated_by_direction=True, use_plotly=False)
+        # Interstitial, total displacement
+        return self.F_i_m1_defect_entry.plot_site_displacements(
+            separated_by_direction=True, use_plotly=False
+        )
