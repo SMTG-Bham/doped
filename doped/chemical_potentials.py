@@ -43,7 +43,7 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
-from doped.generation import _element_sorting_func
+from doped.generation import _element_sort_func
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import _round_floats, get_primitive_structure
@@ -216,7 +216,7 @@ def _calculate_formation_energies(data: list, elemental: dict):
         lambda x: len(Composition(x).as_dict())
     )
     formation_energy_df["periodic_group_ordering"] = formation_energy_df["Formula"].apply(
-        lambda x: tuple(sorted([_element_sorting_func(i.symbol) for i in Composition(x).elements]))
+        lambda x: tuple(sorted([_element_sort_func(i.symbol) for i in Composition(x).elements]))
     )
 
     # get energy per fu then subtract elemental energies later, to get formation energies
@@ -465,7 +465,7 @@ def get_entries_in_chemsys(
         ]
 
     # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
-    MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=bulk_composition))
+    MP_full_pd_entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
 
     if return_all_info:
         return MP_full_pd_entries, property_key_dict, property_data_fields
@@ -528,7 +528,7 @@ def get_entries(
         )
 
     # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
-    entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=bulk_composition))
+    entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
 
     return entries
 
@@ -722,7 +722,7 @@ def get_MP_summary_docs(
     return MP_docs
 
 
-def _entries_sorting_func(
+def _entries_sort_func(
     entry: ComputedEntry,
     use_e_per_atom: bool = False,
     bulk_composition: Optional[Union[str, Composition, dict, list]] = None,
@@ -736,7 +736,7 @@ def _entries_sorting_func(
     If ``bulk_composition`` is provided, then entries matching the bulk
     composition are sorted first, followed by all other entries.
 
-    Usage: ``entries_list.sort(key=_entries_sorting_func)``
+    Usage: ``entries_list.sort(key=_entries_sort_func)``
 
     Args:
         entry (ComputedEntry):
@@ -760,7 +760,7 @@ def _entries_sorting_func(
         entry.composition.reduced_composition == bulk_reduced_comp,
         entry.energy_per_atom if use_e_per_atom else _get_e_above_hull(entry.data),
         len(Composition(entry.name).as_dict()),
-        sorted([_element_sorting_func(i.symbol) for i in Composition(entry.name).elements]),
+        sorted([_element_sort_func(i.symbol) for i in Composition(entry.name).elements]),
         entry.name,
     )
 
@@ -841,7 +841,7 @@ def prune_entries_to_border_candidates(
     # relative energy was downshifted by ``e_above_hull``:
     # only check if not already bordering; can just use names for this:
     entries_to_test = [entry for entry in entries if entry.name not in bordering_entry_names]
-    entries_to_test.sort(key=_entries_sorting_func)  # sort by energy above hull
+    entries_to_test.sort(key=_entries_sort_func)  # sort by energy above hull
     # to save unnecessary looping, whenever we encounter a phase that is not being added to the border
     # candidates list, skip all following phases with this composition (because they have higher
     # energies above hull (because we've sorted by this) and so will also not border the host):
@@ -1222,7 +1222,7 @@ class CompetingPhases:
             self.entries = formatted_entries
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
-        self.entries.sort(key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition))
+        self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
@@ -1525,7 +1525,7 @@ class CompetingPhases:
                 formatted_entries.append(entry)
 
         # sort by energy above hull, num_species, then by periodic table positioning:
-        formatted_entries.sort(key=lambda x: _entries_sorting_func(x))
+        formatted_entries.sort(key=lambda x: _entries_sort_func(x))
 
         return formatted_entries
 
@@ -1814,11 +1814,11 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.MP_full_pd_entries.sort(
-            key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition.reduced_composition)
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
         )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
         self.entries.sort(
-            key=lambda x: _entries_sorting_func(x, bulk_composition=self.composition.reduced_composition)
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
         )
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
@@ -2177,9 +2177,9 @@ class CompetingPhasesAnalyzer:
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sorting_func)
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: _element_sorting_func(x[0]))
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 
@@ -2313,9 +2313,9 @@ class CompetingPhasesAnalyzer:
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sorting_func)
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: _element_sorting_func(x[0]))
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 

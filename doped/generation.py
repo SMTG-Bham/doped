@@ -1065,10 +1065,16 @@ def get_ideal_supercell_matrix(
                 target_size=alt_target_size,
                 return_min_dist=True,
             )
+            alt_optimal_P = supercells._check_and_return_scalar_matrix(
+                alt_optimal_P, structure.lattice.matrix
+            )
             if (
-                round(supercells._min_sum_off_diagonals(structure, alt_optimal_P)) == 0
-                and alt_best_min_dist > min_image_distance
-            ):
+                (
+                    alt_optimal_P[0, 0] != 0
+                    and np.allclose(np.abs(alt_optimal_P / alt_optimal_P[0, 0]), np.eye(3))
+                )
+                or round(supercells._min_sum_off_diagonals(structure, alt_optimal_P)) == 0
+            ) and alt_best_min_dist > min_image_distance:
                 optimal_P = alt_optimal_P
                 best_min_dist = alt_best_min_dist
                 target_size = alt_target_size
@@ -1288,7 +1294,7 @@ class DefectsGenerator(MSONable):
                     "disordered/defective), then you should check your input structure!"
                 )
 
-            prim_struct = symmetry.get_primitive_structure(sga)
+            prim_struct = symmetry.get_primitive_structure(self.structure)
             if prim_struct.num_sites < self.structure.num_sites:
                 primitive_structure = Structure.from_dict(symmetry._round_floats(prim_struct.as_dict()))
 
@@ -1358,13 +1364,12 @@ class DefectsGenerator(MSONable):
                 [site.to_unit_cell() for site in self.primitive_structure]
             )
             self.bulk_supercell = Structure.from_sites(
-                [
-                    site.to_unit_cell()
-                    for site in (self.primitive_structure * self.supercell_matrix).get_sorted_structure()
-                ]
-            )
-            self.bulk_supercell = Structure.from_dict(
-                symmetry._round_floats(self.bulk_supercell.as_dict())
+                Structure.from_dict(
+                    symmetry._round_floats(
+                        (self.primitive_structure * self.supercell_matrix).get_sorted_structure().as_dict()
+                    )
+                ).sites,
+                to_unit_cell=True,
             )
             if not generate_supercell:  # re-order bulk supercell to match that of input supercell
                 self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
@@ -2252,7 +2257,7 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     return (defect_name.split("_")[0], defect_name.split("_")[1])  # return name split if formatting fails
 
 
-def _element_sorting_func(element_str: str) -> tuple[int, int]:
+def _element_sort_func(element_str: str) -> tuple[int, int]:
     """
     Return a tuple of the group (+16 if it's a transition metal, to move them
     after main group elements) and atomic number of the element, for sorting
@@ -2300,7 +2305,7 @@ def _sort_defect_entries(
         # sort extrinsic elements by periodic group and atomic number for deterministic ordering in output:
         extrinsic_element_list = sorted(
             [el for el in extrinsic_element_list if el not in host_element_list],
-            key=_element_sorting_func,
+            key=_element_sort_func,
         )
         element_list = host_element_list + extrinsic_element_list
 
@@ -2321,7 +2326,7 @@ def _sort_defect_entries(
         # possibly defect entries with names not in doped format, try sorting without using name:
         try:
 
-            def _defect_entry_sorting_func(defect_entry):
+            def _defect_entry_sort_func(defect_entry):
                 unrelaxed_defect_name_w_charge = defect_entry.calculation_metadata.get(
                     "full_unrelaxed_defect_name"
                 )
@@ -2349,7 +2354,7 @@ def _sort_defect_entries(
             return dict(
                 sorted(
                     defect_entries_dict.items(),
-                    key=lambda s: _defect_entry_sorting_func(s[1]),  # sort by defect entry object
+                    key=lambda s: _defect_entry_sort_func(s[1]),  # sort by defect entry object
                 )
             )
         except ValueError as value_err_2:

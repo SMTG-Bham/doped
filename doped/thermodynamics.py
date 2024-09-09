@@ -915,7 +915,7 @@ class DefectThermodynamics(MSONable):
         self.defect_charge_map = defect_charge_map
 
         # sort dictionaries deterministically:
-        def _map_sorting_func(name_wout_charge):
+        def _map_sort_func(name_wout_charge):
             for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
                 with contextlib.suppress(ValueError):
                     return (
@@ -926,16 +926,14 @@ class DefectThermodynamics(MSONable):
             return 100, name_wout_charge  # if name not in defect_entries, put at end
 
         self.transition_level_map = dict(
-            sorted(self.transition_level_map.items(), key=lambda item: _map_sorting_func(item[0]))
+            sorted(self.transition_level_map.items(), key=lambda item: _map_sort_func(item[0]))
         )
         self.stable_entries = dict(
-            sorted(self.stable_entries.items(), key=lambda item: _map_sorting_func(item[0]))
+            sorted(self.stable_entries.items(), key=lambda item: _map_sort_func(item[0]))
         )
-        self.all_entries = dict(
-            sorted(self.all_entries.items(), key=lambda item: _map_sorting_func(item[0]))
-        )
+        self.all_entries = dict(sorted(self.all_entries.items(), key=lambda item: _map_sort_func(item[0])))
         self.defect_charge_map = dict(
-            sorted(self.defect_charge_map.items(), key=lambda item: _map_sorting_func(item[0]))
+            sorted(self.defect_charge_map.items(), key=lambda item: _map_sort_func(item[0]))
         )
 
         self.transition_levels = {
