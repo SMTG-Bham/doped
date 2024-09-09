@@ -2511,6 +2511,9 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "bulk/vasp_std/voronoi_nodes.json"))
 
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
+
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
         for defect_gen_name in [
@@ -3362,6 +3365,10 @@ class ReorderedParsingTestCase(unittest.TestCase):
         self.CdTe_corrections_dir = os.path.join(self.module_path, "data/CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.CdTe_corrections_dir}/v_Cd_-2_vasp_gam"
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
+        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+
+    def tearDown(self):
+        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
 
     @custom_mpl_image_compare(filename="CdTe_v_cd_m2_eigenvalue_plot.png")
     def test_parsing_cdte(self):

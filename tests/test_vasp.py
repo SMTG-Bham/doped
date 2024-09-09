@@ -1133,6 +1133,8 @@ class DefectsSetTest(unittest.TestCase):
                 if_present_rm(folder)
 
         if_present_rm("AgSbTe2_test")
+        if_present_rm("CdTe_defects_generator.json")
+        if_present_rm("test_CdTe_defects_generator.json")
 
     def check_generated_vasp_inputs(
         self,
