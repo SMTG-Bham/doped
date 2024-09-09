@@ -139,36 +139,34 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.MgO_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "MgO")
 
         cls.orig_CdTe_defect_dict = loadfn(
-            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json.gz")
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")
         )
         cls.orig_CdTe_defect_thermo = loadfn(
-            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz")
+            os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
         )
         cls.orig_YTOS_defect_dict = loadfn(
-            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json.gz")
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_defect_dict.json")
         )
         cls.orig_YTOS_defect_thermo = loadfn(
-            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
+            os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )
         cls.orig_Sb2Se3_defect_dict = loadfn(
-            os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json.gz")
+            os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json")
         )
         cls.orig_Sb2Se3_defect_thermo = loadfn(
-            os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json.gz")
+            os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
         )
         cls.orig_Sb2Si2Te6_defect_dict = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json.gz")
+            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json")
         )
         cls.orig_Sb2Si2Te6_defect_thermo = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json.gz")
+            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json")
         )
 
         cls.orig_V2O5_defect_dict = loadfn(
-            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json.gz")
+            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_defect_dict.json")
         )
-        cls.orig_V2O5_defect_thermo = loadfn(
-            os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json.gz")
-        )
+        cls.orig_V2O5_defect_thermo = loadfn(os.path.join(cls.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
         cls.V2O5_chempots = loadfn(os.path.join(cls.V2O5_DATA_DIR, "chempots.json"))
 
         cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json.gz"))
@@ -178,7 +176,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
 
-        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json.gz"))
+        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json"))
 
         cls.orig_Se_ext_no_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
         cls.orig_Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
@@ -187,25 +185,30 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
-        assert {entry.name for entry in defect_thermo.defect_entries} == set(defect_dict.keys())
-        assert {round(entry.get_ediff(), 3) for entry in defect_thermo.defect_entries} == {
+        assert set(defect_thermo.defect_entries.keys()) == set(defect_dict.keys())
+        assert {round(entry.get_ediff(), 3) for entry in defect_thermo.defect_entries.values()} == {
             round(entry.get_ediff(), 3) for entry in defect_dict.values()
         }
         assert {  # check coords are the same by getting their products
-            round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo.defect_entries
+            round(np.prod(entry.sc_defect_frac_coords), 3)
+            for entry in defect_thermo.defect_entries.values()
         } == {round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_dict.values()}
 
     def _compare_defect_thermos(self, defect_thermo1, defect_thermo2):
         assert len(defect_thermo1.defect_entries) == len(defect_thermo2.defect_entries)
-        assert {entry.name for entry in defect_thermo1.defect_entries} == {
-            entry.name for entry in defect_thermo2.defect_entries
+        assert {entry.name for entry in defect_thermo1.defect_entries.values()} == {
+            entry.name for entry in defect_thermo2.defect_entries.values()
         }
-        assert {round(entry.get_ediff(), 3) for entry in defect_thermo1.defect_entries} == {
-            round(entry.get_ediff(), 3) for entry in defect_thermo2.defect_entries
+        assert {round(entry.get_ediff(), 3) for entry in defect_thermo1.defect_entries.values()} == {
+            round(entry.get_ediff(), 3) for entry in defect_thermo2.defect_entries.values()
         }
         assert {  # check coords are the same by getting their products
-            round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo1.defect_entries
-        } == {round(np.prod(entry.sc_defect_frac_coords), 3) for entry in defect_thermo2.defect_entries}
+            round(np.prod(entry.sc_defect_frac_coords), 3)
+            for entry in defect_thermo1.defect_entries.values()
+        } == {
+            round(np.prod(entry.sc_defect_frac_coords), 3)
+            for entry in defect_thermo2.defect_entries.values()
+        }
 
     def _check_defect_thermo(
         self,
@@ -220,6 +223,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self._compare_defect_thermo_and_dict(defect_thermo, defect_dict)
 
         print(defect_thermo)
+        assert set(defect_thermo.defect_entries.keys()) == {
+            defect_entry.name for defect_entry in defect_thermo.defect_entries.values()
+        }
         assert defect_thermo.dist_tol == dist_tol
         assert defect_thermo.chempots == chempots
         assert defect_thermo.el_refs == el_refs
@@ -417,7 +423,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         defect_thermo.print_transition_levels(all=True)
 
     def _clear_symmetry_degeneracy_info(self, defect_thermo):
-        for defect_entry in defect_thermo.defect_entries:
+        for defect_entry in defect_thermo.defect_entries.values():
             for key in list(defect_entry.calculation_metadata.keys()):
                 if "symmetry" in key:
                     del defect_entry.calculation_metadata[key]
@@ -534,7 +540,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe
             # example set for its semi-hard 😏 tests)
             defect_entries_wout_metadata = random.sample(
-                defect_thermo.defect_entries, min(7, len(defect_thermo.defect_entries))
+                list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
             )
             for entry in defect_entries_wout_metadata:
                 print(f"Setting metadata to empty for {entry.name}")
@@ -561,7 +567,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self._check_defect_thermo(thermo_wout_metadata)  # default values
 
             defect_entries_wout_metadata_or_degeneracy = random.sample(
-                defect_thermo.defect_entries, min(7, len(defect_thermo.defect_entries))
+                list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
             )  # get set of random 7 entries from defect_entries_wout_metadata (7 needed for CdTe tests)
             for entry in defect_entries_wout_metadata_or_degeneracy:
                 print(f"Setting metadata and degeneracy factors to empty for {entry.name}")
@@ -927,7 +933,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         """
         if defect_thermo is not None:  # check defect sorting
             sorted_defect_entries = _sort_defect_entries(
-                {defect_entry.name: defect_entry for defect_entry in defect_thermo.defect_entries}
+                {defect_entry.name: defect_entry for defect_entry in defect_thermo.defect_entries.values()}
             )
             assert form_en_df["Defect"].tolist() == [
                 defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries.values()
@@ -1074,7 +1080,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(defect_name_w_charge_state)  # for debugging
             defect_entry = next(
                 entry
-                for entry in thermo_obj.defect_entries
+                for entry in thermo_obj.defect_entries.values()
                 if entry.name.rsplit("_", 1)[0] == defect_name_w_charge_state.rsplit("_", 1)[0]
                 and entry.charge_state == int(defect_name_w_charge_state.rsplit("_", 1)[1])
             )
@@ -1136,7 +1142,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         lowest_e_form,
                         min(
                             thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level)
-                            for entry in thermo_obj.defect_entries
+                            for entry in thermo_obj.defect_entries.values()
                             if form_en_df_row[0] in entry.name
                         ),
                     )
@@ -1164,7 +1170,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                                     fermi_level=fermi_level,
                                     chempots=thermo_obj.chempots,
                                 )
-                                for entry in thermo_obj.defect_entries
+                                for entry in thermo_obj.defect_entries.values()
                                 if form_en_df_row[0] in entry.name
                             ]
                         ),
@@ -1233,7 +1239,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "'Int_Te_3_Unperturbed_1']" in str(exc.value)
         )
 
-        for i, defect_entry in enumerate(self.CdTe_defect_thermo.defect_entries):
+        for i, defect_entry in enumerate(self.CdTe_defect_thermo.defect_entries.values()):
             new_entry = deepcopy(defect_entry)
             _vbm = new_entry.calculation_metadata.pop("vbm")
             assert np.isclose(
@@ -1724,22 +1730,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             for row in cdte_sym_degen_lists
         }
         bulk_symm_ops = get_sga(
-            cdte_defect_thermo.defect_entries[0].bulk_supercell
+            next(iter(cdte_defect_thermo.defect_entries.values())).bulk_supercell
         ).get_symmetry_operations()
         skipped = 0
-        for defect_entry in cdte_defect_thermo.defect_entries:
+        for name, defect_entry in cdte_defect_thermo.defect_entries.items():
             print(f"Testing point_symmetry for {defect_entry.name}")
-            if defect_entry.name == "Int_Te_3_C3v_meta_2":  # C3v with symprec = 0.2, 0.15, C3 with 0.1
+            if name == "Int_Te_3_C3v_meta_2":  # C3v with symprec = 0.2, 0.15, C3 with 0.1
                 assert point_symmetry(defect_entry.defect_supercell) == "C3"
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.15) == "C3v"
                 continue
 
-            if defect_entry.name == "Int_Te_3_unperturbed_0":  # C2v with symprec = 0.2, Cs with 0.1
+            if name == "Int_Te_3_unperturbed_0":  # C2v with symprec = 0.2, Cs with 0.1
                 assert point_symmetry(defect_entry.defect_supercell) == "Cs"
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.2) == "C2v"
                 continue
 
-            if defect_entry.name not in sym_degen_dict:  # only v_Cd_1_not_in_gap_+1
+            if name not in sym_degen_dict:  # only v_Cd_1_not_in_gap_+1
                 skipped += 1
                 continue
 
@@ -1780,21 +1786,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
 
             # test adjusting symprec:
-            if defect_entry.name in [
+            if name in [
                 "vac_1_Cd_0",
                 "as_1_Te_on_Cd_0",
                 "Int_Te_3_unperturbed_0",
                 "as_2_Te_on_Cd_C3v_metastable_1",
             ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
-            elif defect_entry.name in [
+            elif name in [
                 "vac_1_Cd_Td_0",
                 "as_1_Cd_on_Te_2",
             ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "D2d"
-            elif defect_entry.name == "vac_2_Te_orig_non_JT_distorted_0":
+            elif name == "vac_2_Te_orig_non_JT_distorted_0":
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C3v"
-            elif defect_entry.name in [
+            elif name in [
                 "as_1_Te_on_Cd_-1",
                 "as_1_Cd_on_Te_1",
                 "as_2_Cd_on_Te_metastable_0",
@@ -1805,10 +1811,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ]:
                 assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
             else:
-                print(defect_entry.name)
+                print(name)
                 assert (
                     point_symmetry(defect_entry.defect_supercell, symprec=0.01)
-                    == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
+                    == sym_degen_dict[name]["relaxed point symmetry"]
                 )
 
         assert skipped == 1  # only v_Cd_1_not_in_gap_+1, because different format ("_+1" vs "_1")
@@ -1848,7 +1854,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         # random defect_entry:
         for _ in range(10):
-            random_defect_entry = random.choice(cdte_defect_thermo.defect_entries)
+            random_defect_entry = random.choice(list(cdte_defect_thermo.defect_entries.values()))
             print(f"Randomly testing concentration method for {random_defect_entry.name}")
 
             for temperature in [300, 1000]:
