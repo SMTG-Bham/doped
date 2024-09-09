@@ -2054,7 +2054,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self.CdTe_defect_gen_check(CdTe_defect_gen)
         self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
-        CdTe_defect_gen.to_json(f"{self.data_dir}/CdTe_defect_gen.json.gz")  # for testing in test_vasp.py
+        CdTe_defect_gen.to_json(f"{self.data_dir}/CdTe_defect_gen.json")  # for testing in test_vasp.py
 
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
@@ -2355,7 +2355,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
 
         reduced_ytos_defect_gen.to_json(
-            f"{self.data_dir}/ytos_defect_gen.json.gz"
+            f"{self.data_dir}/ytos_defect_gen.json"
         )  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):
@@ -2379,7 +2379,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
 
         reduced_ytos_defect_gen.to_json(
-            f"{self.data_dir}/ytos_defect_gen_supercell.json.gz"
+            f"{self.data_dir}/ytos_defect_gen_supercell.json"
         )  # for testing in test_vasp.py
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
@@ -2501,7 +2501,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_lmno_defect_gen = self._reduce_to_one_defect_each(lmno_defect_gen)
 
         reduced_lmno_defect_gen.to_json(
-            f"{self.data_dir}/lmno_defect_gen.json.gz"
+            f"{self.data_dir}/lmno_defect_gen.json"
         )  # for testing in test_vasp.py
 
     def test_lmno_no_generate_supercell(self):
@@ -2734,7 +2734,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self.cu_defect_gen_check(cu_defect_gen)
         self._load_and_test_defect_gen_jsons(cu_defect_gen)
 
-        cu_defect_gen.to_json(f"{self.data_dir}/cu_defect_gen.json.gz")  # for testing in test_vasp.py
+        cu_defect_gen.to_json(f"{self.data_dir}/cu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_cu_no_generate_supercell(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
@@ -2856,7 +2856,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self.agcu_defect_gen_check(agcu_defect_gen)
         self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
-        agcu_defect_gen.to_json(f"{self.data_dir}/agcu_defect_gen.json.gz")  # for testing in test_vasp.py
+        agcu_defect_gen.to_json(f"{self.data_dir}/agcu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
@@ -2990,7 +2990,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_cd_i_defect_gen = self._reduce_to_one_defect_each(cd_i_defect_gen)
 
         reduced_cd_i_defect_gen.to_json(
-            f"{self.data_dir}/cd_i_supercell_defect_gen.json.gz"
+            f"{self.data_dir}/cd_i_supercell_defect_gen.json"
         )  # for testing in test_vasp.py
 
         # don't need to test generate_supercell = False with this one. Already takes long enough as is,
@@ -3036,7 +3036,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_N_diamond_defect_gen = self._reduce_to_one_defect_each(N_diamond_defect_gen)
 
         reduced_N_diamond_defect_gen.to_json(
-            f"{self.data_dir}/N_diamond_defect_gen.json.gz"
+            f"{self.data_dir}/N_diamond_defect_gen.json"
         )  # test in test_vasp.py
 
     def compare_doped_charges(self, tld_stable_charges, defect_gen):

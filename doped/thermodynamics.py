@@ -649,14 +649,16 @@ class DefectThermodynamics(MSONable):
             "ignore", "Use of properties is"
         )  # `message` only needs to match start of message
 
+        def _get_defect_entry(entry_dict):
+            if isinstance(entry_dict, DefectEntry):
+                return entry_dict
+            return DefectEntry.from_dict(entry_dict)
+
         if isinstance(d.get("defect_entries"), list):
-            d["defect_entries"] = [
-                DefectEntry.from_dict(entry_dict) for entry_dict in d.get("defect_entries")
-            ]
+            d["defect_entries"] = [_get_defect_entry(entry_dict) for entry_dict in d.get("defect_entries")]
         else:
             d["defect_entries"] = {
-                name: DefectEntry.from_dict(entry_dict)
-                for name, entry_dict in d.get("defect_entries").items()
+                name: _get_defect_entry(entry_dict) for name, entry_dict in d.get("defect_entries").items()
             }
 
         return cls(
@@ -915,25 +917,17 @@ class DefectThermodynamics(MSONable):
         self.defect_charge_map = defect_charge_map
 
         # sort dictionaries deterministically:
-        def _map_sort_func(name_wout_charge):
-            for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
-                with contextlib.suppress(ValueError):
-                    return (
-                        list(self._defect_entries.keys()).index(name_wout_charge.rsplit("_", i)[0]),
-                        name_wout_charge,
-                    )
-
-            return 100, name_wout_charge  # if name not in defect_entries, put at end
-
         self.transition_level_map = dict(
-            sorted(self.transition_level_map.items(), key=lambda item: _map_sort_func(item[0]))
+            sorted(self.transition_level_map.items(), key=lambda item: self._map_sort_func(item[0]))
         )
         self.stable_entries = dict(
-            sorted(self.stable_entries.items(), key=lambda item: _map_sort_func(item[0]))
+            sorted(self.stable_entries.items(), key=lambda item: self._map_sort_func(item[0]))
         )
-        self.all_entries = dict(sorted(self.all_entries.items(), key=lambda item: _map_sort_func(item[0])))
+        self.all_entries = dict(
+            sorted(self.all_entries.items(), key=lambda item: self._map_sort_func(item[0]))
+        )
         self.defect_charge_map = dict(
-            sorted(self.defect_charge_map.items(), key=lambda item: _map_sort_func(item[0]))
+            sorted(self.defect_charge_map.items(), key=lambda item: self._map_sort_func(item[0]))
         )
 
         self.transition_levels = {
@@ -944,6 +938,20 @@ class DefectThermodynamics(MSONable):
             defect_name: [entry.charge_state for entry in entries]
             for defect_name, entries in stable_entries.items()
         }
+
+    def _map_sort_func(self, name_wout_charge):
+        """
+        Convenience sorting function for dictionaries in and outputs from
+        ``DefectThermodynamics``.
+        """
+        for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
+            with contextlib.suppress(ValueError):
+                return (
+                    list(self._defect_entries.keys()).index(name_wout_charge.rsplit("_", i)[0]),
+                    name_wout_charge,
+                )
+
+        return 100, name_wout_charge  # if name not in defect_entries, put at end
 
     def _check_bulk_compatibility(self):
         """
@@ -1389,54 +1397,56 @@ class DefectThermodynamics(MSONable):
 
         energy_concentration_list = []
 
-        for defect_entry in self.defect_entries.values():
-            formation_energy = defect_entry.formation_energy(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            raw_concentration = defect_entry.equilibrium_concentration(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=self.vbm,
-                temperature=temperature,
-                per_site=per_site,
-                formation_energy=formation_energy,  # reduce compute times
-            )
+        with warnings.catch_warnings():  # avoid double warning, already warned about 0 chemical potentials
+            warnings.filterwarnings("ignore", "Chemical potentials not present")
+            for defect_entry in self.defect_entries.values():
+                formation_energy = defect_entry.formation_energy(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    fermi_level=fermi_level,
+                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                )
+                raw_concentration = defect_entry.equilibrium_concentration(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    fermi_level=fermi_level,
+                    vbm=self.vbm,
+                    temperature=temperature,
+                    per_site=per_site,
+                    formation_energy=formation_energy,  # reduce compute times
+                )
 
-            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
-            charge = (
-                defect_entry.charge_state
-                if skip_formatting
-                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-            )
-            if lean:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Charge": charge,
-                        "Concentration (cm^-3)": raw_concentration,
-                    }
+                defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
+                charge = (
+                    defect_entry.charge_state
+                    if skip_formatting
+                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                 )
-            else:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Raw Charge": defect_entry.charge_state,  # for sorting
-                        "Charge": charge,
-                        "Formation Energy (eV)": round(formation_energy, 3),
-                        "Raw Concentration": raw_concentration,
-                        (
-                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                        ): _format_concentration(
-                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
-                        ),
-                    }
-                )
+                if lean:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name,
+                            "Charge": charge,
+                            "Concentration (cm^-3)": raw_concentration,
+                        }
+                    )
+                else:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name,
+                            "Raw Charge": defect_entry.charge_state,  # for sorting
+                            "Charge": charge,
+                            "Formation Energy (eV)": round(formation_energy, 3),
+                            "Raw Concentration": raw_concentration,
+                            (
+                                "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                            ): _format_concentration(
+                                raw_concentration, per_site=per_site, skip_formatting=skip_formatting
+                            ),
+                        }
+                    )
 
         conc_df = pd.DataFrame(energy_concentration_list)
 
@@ -2779,7 +2789,7 @@ class DefectThermodynamics(MSONable):
             return None
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
-        tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._name_wout_charge_appearance_order)
+        tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._map_sort_func)
         tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "eV from VBM"])
         tl_df = tl_df.drop(columns="Defect Appearance Order")
         return tl_df.reset_index(drop=True)
@@ -2939,22 +2949,26 @@ class DefectThermodynamics(MSONable):
         limits = [limit] if limit is not None else list(chempots["limits"].keys())
 
         list_of_dfs = []
-        for limit in limits:
-            limits_wrt_el_refs = chempots.get("limits_wrt_el_refs") or chempots.get("limits_wrt_elt_refs")
-            if limits_wrt_el_refs is None:
-                raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
-            relative_chempots = limits_wrt_el_refs[limit]
-            if el_refs is None:
-                el_refs = (
-                    {el: 0 for el in relative_chempots}
-                    if chempots.get("elemental_refs") is None
-                    else chempots["elemental_refs"]
+        with warnings.catch_warnings():  # avoid double warning, already warned above
+            warnings.filterwarnings("ignore", "Chemical potentials not present")
+            for limit in limits:
+                limits_wrt_el_refs = chempots.get("limits_wrt_el_refs") or chempots.get(
+                    "limits_wrt_elt_refs"
                 )
+                if limits_wrt_el_refs is None:
+                    raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
+                relative_chempots = limits_wrt_el_refs[limit]
+                if el_refs is None:
+                    el_refs = (
+                        {el: 0 for el in relative_chempots}
+                        if chempots.get("elemental_refs") is None
+                        else chempots["elemental_refs"]
+                    )
 
-            single_formation_energy_df = self._single_formation_energy_table(
-                relative_chempots, el_refs, fermi_level, skip_formatting
-            )
-            list_of_dfs.append(single_formation_energy_df)
+                single_formation_energy_df = self._single_formation_energy_table(
+                    relative_chempots, el_refs, fermi_level, skip_formatting
+                )
+                list_of_dfs.append(single_formation_energy_df)
 
         return list_of_dfs[0] if len(list_of_dfs) == 1 else list_of_dfs
 
