@@ -2,6 +2,7 @@
 Utility code and functions for generating defect supercells.
 """
 
+from itertools import permutations
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -184,7 +185,9 @@ def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
     return np.min(np.linalg.norm(length_vecs, axis=1))
 
 
-def cell_metric(cell_matrix: np.ndarray, target: str = "SC", rms=True) -> float:
+def cell_metric(
+    cell_matrix: np.ndarray, target: str = "SC", rms: bool = True, eff_cubic_length: Optional[float] = None
+) -> float:
     """
     Calculates the deviation of the given cell matrix from an ideal simple
     cubic (if target = "SC") or face-centred cubic (if target = "FCC") matrix,
@@ -220,12 +223,17 @@ def cell_metric(cell_matrix: np.ndarray, target: str = "SC", rms=True) -> float:
             the vector lengths from that of the idealised values (default),
             or just the mean square difference (to reduce computation time
             when scanning over many possible matrices).
-
+            Default = True
+        eff_cubic_length (float):
+            Effective cubic length of the cell matrix (to reduce
+            computation time during looping).
+            Default = None
 
     Returns:
         float: Cell metric (0 is perfect score)
     """
-    eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
+    if eff_cubic_length is None:
+        eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
     norms = np.linalg.norm(cell_matrix, axis=1)
 
     if target.upper() == "SC":  # get rms/msd difference to eff cubic
@@ -277,7 +285,9 @@ def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.nda
     return np.concatenate((lengths, angles), axis=1)
 
 
-def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
+def _P_matrix_sort_func(
+    P: np.ndarray, cell: np.ndarray = None, eff_norm_cubic_length: Optional[float] = None
+) -> tuple:
     """
     Sorting function to apply on an iterable of transformation matrices.
 
@@ -285,6 +295,9 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
 
     - minimum ASE style cubic-like metric
       (using the fixed, efficient doped version)
+    - P is diagonal?
+    - lattice matrix is diagonal?
+    - lattice matrix is symmetric?
     - matrix symmetry (around diagonal)
     - minimum absolute sum of elements
     - minimum absolute sum of off-diagonal elements
@@ -297,35 +310,54 @@ def _P_matrix_sorting_func(P: np.ndarray, cell: np.ndarray = None) -> tuple:
     Args:
         P (np.ndarray): Transformation matrix.
         cell (np.ndarray): Cell matrix (on which to apply P).
+        eff_norm_cubic_length (float):
+            Effective cubic length of the cell matrix (to reduce
+            computation time during looping).
 
     Returns:
         tuple: Tuple of sorting criteria values
     """
-    cubic_metric = (
-        cell_metric(np.matmul(P, cell), rms=False) if cell is not None else cell_metric(P, rms=False)
-    )
-    symmetric = np.allclose(P, P.T)
-    abs_sum_off_diag = np.sum(np.abs(P) - np.abs(np.diag(np.diag(P))))
-
+    # Note: Lazy-loading _could_ make this quicker (screening out bad matrices early), if efficiency was
+    # an issue for supercell generation
+    transformed_cell = np.matmul(P, cell) if cell is not None else P
+    cubic_metric = cell_metric(transformed_cell, rms=False, eff_cubic_length=eff_norm_cubic_length)
     abs_P = np.abs(P)
+    diag_P = np.diag(P)
+    abs_diag_P = np.abs(diag_P)
+
+    abs_sum_off_diag = np.sum(abs_P - np.diag(abs_diag_P))
     abs_sum = np.sum(abs_P)
     num_negs = np.sum(P < 0)
     max_abs = np.max(abs_P)
-    abs_diag_sum = np.sum(np.abs(np.diag(P)))
-    diag_sum = np.sum(np.diag(P))
+    abs_diag_sum = np.sum(abs_diag_P)
+    diag_sum = np.sum(diag_P)
     P_flat = P.flatten()
-    num_equals = sum(
-        P_flat[i] == P_flat[j] for i in range(len(P_flat)) for j in range(i, len(P_flat))
-    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
+    P_flat_sorted = np.sort(P_flat)
+    diffs = np.diff(P_flat_sorted)
+    num_equals = np.sum(diffs == 0)
+    if num_equals >= 3:
+        symmetric = np.all(P == P.T)  # integer matrices so can use np.all instead of allclose
+        is_diagonal = False if not symmetric else np.all(np.diag(np.diag(P)) == P)
+    else:
+        symmetric = is_diagonal = False
 
     # Note: Initial idea was also to use cell symmetry operations to sort, but this is far too slow, and
     #  in theory should be accounted for with the other (min dist, cubic cell metric) criteria anyway.
     # struct = Structure(Lattice(P), ["H"], [[0, 0, 0]])
     # sga = get_sga(struct)
     # symm_ops = len(sga.get_symmetry_operations())
+    lattice_matrix_is_symmetric = np.allclose(transformed_cell, transformed_cell.T)
+    lattice_matrix_is_diagonal = (
+        False
+        if not lattice_matrix_is_symmetric
+        else np.allclose(transformed_cell, np.diag(np.diag(transformed_cell)))
+    )
 
     return (
+        not is_diagonal,
         cubic_metric,
+        not lattice_matrix_is_diagonal,
+        not lattice_matrix_is_symmetric,
         not symmetric,
         abs_sum_off_diag,
         abs_sum,
@@ -372,7 +404,7 @@ def _get_candidate_P_arrays(
         target_metric = np.eye(3)  # SC by default
 
     # Normalize cell metric to reduce computation time during looping
-    norm = (target_size * abs(np.linalg.det(cell)) / np.linalg.det(target_metric)) ** (-1.0 / 3)
+    norm = (target_size * abs(np.linalg.det(cell)) / abs(np.linalg.det(target_metric))) ** (-1.0 / 3)
     norm_cell = norm * cell
 
     if verbose:
@@ -417,13 +449,35 @@ def _get_candidate_P_arrays(
     return valid_P, norm, norm_cell, unique_cell_matrices, unique_hashes, lengths_angles_hash
 
 
+def _check_and_return_scalar_matrix(P, cell=None):
+    """
+    Check if the input transformation matrix (``P``) is equivalent to a scalar
+    matrix (multiple of the identity matrix), and return the scalar matrix if
+    so.
+    """
+    eigenvalues = np.abs(np.linalg.eigvals(P))
+    if np.allclose(eigenvalues, eigenvalues[0], atol=1e-4):
+        scalar_P = np.eye(3) * eigenvalues[0]
+        if cell is None:
+            return scalar_P
+
+        # otherwise check if the min image distance is the same
+        if np.isclose(
+            _get_min_image_distance_from_matrix(np.matmul(P, cell)),
+            _get_min_image_distance_from_matrix(np.matmul(scalar_P, cell)),
+        ):
+            P = scalar_P
+
+    return P
+
+
 def _get_optimal_P(
     valid_P, selected_indices, unique_hashes, lengths_angles_hash, norm_cell, verbose, label, cell
 ):
     """
     Get the optimal/cleanest P matrix from the given valid_P array (with
     provided set of grouped unique matrices), according to the
-    _P_matrix_sorting_func.
+    ``_P_matrix_sort_func``.
     """
     poss_P = []
     for idx in selected_indices:
@@ -431,11 +485,14 @@ def _get_optimal_P(
         matching_indices = np.where(lengths_angles_hash == hash_value)[0]
         poss_P.extend(valid_P[matching_indices])
 
-    poss_P.sort(key=lambda x: _P_matrix_sorting_func(x, norm_cell))
+    eff_norm_cubic_length = Lattice(np.matmul(next(iter(poss_P)), norm_cell)).volume ** (1 / 3)
+    poss_P.sort(key=lambda x: _P_matrix_sort_func(x, norm_cell, eff_norm_cubic_length))
     if verbose:
         print(f"{label} number of possible P matrices with best score (poss_P): {len(poss_P)}")
 
     optimal_P = poss_P[0]
+    # check if P is equivalent to a scalar multiple of the identity matrix
+    optimal_P = _check_and_return_scalar_matrix(optimal_P, cell)
 
     # Finalize.
     if verbose:
@@ -526,7 +583,7 @@ def find_ideal_supercell(
             (Default = 2)
         clean (bool):
             Whether to return the supercell matrix which gives the 'cleanest'
-            supercell (according to `_lattice_matrix_sorting_func`; most
+            supercell (according to `_lattice_matrix_sort_func`; most
             symmetric, with mostly positive diagonals and c >= b >= a).
             (Default = True)
         return_min_dist (bool):
@@ -550,7 +607,12 @@ def find_ideal_supercell(
     # metric, then secondarily sorted by the (fixed) cubic cell metric (in doped), and then by some other
     # criteria to give the cleanest output
     sc_target_metric = np.eye(3)  # simple cubic type target
-    fcc_target_metric = 0.5 * np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]], dtype=float)
+
+    a = [0, 1, 1]
+    b = [1, 0, 1]
+    c = [1, 1, 0]  # get FCC metric which aligns best with input cell:
+    fcc_target_metrics = [0.5 * np.array(perm, dtype=float) for perm in permutations([a, b, c])]
+    fcc_target_metric = sorted(fcc_target_metrics, key=lambda x: -np.abs(np.linalg.norm(x * cell)))[0]
 
     def _find_ideal_supercell_for_target_metric(
         cell: np.ndarray,
@@ -632,12 +694,15 @@ def find_ideal_supercell(
         (fcc_optimal_P, fcc_min_dist),
     ]
     sc_fcc_P_and_min_dists.sort(
-        key=lambda x: (-x[1], _P_matrix_sorting_func(x[0], cell))
+        key=lambda x: (-x[1], _P_matrix_sort_func(x[0], cell))
     )  # sort by max min dist, then by sorting func
 
     optimal_P, min_dist = sc_fcc_P_and_min_dists[0]
 
-    if clean:
+    if clean and not (
+        optimal_P[0, 0] != 0 and np.allclose(np.abs(optimal_P / optimal_P[0, 0]), np.eye(3))
+    ):
+        # only try cleaning if it's not a perfect scalar expansion
         supercell = Structure(Lattice(cell), ["H"], [[0, 0, 0]]) * optimal_P
         clean_supercell, T = get_clean_structure(supercell, return_T=True)  # T maps orig to clean_super
         # T*orig = clean -> orig = T^-1*clean

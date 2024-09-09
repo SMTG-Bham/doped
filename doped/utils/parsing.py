@@ -301,8 +301,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
-            defect_site_arg_idx = find_nearest_coords(
-                bulk_new_species_coords[:, None],
+            defect_site_arg_idx = find_idx_of_nearest_coords(
+                bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk.lattice,
                 defect_type="substitution",
@@ -320,7 +320,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # again, make sure to use periodic boundaries
         bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(bulk, old_species)
 
-        bulk_site_arg_idx = find_nearest_coords(
+        bulk_site_arg_idx = find_idx_of_nearest_coords(
             bulk_old_species_coords,
             defect_coords,
             bulk.lattice,
@@ -348,8 +348,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect, old_species
         )
 
-        bulk_site_arg_idx = find_nearest_coords(
-            bulk_old_species_coords[:, None],
+        bulk_site_arg_idx = find_idx_of_nearest_coords(
+            bulk_old_species_coords,
             defect_old_species_coords,
             bulk.lattice,
             defect_type="vacancy",
@@ -379,8 +379,8 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
-            defect_site_arg_idx = find_nearest_coords(
-                bulk_new_species_coords[:, None],
+            defect_site_arg_idx = find_idx_of_nearest_coords(
+                bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk.lattice,
                 defect_type="interstitial",
@@ -441,7 +441,7 @@ def get_coords_and_idx_of_species(structure, species_name):
     return np.array(coords), np.array(idx)
 
 
-def find_nearest_coords(
+def find_idx_of_nearest_coords(
     bulk_coords,
     target_coords,
     bulk_lattice,
@@ -455,7 +455,9 @@ def find_nearest_coords(
     distance_matrix = bulk_lattice.get_all_distances(
         bulk_coords,
         target_coords,
-    )[:, 0]
+    )
+    if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
+        distance_matrix = distance_matrix.ravel()
     site_matches = distance_matrix.argmin(axis=0 if defect_type == "vacancy" else -1)
 
     def _site_matching_failure_error(defect_type, searched_structure):
@@ -503,7 +505,7 @@ def _remove_and_insert_species_from_bulk(
     bulk_site_idx = None
 
     if site_arg_idx is not None:
-        bulk_site_idx = find_nearest_coords(
+        bulk_site_idx = find_idx_of_nearest_coords(
             bulk_coords,
             coords[site_arg_idx],
             bulk.lattice,
@@ -567,7 +569,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
 
     for site in defect:
         if site.distance_and_image_from_frac_coords(defect_coords)[0] > wigner_seitz_radius:
-            bulk_site_arg_idx = find_nearest_coords(  # get closest site in bulk to defect site
+            bulk_site_arg_idx = find_idx_of_nearest_coords(  # get closest site in bulk to defect site
                 bulk_species_coord_dict[site.specie.symbol],
                 site.frac_coords,
                 bulk.lattice,
