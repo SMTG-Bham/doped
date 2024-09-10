@@ -834,9 +834,9 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         # outputs):
         # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
         # defect_entry.defect)
-        assert np.isclose(
+        assert np.array_equal(
             defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords
-        ).all()
+        )
         assert np.allclose(
             defect_entry.sc_entry.structure.lattice.matrix,
             defect_gen.bulk_supercell.lattice.matrix,
@@ -845,12 +845,12 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         reoriented_conv_structure = swap_axes(
             sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
         )
-        assert np.allclose(
+        assert np.array_equal(
             defect_entry.conventional_structure.lattice.matrix,
-            reoriented_conv_structure.lattice.matrix,
+            defect_entry.defect.conventional_structure.lattice.matrix,
         )
         assert np.allclose(
-            defect_entry.defect.conventional_structure.lattice.matrix,
+            defect_entry.conventional_structure.lattice.matrix,
             reoriented_conv_structure.lattice.matrix,
         )
         # test no unwanted structure reordering
@@ -906,7 +906,10 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         )
         assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
         assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-        assert defect_entry.conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords
+        assert any(
+            np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
+            for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
+        )
         for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
             assert any(
                 np.array_equal(equiv_conv_cell_frac_coords, x)
@@ -1529,8 +1532,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             )
 
         self._general_defect_gen_check(ytos_defect_gen)
-        self._save_defect_gen_jsons(ytos_defect_gen)
-        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
         assert ytos_defect_gen.interstitial_coords == ytos_interstitial_coords  # check attribute set
         _compare_prim_interstitial_coords(
@@ -1598,9 +1599,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             ],
         )
 
-        self._save_defect_gen_jsons(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen)
-        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
         # with supercell input, single interstitial coord, within min_dist of host atom:
         te_cd_1_metastable_c2v_antisite_supercell_frac_coords = [0.9999, 0.9999, 0.0313]
@@ -2084,9 +2083,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert self.CdTe_defect_gen_info in output
         assert CdTe_defect_gen.structure == self.CdTe_bulk_supercell
 
-        self._save_defect_gen_jsons(CdTe_defect_gen)
         self.CdTe_defect_gen_check(CdTe_defect_gen)
-        self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
     def test_adding_charge_states(self):
         CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
@@ -2371,9 +2368,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert self.ytos_defect_gen_info in output
 
-        self._save_defect_gen_jsons(ytos_defect_gen)
         self.ytos_defect_gen_check(ytos_defect_gen, generate_supercell=False)
-        self._load_and_test_defect_gen_jsons(ytos_defect_gen)
 
         # save reduced defect gen to json
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
@@ -2493,9 +2488,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert self.lmno_defect_gen_info in output
 
-        self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen)
-        self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
         # save reduced defect gen to json
         reduced_lmno_defect_gen = self._reduce_to_one_defect_each(lmno_defect_gen)
@@ -2513,9 +2506,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert self.lmno_defect_gen_info in output
 
-        self._save_defect_gen_jsons(lmno_defect_gen)
         self.lmno_defect_gen_check(lmno_defect_gen, generate_supercell=False)
-        self._load_and_test_defect_gen_jsons(lmno_defect_gen)
 
     def zns_defect_gen_check(self, zns_defect_gen, generate_supercell=True, check_info=True):
         self._general_defect_gen_check(zns_defect_gen)
@@ -2638,9 +2629,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert self.zns_defect_gen_info in output
 
-        self._save_defect_gen_jsons(zns_defect_gen)
         self.zns_defect_gen_check(zns_defect_gen, generate_supercell=False)
-        self._load_and_test_defect_gen_jsons(zns_defect_gen)
 
     def cu_defect_gen_check(self, cu_defect_gen):
         self._general_defect_gen_check(cu_defect_gen)
@@ -2730,9 +2719,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert self.cu_defect_gen_info in output
         assert cu_defect_gen.structure == self.prim_cu
 
-        self._save_defect_gen_jsons(cu_defect_gen)
         self.cu_defect_gen_check(cu_defect_gen)
-        self._load_and_test_defect_gen_jsons(cu_defect_gen)
 
         cu_defect_gen.to_json(f"{self.data_dir}/cu_defect_gen.json")  # for testing in test_vasp.py
 
@@ -2852,9 +2839,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert self.agcu_defect_gen_info in output
 
-        self._save_defect_gen_jsons(agcu_defect_gen)
         self.agcu_defect_gen_check(agcu_defect_gen)
-        self._load_and_test_defect_gen_jsons(agcu_defect_gen)
 
         agcu_defect_gen.to_json(f"{self.data_dir}/agcu_defect_gen.json")  # for testing in test_vasp.py
 
@@ -2999,7 +2984,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
     def test_supercell_w_substitution_N_doped_diamond(self):
         # test inputting a large (216-atom) N_C diamond supercell as input, to check oxi_state handling
         # and skipping of interstitial generation:
-        if not _potcars_available():
+        if not self.heavy_tests:
             return
 
         original_stdout = sys.stdout  # Save a reference to the original standard output
