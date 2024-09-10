@@ -1767,7 +1767,9 @@ class DefectsGenerator(MSONable):
                     neutral_defect_entry.charge_state_guessing_log = {}
 
                 for charge in charge_states:
-                    defect_entry = copy.deepcopy(neutral_defect_entry)
+                    defect_entry = (
+                        copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
+                    )
                     defect_entry.charge_state = charge
                     # set name attribute:
                     defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
@@ -1951,14 +1953,14 @@ class DefectsGenerator(MSONable):
     @classmethod
     def from_dict(cls, d):
         """
-        Reconstructs DefectsGenerator object from a dict representation created
-        using DefectsGenerator.as_dict().
+        Reconstructs ``DefectsGenerator`` object from a dict representation
+        created using ``DefectsGenerator.as_dict()``.
 
         Args:
-            d (dict): dict representation of DefectsGenerator.
+            d (dict): dict representation of ``DefectsGenerator``.
 
         Returns:
-            DefectsGenerator object
+            ``DefectsGenerator`` object
         """
 
         def process_attributes(attributes, iterable):
@@ -2009,7 +2011,7 @@ class DefectsGenerator(MSONable):
                     # pull attributes not in __init__ signature and define after object creation
                     attributes = process_attributes(attribute_groups[class_name], iterable)
                     if class_name == "DefectEntry":
-                        attributes["defect"] = copy.deepcopy(decode_dict(iterable["defect"]))
+                        attributes["defect"] = decode_dict(iterable["defect"])
                     decoded_obj = MontyDecoder().process_decoded(iterable)
                     for attr, value in attributes.items():
                         setattr(decoded_obj, attr, value)

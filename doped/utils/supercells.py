@@ -29,7 +29,7 @@ def get_min_image_distance(structure: Structure) -> float:
     Returns:
         float: Minimum image distance.
     """
-    return _get_min_image_distance_from_matrix(structure.lattice.matrix)
+    return _get_min_image_distance_from_matrix(structure.lattice.matrix)  # type: ignore
 
 
 def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
@@ -52,7 +52,9 @@ def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
     return np.dot(b, normalised_a) * normalised_a
 
 
-def _get_min_image_distance_from_matrix(matrix: np.ndarray, normalised: bool = False) -> float:
+def _get_min_image_distance_from_matrix(
+    matrix: np.ndarray, normalised: bool = False, break_if_less_than: Optional[float] = None
+) -> Union[float, tuple[float, float]]:
     """
     Get the minimum image distance (i.e. minimum distance between periodic
     images of sites in a lattice) for the input lattice matrix, using the
@@ -69,11 +71,27 @@ def _get_min_image_distance_from_matrix(matrix: np.ndarray, normalised: bool = F
             the ``doped`` supercell generation functions, and boosts
             efficiency by skipping volume calculation.
             Default = False.
+        break_if_less_than (Optional[float]):
+            If the minimum image distance is definitely less than this value
+            (based on the minimum cell vector length), then return early
+            with the minimum cell length and this value. Mainly for internal
+            use in ``doped`` to speed up supercell generation.
+            Default = None.
+
+    Returns:
+        Union[float, tuple[float, float]]: Minimum image distance, or tuple
+        of minimum image distance and the break value if ``break_if_less_than``
+        is not None.
     """
     # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
     # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
     # while of course the minimum possible min image distance is the minimum cell vector length
     lattice = Lattice(matrix)
+    if break_if_less_than is not None:
+        min_cell_length = np.min(lattice.abc)
+        if min_cell_length < break_if_less_than:
+            return min_cell_length, break_if_less_than
+
     volume = 1 if normalised else lattice.volume
     eff_cubic_length = volume ** (1 / 3)
     max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
@@ -88,9 +106,12 @@ def _get_min_image_distance_from_matrix(matrix: np.ndarray, normalised: bool = F
             "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
             "non-orthogonal lattice. Please check your inputs!"
         )
-    return round(  # round to 4 decimal places to avoid tiny numerical differences messing with sorting
-        min_dist, 4
-    )
+    # round to 4 decimal places to avoid tiny numerical differences messing with sorting:
+    min_dist = round(min_dist, 4)
+    if break_if_less_than is not None:
+        return min_dist, max(min_dist, break_if_less_than)
+
+    return min_dist
 
 
 def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 10):
@@ -335,9 +356,9 @@ def _P_matrix_sort_func(
     P_flat_sorted = np.sort(P_flat)
     diffs = np.diff(P_flat_sorted)
     num_equals = np.sum(diffs == 0)
-    if num_equals >= 3:
-        symmetric = np.all(P == P.T)  # integer matrices so can use np.all instead of allclose
-        is_diagonal = False if not symmetric else np.all(np.diag(np.diag(P)) == P)
+    if num_equals >= 3:  # integer matrices so can use direct comparison instead of allclose
+        symmetric = P[0, 1] == P[1, 0] and P[0, 2] == P[2, 0] and P[1, 2] == P[2, 1]
+        is_diagonal = False if not symmetric else P[0, 1] == 0 and P[0, 2] == 0 and P[1, 2] == 0
     else:
         symmetric = is_diagonal = False
 
@@ -346,11 +367,17 @@ def _P_matrix_sort_func(
     # struct = Structure(Lattice(P), ["H"], [[0, 0, 0]])
     # sga = get_sga(struct)
     # symm_ops = len(sga.get_symmetry_operations())
-    lattice_matrix_is_symmetric = np.allclose(transformed_cell, transformed_cell.T)
+    lattice_matrix_is_symmetric = (
+        np.isclose(transformed_cell[0, 1], transformed_cell[1, 0])
+        and np.isclose(transformed_cell[0, 2], transformed_cell[2, 0])
+        and np.isclose(transformed_cell[1, 2], transformed_cell[2, 1])
+    )
     lattice_matrix_is_diagonal = (
         False
         if not lattice_matrix_is_symmetric
-        else np.allclose(transformed_cell, np.diag(np.diag(transformed_cell)))
+        else np.isclose(transformed_cell[0, 1], 0)
+        and np.isclose(transformed_cell[0, 2], 0)
+        and np.isclose(transformed_cell[1, 2], 0)
     )
 
     return (
@@ -385,6 +412,17 @@ def _vectorized_lean_sort_func(P_batch):
     max_abs = np.max(abs_P, axis=(1, 2))
     diag_sum = np.sum(np.diagonal(P_batch, axis1=1, axis2=2), axis=1)
     return np.stack((abs_sum, num_negs, max_abs, -diag_sum), axis=1)
+
+
+def _fast_3x3_determinant_vectorized(matrices):
+    # Apply the determinant formula for each matrix (Nx3x3)
+    return (
+        matrices[:, 0, 0] * (matrices[:, 1, 1] * matrices[:, 2, 2] - matrices[:, 1, 2] * matrices[:, 2, 1])
+        - matrices[:, 0, 1]
+        * (matrices[:, 1, 0] * matrices[:, 2, 2] - matrices[:, 1, 2] * matrices[:, 2, 0])
+        + matrices[:, 0, 2]
+        * (matrices[:, 1, 0] * matrices[:, 2, 1] - matrices[:, 1, 1] * matrices[:, 2, 0])
+    )
 
 
 def _get_candidate_P_arrays(
@@ -426,7 +464,7 @@ def _get_candidate_P_arrays(
     P_array = starting_P[None, :, :] + dP_array
 
     # Compute determinants and filter to only those with the correct size:
-    dets = np.abs(np.linalg.det(P_array))
+    dets = np.abs(_fast_3x3_determinant_vectorized(P_array))
     rounded_dets = np.around(dets, 0).astype(int)
     valid_P = P_array[rounded_dets == target_size]
 
@@ -638,15 +676,19 @@ def find_ideal_supercell(
             label=label,
         )
 
-        min_image_dists = np.array(
-            [
-                _get_min_image_distance_from_matrix(cell_matrix, normalised=True)
-                for cell_matrix in unique_cell_matrices
-            ]
-        )  # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
+        current_best_min_image_distance = 0.001
+        min_dists = []
+        # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
         # so if the efficiency of this function was the bottleneck we could rank first with the fixed
         # cubic-cell metric, then subselect and apply this function, but at present this is not the
-        # limiting factor in this function so not worth it.
+        # limiting factor in this function so not worth it
+        for cell_matrix in unique_cell_matrices:
+            min_dist, current_best_min_image_distance = _get_min_image_distance_from_matrix(
+                cell_matrix, normalised=True, break_if_less_than=current_best_min_image_distance
+            )  # type: ignore
+            min_dists.append(min_dist)
+
+        min_image_dists = np.array(min_dists)
         if len(min_image_dists) == 0:
             raise ValueError("No valid P matrices found with given settings")
 
@@ -686,8 +728,12 @@ def find_ideal_supercell(
         label="FCC",
     )
     # recalculate min dists (reduces numerical errors inherited from transformations)
-    sc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3)
-    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3)
+    sc_min_dist = round(
+        _get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3  # type: ignore
+    )
+    fcc_min_dist = round(
+        _get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3  # type: ignore
+    )
 
     sc_fcc_P_and_min_dists = [
         (sc_optimal_P, sc_min_dist),
