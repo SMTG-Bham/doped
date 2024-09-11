@@ -964,19 +964,27 @@ class DefectsParser:
 
         for energy, entries_list in energy_entries_dict.items():
             if len(entries_list) > 1:  # More than one entry with the same energy
-                # sort any duplicates by name length (shorter name preferred)
-                energy_entries_dict[energy] = sorted(entries_list, key=lambda x: len(x.name))
+                # sort any duplicates by name length, name, folder length, folder (shorter preferred)
+                energy_entries_dict[energy] = sorted(
+                    entries_list,
+                    key=lambda x: (
+                        len(x.name),
+                        x.name,
+                        len(self._get_defect_folder(x)),
+                        self._get_defect_folder(x),
+                    ),
+                )
 
         if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
-            duplicate_entry_names_string = "\n".join(
-                ", ".join(f"{entry.name}" for entry in entries_list)
+            duplicate_entry_names_folders_string = "\n".join(
+                ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
                 for entries_list in energy_entries_dict.values()
                 if len(entries_list) > 1
             )
             warnings.warn(
                 f"The following parsed defect entries were found to be duplicates (exact same defect "
                 f"supercell energies). The first of each duplicate group shown will be kept and the "
-                f"other duplicate entries omitted:\n{duplicate_entry_names_string}"
+                f"other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
             )
         parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
 
@@ -1192,12 +1200,18 @@ class DefectsParser:
 
         return ""
 
+    def _get_defect_folder(self, entry):
+        return (
+            entry.calculation_metadata["defect_path"]
+            .replace("/.", "")
+            .split("/")[-1 if self.subfolder == "." else -2]
+        )
+
     def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
         pbar.update()
 
         if result[0] is not None:
-            i = -1 if self.subfolder == "." else -2
-            defect_folder = result[0].calculation_metadata["defect_path"].replace("/.", "").split("/")[i]
+            defect_folder = self._get_defect_folder(result[0])
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
