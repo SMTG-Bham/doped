@@ -457,6 +457,7 @@ def get_entries_in_chemsys(
     for entry in MP_full_pd_entries:
         # reparse energy above hull, to avoid mislabelling issues noted in (legacy) Materials Project
         # database; e.g. search "F", or ZnSe2 on Zn-Se convex hull from MP PD, but EaH = 0.147 eV/atom?
+        # or Immm phases for Br, I...
         entry.data[property_key_dict["energy_above_hull"]] = temp_phase_diagram.get_e_above_hull(entry)
 
     if e_above_hull is not None:
@@ -703,6 +704,7 @@ def get_MP_summary_docs(
     for entry in entries:
         doc = MP_docs.get(entry.data["material_id"])
         if doc:
+            entry.MP_doc = doc  # for user convenience, can query the MP doc later
             for data_field in data_fields:
                 if (
                     data_field not in entry.data
@@ -897,9 +899,16 @@ def get_and_set_competing_phase_name(
     """
     if not entry.data.get("doped_name") or regenerate:  # not set, so generate
         rounded_eah = round(_get_e_above_hull(entry.data), ndigits)
+
         if np.isclose(rounded_eah, 0):
             rounded_eah = 0
-        space_group = entry.structure.get_space_group_info()[0] if hasattr(entry, "structure") else "NA"
+
+        if entry.data.get("molecule"):
+            space_group = "mmm"  # just point group
+        elif hasattr(entry, "structure"):
+            space_group = entry.structure.get_space_group_info()[0]
+        else:
+            space_group = "NA"
         entry.data["doped_name"] = f"{entry.name}_{space_group}_EaH_{rounded_eah}"
 
     return entry.data.get("doped_name")
