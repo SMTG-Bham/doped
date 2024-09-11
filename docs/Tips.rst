@@ -426,9 +426,10 @@ for multiple defects.
 .. note::
 
     For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
-    automatically set ``NUPDOWN`` according to the magnetisation output from the ``Materials Project``
-    calculation of the competing phase, but ``MAGMOM`` may also need to be set to induce a specific spin
-    configuration.
+    automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
+    magnetisation output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
+    (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
+    certain cases.
 
 Symmetry Precision (``symprec``)
 --------------------------------
