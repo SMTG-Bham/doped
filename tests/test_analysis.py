@@ -930,11 +930,18 @@ class DefectsParsingTestCase(unittest.TestCase):
                 shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
 
         with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("error")
             dp = DefectsParser("V2O5_test", dielectric=[4.186, 19.33, 17.49])
         print([str(warning.message) for warning in w])  # for debugging
-        assert not w  # no warnings
-        assert len(dp.defect_dict) == 5  # now 5 defects, all still included
+        assert any(
+            "The following parsed defect entries were found to be duplicates" in str(warning.message)
+            for warning in w
+        )
+        assert any(
+            "v_O_Cs_O2.54_0 (unrecognised_1), v_O_Cs_O2.54_0 (unrecognised_4), v_O_Cs_O2.54_0 ("
+            "unrecognised_5)" in str(warning.message)
+            for warning in w
+        )
+        assert len(dp.defect_dict) == 3  # only 3 defects, 2 duplicates warned and omitted
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
@@ -3365,10 +3372,6 @@ class ReorderedParsingTestCase(unittest.TestCase):
         self.CdTe_corrections_dir = os.path.join(self.module_path, "data/CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.CdTe_corrections_dir}/v_Cd_-2_vasp_gam"
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
-        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
-
-    def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
 
     @custom_mpl_image_compare(filename="CdTe_v_cd_m2_eigenvalue_plot.png")
     def test_parsing_cdte(self):
