@@ -1880,6 +1880,7 @@ class DefectRelaxSet(MSONable):
         )
 
 
+# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class DefectsSet(MSONable):
     """
     An object for generating input files for VASP defect calculations from

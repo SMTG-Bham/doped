@@ -968,6 +968,7 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
 
 
 # TODO: Make these classes MSONable
+# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class CompetingPhases:
     def __init__(
         self,

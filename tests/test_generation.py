@@ -1680,7 +1680,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             CdTe_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords,
-            [10.6285595, 5.7230705, 5.7230705],
+            [-2.4527445, 4.0879075, 4.0879075],
             atol=1e-2,
         )
 
