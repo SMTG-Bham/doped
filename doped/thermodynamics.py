@@ -396,6 +396,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     return grouped_entries
 
 
+# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
