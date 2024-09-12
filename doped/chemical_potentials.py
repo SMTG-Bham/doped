@@ -2190,6 +2190,7 @@ class CompetingPhasesAnalyzer:
 
         if csv_path is not None:
             self.to_csv(csv_path)
+            print(f"Competing phase formation energies have been saved to {csv_path}")
 
     def _get_and_sort_formation_energy_data(self, sort_by_energy=False, prune_polymorphs=False):
         data = copy.deepcopy(self.data)
@@ -2260,7 +2261,6 @@ class CompetingPhasesAnalyzer:
         """
         formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
         pd.DataFrame(formation_energy_data).set_index("Formula").to_csv(csv_path)
-        print(f"Competing phase formation energies have been saved to {csv_path}")
 
     def from_csv(self, csv_path: PathLike):
         """

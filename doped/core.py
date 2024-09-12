@@ -1360,7 +1360,7 @@ def _get_dft_chempots(chempots, el_refs, limit):
     """
     from doped.thermodynamics import _parse_chempots, _parse_limit
 
-    chempots, _el_refs = _parse_chempots(chempots, el_refs)
+    chempots, _el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
     if chempots is not None:
         limit = _parse_limit(chempots, limit)
         if limit is None:

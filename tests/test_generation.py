@@ -2515,7 +2515,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             assert self.zns_defect_gen_info in zns_defect_gen._defect_generator_info()
         assert zns_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
-
         assert self.structure_matcher.fit(zns_defect_gen.primitive_structure, self.non_diagonal_ZnS)
         assert self.structure_matcher.fit(
             zns_defect_gen.primitive_structure, zns_defect_gen.bulk_supercell
@@ -2637,7 +2636,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert cu_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert self.structure_matcher.fit(cu_defect_gen.primitive_structure, self.prim_cu)
-
         assert np.allclose(cu_defect_gen.supercell_matrix, np.eye(3) * 4)
         assert np.isclose(cu_defect_gen.min_image_distance, 10.12, atol=0.01)
         assert self.structure_matcher.fit(cu_defect_gen.conventional_structure, self.prim_cu)
@@ -2740,7 +2738,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert agcu_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert self.structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
-
         supercell_matrix = np.array(
             [[2, -2, 2], [4, 0, 0], [4, -4, 0]]
             if generate_supercell
@@ -2864,7 +2861,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert not self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure, self.CdTe_bulk_supercell
         )
-
         assert np.allclose(
             cd_i_defect_gen.supercell_matrix,
             np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]),
